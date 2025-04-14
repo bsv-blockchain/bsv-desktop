@@ -1,6 +1,10 @@
 {
   "name": "@bsv/brc100-ui-react-components",
   "version": "0.1.0",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "A library of reusable React components for building wallet UIs.",
   "repository": {
     "type": "git",

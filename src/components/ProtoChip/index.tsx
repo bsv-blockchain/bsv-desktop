@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useContext } from 'react'
 import { Chip, Avatar, Stack, Typography, Divider, Box } from '@mui/material'
 import { withRouter, RouteComponentProps } from 'react-router-dom'
 import CloseIcon from '@mui/icons-material/Close'
@@ -7,6 +7,8 @@ import { useTheme } from '@mui/styles'
 import style from './style'
 import { deterministicImage } from '../../utils/deterministicImage'
 import CounterpartyChip from '../CounterpartyChip/index'
+import { WalletContext } from '../../WalletContext'
+import { RegistryClient, SecurityLevel } from '@bsv/sdk'
 
 const useStyles = makeStyles(style as any, {
   name: 'ProtoChip'
@@ -42,8 +44,8 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
   expires,
   onCloseClick,
   canRevoke = true,
-  description,
-  iconURL,
+  // description,
+  // iconURL,
   backgroundColor = 'transparent'
 }) => {
   const classes = useStyles()
@@ -67,15 +69,72 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
   }
 
   const [protocolName, setProtocolName] = useState(protocolID)
-  const [iconURLState, setIconURLState] = useState(iconURL || deterministicImage(protocolID))
+  const [iconURL, setIconURL] = useState(deterministicImage(protocolID))
+  const [description, setDescription] = useState('Protocol description not found.')
   const [imageError, setImageError] = useState(false)
-  const [documentationURL] = useState('https://projectbabbage.com')
+  const [documentationURL, setDocumentationURL] = useState('https://docs.bsvblockchain.org')
+  const { managers, settings } = useContext(WalletContext)
+  const registrant = new RegistryClient(managers.permissionsManager)
+
+  useEffect(() => {
+    const cacheKey = `protocolInfo_${protocolID}_${securityLevel}`
+
+    const fetchAndCacheData = async () => {
+      // Try to load data from cache
+      const cachedData = window.localStorage.getItem(cacheKey)
+      if (cachedData) {
+        const { name, iconURL, description, documentationURL } = JSON.parse(cachedData)
+        setProtocolName(name)
+        setIconURL(iconURL)
+        setDescription(description)
+        setDocumentationURL(documentationURL)
+      }
+      try {
+        // Resolve a Protocol info from id and security level
+        const certifiers = settings.trustSettings.trustedCertifiers.map(x => x.identityKey)
+        const results = await registrant.resolve('protocol', {
+          protocolID: [securityLevel as SecurityLevel, protocolID],
+          registryOperators: certifiers
+        })
+
+        // Compute the most trusted of the results
+        let mostTrustedIndex = 0
+        let maxTrustPoints = 0
+        for (let i = 0; i < results.length; i++) {
+          const resultTrustLevel = settings.trustSettings.trustedCertifiers.find(x => x.identityKey === results[i].registryOperator)?.trust || 0
+          if (resultTrustLevel > maxTrustPoints) {
+            mostTrustedIndex = i
+            maxTrustPoints = resultTrustLevel
+          }
+        }
+        const trusted = results[mostTrustedIndex]
+
+        // Update state and cache the results
+        setProtocolName(trusted.name)
+        setIconURL(trusted.iconURL)
+        setDescription(trusted.description)
+        setDocumentationURL(trusted.documentationURL)
+
+        // Store data in local storage
+        window.localStorage.setItem(cacheKey, JSON.stringify({
+          name: trusted.name,
+          iconURL: trusted.iconURL,
+          description: trusted.description,
+          documentationURL: trusted.documentationURL
+        }))
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    fetchAndCacheData()
+  }, [protocolID, securityLevel, settings])
 
   useEffect(() => {
     if (typeof protocolID === 'string') {
       // Update state if props change
       setProtocolName(protocolID)
-      setIconURLState(iconURL || deterministicImage(protocolID))
+      setIconURL(iconURL || deterministicImage(protocolID))
     }
   }, [protocolID, iconURL])
 
@@ -116,11 +175,11 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
           style={theme.templates.chip({ size, backgroundColor })}
           icon={
             <Avatar
-              src={iconURLState}
+              src={iconURL}
               alt={protocolName}
-              sx={{ 
-                  width: '2.5em',
-                  height: '2.5em',
+              sx={{
+                width: '2.5em',
+                height: '2.5em',
               }}
               onLoad={handleImageLoad}
               onError={handleImageError}
@@ -139,17 +198,17 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
         />
       </Stack>
       {(counterparty && securityLevel > 1) && <CounterpartyChip
-          counterparty={counterparty}
+        counterparty={counterparty}
       />}
-      {expires && 
-      <>
-        <Divider />
-        <Stack sx={{
-          height: '3em', width: '100%'
-        }}>
-          {expires}
-        </Stack>
-      </>}
+      {expires &&
+        <>
+          <Divider />
+          <Stack sx={{
+            height: '3em', width: '100%'
+          }}>
+            {expires}
+          </Stack>
+        </>}
       <Divider />
       <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{
         height: '3em', width: '100%'

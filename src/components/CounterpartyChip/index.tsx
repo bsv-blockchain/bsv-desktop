@@ -1,19 +1,15 @@
 /* eslint-disable react/prop-types */
-import { useState } from 'react'
-import { Avatar, Badge, Chip, Divider, Icon, Stack, Tooltip, Typography } from '@mui/material'
+import { useContext, useEffect, useState } from 'react'
+import { Avatar, Badge, Chip, Divider, Icon, Stack, Typography } from '@mui/material'
 import { withRouter, RouteComponentProps } from 'react-router-dom'
-// import { Signia } from 'babbage-signia'
-// import { Img } from 'uhrp-react'
 import makeStyles from '@mui/styles/makeStyles'
 import CloseIcon from '@mui/icons-material/Close'
 import { useTheme } from '@mui/styles'
 import style from './style'
 import PlaceholderAvatar from '../PlaceholderAvatar'
-import { generateDefaultIcon } from '../../constants/popularApps'
 import deterministicImage from '../../utils/deterministicImage'
-// import confederacyHost from '../../utils/confederacyHost'
-// import { discoverByIdentityKey, getPublicKey } from '@babbage/sdk-ts'
-// import { defaultIdentity, parseIdentity } from 'identinator'
+import { WalletContext } from '../../WalletContext'
+import { IdentityClient } from '@bsv/sdk'
 
 const useStyles = makeStyles(style, {
   name: 'CounterpartyChip'
@@ -41,32 +37,64 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
   canRevoke = false,
   label = 'Counterparty'
 }) => {
-  // const signia = new Signia()
-  // signia.config.confederacyHost = confederacyHost()
-
   const theme = useTheme()
   const classes = useStyles()
-
-  //TODO: const [signiaIdentity, setSigniaIdentity] = useState(defaultIdentity)
-  const [signiaIdentity] = useState({
+  const [identity, setIdentity] = useState({
     name: 'Unknown',
     badgeLabel: 'Unknown',
     abbreviatedKey: counterparty.substring(0, 10),
-    badgeIconURL: 'https://projectbabbage.com/favicon.ico',
+    badgeIconURL: 'https://bsvblockchain.org/favicon.ico',
     avatarURL: deterministicImage(counterparty)
   })
-  
+
   const [avatarError, setAvatarError] = useState(false)
   const [badgeError, setBadgeError] = useState(false)
+
+  const { managers } = useContext(WalletContext)
 
   // Handle image loading errors
   const handleAvatarError = () => {
     setAvatarError(true)
   }
-  
+
   const handleBadgeError = () => {
     setBadgeError(true)
   }
+
+
+  useEffect(() => {
+    // Function to load and potentially update identity for a specific counterparty
+    const loadIdentity = async (counterpartyKey) => {
+      // Initial load from local storage for a specific counterparty
+      const cachedIdentity = window.localStorage.getItem(`identity_${counterpartyKey}`)
+      if (cachedIdentity) {
+        setIdentity(JSON.parse(cachedIdentity))
+      }
+
+      try {
+        // Resolve the counterparty key for 'self' or 'anyone'
+        if (counterpartyKey === 'self') {
+          counterpartyKey = (await managers.permissionsManager.getPublicKey({ identityKey: true })).publicKey
+        } else if (counterpartyKey === 'anyone') {
+          counterpartyKey = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+        }
+
+        // Fetch the latest identity info from the server
+        const identityClient = new IdentityClient(managers.permissionsManager)
+        const results = await identityClient.resolveByIdentityKey({ identityKey: counterpartyKey })
+        if (results && results.length > 0) {
+          setIdentity(results[0])
+          // Update component state and cache in local storage
+          window.localStorage.setItem(`identity_${counterpartyKey}`, JSON.stringify(results[0]))
+        }
+      } catch (e) {
+        console.error(e)
+      }
+    }
+
+    // Execute the loading function with the initial counterparty
+    loadIdentity(counterparty)
+  }, [counterparty])
 
   return (
     <>
@@ -86,10 +114,10 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
           label={
             <div style={(theme as any).templates.chipLabel}>
               <span style={(theme as any).templates.chipLabelTitle({ size })}>
-                {counterparty === 'self' ? 'Self' : signiaIdentity.name}
+                {counterparty === 'self' ? 'Self' : identity.name}
               </span>
               <span style={(theme as any).templates.chipLabelSubtitle}>
-                {counterparty === 'self' ? '' : (signiaIdentity.abbreviatedKey || `${counterparty.substring(0, 10)}...`)}
+                {counterparty === 'self' ? '' : (identity.abbreviatedKey || `${counterparty.substring(0, 10)}...`)}
               </span>
             </div>
           }
@@ -99,46 +127,46 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
               badgeContent={
                 !badgeError ? (
-                    <Icon style={{ width: '20px', height: '20px', backgroundColor: 'white', borderRadius: '20%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <img
-                        style={{ width: '95%', height: '95%', objectFit: 'cover', borderRadius: '20%' }}
-                        src={signiaIdentity.badgeIconURL}
-                        alt={`${signiaIdentity.badgeLabel} badge`}
-                        onError={handleBadgeError}
-                        loading="lazy"
-                      />
-                    </Icon>
-                  ) : (
-                    <Avatar 
-                      sx={{ 
-                        width: '20px', 
-                        height: '20px', 
-                        backgroundColor: 'rgba(0, 0, 0, 0.5)', 
-                        fontSize: '10px' 
-                      }}
-                    >
-                      ID
-                    </Avatar>
-                  )
-                }
-              >
-                {!avatarError ? (
-                  <Avatar alt={signiaIdentity.name} sx={{ width: '2.5em', height: '2.5em' }}>
+                  <Icon style={{ width: '20px', height: '20px', backgroundColor: 'white', borderRadius: '20%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <img
-                      src={signiaIdentity.avatarURL}
-                      alt={signiaIdentity.name}
-                      className={classes.table_picture}
-                      onError={handleAvatarError}
+                      style={{ width: '95%', height: '95%', objectFit: 'cover', borderRadius: '20%' }}
+                      src={identity.badgeIconURL}
+                      alt={`${identity.badgeLabel} badge`}
+                      onError={handleBadgeError}
                       loading="lazy"
                     />
-                  </Avatar>
+                  </Icon>
                 ) : (
-                  <PlaceholderAvatar
-                    name={signiaIdentity.name !== 'Unknown' ? signiaIdentity.name : counterparty.substring(0, 10)}
-                    size={2.5 * 16}
+                  <Avatar
+                    sx={{
+                      width: '20px',
+                      height: '20px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                      fontSize: '10px'
+                    }}
+                  >
+                    ID
+                  </Avatar>
+                )
+              }
+            >
+              {!avatarError ? (
+                <Avatar alt={identity.name} sx={{ width: '2.5em', height: '2.5em' }}>
+                  <img
+                    src={identity.avatarURL}
+                    alt={identity.name}
+                    className={classes.table_picture}
+                    onError={handleAvatarError}
+                    loading="lazy"
                   />
-                )}
-              </Badge>
+                </Avatar>
+              ) : (
+                <PlaceholderAvatar
+                  name={identity.name !== 'Unknown' ? identity.name : counterparty.substring(0, 10)}
+                  size={2.5 * 16}
+                />
+              )}
+            </Badge>
           }
           onClick={e => {
             if (clickable) {

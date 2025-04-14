@@ -1,5 +1,5 @@
 const localeDefault = Intl.NumberFormat().resolvedOptions().locale
-const groupDefault = Intl.NumberFormat().formatToParts(1234.56).filter(p => p.type === 'group')[0].value
+const groupDefault = Intl.NumberFormat().formatToParts(10234.56).filter(p => p.type === 'group')[0].value
 const decimalDefault = Intl.NumberFormat().formatToParts(1234.56).filter(p => p.type === 'decimal')[0].value
 
 export const satoshisOptions = {

@@ -1,12 +1,13 @@
-import { useContext, useState } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import { Chip, Box, Typography, IconButton } from '@mui/material'
 import { withRouter, RouteComponentProps } from 'react-router-dom'
 import { useTheme, makeStyles } from '@mui/styles'
 import style from './style'
 import CounterpartyChip from '../CounterpartyChip'
-import { Base64String } from '@bsv/sdk'
+import { Base64String, CertificateDefinitionData, CertificateFieldDescriptor, RegistryClient } from '@bsv/sdk'
 import { WalletContext } from '../../WalletContext'
 import DeleteIcon from '@mui/icons-material/Delete'
+import { DEFAULT_APP_ICON } from '../../constants/popularApps'
 
 const useStyles = makeStyles(style, {
   name: 'CertificateChip'
@@ -50,8 +51,8 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
   expires,
   onCloseClick,
   canRevoke = false,
-  description,
-  iconURL,
+  // description,
+  // iconURL,
   onRevoke
 }) => {
   if (typeof certType !== 'string') {
@@ -60,15 +61,75 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
   const classes = useStyles()
   const theme = useTheme()
 
-  const [certName] = useState('Unknown Cert')
-  const [descriptionState] = useState(description || `${certType.substr(0, 12)}...`)
-  const [isRevoked, setIsRevoked] = useState(false)
-
-  const fields = (Array.isArray(fieldsToDisplay) && fieldsToDisplay.length > 0) ? fieldsToDisplay : Object.entries(fieldsToDisplay || {}).map(([k, v]) => `${k}: ${v}`)
-
   const {
-    managers
+    managers,
+    settings
   } = useContext(WalletContext)
+
+  const [certName, setCertName] = useState('Unknown Cert')
+  const [iconURL, setIconURL] = useState(
+    DEFAULT_APP_ICON
+  )
+  const [description, setDescription] = useState(`${certType.substr(0, 12)}...`)
+  const [documentationURL, setDocumentationURL] = useState('unknown')
+  const [fields, setFields] = useState<Record<string, CertificateFieldDescriptor>>({})
+  const [isRevoked, setIsRevoked] = useState(false)
+  const registrant = new RegistryClient(managers.walletManager)
+
+  useEffect(() => {
+    const fetchAndCacheData = async () => {
+      const registryOperators: string[] = settings.trustSettings.trustedCertifiers.map((x: any) => x.identityKey)
+      const cacheKey = `certData_${certType}_${registryOperators.join('_')}`
+      const cachedData = window.localStorage.getItem(cacheKey)
+
+      if (cachedData) {
+        const cachedCert = JSON.parse(cachedData)
+        setCertName(cachedCert.name)
+        setIconURL(cachedCert.iconURL)
+        setDescription(cachedCert.description)
+        setDocumentationURL(cachedCert.documentationURL)
+        setFields(cachedCert.fields)
+      }
+
+      try {
+        const results = (await registrant.resolve('certificate', {
+          type: certType,
+          registryOperators
+        })) as CertificateDefinitionData[]
+        if (results && results.length > 0) {
+          // Compute the most trusted of the results
+          let mostTrustedIndex = 0
+          let maxTrustPoints = 0
+          for (let i = 0; i < results.length; i++) {
+            const resultTrustLevel =
+              settings.trustSettings.trustedCertifiers.find(
+                (x: any) => x.identityKey === results[i].registryOperator
+              )?.trust || 0
+            if (resultTrustLevel > maxTrustPoints) {
+              mostTrustedIndex = i
+              maxTrustPoints = resultTrustLevel
+            }
+          }
+          const mostTrustedCert = results[mostTrustedIndex]
+          setCertName(mostTrustedCert.name)
+          setIconURL(mostTrustedCert.iconURL)
+          setDescription(mostTrustedCert.description)
+          setDocumentationURL(mostTrustedCert.documentationURL)
+          setFields(mostTrustedCert.fields)
+
+          // Cache the fetched data
+          window.localStorage.setItem(cacheKey, JSON.stringify(mostTrustedCert))
+        } else {
+          console.log('No certificates found.')
+        }
+      } catch (error) {
+        console.error('Failed to fetch certificate details:', error)
+      }
+    }
+
+    fetchAndCacheData()
+  }, [settings, certType, setCertName, setIconURL, setDescription, setDocumentationURL, setFields])
+
 
   const handleRelinquishCertificate = async () => {
     try {
@@ -113,11 +174,11 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
       </Typography>
 
       <Typography variant='body1'>
-        {lastAccessed || descriptionState}
+        {lastAccessed || description}
       </Typography>
       {/* Revoke button - only shown when canRevoke is true */}
       {canRevoke && (
-        <Box sx={{ 
+        <Box sx={{
           position: 'absolute',
           top: 0,
           right: 0
@@ -134,7 +195,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
       )}
 
       {/* Fields display section */}
-      {fields.length > 0 && (
+      {Object.keys(fields).length > 0 && (
         <Box sx={{
           ...(theme as any).templates.boxOfChips,
           display: 'flex',
@@ -152,7 +213,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
             maxWidth: '100%',
             overflow: 'hidden'
           }}>
-            {fields.map(y => (
+            {Object.keys(fields).map(y => (
               <Chip
                 sx={{ margin: '0.4em 0.25em' }}
                 key={`field-${y}`}

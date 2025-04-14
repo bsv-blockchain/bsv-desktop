@@ -10,7 +10,8 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import EyeCon from '@mui/icons-material/Visibility'
 import { WalletContext } from '../../../WalletContext'
 import { ProtoWallet, VerifiableCertificate } from '@bsv/sdk'
-import CertificateChip from '../../../components/CertificateChip'
+// import CertificateChip from '../../../components/CertificateChip'
+import CertificateCard from './CertificateCard'
 
 const useStyles = makeStyles(style, {
   name: 'MyIdentity'
@@ -220,14 +221,15 @@ const MyIdentity = () => {
           {shownCertificates.map((cert) => (
             <Grid2 key={cert.serialNumber} size={1}>
               <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover', border: 1, borderColor: 'action.main' }}>
-                <CertificateChip
+                <CertificateCard certificate={cert} />
+                {/* <CertificateChip
                   certType={cert.type}
                   serialNumber={cert.serialNumber}
                   certifier={cert.certifier}
                   fieldsToDisplay={cert.decryptedFields}
                   canRevoke={true}
                   onRevoke={handleCertificateRevoke}
-                />
+                /> */}
               </Box>
             </Grid2>
           ))}

@@ -14,7 +14,7 @@ import { DEFAULT_APP_ICON } from '../../../constants/popularApps';
 import PageHeader from '../../../components/PageHeader';
 import RecentActions from '../../../components/RecentActions';
 import fetchAndCacheAppData from '../../../utils/fetchAndCacheAppData';
-// import AccessAtAGlance from '../../../components/AccessAtAGlance';
+import AccessAtAGlance from '../../../components/AccessAtAGlance';
 
 // Extended interface for transformed wallet actions
 interface TransformedWalletAction extends WalletAction {
@@ -223,6 +223,15 @@ const Apps: React.FC<AppsProps> = ({ history }) => {
             setDisplayLimit={setDisplayLimit}
             loading={loading}
             setRefresh={setRefresh}
+          />
+        </Grid>
+        {/* AccessAtAGlance Section */}
+        <Grid sx={{ lg: 6, md: 6, xs: 12 }}>
+          <AccessAtAGlance
+            originator={appDomain}
+            loading={loading}
+            setRefresh={setRefresh}
+            history={history}
           />
         </Grid>
       </Grid>

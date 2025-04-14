@@ -32,11 +32,7 @@ const queries = {
 }
 
 // 2. Create the root and render:
-const rootElement = document.getElementById('root')
-if (rootElement) {
-  const root = createRoot(rootElement)
-
-  root.render(
+export default () => (
     <React.StrictMode>
       <UserContextProvider>
         <WalletContextProvider>
@@ -67,4 +63,3 @@ if (rootElement) {
       </UserContextProvider>
     </React.StrictMode>
   )
-}

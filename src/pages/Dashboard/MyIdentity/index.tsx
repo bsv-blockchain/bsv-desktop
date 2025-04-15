@@ -2,7 +2,7 @@
 /* eslint-disable react/prop-types */
 import { useState, useContext, useEffect } from 'react'
 import { Typography, IconButton, Box, Paper, Button } from '@mui/material'
-import Grid2 from '@mui/material/Grid2'
+import Grid from '@mui/material/Grid'
 import { makeStyles } from '@mui/styles'
 import style from './style.js'
 import CheckIcon from '@mui/icons-material/Check'
@@ -217,9 +217,9 @@ const MyIdentity = () => {
           As you go about your life, people and businesses you interact with can give you certificates and credentials. These verify your qualifications and help you establish trust.
         </Typography>
 
-        <Grid2 container spacing={2} justifyContent="space-between" columns={{ xs: 1, sm: 1, md: 1, lg: 2 }}>
+        <Grid container spacing={2} justifyContent="space-between" columns={{ xs: 1, sm: 1, md: 1, lg: 2 }}>
           {shownCertificates.map((cert) => (
-            <Grid2 key={cert.serialNumber} size={1}>
+            <Grid key={cert.serialNumber} size={1}>
               <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover', border: 1, borderColor: 'action.main' }}>
                 <CertificateCard certificate={cert} />
                 {/* <CertificateChip
@@ -231,9 +231,9 @@ const MyIdentity = () => {
                   onRevoke={handleCertificateRevoke}
                 /> */}
               </Box>
-            </Grid2>
+            </Grid>
           ))}
-        </Grid2>
+        </Grid>
 
         {shownCertificates.length === 0 && (
           <Box sx={{ textAlign: 'center', py: 4 }}>

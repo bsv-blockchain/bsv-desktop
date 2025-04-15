@@ -6,7 +6,7 @@ import {
 } from '@mui/material'
 import { makeStyles } from '@mui/styles'
 import { toast } from 'react-toastify'
-import PhoneEntry from '../../../../components/PhoneEntry.jsx'
+import PhoneEntry from '../../../../components/PhoneEntry'
 import { formatPhoneNumber } from 'react-phone-number-input'
 import UIContext from '../../../../UIContext'
 
@@ -84,7 +84,7 @@ const PhoneSettings = ({ history }) => {
               >
                 {currentNumber ? 'Hide' : 'View'}
               </Button>
-              )}
+            )}
           <div />
           {changeLoading
             ? <CircularProgress />
@@ -96,7 +96,7 @@ const PhoneSettings = ({ history }) => {
               >
                 Change
               </Button>
-              )}
+            )}
         </div>
       </form>
       <br />

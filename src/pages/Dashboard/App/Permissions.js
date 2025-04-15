@@ -1,7 +1,7 @@
 import React from 'react'
-import ProtocolPermissionList from '../../../components/ProtocolPermissionList/index.jsx'
-import SpendingAuthorizationList from '../../../components/SpendingAuthorizationList/index.jsx'
-import BasketAccessList from '../../../components/BasketAccessList/index.jsx'
+import ProtocolPermissionList from '../../../components/ProtocolPermissionList/index'
+import SpendingAuthorizationList from '../../../components/SpendingAuthorizationList/index'
+import BasketAccessList from '../../../components/BasketAccessList/index'
 import CertificateAccessList from '../../../components/CertificateAccessList'
 import { Typography } from '@mui/material'
 

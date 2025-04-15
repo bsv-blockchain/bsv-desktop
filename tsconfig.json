@@ -7,11 +7,12 @@
     "declarationDir": "dist/types",
     "outDir": "dist",
     "rootDir": "src",
-    "strict": true,
+    "strict": false,
     "jsx": "react-jsx",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "allowJs": true
+    "allowJs": true,
+    "resolveJsonModule": true,
   },
   "include": [
     "src/**/*"

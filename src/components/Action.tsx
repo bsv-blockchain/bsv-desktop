@@ -14,7 +14,7 @@ import {
   Tooltip,
   useTheme,
 } from '@mui/material';
-import Grid from '@mui/material/Grid2';
+import Grid from '@mui/material/Grid';
 import { makeStyles } from '@mui/styles';
 import { Theme } from '@mui/material/styles';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';

@@ -1,19 +1,19 @@
 import { useState, useContext, useEffect } from 'react'
 import {
-  Typography, 
-  LinearProgress, 
+  Typography,
+  LinearProgress,
   Box,
   Paper,
   Button,
   useTheme
 } from '@mui/material'
-import Grid from '@mui/material/Grid2' 
+import Grid from '@mui/material/Grid'
 import { makeStyles } from '@mui/styles'
 import { toast } from 'react-toastify'
 import { WalletContext } from '../../../WalletContext'
 import { Theme } from '@mui/material/styles'
-import DarkModeImage from "../../../images/darkMode.jsx"
-import LightModeImage from "../../../images/lightMode.jsx"
+import DarkModeImage from "../../../images/darkMode"
+import LightModeImage from "../../../images/lightMode"
 import ComputerIcon from '@mui/icons-material/Computer'
 import { UserContext } from '../../../UserContext'
 import PageLoading from '../../../components/PageLoading.js'
@@ -91,19 +91,19 @@ const Settings = () => {
 
   const handleThemeChange = async (themeOption: string) => {
     if (selectedTheme === themeOption) return;
-    
+
     try {
       setSettingsLoading(true);
 
       updateSettings({
         ...settings,
-        theme: { 
-          mode: themeOption 
+        theme: {
+          mode: themeOption
         }
       });
 
       setSelectedTheme(themeOption);
-      
+
       toast.success('Theme updated!', {
         position: 'top-center'
       });
@@ -117,16 +117,16 @@ const Settings = () => {
 
   const handleCurrencyChange = async (currency) => {
     if (selectedCurrency === currency) return;
-    
+
     try {
       setSettingsLoading(true);
       setSelectedCurrency(currency);
-      
+
       updateSettings({
         ...settings,
         currency,
       });
-      
+
       toast.success('Currency updated!', {
         position: 'top-center'
       });
@@ -139,7 +139,7 @@ const Settings = () => {
   }
 
   const renderThemeIcon = (themeType) => {
-    switch(themeType) {
+    switch (themeType) {
       case 'light':
         return <LightModeImage />;
       case 'dark':
@@ -152,7 +152,7 @@ const Settings = () => {
   };
 
   const getThemeButtonStyles = (themeType) => {
-    switch(themeType) {
+    switch (themeType) {
       case 'light':
         return {
           color: 'text.primary',
@@ -167,8 +167,8 @@ const Settings = () => {
         return {
           color: theme.palette.mode === 'dark' ? 'common.white' : 'text.primary',
           backgroundColor: theme.palette.mode === 'dark' ? 'grey.800' : 'background.paper',
-          backgroundImage: theme.palette.mode === 'dark' 
-            ? 'linear-gradient(135deg, #474747 0%, #111111 100%)' 
+          backgroundImage: theme.palette.mode === 'dark'
+            ? 'linear-gradient(135deg, #474747 0%, #111111 100%)'
             : 'linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%)',
         };
       default:
@@ -178,7 +178,7 @@ const Settings = () => {
 
   const getSelectedButtonStyle = (isSelected) => {
     if (!isSelected) return {};
-    
+
     return isDarkMode ? {
       borderColor: 'common.white',
       borderWidth: '2px',

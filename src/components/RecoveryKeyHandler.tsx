@@ -10,10 +10,10 @@ import {
   useTheme,
   Box,
   IconButton,
-  Grid2,
+  Grid,
   Stack
 } from '@mui/material'
-import CustomDialog from './CustomDialog/index.jsx'
+import CustomDialog from './CustomDialog/index'
 import LockIcon from '@mui/icons-material/Lock'
 import DownloadIcon from '@mui/icons-material/Download'
 import exportDataToFile, { downloadFile } from '../utils/exportDataToFile'
@@ -86,13 +86,13 @@ const RecoveryKeyHandler: FC = () => {
       title='Secure Access Backup and Recovery'
     >
       <DialogContent>
-        { !affirmative1 && <>
+        {!affirmative1 && <>
           <DialogContentText variant='body1' sx={{ mt: 3, mb: 1, color: theme.palette.getContrastText(theme.palette.background.default) }}>
             Save Your Recovery Key Now:
           </DialogContentText>
-          <Grid2 container spacing={2} width='100%'>
+          <Grid container spacing={2} width='100%'>
             <Stack sx={{ my: 3 }} direction="row" alignItems="center" justifyContent="space-between">
-            <Typography 
+              <Typography
                 variant='body1'
                 sx={{
                   userSelect: 'all',
@@ -100,12 +100,12 @@ const RecoveryKeyHandler: FC = () => {
                   wordBreak: 'break-all'
                 }}
                 color={theme.palette.getContrastText(theme.palette.background.default)}>
-              {recoveryKey}
-            </Typography>
-            <Stack>
-              <IconButton size='large' onClick={() => handleCopy(recoveryKey)} disabled={copied} sx={{ ml: 1 }}>
-                {copied ? <CheckIcon /> : <ContentCopyIcon fontSize='small' />}
-              </IconButton></Stack>
+                {recoveryKey}
+              </Typography>
+              <Stack>
+                <IconButton size='large' onClick={() => handleCopy(recoveryKey)} disabled={copied} sx={{ ml: 1 }}>
+                  {copied ? <CheckIcon /> : <ContentCopyIcon fontSize='small' />}
+                </IconButton></Stack>
             </Stack>
             <Button
               variant='contained'
@@ -117,7 +117,7 @@ const RecoveryKeyHandler: FC = () => {
             >
               Save as a File
             </Button>
-          </Grid2>
+          </Grid>
           <Box my={3}>
             <DialogContentText>Take a screenshot, email it to yourself, print it out and put it in a safe, or save it to secure cloud storage.</DialogContentText>
           </Box>
@@ -133,56 +133,56 @@ const RecoveryKeyHandler: FC = () => {
             sx={{ m: 0, p: 0 }}
           />
         </DialogContentText>
-        { affirmative1 && <>
-        <DialogContentText variant='body1' sx={{ mt: 3, mb: 1 }}>
-          Any 2 of 3 factors are required to access your data:
-        </DialogContentText>
-        <DialogContentText sx={{ mb: 3, textAlign: 'center', fontWeight: 'bold', color: theme.palette.getContrastText(theme.palette.background.default) }}>
-          Phone, Password, Recovery Key
-        </DialogContentText>
-        <DialogContentText variant='body1' sx={{ mt: 3, mb: 1 }}>
-          When you lose your phone or forget your password, you must use the other factors to re-establish secure control. This is a perfectly normal and unavoidable fact of life. However -
-        </DialogContentText>
-        <DialogContentText>
-          <Typography 
-            variant="body2" 
-            color="error" 
-            sx={{ 
-              mt: 2, 
-              mb: 2, 
-              fontWeight: 'bold',
-              textAlign: 'center',
-              border: '1px solid',
-              borderColor: 'error.main',
-              p: 2,
-              borderRadius: 1
-             }}
-          >
-            Loss of more than one factor will result in TOTAL LOSS of access to all assets, encrypted data, and certificates.
-          </Typography>
-        </DialogContentText>
-        <DialogContentText sx={{ color: theme.palette.getContrastText(theme.palette.background.default) }}>
-          <FormControlLabel
-            control={<Checkbox
-              checked={affirmative3}
-              onChange={() => setAffirmative3(x => !x)}
-            />}
-            label={'I will immediately recover lost factors using the other two'}
-            labelPlacement="start"
-            sx={{ m: 0, p: 0 }}
-          />
-        </DialogContentText>
-        <DialogContentText sx={{ color: theme.palette.getContrastText(theme.palette.background.default) }}>
-          <FormControlLabel
-            control={<Checkbox
-              checked={affirmative2}
-              onChange={() => setAffirmative2(x => !x)}
-            />}
-            label={'I am solely responsible for maintaining access to my own data'}
-            labelPlacement="start"
-            sx={{ m: 0, p: 0 }}
-          />
-        </DialogContentText>
+        {affirmative1 && <>
+          <DialogContentText variant='body1' sx={{ mt: 3, mb: 1 }}>
+            Any 2 of 3 factors are required to access your data:
+          </DialogContentText>
+          <DialogContentText sx={{ mb: 3, textAlign: 'center', fontWeight: 'bold', color: theme.palette.getContrastText(theme.palette.background.default) }}>
+            Phone, Password, Recovery Key
+          </DialogContentText>
+          <DialogContentText variant='body1' sx={{ mt: 3, mb: 1 }}>
+            When you lose your phone or forget your password, you must use the other factors to re-establish secure control. This is a perfectly normal and unavoidable fact of life. However -
+          </DialogContentText>
+          <DialogContentText>
+            <Typography
+              variant="body2"
+              color="error"
+              sx={{
+                mt: 2,
+                mb: 2,
+                fontWeight: 'bold',
+                textAlign: 'center',
+                border: '1px solid',
+                borderColor: 'error.main',
+                p: 2,
+                borderRadius: 1
+              }}
+            >
+              Loss of more than one factor will result in TOTAL LOSS of access to all assets, encrypted data, and certificates.
+            </Typography>
+          </DialogContentText>
+          <DialogContentText sx={{ color: theme.palette.getContrastText(theme.palette.background.default) }}>
+            <FormControlLabel
+              control={<Checkbox
+                checked={affirmative3}
+                onChange={() => setAffirmative3(x => !x)}
+              />}
+              label={'I will immediately recover lost factors using the other two'}
+              labelPlacement="start"
+              sx={{ m: 0, p: 0 }}
+            />
+          </DialogContentText>
+          <DialogContentText sx={{ color: theme.palette.getContrastText(theme.palette.background.default) }}>
+            <FormControlLabel
+              control={<Checkbox
+                checked={affirmative2}
+                onChange={() => setAffirmative2(x => !x)}
+              />}
+              label={'I am solely responsible for maintaining access to my own data'}
+              labelPlacement="start"
+              sx={{ m: 0, p: 0 }}
+            />
+          </DialogContentText>
         </>}
       </DialogContent>
       <DialogActions sx={{ justifyContent: 'space-between' }}>

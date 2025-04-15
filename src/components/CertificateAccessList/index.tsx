@@ -191,7 +191,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
         {grants.map((grant, i) => (
           <React.Fragment key={i}>
             {itemsDisplayed === 'apps' ? (
-              <div className={classes.appList}>
+              <div className={(classes as any).appList}>
                 <div
                   style={{
                     display: 'flex',
@@ -218,7 +218,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
                         <Button
                           onClick={() => revokeAllAccess(grant as AppGrant)}
                           color="secondary"
-                          className={classes.revokeButton}
+                          className={(classes as any).revokeButton}
                         >
                           Revoke All
                         </Button>
@@ -266,7 +266,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
               </div>
             ) : (
               <Paper elevation={4}>
-                <ListItem className={classes.action_card}>
+                <ListItem className={(classes as any).action_card}>
                   {/*
                     When itemsDisplayed is not 'apps', we assume each grant is a Permission.
                   */}

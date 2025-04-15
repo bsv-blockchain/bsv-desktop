@@ -26,7 +26,8 @@
     }
   },
   "dependencies": {
-    "@bsv/uhrp-react": "^1.0.1"
+    "@bsv/uhrp-react": "^1.0.1",
+    "libphonenumber-js": "^1.12.6"
   },
   "peerDependencies": {
     "@bsv/sdk": "^1.4.11",
@@ -36,7 +37,6 @@
     "@mui/icons-material": "^7.0.2",
     "@mui/material": "^7.0.2",
     "@mui/styles": "^6.4.0",
-    "boomerang-http": "^0.1.0",
     "date-fns": "^4.1.0",
     "fuse.js": "^7.1.0",
     "iso-3166-ts": "^2.2.0",

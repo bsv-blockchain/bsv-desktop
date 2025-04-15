@@ -1,5 +1,4 @@
 import { useContext, useState, useRef, useCallback } from 'react'
-import { open } from '@tauri-apps/plugin-shell'
 import {
   Typography,
   Button,
@@ -506,9 +505,12 @@ const Greeter: React.FC<any> = ({ history }) => {
             href='https://github.com/bitcoin-sv/metanet-desktop/blob/master/LICENSE.txt'
             target='_blank'
             rel='noopener noreferrer'
-            onClick={async e => {
+            onClick={(e) => {
+              // Prevent default behavior for the link
               e.preventDefault()
-              await open('https://github.com/bitcoin-sv/metanet-desktop/blob/master/LICENSE.txt')
+              // In a browser environment, this will work as expected
+              // In Tauri, this will be handled by the configured shell handler
+              window.open('https://github.com/bitcoin-sv/metanet-desktop/blob/master/LICENSE.txt', '_blank', 'noopener,noreferrer')
             }}
             style={{ color: theme.palette.primary.main, textDecoration: 'none' }}
           >

@@ -16,7 +16,6 @@ import {
 import CustomDialog from './CustomDialog/index'
 import LockIcon from '@mui/icons-material/Lock'
 import DownloadIcon from '@mui/icons-material/Download'
-import exportDataToFile, { downloadFile } from '../utils/exportDataToFile'
 import { Utils } from '@bsv/sdk';
 import { WalletContext } from '../WalletContext'
 import CheckIcon from '@mui/icons-material/Check'
@@ -69,10 +68,27 @@ const RecoveryKeyHandler: FC = () => {
 
   const handleDownload = async (): Promise<void> => {
     const recoveryKeyData = `Metanet Recovery Key:\n\n${recoveryKey}\n\nSaved: ${new Date()}`
-    const success = await downloadFile('Metanet Recovery Key.txt', Utils.toArray(recoveryKeyData, 'utf8'))
-    if (success) {
+    try {
+      // Create a blob from the text data
+      const blob = new Blob([recoveryKeyData], { type: 'text/plain' })
+      
+      // Create a URL for the blob
+      const url = URL.createObjectURL(blob)
+      
+      // Create and configure a download link
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'Metanet Recovery Key.txt'
+      
+      // Append to document, trigger click, and cleanup
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      
       toast.success('Recovery key downloaded successfully')
-    } else {
+    } catch (error) {
+      console.error('Download error:', error)
       toast.error('Failed to download recovery key')
     }
   }

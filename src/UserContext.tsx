@@ -1,18 +1,12 @@
 import React, { createContext, Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react'
 import packageJson from '../package.json'
-import { invoke } from '@tauri-apps/api/core'
+import { TauriFunctions } from './UserInterface'
 
-// 1. Our Tauri commands exposed as async calls:
-async function isFocused(): Promise<boolean> {
-  return invoke<boolean>('is_focused')
-}
-
-async function onFocusRequested(): Promise<void> {
-  return invoke<void>('request_focus')
-}
-
-async function onFocusRelinquished(): Promise<void> {
-  return invoke<void>('relinquish_focus')
+// Default no-op implementations for Tauri functions
+const defaultTauriFunctions: TauriFunctions = {
+  isFocused: async () => false,
+  onFocusRequested: async () => {},
+  onFocusRelinquished: async () => {}
 }
 
 // -----
@@ -22,6 +16,7 @@ interface UserContextProps {
     appVersion?: string;
     appName?: string;
     children?: React.ReactNode;
+    tauriFunctions?: TauriFunctions;
 }
 
 export interface UserContextValue {
@@ -53,7 +48,8 @@ export const UserContext = createContext<UserContextValue>({} as UserContextValu
 export const UserContextProvider: React.FC<UserContextProps> = ({
     appVersion = packageJson.version,
     appName = 'Metanet Desktop',
-    children
+    children,
+    tauriFunctions = defaultTauriFunctions
 }) => {
     const [basketAccessModalOpen, setBasketAccessModalOpen] = useState(false)
     const [certificateAccessModalOpen, setCertificateAccessModalOpen] = useState(false)
@@ -62,9 +58,9 @@ export const UserContextProvider: React.FC<UserContextProps> = ({
     const [pageLoaded, setPageLoaded] = useState(false)
 
     const userContext = useMemo(() => ({
-        isFocused,
-        onFocusRequested,
-        onFocusRelinquished,
+        isFocused: tauriFunctions.isFocused,
+        onFocusRequested: tauriFunctions.onFocusRequested,
+        onFocusRelinquished: tauriFunctions.onFocusRelinquished,
         appVersion,
         appName,
         basketAccessModalOpen,

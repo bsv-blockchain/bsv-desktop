@@ -4,7 +4,7 @@ import { IconButton, Typography } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import CheckIcon from '@mui/icons-material/Check';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import { openUrl } from '@tauri-apps/plugin-opener';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
 import { useLocation } from 'react-router-dom';
 import { WalletContext } from '../../../WalletContext';
@@ -207,8 +207,9 @@ const Apps: React.FC<AppsProps> = ({ history }) => {
           }
           icon={appIcon}
           buttonTitle="Launch"
+          buttonIcon={<OpenInNewIcon />}
           onClick={() => {
-            openUrl(url)
+            window.open(url, '_blank', 'noopener,noreferrer')
           }}
         />
       </Grid>

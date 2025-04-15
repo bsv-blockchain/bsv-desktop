@@ -24,7 +24,6 @@ import {
 import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 import { toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
-// import { walletBridgeAsyncListen } from './walletBridgeAsyncListen'
 import { DEFAULT_WAB_URL, DEFAULT_STORAGE_URL, DEFAULT_CHAIN, ADMIN_ORIGINATOR } from './config'
 import { UserContext } from './UserContext'
 import getApps from './pages/Dashboard/Apps/getApps'
@@ -151,12 +150,12 @@ export interface WABConfig {
 
 interface WalletContextProps {
   children?: React.ReactNode;
-  walletBridgeAsyncListen: (wallet: WalletInterface) => Promise<(() => void) | undefined>;
+  onWalletReady: (wallet: WalletInterface) => Promise<(() => void) | undefined>;
 }
 
 export const WalletContextProvider: React.FC<WalletContextProps> = ({
   children,
-  walletBridgeAsyncListen
+  onWalletReady
 }) => {
   const [managers, setManagers] = useState<ManagerState>({});
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -757,7 +756,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       let unlistenFn: (() => void) | undefined;
 
       const setupListener = async () => {
-        unlistenFn = await walletBridgeAsyncListen(wallet);
+        unlistenFn = await onWalletReady(wallet);
       };
 
       setupListener();

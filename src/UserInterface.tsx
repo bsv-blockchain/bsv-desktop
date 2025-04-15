@@ -5,8 +5,6 @@ import { HashRouter as Router, Route, Switch } from 'react-router-dom'
 import 'react-toastify/dist/ReactToastify.css'
 import { BreakpointProvider } from './utils/useBreakpoints'
 import { ExchangeRateContextProvider } from './components/AmountDisplay/ExchangeRateContextProvider'
-import { AppThemeProvider } from './components/Theme'
-
 import Greeter from './pages/Greeter'
 import Dashboard from './pages/Dashboard'
 import LostPhone from './pages/Recovery/LostPhone'
@@ -21,6 +19,8 @@ import SpendingAuthorizationHandler from './components/SpendingAuthorizationHand
 import AuthRedirector from './navigation/AuthRedirector'
 import ThemedToastContainer from './components/ThemedToastContainer'
 import { WalletInterface } from '@bsv/sdk'
+import { ThemeProvider } from '@mui/material/styles'
+import theme from './theme'
 
 // Define queries for responsive design
 const queries = {
@@ -30,19 +30,26 @@ const queries = {
   or: '(orientation: portrait)'
 }
 
-interface UserInterfaceProps {
-  walletBridgeAsyncListen: (wallet: WalletInterface) => Promise<(() => void) | undefined>;
+export interface TauriFunctions {
+  isFocused: () => Promise<boolean>;
+  onFocusRequested: () => Promise<void>;
+  onFocusRelinquished: () => Promise<void>;
 }
 
-const UserInterface: React.FC<UserInterfaceProps> = ({ walletBridgeAsyncListen }) => {
+interface UserInterfaceProps {
+  onWalletReady: (wallet: WalletInterface) => Promise<(() => void) | undefined>;
+  tauriFunctions?: TauriFunctions;
+}
+
+const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, tauriFunctions }) => {
   return (
-    <UserContextProvider>
-      <WalletContextProvider walletBridgeAsyncListen={walletBridgeAsyncListen}>
-        <ExchangeRateContextProvider>
-          <Router>
-            <AuthRedirector />
-            <BreakpointProvider queries={queries}>
-              <AppThemeProvider>
+    <ThemeProvider theme={theme}>
+      <UserContextProvider tauriFunctions={tauriFunctions}>
+        <WalletContextProvider onWalletReady={onWalletReady}>
+          <ExchangeRateContextProvider>
+            <Router>
+              <AuthRedirector />
+              <BreakpointProvider queries={queries}>
                 <PasswordHandler />
                 <RecoveryKeyHandler />
                 <BasketAccessHandler />
@@ -57,12 +64,12 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ walletBridgeAsyncListen }
                   <Route exact path='/recovery/lost-password' component={LostPassword} />
                   <Route exact path='/recovery' component={Recovery} />
                 </Switch>
-              </AppThemeProvider>
-            </BreakpointProvider>
-          </Router>
-        </ExchangeRateContextProvider>
-      </WalletContextProvider>
-    </UserContextProvider>
+              </BreakpointProvider>
+            </Router>
+          </ExchangeRateContextProvider>
+        </WalletContextProvider>
+      </UserContextProvider>
+    </ThemeProvider>
   )
 }
 

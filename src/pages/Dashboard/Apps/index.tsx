@@ -14,7 +14,7 @@ import {
   LinearProgress,
   FormControl,
 } from '@mui/material'
-import Grid from '@mui/material/Grid'
+import Grid2 from '@mui/material/Grid2'
 import { makeStyles, useTheme } from '@mui/styles'
 import SearchIcon from '@mui/icons-material/Search'
 import Fuse from 'fuse.js'
@@ -231,7 +231,7 @@ const Apps: React.FC = () => {
       </Typography>
 
       <Container>
-        <Grid
+        <Grid2
           container
           spacing={3}
           alignItems='center'
@@ -239,15 +239,15 @@ const Apps: React.FC = () => {
           className={classes.apps_view}
         >
           {filteredApps.map((app) => (
-            <Grid key={app.domain} size={{ xs: 6, sm: 6, md: 3, lg: 2 }} className={classes.gridItem}>
+            <Grid2 key={app.domain} size={{ xs: 6, sm: 6, md: 3, lg: 2 }} className={classes.gridItem}>
               <MetanetApp
                 appName={app.appName}
                 domain={app.domain}
                 iconImageUrl={app.appIconImageUrl}
               />
-            </Grid>
+            </Grid2>
           ))}
-        </Grid>
+        </Grid2>
       </Container>
 
       {loading && <LinearProgress style={{ marginTop: '1em' }} />}

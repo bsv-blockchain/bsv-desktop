@@ -1,10 +1,8 @@
 /* eslint-disable indent */
 /* eslint-disable react/prop-types */
 import { useState, useContext, useEffect } from 'react'
-import { Typography, IconButton, Box, Paper, Button } from '@mui/material'
+import { Typography, IconButton, Box, Button, Paper } from '@mui/material'
 import Grid from '@mui/material/Grid'
-import { makeStyles } from '@mui/styles'
-import style from './style.js'
 import CheckIcon from '@mui/icons-material/Check'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import EyeCon from '@mui/icons-material/Visibility'
@@ -12,10 +10,10 @@ import { WalletContext } from '../../../WalletContext'
 import { ProtoWallet, VerifiableCertificate } from '@bsv/sdk'
 // import CertificateChip from '../../../components/CertificateChip'
 import CertificateCard from './CertificateCard'
+// Import just the styled components we need
+import { Root } from './styles'
 
-const useStyles = makeStyles(style, {
-  name: 'MyIdentity'
-})
+// Modern MUI styling no longer needs useStyles
 
 const MyIdentity = () => {
   const { managers, network, adminOriginator } = useContext(WalletContext)
@@ -26,7 +24,7 @@ const MyIdentity = () => {
   const [primaryIdentityKey, setPrimaryIdentityKey] = useState('...')
   const [privilegedIdentityKey, setPrivilegedIdentityKey] = useState('...')
   const [copied, setCopied] = useState({ id: false, privileged: false })
-  const classes = useStyles()
+  // No longer need classes from useStyles
 
   const handleCopy = (data, type) => {
     navigator.clipboard.writeText(data)
@@ -133,7 +131,7 @@ const MyIdentity = () => {
   })
 
   return (
-    <div className={classes.root}>
+    <Root>
       <Typography variant="h1" color="textPrimary" sx={{ mb: 2 }}>
         {network === 'testnet' ? 'Testnet Identity' : 'Identity'}
       </Typography>
@@ -141,88 +139,91 @@ const MyIdentity = () => {
         Manage your identity keys and certificates.
       </Typography>
 
-      <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
-        <Typography variant="h4" sx={{ mb: 2 }}>
-          Identity Keys
-        </Typography>
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-            <b>Everyday Identity Key:</b>
+      <Box sx={{ mb: 4 }}>
+        <Paper elevation={0} sx={{ p: 3, bgcolor: 'background.paper' }}>
+          <Typography variant="h4" sx={{ mb: 2 }}>
+            Identity Keys
           </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-            <Typography
-              variant="body2"
-              sx={{
-                fontFamily: 'monospace',
-                bgcolor: 'action.hover',
-                py: 1,
-                px: 2,
-                flexGrow: 1,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}
-            >
-              {primaryIdentityKey}
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+              <b>Everyday Identity Key:</b>
             </Typography>
-            <IconButton size='small' onClick={() => handleCopy(primaryIdentityKey, 'id')} disabled={copied.id} sx={{ ml: 1 }}>
-              {copied.id ? <CheckIcon /> : <ContentCopyIcon fontSize='small' />}
-            </IconButton>
-          </Box>
-
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-            <b>Privileged Identity Key:</b>
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            {privilegedIdentityKey === '...' ? (
-              <Button
-                variant="outlined"
-                startIcon={<EyeCon />}
-                onClick={handleRevealPrivilegedKey}
-                size="small"
-                sx={{ mr: 1 }}
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontFamily: 'monospace',
+                  bgcolor: 'action.hover',
+                  py: 1,
+                  px: 2,
+                  flexGrow: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}
               >
-                Reveal Key
-              </Button>
-            ) : (
-              <>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontFamily: 'monospace',
-                    bgcolor: 'action.hover',
-                    py: 1,
-                    px: 2,
-                    borderRadius: 1,
-                    flexGrow: 1,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis'
-                  }}
+                {primaryIdentityKey}
+              </Typography>
+              <IconButton size='small' onClick={() => handleCopy(primaryIdentityKey, 'id')} disabled={copied.id} sx={{ ml: 1 }}>
+                {copied.id ? <CheckIcon /> : <ContentCopyIcon fontSize='small' />}
+              </IconButton>
+            </Box>
+
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+              <b>Privileged Identity Key:</b>
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              {privilegedIdentityKey === '...' ? (
+                <Button
+                  variant="outlined"
+                  startIcon={<EyeCon />}
+                  onClick={handleRevealPrivilegedKey}
+                  size="small"
+                  sx={{ mr: 1 }}
                 >
-                  {privilegedIdentityKey}
-                </Typography>
-                <IconButton size='small' onClick={() => handleCopy(privilegedIdentityKey, 'privileged')} disabled={copied.privileged} sx={{ ml: 1 }}>
-                  {copied.privileged ? <CheckIcon /> : <ContentCopyIcon fontSize='small' />}
-                </IconButton>
-              </>
-            )}
+                  Reveal Key
+                </Button>
+              ) : (
+                <>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      fontFamily: 'monospace',
+                      bgcolor: 'action.hover',
+                      py: 1,
+                      px: 2,
+                      borderRadius: 1,
+                      flexGrow: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
+                    }}
+                  >
+                    {privilegedIdentityKey}
+                  </Typography>
+                  <IconButton size='small' onClick={() => handleCopy(privilegedIdentityKey, 'privileged')} disabled={copied.privileged} sx={{ ml: 1 }}>
+                    {copied.privileged ? <CheckIcon /> : <ContentCopyIcon fontSize='small' />}
+                  </IconButton>
+                </>
+              )}
+            </Box>
           </Box>
-        </Box>
-      </Paper>
+        </Paper>
+      </Box>
 
-      <Paper elevation={0} className={classes.section} sx={{ p: 3, mt: 4, bgcolor: 'background.paper' }}>
-        <Typography variant="h4" sx={{ mb: 2 }}>
-          Certificates
-        </Typography>
-        <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-          As you go about your life, people and businesses you interact with can give you certificates and credentials. These verify your qualifications and help you establish trust.
-        </Typography>
+      <Box sx={{ mb: 4 }}>
+        <Paper elevation={0} sx={{ p: 3, bgcolor: 'background.paper' }}>
+          <Typography variant="h4" sx={{ mb: 2 }}>
+            Certificates
+          </Typography>
+          <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
+            As you go about your life, people and businesses you interact with can give you certificates and credentials. These verify your qualifications and help you establish trust.
+          </Typography>
 
-        <Grid container spacing={2} justifyContent="space-between" columns={{ xs: 1, sm: 1, md: 1, lg: 2 }}>
-          {shownCertificates.map((cert) => (
-            <Grid key={cert.serialNumber} size={1}>
-              <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover', border: 1, borderColor: 'action.main' }}>
-                <CertificateCard certificate={cert} />
-                {/* <CertificateChip
+          <Grid container spacing={2} justifyContent="space-between" columns={{ xs: 1, sm: 1, md: 1, lg: 2 }}>
+            {shownCertificates.map((cert) => (
+              <Grid key={cert.serialNumber} size={1}>
+                <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover', border: 1, borderColor: 'action.main' }}>
+                  <CertificateCard certificate={cert} />
+                  {/* <CertificateChip
                   certType={cert.type}
                   serialNumber={cert.serialNumber}
                   certifier={cert.certifier}
@@ -230,20 +231,21 @@ const MyIdentity = () => {
                   canRevoke={true}
                   onRevoke={handleCertificateRevoke}
                 /> */}
-              </Box>
-            </Grid>
-          ))}
-        </Grid>
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
 
-        {shownCertificates.length === 0 && (
-          <Box sx={{ textAlign: 'center', py: 4 }}>
-            <Typography color="textSecondary">
-              No certificates found. Register with identity certifiers to receive certificates.
-            </Typography>
-          </Box>
-        )}
-      </Paper>
-    </div>
+          {shownCertificates.length === 0 && (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography color="textSecondary">
+                No certificates found. Register with identity certifiers to receive certificates.
+              </Typography>
+            </Box>
+          )}
+        </Paper>
+      </Box>
+    </Root>
   )
 }
 

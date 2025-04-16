@@ -19,8 +19,7 @@ import SpendingAuthorizationHandler from './components/SpendingAuthorizationHand
 import AuthRedirector from './navigation/AuthRedirector'
 import ThemedToastContainer from './components/ThemedToastContainer'
 import { WalletInterface } from '@bsv/sdk'
-import { ThemeProvider } from '@mui/material/styles'
-import theme from './theme'
+import { AppThemeProvider } from './components/Theme'
 
 // Define queries for responsive design
 const queries = {
@@ -43,7 +42,7 @@ interface UserInterfaceProps {
 
 const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, tauriFunctions }) => {
   return (
-    <ThemeProvider theme={theme}>
+    <AppThemeProvider>
       <UserContextProvider tauriFunctions={tauriFunctions}>
         <WalletContextProvider onWalletReady={onWalletReady}>
           <ExchangeRateContextProvider>
@@ -69,7 +68,7 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, tauriFunct
           </ExchangeRateContextProvider>
         </WalletContextProvider>
       </UserContextProvider>
-    </ThemeProvider>
+    </AppThemeProvider>
   )
 }
 

@@ -143,8 +143,8 @@ const CertificateCard: React.FC<CertificateCardProps> = ({
         </Box>
         {certificate && certificate.certifier ? (
           <div>
-            <Grid container alignContent="center" style={{ alignItems: 'center' }}>
-              <Grid item>
+            <Box display="flex" alignItems="center">
+              <Box flexGrow={1}>
                 <p
                   style={{
                     fontSize: '0.9em',
@@ -154,11 +154,11 @@ const CertificateCard: React.FC<CertificateCardProps> = ({
                 >
                   Issuer:
                 </p>
-              </Grid>
-              <Grid item paddingBottom="1em">
+              </Box>
+              <Box sx={{ pb: 1 }}>
                 <CounterpartyChip size={0.89} counterparty={certificate.certifier} clickable />
-              </Grid>
-            </Grid>
+              </Box>
+            </Box>
           </div>
         ) : (
           ''

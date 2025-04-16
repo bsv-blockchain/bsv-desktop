@@ -1,10 +1,9 @@
 /* eslint-disable indent */
-/* eslint-disable react/prop-types */
 import { useState, useContext, useEffect } from 'react'
 import { Prompt } from 'react-router-dom'
 import { Typography, Button, Slider, TextField, LinearProgress, Snackbar, Box, Paper } from '@mui/material'
 import { makeStyles } from '@mui/styles'
-import style from './style.js'
+import style from './style'
 import AddIcon from '@mui/icons-material/Add'
 import SearchIcon from '@mui/icons-material/Search'
 import { toast } from 'react-toastify'
@@ -15,7 +14,7 @@ import arraysOfObjectsAreEqual from '../../../utils/arraysOfObjectsAreEqual.js'
 import AddEntityModal from './AddEntityModal.js'
 import NavigationConfirmModal from './NavigationConfirmModal.js'
 
-const useStyles = makeStyles(style, {
+const useStyles = makeStyles((style as any), {
   name: 'Trust'
 })
 
@@ -146,7 +145,7 @@ const Trust = ({ history }) => {
         <Typography variant='body1' color='textSecondary' sx={{ mb: 3 }}>
           People, businesses, and websites will need endorsement by these certifiers to show up in your apps. Otherwise, you'll see them as "Unknown Identity".
         </Typography>
-        
+
         {/* UI Controls - Search and Add Buttons */}
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2, mb: 2 }}>
           <TextField
@@ -233,13 +232,13 @@ const Trust = ({ history }) => {
         open={settingsNeedsUpdate}
         message='You have unsaved changes!'
         action={
-            <Button
-              disabled={settingsLoading}
-              color='secondary' size='small'
-              onClick={handleSave}
-            >
-              {settingsLoading ? 'Saving...' : 'Save'}
-            </Button>
+          <Button
+            disabled={settingsLoading}
+            color='secondary' size='small'
+            onClick={handleSave}
+          >
+            {settingsLoading ? 'Saving...' : 'Save'}
+          </Button>
         }
       />
     </div>

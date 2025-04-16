@@ -6,6 +6,7 @@ import {
   useMediaQuery,
   PaletteMode
 } from '@mui/material';
+import { StylesProvider } from '@mui/styles';
 import { WalletContext } from '../WalletContext';
 
 // Define custom theme types
@@ -334,9 +335,11 @@ export function AppThemeProvider({ children }: ThemeProps) {
   }, [prefersDarkMode, settings?.theme?.mode]);
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      {children}
-    </ThemeProvider>
+    <StylesProvider injectFirst>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        {children}
+      </ThemeProvider>
+    </StylesProvider>
   );
 }

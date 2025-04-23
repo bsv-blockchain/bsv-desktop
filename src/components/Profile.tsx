@@ -44,14 +44,15 @@ const Profile = () => {
     refreshBalance()
   }, [refreshBalance])
 
-  return (<Stack>
-    <Typography variant='h5' color='textSecondary'>
+  return (<Stack alignItems="center">
+    <Typography variant='h5' color='textSecondary' align='center'>
       Your Balance
     </Typography>
     <Typography
       onClick={() => refreshBalance()}
       color='textPrimary'
       variant='h2'
+      align='center'
       style={{ cursor: 'pointer' }}
     >
       {!managers?.permissionsManager || balanceLoading

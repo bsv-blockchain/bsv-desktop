@@ -14,14 +14,17 @@ import { Menu as MenuIcon } from '@mui/icons-material'
 import MyIdentity from './MyIdentity/index.js'
 import Trust from './Trust/index.js'
 import Apps from './Apps'
-import App from './App'
+import App from './App/Index'
 import Settings from './Settings/index.js'
 import Security from './Security/index.js'
-import { UserContext } from '../../UserContext.js'
+import { UserContext } from '../../UserContext'
 
-const useStyles = makeStyles(style as any, {
+// @ts-expect-error - Type issues with makeStyles
+const useStyles = makeStyles(style, {
   name: 'Dashboard'
 })
+
+// Profile-related code has been moved to Menu.tsx
 
 /**
  * Renders the Apps page and menu by default
@@ -32,11 +35,11 @@ export default function Dashboard() {
   const classes = useStyles({ breakpoints })
   const menuRef = useRef(null)
   const [menuOpen, setMenuOpen] = useState(true)
-  const [myIdentityKey, setMyIdentityKey] = useState('self')
+  const [myIdentityKey] = useState('self')
 
 
   const getMargin = () => {
-    if (menuOpen && !(breakpoints as any).sm) {
+    if (menuOpen && !breakpoints.sm) {
       return '320px'
     }
     return '0px'
@@ -53,7 +56,7 @@ export default function Dashboard() {
         width: menuOpen ? `calc(100vw - ${getMargin()})` : '100vw',
         transition: 'width 0.3s ease, margin 0.3s ease'
       }}>
-        {(breakpoints as any).sm &&
+        {breakpoints.sm &&
           <div style={{ padding: '0.5em 0 0 0.5em' }} ref={menuRef}>
             <Toolbar>
               <IconButton
@@ -74,6 +77,7 @@ export default function Dashboard() {
       </div>
       <Menu menuOpen={menuOpen} setMenuOpen={setMenuOpen} menuRef={menuRef} />
       <div className={classes.page_container}>
+
         <Switch>
           <Redirect from='/dashboard/counterparty/self' to={`/dashboard/counterparty/${myIdentityKey}`} />
           <Redirect from='/dashboard/counterparty/anyone' to='/dashboard/counterparty/0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798' />
@@ -104,7 +108,7 @@ export default function Dashboard() {
           <Route
             component={() => {
               return (
-                <div className={classes.full_width} style={{ padding: '1em' }}>
+                <div className={(classes as any).full_width} style={{ padding: '1em' }}>
                   <br />
                   <br />
                   <Typography align='center' color='textPrimary'>Use the menu to select a page</Typography>
@@ -114,6 +118,8 @@ export default function Dashboard() {
           />
         </Switch>
       </div>
+
+      {/* Profile management has been moved to Menu.tsx */}
     </div>
   )
 }

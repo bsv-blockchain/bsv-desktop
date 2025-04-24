@@ -3,7 +3,12 @@ import {
   Settings as SettingsIcon,
   Badge as IdentityIcon,
   ExitToApp as LogoutIcon,
-  Security as SecurityIcon
+  Security as SecurityIcon,
+  Add as AddIcon,
+  Delete as DeleteIcon,
+  ExpandLess,
+  ExpandMore,
+  Person as PersonIcon
 } from '@mui/icons-material'
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
 import {
@@ -15,14 +20,39 @@ import {
   Drawer,
   Box,
   Divider,
+  Collapse,
+  Card,
+  CardContent,
+  Button,
+  IconButton,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  TextField,
+  Grid,
+  alpha,
+  LinearProgress
 } from '@mui/material'
 import Profile from '../components/Profile'
-import { useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useCallback } from 'react';
+import { toast } from 'react-toastify';
 import { useHistory } from 'react-router';
 import { WalletContext } from '../WalletContext';
 import { UserContext } from '../UserContext';
 import { useBreakpoint } from '../utils/useBreakpoints.js';
+import { Utils } from '@bsv/sdk';
 
+
+// Type definition for profile structure from CWIStyleWalletManager
+interface Profile {
+  id: number[];
+  name: string;
+  createdAt: number | null;
+  active: boolean;
+}
 
 // Custom styling for menu items
 const menuItemStyle = (isSelected) => ({
@@ -40,16 +70,33 @@ const menuItemStyle = (isSelected) => ({
   }),
 });
 
-export default function Menu({ menuOpen, setMenuOpen, menuRef }) {
+interface MenuProps {
+  menuOpen: boolean;
+  setMenuOpen: (open: boolean) => void;
+  menuRef: React.RefObject<HTMLDivElement>;
+}
+
+export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const history = useHistory()
   const breakpoints = useBreakpoint()
-  const { logout } = useContext(WalletContext)
+  const { logout, managers } = useContext(WalletContext)
   const { appName, appVersion } = useContext(UserContext)
+
+  // Profile management state
+  const [profilesOpen, setProfilesOpen] = useState(false)
+  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [createProfileOpen, setCreateProfileOpen] = useState(false)
+  const [newProfileName, setNewProfileName] = useState('')
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [profileToDelete, setProfileToDelete] = useState<number[] | null>(null)
+  const [profilesLoading, setProfilesLoading] = useState(false)
 
   // History.push wrapper
   const navigation = {
-    push: (path) => {
-      if ((breakpoints as any).sm) {
+    push: (path: string) => {
+      // Explicitly cast breakpoints to avoid TypeScript error
+      const { sm } = breakpoints as { sm: boolean };
+      if (sm) {
         setMenuOpen(false)
       }
       history.push(path)
@@ -58,7 +105,9 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }) {
 
   // First useEffect to handle breakpoint changes
   useEffect(() => {
-    if (!(breakpoints as any).sm) {
+    // Explicitly cast breakpoints to avoid TypeScript error
+    const { sm } = breakpoints as { sm: boolean };
+    if (!sm) {
       setMenuOpen(true)
     } else {
       setMenuOpen(false)
@@ -67,8 +116,8 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }) {
 
   // Second useEffect to handle outside clicks
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpen(false)
       }
     }
@@ -84,6 +133,115 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }) {
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [menuOpen])
+
+  // Helper function to refresh profiles
+  const refreshProfiles = useCallback(async () => {
+    if (!managers?.walletManager || !managers.walletManager.listProfiles) return;
+
+    try {
+      setProfilesLoading(true);
+      // Handle both synchronous and asynchronous listProfiles implementation
+      if (managers.walletManager.saveSnapshot) {
+        localStorage.snap = Utils.toBase64(managers.walletManager.saveSnapshot())
+      }
+      const profileList = await Promise.resolve(managers.walletManager.listProfiles());
+      setProfiles(profileList);
+    } catch (error) {
+      toast.error(`Error loading profiles: ${error.message || error}`);
+    } finally {
+      setProfilesLoading(false);
+    }
+  }, [managers?.walletManager]);
+
+  // Handle profile creation
+  const handleCreateProfile = async () => {
+    if (!newProfileName.trim() || !managers?.walletManager) return;
+
+    try {
+      // Close dialog first before async operation
+      setCreateProfileOpen(false);
+      setNewProfileName('');
+
+      // Show loading state
+      setProfilesLoading(true);
+
+      // Then perform the async operation
+      await managers.walletManager.addProfile(newProfileName.trim());
+
+      // Refresh the profile list
+      await refreshProfiles();
+    } catch (error) {
+      toast.error(`Error creating profile: ${error.message || error}`);
+      setProfilesLoading(false);
+    }
+  };
+
+  // Handle profile switching
+  const handleSwitchProfile = async (profileId: number[]) => {
+    if (!managers?.walletManager) return;
+
+    try {
+      // Show loading state
+      setProfilesLoading(true);
+
+      // Create a copy of the profile ID to prevent any reference issues
+      const profileIdCopy = [...profileId];
+
+      // Perform the async operation
+      await managers.walletManager.switchProfile(profileIdCopy);
+
+      // Refresh the profile list to update active status
+      await refreshProfiles();
+    } catch (error) {
+      toast.error(`Error switching profile: ${error.message || error}`);
+      setProfilesLoading(false);
+    }
+  };
+
+  // Handle profile deletion
+  const confirmDeleteProfile = (profileId: number[]) => {
+    setProfileToDelete(profileId);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteProfile = async () => {
+    if (!profileToDelete || !managers?.walletManager) return;
+
+    try {
+      // Close dialog first before async operation
+      setDeleteConfirmOpen(false);
+      const profileIdToDelete = [...profileToDelete]; // Create a copy
+      setProfileToDelete(null);
+
+      // Show loading state
+      setProfilesLoading(true);
+
+      // Then perform the async operation
+      await managers.walletManager.deleteProfile(profileIdToDelete);
+
+      // Refresh the profile list
+      await refreshProfiles();
+    } catch (error) {
+      toast.error(`Error deleting profile: ${error.message || error}`);
+      setProfilesLoading(false);
+    }
+  };
+
+  // Render formatted profile ID (first 8 chars)
+  const formatProfileId = (id: number[]) => {
+    // Check if it's the default profile
+    if (id.every(x => x === 0)) {
+      return 'Default';
+    }
+
+    // Convert to hex and show first 8 characters
+    return id.slice(0, 4).map(byte => byte.toString(16).padStart(2, '0')).join('');
+  };
+
+  // Load profiles when wallet is initialized
+  useEffect(() => {
+    refreshProfiles();
+  }, [refreshProfiles]);
 
   return (
     <Drawer
@@ -116,6 +274,130 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }) {
         <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
           <Profile />
         </Box>
+
+        <Divider sx={{ mb: 2 }} />
+
+        {/* Profile Management Section */}
+        <List component="nav" sx={{ mb: 1 }}>
+          <ListItemButton onClick={() => setProfilesOpen(!profilesOpen)} sx={menuItemStyle(false)}>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <PersonIcon />
+            </ListItemIcon>
+            <ListItemText
+              primary={
+                <Typography variant="body1">
+                  Profiles
+                </Typography>
+              }
+              secondary={
+                !profilesOpen && profiles.length > 0 ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5, overflow: 'hidden' }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{
+                        display: 'inline',
+                        maxWidth: '100%',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      Active: {profiles.find(p => p.active)?.name || 'Default'}
+                    </Typography>
+                  </Box>
+                ) : null
+              }
+            />
+            {profilesOpen ? <ExpandLess /> : <ExpandMore />}
+          </ListItemButton>
+
+          {/* Profile loading indicator */}
+          {profilesLoading && (
+            <LinearProgress
+              sx={{
+                height: 2,
+                mt: -0.5,
+                mb: 0.5,
+                borderRadius: 1,
+                mx: 1
+              }}
+            />
+          )}
+
+          <Collapse in={profilesOpen} timeout="auto" unmountOnExit>
+            <Box sx={{ p: 1 }}>
+              <Grid container spacing={1} sx={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+                {profiles.map((profile) => (
+                  <Grid item xs={12} key={formatProfileId(profile.id)}>
+                    <Card
+                      variant={profile.active ? 'outlined' : 'elevation'}
+                      onClick={!profile.active ? () => handleSwitchProfile(profile.id) : undefined}
+                      sx={{
+                        borderColor: profile.active ? 'primary.main' : undefined,
+                        backgroundColor: profile.active ? alpha('#1976d2', 0.08) : undefined,
+                        position: 'relative',
+                        width: '100%',
+                        maxWidth: '100%',
+                        overflow: 'hidden',
+                        cursor: profile.active ? 'default' : 'pointer',
+                        '&:hover': {
+                          boxShadow: profile.active ? 1 : 3,
+                          backgroundColor: profile.active ? alpha('#1976d2', 0.08) : alpha('#1976d2', 0.04)
+                        }
+                      }}
+                    >
+                      <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                        <Box display="flex" justifyContent="space-between" alignItems="center">
+                          <Typography variant="subtitle2" sx={{ fontWeight: profile.active ? 'bold' : 'normal' }}>
+                            {profile.name}
+                          </Typography>
+                          {profile.active && <Chip size="small" label="Active" color="primary" sx={{ height: 20, fontSize: '0.7rem' }} />}
+                        </Box>
+                        <Box display="flex" justifyContent="space-between" alignItems="center">
+                          <Typography variant="caption" color="textSecondary">
+                            ID: {formatProfileId(profile.id)}
+                          </Typography>
+                          {!profile.active && !profile.id.every(x => x === 0) && (
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation(); // Prevent card click from triggering
+                                confirmDeleteProfile(profile.id);
+                              }}
+                              sx={{
+                                color: 'white',
+                                p: 0.5,
+                                '&:hover': {
+                                  backgroundColor: alpha('#1976d2', 0.1)
+                                }
+                              }}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          )}
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))}
+                <Grid item xs={12}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    color="primary"
+                    startIcon={<AddIcon />}
+                    onClick={() => setCreateProfileOpen(true)}
+                    size="small"
+                    sx={{ mt: 1, justifyContent: 'start' }}
+                  >
+                    New Profile
+                  </Button>
+                </Grid>
+              </Grid>
+            </Box>
+          </Collapse>
+        </List>
 
         <Divider sx={{ mb: 2 }} />
 
@@ -259,6 +541,50 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }) {
           </Typography>
         </Box>
       </Box>
+
+      {/* Create Profile Dialog */}
+      <Dialog open={createProfileOpen} onClose={() => setCreateProfileOpen(false)}>
+        <DialogTitle>Create New Profile</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Enter a name for the new profile. Each profile has its own set of keys and can be used for different purposes.
+          </DialogContentText>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Profile Name"
+            type="text"
+            fullWidth
+            value={newProfileName}
+            onChange={(e) => setNewProfileName(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateProfileOpen(false)}>Cancel</Button>
+          <Button onClick={handleCreateProfile} color="primary">
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+      >
+        <DialogTitle>Delete Profile</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete this profile? This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
+          <Button onClick={handleDeleteProfile} color="error">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Drawer>
   )
 }

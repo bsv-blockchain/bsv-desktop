@@ -746,7 +746,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     setManagers({});
 
     // Reset configuration state
-    setConfigStatus('editing');
+    setConfigStatus('configured');
     setSnapshotLoaded(false);
   }, []);
 

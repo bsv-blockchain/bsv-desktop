@@ -185,9 +185,18 @@ const Apps: React.FC<AppsProps> = ({ history }) => {
   const url = (appDomain.startsWith('http') ? appDomain : `https://${appDomain}`)
 
   return (
-    <Grid container spacing={3} direction="column">
+    <Grid 
+      container 
+      spacing={3} 
+      direction="column" 
+      sx={{ 
+        width: '100%', 
+        maxWidth: '100%', 
+        overflow: 'hidden' 
+      }}
+    >
       {/* Page Header */}
-      <Grid sx={{ xs: 12 }}>
+      <Grid item xs={12}>
         <PageHeader
           history={history}
           title={appName}
@@ -215,25 +224,39 @@ const Apps: React.FC<AppsProps> = ({ history }) => {
       </Grid>
 
       {/* Main Content: RecentActions + AccessAtAGlance */}
-      <Grid container spacing={3} direction="row">
-        {/* RecentActions Section */}
-        <Grid sx={{ lg: 6, md: 6, xs: 12 }}>
-          <RecentActions
-            appActions={appActions}
-            displayLimit={displayLimit}
-            setDisplayLimit={setDisplayLimit}
-            loading={loading}
-            setRefresh={setRefresh}
-          />
-        </Grid>
-        {/* AccessAtAGlance Section */}
-        <Grid sx={{ lg: 6, md: 6, xs: 12 }}>
-          <AccessAtAGlance
-            originator={appDomain}
-            loading={loading}
-            setRefresh={setRefresh}
-            history={history}
-          />
+      <Grid 
+        item 
+        xs={12}
+      >
+        <Grid 
+          container 
+          spacing={3} 
+          sx={{ 
+            width: '100%', 
+            maxWidth: '100%', 
+            overflow: 'hidden',
+            justifyItems: 'start' 
+          }}
+        >
+          {/* RecentActions Section */}
+          <Grid item lg={6} md={6} xs={12}>
+            <RecentActions
+              appActions={appActions}
+              displayLimit={displayLimit}
+              setDisplayLimit={setDisplayLimit}
+              loading={loading}
+              setRefresh={setRefresh}
+            />
+          </Grid>
+          {/* AccessAtAGlance Section */}
+          <Grid item lg={6} md={6} xs={12}>
+            <AccessAtAGlance
+              originator={appDomain}
+              loading={loading}
+              setRefresh={setRefresh}
+              history={history}
+            />
+          </Grid>
         </Grid>
       </Grid>
     </Grid>

@@ -38,6 +38,7 @@ import {
 } from '@mui/material'
 import Profile from '../components/Profile'
 import React, { useState, useContext, useEffect, useCallback } from 'react';
+import { toast } from 'react-toastify';
 import { useHistory } from 'react-router';
 import { WalletContext } from '../WalletContext';
 import { UserContext } from '../UserContext';
@@ -146,7 +147,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       const profileList = await Promise.resolve(managers.walletManager.listProfiles());
       setProfiles(profileList);
     } catch (error) {
-      console.error('Error loading profiles:', error);
+      toast.error(`Error loading profiles: ${error.message || error}`);
     } finally {
       setProfilesLoading(false);
     }
@@ -170,7 +171,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       // Refresh the profile list
       await refreshProfiles();
     } catch (error) {
-      console.error('Error creating profile:', error);
+      toast.error(`Error creating profile: ${error.message || error}`);
       setProfilesLoading(false);
     }
   };
@@ -192,7 +193,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       // Refresh the profile list to update active status
       await refreshProfiles();
     } catch (error) {
-      console.error('Error switching profile:', error);
+      toast.error(`Error switching profile: ${error.message || error}`);
       setProfilesLoading(false);
     }
   };
@@ -221,7 +222,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       // Refresh the profile list
       await refreshProfiles();
     } catch (error) {
-      console.error('Error deleting profile:', error);
+      toast.error(`Error deleting profile: ${error.message || error}`);
       setProfilesLoading(false);
     }
   };

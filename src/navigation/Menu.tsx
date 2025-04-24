@@ -33,7 +33,8 @@ import {
   DialogTitle,
   TextField,
   Grid,
-  alpha
+  alpha,
+  LinearProgress
 } from '@mui/material'
 import Profile from '../components/Profile'
 import React, { useState, useContext, useEffect, useCallback } from 'react';
@@ -87,6 +88,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const [newProfileName, setNewProfileName] = useState('')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [profileToDelete, setProfileToDelete] = useState<number[] | null>(null)
+  const [profilesLoading, setProfilesLoading] = useState(false)
 
   // History.push wrapper
   const navigation = {
@@ -136,6 +138,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
     if (!managers?.walletManager || !managers.walletManager.listProfiles) return;
 
     try {
+      setProfilesLoading(true);
       // Handle both synchronous and asynchronous listProfiles implementation
       if (managers.walletManager.saveSnapshot) {
         localStorage.snap = Utils.toBase64(managers.walletManager.saveSnapshot())
@@ -144,6 +147,8 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       setProfiles(profileList);
     } catch (error) {
       console.error('Error loading profiles:', error);
+    } finally {
+      setProfilesLoading(false);
     }
   }, [managers?.walletManager]);
 
@@ -156,6 +161,9 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       setCreateProfileOpen(false);
       setNewProfileName('');
 
+      // Show loading state
+      setProfilesLoading(true);
+
       // Then perform the async operation
       await managers.walletManager.addProfile(newProfileName.trim());
 
@@ -163,6 +171,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       await refreshProfiles();
     } catch (error) {
       console.error('Error creating profile:', error);
+      setProfilesLoading(false);
     }
   };
 
@@ -171,6 +180,9 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
     if (!managers?.walletManager) return;
 
     try {
+      // Show loading state
+      setProfilesLoading(true);
+
       // Create a copy of the profile ID to prevent any reference issues
       const profileIdCopy = [...profileId];
 
@@ -181,6 +193,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       await refreshProfiles();
     } catch (error) {
       console.error('Error switching profile:', error);
+      setProfilesLoading(false);
     }
   };
 
@@ -199,6 +212,9 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       const profileIdToDelete = [...profileToDelete]; // Create a copy
       setProfileToDelete(null);
 
+      // Show loading state
+      setProfilesLoading(true);
+
       // Then perform the async operation
       await managers.walletManager.deleteProfile(profileIdToDelete);
 
@@ -206,6 +222,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       await refreshProfiles();
     } catch (error) {
       console.error('Error deleting profile:', error);
+      setProfilesLoading(false);
     }
   };
 
@@ -293,6 +310,19 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
             />
             {profilesOpen ? <ExpandLess /> : <ExpandMore />}
           </ListItemButton>
+
+          {/* Profile loading indicator */}
+          {profilesLoading && (
+            <LinearProgress
+              sx={{
+                height: 2,
+                mt: -0.5,
+                mb: 0.5,
+                borderRadius: 1,
+                mx: 1
+              }}
+            />
+          )}
 
           <Collapse in={profilesOpen} timeout="auto" unmountOnExit>
             <Box sx={{ p: 1 }}>

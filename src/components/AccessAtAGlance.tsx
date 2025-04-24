@@ -2,10 +2,8 @@ import React, { useContext, useEffect, useState } from 'react'
 import {
   Typography,
   Button,
-  LinearProgress,
   List,
   ListSubheader,
-  Divider,
   Box
 } from '@mui/material'
 import BasketChip from './BasketChip'
@@ -110,7 +108,6 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({ originator, loading, 
         )}
       </Box>
 
-      {loading && <LinearProgress sx={{ paddingTop: '1em' }} />}
       <center style={{ padding: '1em' }}>
         <Button
           onClick={() => {

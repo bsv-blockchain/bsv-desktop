@@ -353,10 +353,10 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                           </Typography>
                           {profile.active && <Chip size="small" label="Active" color="primary" sx={{ height: 20, fontSize: '0.7rem' }} />}
                         </Box>
-                        <Typography variant="caption" color="textSecondary">
-                          ID: {formatProfileId(profile.id)}
-                        </Typography>
-                        <Box mt={1} display="flex" justifyContent="flex-end" alignItems="center">
+                        <Box display="flex" justifyContent="space-between" alignItems="center">
+                          <Typography variant="caption" color="textSecondary">
+                            ID: {formatProfileId(profile.id)}
+                          </Typography>
                           {!profile.active && !profile.id.every(x => x === 0) && (
                             <IconButton
                               size="small"
@@ -365,10 +365,10 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                                 confirmDeleteProfile(profile.id);
                               }}
                               sx={{
-                                color: 'error.main',
+                                color: 'white',
                                 p: 0.5,
                                 '&:hover': {
-                                  backgroundColor: alpha('#f44336', 0.1)
+                                  backgroundColor: alpha('#1976d2', 0.1)
                                 }
                               }}
                             >

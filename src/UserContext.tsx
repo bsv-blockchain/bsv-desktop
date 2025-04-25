@@ -1,12 +1,18 @@
-import React, { createContext, Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react'
+import React, { createContext, Dispatch, SetStateAction, useMemo, useState } from 'react'
 import packageJson from '../package.json'
-import { TauriFunctions } from './UserInterface'
+
+// Define the NativeHandlers interface here to avoid circular dependency
+export interface NativeHandlers {
+    isFocused: () => Promise<boolean>;
+    onFocusRequested: () => Promise<void>;
+    onFocusRelinquished: () => Promise<void>;
+}
 
 // Default no-op implementations for Tauri functions
-const defaultTauriFunctions: TauriFunctions = {
-  isFocused: async () => false,
-  onFocusRequested: async () => {},
-  onFocusRelinquished: async () => {}
+const defaultNativeHandlers: NativeHandlers = {
+    isFocused: async () => false,
+    onFocusRequested: async () => { },
+    onFocusRelinquished: async () => { }
 }
 
 // -----
@@ -16,7 +22,7 @@ interface UserContextProps {
     appVersion?: string;
     appName?: string;
     children?: React.ReactNode;
-    tauriFunctions?: TauriFunctions;
+    nativeHandlers?: NativeHandlers;
 }
 
 export interface UserContextValue {
@@ -49,7 +55,7 @@ export const UserContextProvider: React.FC<UserContextProps> = ({
     appVersion = packageJson.version,
     appName = 'Metanet Desktop',
     children,
-    tauriFunctions = defaultTauriFunctions
+    nativeHandlers = defaultNativeHandlers
 }) => {
     const [basketAccessModalOpen, setBasketAccessModalOpen] = useState(false)
     const [certificateAccessModalOpen, setCertificateAccessModalOpen] = useState(false)
@@ -58,9 +64,9 @@ export const UserContextProvider: React.FC<UserContextProps> = ({
     const [pageLoaded, setPageLoaded] = useState(false)
 
     const userContext = useMemo(() => ({
-        isFocused: tauriFunctions.isFocused,
-        onFocusRequested: tauriFunctions.onFocusRequested,
-        onFocusRelinquished: tauriFunctions.onFocusRelinquished,
+        isFocused: nativeHandlers.isFocused,
+        onFocusRequested: nativeHandlers.onFocusRequested,
+        onFocusRelinquished: nativeHandlers.onFocusRelinquished,
         appVersion,
         appName,
         basketAccessModalOpen,

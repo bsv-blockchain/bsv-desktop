@@ -29,21 +29,18 @@ const queries = {
   or: '(orientation: portrait)'
 }
 
-export interface TauriFunctions {
-  isFocused: () => Promise<boolean>;
-  onFocusRequested: () => Promise<void>;
-  onFocusRelinquished: () => Promise<void>;
-}
+// Import NativeHandlers from UserContext to avoid circular dependency
+import { NativeHandlers } from './UserContext'
 
 interface UserInterfaceProps {
   onWalletReady: (wallet: WalletInterface) => Promise<(() => void) | undefined>;
-  tauriFunctions?: TauriFunctions;
+  nativeHandlers?: NativeHandlers;
 }
 
-const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, tauriFunctions }) => {
+const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHandlers }) => {
   return (
     <AppThemeProvider>
-      <UserContextProvider tauriFunctions={tauriFunctions}>
+      <UserContextProvider nativeHandlers={nativeHandlers}>
         <WalletContextProvider onWalletReady={onWalletReady}>
           <ExchangeRateContextProvider>
             <Router>

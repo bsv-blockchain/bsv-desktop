@@ -40,7 +40,7 @@ interface UserInterfaceProps {
    * - isFocused: Check if the application window is focused
    * - onFocusRequested: Request focus for the application window
    * - onFocusRelinquished: Relinquish focus from the application window
-   * - downloadFile: Download a file (works across browser, Tauri, extensions)
+   * - onDownloadFile: Download a file (works across browser, Tauri, extensions)
    */
   nativeHandlers?: NativeHandlers;
 }

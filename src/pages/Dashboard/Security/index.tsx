@@ -1,8 +1,8 @@
 import React, { useContext, useState } from 'react'
 import { makeStyles } from '@mui/styles'
 import { Theme } from '@mui/material/styles'
-import { 
-  Typography, 
+import {
+  Typography,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -21,7 +21,7 @@ import ChangePassword from '../Settings/Password'
 import RecoveryKey from '../Settings/RecoveryKey'
 import { UserContext } from '../../../UserContext'
 import PageLoading from '../../../components/PageLoading.js'
-import { downloadFile } from '../../../utils/exportDataToFile.js'
+import { useExportDataToFile } from '../../../utils/exportDataToFile.js'
 import { Utils } from '@bsv/sdk'
 import { toast } from 'react-toastify'
 
@@ -54,6 +54,8 @@ const Security: React.FC = () => {
   const [recoveryKey, setRecoveryKey] = useState('')
   const { pageLoaded } = useContext(UserContext)
   const [copied, setCopied] = useState(false)
+  // Move the hook to component level where it belongs
+  const exportData = useExportDataToFile()
 
   const handleCopy = (data: string) => {
     navigator.clipboard.writeText(data)
@@ -75,7 +77,8 @@ const Security: React.FC = () => {
 
   const handleDownload = async (): Promise<void> => {
     const recoveryKeyData = `Metanet Recovery Key:\n\n${recoveryKey}\n\nSaved: ${new Date()}`
-    const success = await downloadFile('Metanet Recovery Key.txt', Utils.toArray(recoveryKeyData, 'utf8'))
+    // Use the hook's returned function that we defined at the component level
+    const success = await exportData({ data: recoveryKeyData, filename: 'Metanet Recovery Key.txt', type: 'text/plain' })
     if (success) {
       toast.success('Recovery key downloaded successfully')
     } else {
@@ -127,9 +130,9 @@ const Security: React.FC = () => {
             </IconButton></Stack>
           </Stack>
           <Button
-              variant='contained'
-              color='primary'
-              startIcon={<DownloadIcon />}
+            variant='contained'
+            color='primary'
+            startIcon={<DownloadIcon />}
             onClick={handleDownload}
             fullWidth
             sx={{ p: 2 }}

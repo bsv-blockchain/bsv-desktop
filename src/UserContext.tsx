@@ -6,7 +6,7 @@ export interface NativeHandlers {
     isFocused: () => Promise<boolean>;
     onFocusRequested: () => Promise<void>;
     onFocusRelinquished: () => Promise<void>;
-    downloadFile: (fileData: Blob, fileName: string) => Promise<boolean>;
+    onDownloadFile: (fileData: Blob, fileName: string) => Promise<boolean>;
 }
 
 // Default no-op implementations for Tauri functions
@@ -15,24 +15,24 @@ const defaultNativeHandlers: NativeHandlers = {
     onFocusRequested: async () => { },
     onFocusRelinquished: async () => { },
     // Default implementation uses browser's download API
-    downloadFile: async (fileData: Blob, fileName: string) => {
+    onDownloadFile: async (fileData: Blob, fileName: string) => {
         try {
             // Create a URL for the blob
             const url = window.URL.createObjectURL(fileData);
-            
+
             // Create a temporary link element
             const link = document.createElement('a');
             link.href = url;
             link.download = fileName;
-            
+
             // Append to body, click, and clean up
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            
+
             // Release the blob URL
             window.URL.revokeObjectURL(url);
-            
+
             return true;
         } catch (error) {
             console.error('Download failed:', error);
@@ -55,7 +55,7 @@ export interface UserContextValue {
     isFocused: () => Promise<boolean>;
     onFocusRequested: () => Promise<void>;
     onFocusRelinquished: () => Promise<void>;
-    downloadFile: (fileData: Blob, fileName: string) => Promise<boolean>;
+    onDownloadFile: (fileData: Blob, fileName: string) => Promise<boolean>;
     appVersion: string;
     appName: string;
     basketAccessModalOpen: boolean;
@@ -94,7 +94,7 @@ export const UserContextProvider: React.FC<UserContextProps> = ({
         isFocused: nativeHandlers.isFocused,
         onFocusRequested: nativeHandlers.onFocusRequested,
         onFocusRelinquished: nativeHandlers.onFocusRelinquished,
-        downloadFile: nativeHandlers.downloadFile,
+        onDownloadFile: nativeHandlers.onDownloadFile,
         appVersion,
         appName,
         basketAccessModalOpen,

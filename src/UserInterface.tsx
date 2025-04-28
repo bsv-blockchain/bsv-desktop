@@ -43,12 +43,14 @@ interface UserInterfaceProps {
    * - onDownloadFile: Download a file (works across browser, Tauri, extensions)
    */
   nativeHandlers?: NativeHandlers;
+  appVersion?: string;
 }
 
 const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHandlers }) => {
+const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHandlers, appVersion }) => {
   return (
     <AppThemeProvider>
-      <UserContextProvider nativeHandlers={nativeHandlers}>
+      <UserContextProvider nativeHandlers={nativeHandlers} appVersion={appVersion}>
         <WalletContextProvider onWalletReady={onWalletReady}>
           <ExchangeRateContextProvider>
             <Router>

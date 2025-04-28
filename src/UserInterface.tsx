@@ -1,6 +1,5 @@
 import React from 'react'
 import { WalletContextProvider } from './WalletContext'
-import { UserContextProvider } from './UserContext'
 import { HashRouter as Router, Route, Switch } from 'react-router-dom'
 import 'react-toastify/dist/ReactToastify.css'
 import { BreakpointProvider } from './utils/useBreakpoints'
@@ -30,7 +29,7 @@ const queries = {
 }
 
 // Import NativeHandlers from UserContext to avoid circular dependency
-import { NativeHandlers } from './UserContext'
+import { NativeHandlers, UserContextProvider } from './UserContext'
 
 interface UserInterfaceProps {
   onWalletReady: (wallet: WalletInterface) => Promise<(() => void) | undefined>;
@@ -46,7 +45,6 @@ interface UserInterfaceProps {
   appVersion?: string;
 }
 
-const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHandlers }) => {
 const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHandlers, appVersion }) => {
   return (
     <AppThemeProvider>

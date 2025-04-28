@@ -43,12 +43,13 @@ interface UserInterfaceProps {
    */
   nativeHandlers?: NativeHandlers;
   appVersion?: string;
+  appName?: string;
 }
 
-const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHandlers, appVersion }) => {
+const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHandlers, appVersion, appName }) => {
   return (
     <AppThemeProvider>
-      <UserContextProvider nativeHandlers={nativeHandlers} appVersion={appVersion}>
+      <UserContextProvider nativeHandlers={nativeHandlers} appVersion={appVersion} appName={appName}>
         <WalletContextProvider onWalletReady={onWalletReady}>
           <ExchangeRateContextProvider>
             <Router>

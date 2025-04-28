@@ -1,52 +1,59 @@
-import { useState, useContext, useRef } from 'react'
-import { useBreakpoint } from '../../utils/useBreakpoints.js'
-import { Switch, Route, Redirect } from 'react-router-dom'
-import style from '../../navigation/style.js'
-import { makeStyles } from '@mui/styles'
+import { useState, useContext, useRef } from 'react';
+import { useBreakpoint } from '../../utils/useBreakpoints';
+import { Switch, Route, Redirect } from 'react-router-dom';
+import style from '../../navigation/style';
+import { makeStyles } from '@mui/styles';
 import {
   Typography,
   IconButton,
   Toolbar
-} from '@mui/material'
-import PageLoading from '../../components/PageLoading.js'
-import Menu from '../../navigation/Menu.js'
-import { Menu as MenuIcon } from '@mui/icons-material'
-import MyIdentity from './MyIdentity/index.js'
-import Trust from './Trust/index.js'
-import Apps from './Apps'
-import App from './App/Index'
-import Settings from './Settings/index.js'
-import Security from './Security/index.js'
-import { UserContext } from '../../UserContext'
+} from '@mui/material';
+import PageLoading from '../../components/PageLoading';
+import Menu from '../../navigation/Menu';
+import { Menu as MenuIcon } from '@mui/icons-material';
+import MyIdentity from './MyIdentity'; // Assuming index.tsx or similar
+import Trust from './Trust'; // Assuming index.tsx or similar
+import Apps from './Apps';
+import App from './App/Index'; // Assuming index.tsx or similar
+import Settings from './Settings'; // Assuming index.tsx or similar
+import Security from './Security'; // Assuming index.tsx or similar
+import { UserContext } from '../../UserContext';
+
+// Import the components for the new routes
+// Note: These might still be .jsx files and need refactoring later
+import AppAccess from './AppAccess'; // Assuming index.jsx or similar
+import BasketAccess from './BasketAccess'; // Assuming index.jsx or similar
+import ProtocolAccess from './ProtocolAccess'; // Assuming index.jsx or similar
+import CounterpartyAccess from './CounterpartyAccess'; // Assuming index.jsx or similar
+import CertificateAccess from './CertificateAccess'; // Assuming index.jsx or similar
 
 // @ts-expect-error - Type issues with makeStyles
 const useStyles = makeStyles(style, {
   name: 'Dashboard'
-})
-
-// Profile-related code has been moved to Menu.tsx
+});
 
 /**
- * Renders the Apps page and menu by default
+ * Renders the Dashboard layout with routing for sub-pages.
  */
 export default function Dashboard() {
-  const { pageLoaded } = useContext(UserContext)
-  const breakpoints = useBreakpoint()
-  const classes = useStyles({ breakpoints })
-  const menuRef = useRef(null)
-  const [menuOpen, setMenuOpen] = useState(true)
-  const [myIdentityKey] = useState('self')
-
+  const { pageLoaded } = useContext(UserContext);
+  const breakpoints = useBreakpoint();
+  const classes = useStyles({ breakpoints });
+  const menuRef = useRef(null);
+  const [menuOpen, setMenuOpen] = useState(true);
+  // TODO: Fetch actual identity key instead of hardcoding 'self'
+  const [myIdentityKey] = useState('self');
 
   const getMargin = () => {
     if (menuOpen && !breakpoints.sm) {
-      return '320px'
+      // Adjust margin based on Menu width if needed
+      return '320px'; // Example width, match Menu component
     }
-    return '0px'
-  }
+    return '0px';
+  };
 
   if (!pageLoaded) {
-    return <PageLoading />
+    return <PageLoading />;
   }
 
   return (
@@ -77,10 +84,12 @@ export default function Dashboard() {
       </div>
       <Menu menuOpen={menuOpen} setMenuOpen={setMenuOpen} menuRef={menuRef} />
       <div className={classes.page_container}>
-
         <Switch>
+          {/* Existing Redirects */}
           <Redirect from='/dashboard/counterparty/self' to={`/dashboard/counterparty/${myIdentityKey}`} />
           <Redirect from='/dashboard/counterparty/anyone' to='/dashboard/counterparty/0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798' />
+
+          {/* Existing Routes */}
           <Route
             path='/dashboard/settings'
             component={Settings}
@@ -102,9 +111,34 @@ export default function Dashboard() {
             component={Apps}
           />
           <Route
-            path='/dashboard/app'
+            path='/dashboard/app' // Consider if this needs /:app parameter
             component={App}
           />
+
+          {/* === ADDED MISSING ROUTES === */}
+          <Route
+            path='/dashboard/manage-app/:originator'
+            component={AppAccess}
+          />
+          <Route
+            path='/dashboard/basket/:basketId'
+            component={BasketAccess}
+          />
+          <Route
+            path='/dashboard/protocol/:protocolId'
+            component={ProtocolAccess}
+          />
+          <Route
+            path='/dashboard/counterparty/:counterparty'
+            component={CounterpartyAccess}
+          />
+          <Route
+            path='/dashboard/certificate/:certType'
+            component={CertificateAccess}
+          />
+          {/* === END ADDED MISSING ROUTES === */}
+
+          {/* Default Fallback Route */}
           <Route
             component={() => {
               return (
@@ -113,13 +147,12 @@ export default function Dashboard() {
                   <br />
                   <Typography align='center' color='textPrimary'>Use the menu to select a page</Typography>
                 </div>
-              )
+              );
             }}
           />
         </Switch>
       </div>
-
-      {/* Profile management has been moved to Menu.tsx */}
     </div>
-  )
+  );
 }
+

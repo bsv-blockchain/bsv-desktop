@@ -1,4 +1,4 @@
-const localeDefault = navigator.language || 'en-US'
+const localeDefault = navigator.language?.split('-u-')[0] || 'en-US'
 const groupDefault = Intl.NumberFormat(localeDefault).formatToParts(10234.56).filter(p => p.type === 'group')[0].value
 const decimalDefault = Intl.NumberFormat(localeDefault).formatToParts(1234.56).filter(p => p.type === 'decimal')[0].value
 

@@ -1,7 +1,4 @@
-let navigatorLanguage = navigator.language
-if (typeof navigatorLanguage === 'string' && navigatorLanguage.includes('-u-va-posix'))
-  navigatorLanguage = navigatorLanguage.replace('-u-va-posix', '')
-const localeDefault = navigatorLanguage || 'en-US'
+const localeDefault = navigator.language?.split('-u-')[0] || 'en-US'
 const groupDefault = Intl.NumberFormat(localeDefault).formatToParts(10234.56).filter(p => p.type === 'group')[0].value
 const decimalDefault = Intl.NumberFormat(localeDefault).formatToParts(1234.56).filter(p => p.type === 'decimal')[0].value
 

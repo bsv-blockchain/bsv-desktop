@@ -1,14 +1,15 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { Button, Typography, IconButton, Grid, Link, Paper, Box, CircularProgress } from '@mui/material';
+import { Button, Typography, IconButton, Grid, Link, Paper, Box, CircularProgress, MenuItem } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import DownloadIcon from '@mui/icons-material/Download';
-import { useHistory, useParams } from 'react-router-dom';
+import { useHistory, useParams, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import PageHeader from '../../../components/PageHeader'; // Assuming this component exists and is TSX
-// import BasketAccessList from '../../../components/BasketAccessList'; // This component needs to be created/refactored
+import PageHeader from '../../../components/PageHeader';
 import { WalletContext } from '../../../WalletContext';
 import { UserContext } from '../../../UserContext';
+import { WalletOutput } from '@bsv/sdk';
+import BasketAccessList from '../../../components/BasketAccessList';
 
 // Placeholder type for basket details - adjust based on actual SDK response
 interface BasketDetails {
@@ -20,26 +21,24 @@ interface BasketDetails {
   originator?: string; // Or relevant identifier
 }
 
-// Placeholder type for output items - adjust based on actual SDK response
-interface BasketOutput {
-  // Define properties based on getOutputs response
-  txid: string;
-  vout: number;
-  amount: number;
-  // ... other properties
-}
-
 /**
  * Display the access information for a particular basket.
  */
 const BasketAccess: React.FC = () => {
   const { basketId } = useParams<{ basketId: string }>();
   const history = useHistory();
-  const { managers } = useContext(WalletContext);
+  const location = useLocation<{
+    id?: string;
+    name?: string;
+    description?: string;
+    iconURL?: string;
+    documentationURL?: string;
+  }>();
+  const { managers, adminOriginator } = useContext(WalletContext);
   const { onDownloadFile } = useContext(UserContext);
 
   const [basketDetails, setBasketDetails] = useState<BasketDetails | null>(null);
-  const [itemsInBasket, setItemsInBasket] = useState<BasketOutput[]>([]);
+  const [itemsInBasket, setItemsInBasket] = useState<WalletOutput[]>([]);
   const [copied, setCopied] = useState<{ [key: string]: boolean }>({ id: false });
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,25 +59,42 @@ const BasketAccess: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        // --- Fetch Basket Details --- 
-        // TODO: Replace with actual SDK call to get basket details by ID
-        // Example: const details = await managers.walletManager.getBasketDetails(basketId);
-        // Using placeholder data for now
-        const placeholderDetails: BasketDetails = {
-          id: basketId,
-          name: `Basket ${basketId.substring(0, 6)}...`,
-          description: 'This is a placeholder description for the basket. Details should be fetched from the wallet manager.',
-          documentationURL: 'https://docs.example.com/basket',
-          iconURL: '', // Add a default icon URL if available
-        };
-        setBasketDetails(placeholderDetails);
+        // We don't need to call listBasketAccess here since BasketAccessList component handles that
+        // The BasketAccessList component will fetch and display permissions for this basket
 
-        // --- Fetch Items in Basket --- 
-        // TODO: Replace window.CWI.ninja.getTransactionOutputs with actual SDK call
-        // Example: const outputs = await managers.walletManager.getOutputs({ basket: basketId, includeBasket: true, includeTags: true, spendable: true, order: 'descending' });
-        // Using placeholder data for now
-        const placeholderOutputs: BasketOutput[] = []; // Assume empty for now
-        setItemsInBasket(placeholderOutputs);
+        // Update the itemsInBasket state with the outputs
+        const { outputs } = await managers.permissionsManager.listOutputs({
+          basket: basketId,
+          includeTags: true
+        }, adminOriginator)
+
+        // Type assertion is needed since permissions and outputs may have different structures
+        setItemsInBasket(outputs as WalletOutput[])
+
+        // --- Get Basket Details --- 
+        // First check if we already have the details in the router state
+        if (location.state && location.state.id === basketId) {
+          // Use the data passed via router state
+          setBasketDetails({
+            id: basketId,
+            name: location.state.name || `Basket ${basketId.substring(0, 6)}...`,
+            description: location.state.description || 'No description available',
+            documentationURL: location.state.documentationURL,
+            iconURL: location.state.iconURL,
+          });
+        } else {
+          // TODO: Replace with actual SDK call to get basket details by ID
+          // Example: const details = await managers.walletManager.getBasketDetails(basketId);
+          // Using placeholder data for now
+          const placeholderDetails: BasketDetails = {
+            id: basketId,
+            name: `Basket ${basketId.substring(0, 6)}...`,
+            description: 'This is a placeholder description for the basket. Details should be fetched from the wallet manager.',
+            documentationURL: 'https://docs.example.com/basket',
+            iconURL: '', // Add a default icon URL if available
+          };
+          setBasketDetails(placeholderDetails);
+        }
 
       } catch (err: any) {
         console.error('Failed to fetch basket data:', err);
@@ -134,7 +150,7 @@ const BasketAccess: React.FC = () => {
   const { id, name, description, documentationURL, iconURL } = basketDetails;
 
   return (
-    <Grid container spacing={3} direction='column' sx={{ p: 2 }}> {/* Added padding */} 
+    <Grid container spacing={3} direction='column' sx={{ p: 2 }}> {/* Added padding */}
       <Grid item>
         <PageHeader
           // history={history} // history might not be needed if PageHeader handles back navigation internally
@@ -164,7 +180,7 @@ const BasketAccess: React.FC = () => {
         <Typography variant='h5' gutterBottom>
           Basket Description
         </Typography>
-        <Typography variant='body1' gutterBottom> {/* Changed to body1 */} 
+        <Typography variant='body1' gutterBottom> {/* Changed to body1 */}
           {description}
         </Typography>
       </Grid>
@@ -174,7 +190,7 @@ const BasketAccess: React.FC = () => {
           <Typography variant='h5' gutterBottom>
             Learn More
           </Typography>
-          <Typography variant='body1'> {/* Changed to body1 */} 
+          <Typography variant='body1'> {/* Changed to body1 */}
             You can learn more about how to manipulate and use the items in this basket from the following URL:
           </Typography>
           <Link href={documentationURL} target='_blank' rel='noopener noreferrer' sx={{ display: 'block', mt: 1 }}>{documentationURL}</Link>
@@ -182,23 +198,17 @@ const BasketAccess: React.FC = () => {
       )}
 
       <Grid item>
-        <Paper elevation={3} sx={{ padding: 2, borderRadius: 2 }}> {/* Updated sx */} 
-          <Typography variant='h4' gutterBottom sx={{ pl: 0.5 }}> {/* Updated sx */} 
+        <Paper elevation={3} sx={{ padding: 2, borderRadius: 2 }}> {/* Updated sx */}
+          <Typography variant='h4' gutterBottom sx={{ pl: 0.5 }}>
             Apps with Access
           </Typography>
-          {/* --- BasketAccessList Placeholder --- */}
-          <Box sx={{ p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
-            <Typography color="textSecondary">BasketAccessList component needs to be created/refactored.</Typography>
-            {/* <BasketAccessList
-              basket={id}
-              itemsDisplayed='apps'
-              canRevoke
-              list
-              displayCount
-              showEmptyList
-            /> */}
-          </Box>
-          {/* --- End Placeholder --- */}
+          <BasketAccessList
+            basket={id}
+            itemsDisplayed='apps'
+            canRevoke
+            displayCount
+            showEmptyList
+          />
         </Paper>
       </Grid>
 

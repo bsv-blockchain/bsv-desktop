@@ -114,9 +114,10 @@ const BasketChip: React.FC<BasketChipProps> = ({
   }, [basketId, settings])
 
   return (
-    <Stack direction="column" spacing={1} alignItems="space-between">
-      <Stack direction="row" alignItems="center" spacing={1} justifyContent="space-between" sx={{
-        height: '3em', width: '100%'
+    <Stack direction="column" spacing={1} alignItems="flex-start">
+      <Stack direction="row" alignItems="center" spacing={1} justifyContent="flex-start" sx={{
+        height: '3em', width: '100%',
+        gap: '0.75rem' // Add a more reasonable gap between the label and chip
       }}>
         <Typography variant="body1" fontWeight="bold">Basket:</Typography>
         <Chip

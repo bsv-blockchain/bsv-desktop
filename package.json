@@ -1,6 +1,6 @@
 {
   "name": "@bsv/brc100-ui-react-components",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": false,
   "publishConfig": {
     "access": "public"

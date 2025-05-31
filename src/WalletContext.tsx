@@ -5,6 +5,7 @@ import {
   PrivilegedKeyManager,
   WalletStorageManager,
   WalletAuthenticationManager,
+  CWIStyleWalletManager,
   OverlayUMPTokenInteractor,
   WalletSigner,
   Services,
@@ -24,7 +25,7 @@ import {
 import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 import { toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
-import { DEFAULT_WAB_URL, DEFAULT_STORAGE_URL, DEFAULT_CHAIN, ADMIN_ORIGINATOR } from './config'
+import { DEFAULT_WAB_URL, DEFAULT_STORAGE_URL, DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB } from './config'
 import { UserContext } from './UserContext'
 import getApps from './pages/Dashboard/Apps/getApps'
 import isImageUrl from './utils/isImageUrl'
@@ -64,6 +65,9 @@ export interface WalletContextValue {
   advanceCertificateQueue: () => void
   advanceProtocolQueue: () => void
   advanceSpendingQueue: () => void
+  setWalletFunder: (funder: (presentationKey: number[], wallet: WalletInterface, adminOriginator: string) => Promise<void>) => void
+  setUseWab: (use: boolean) => void
+  useWab: boolean
   recentApps: any[]
   finalizeConfig: (wabConfig: WABConfig) => boolean
   setConfigStatus: (status: ConfigStatus) => void
@@ -89,6 +93,9 @@ export const WalletContext = createContext<WalletContextValue>({
   advanceCertificateQueue: () => { },
   advanceProtocolQueue: () => { },
   advanceSpendingQueue: () => { },
+  setWalletFunder: () => { },
+  setUseWab: () => { },
+  useWab: true,
   recentApps: [],
   finalizeConfig: () => false,
   setConfigStatus: () => { },
@@ -146,6 +153,7 @@ export interface WABConfig {
   method: string;
   network: 'main' | 'test';
   storageUrl: string;
+  useWab?: boolean;
 }
 
 interface WalletContextProps {
@@ -172,6 +180,10 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [certificateRequests, setCertificateRequests] = useState<CertificateAccessRequest[]>([])
   const [protocolRequests, setProtocolRequests] = useState<ProtocolAccessRequest[]>([])
   const [spendingRequests, setSpendingRequests] = useState<SpendingRequest[]>([])
+  const [walletFunder, setWalletFunder] = useState<
+    (presentationKey: number[], wallet: WalletInterface, adminOriginator: string) => Promise<void>
+  >()
+  const [useWab, setUseWab] = useState<boolean>(DEFAULT_USE_WAB)
 
   // Pop the first request from the basket queue, close if empty, relinquish focus if needed
   const advanceBasketQueue = () => {
@@ -482,6 +494,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
   // Fetch WAB info for first-time configuration
   const fetchWabInfo = useCallback(async () => {
+    if (!useWab) return null
     try {
       const response = await fetch(`${wabUrl}/info`);
       if (!response.ok) {
@@ -501,11 +514,11 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       toast.error("Could not fetch WAB info: " + error.message);
       return null;
     }
-  }, [wabUrl]);
+  }, [wabUrl, useWab]);
 
   // Auto-fetch WAB info and apply default configuration when component mounts
   useEffect(() => {
-    if (!localStorage.snap && configStatus === 'initial') {
+    if (!localStorage.snap && configStatus === 'initial' && useWab) {
       (async () => {
         try {
           const info = await fetchWabInfo();
@@ -520,20 +533,22 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         }
       })();
     }
-  }, [wabUrl, configStatus, fetchWabInfo]);
+  }, [wabUrl, configStatus, fetchWabInfo, useWab]);
 
   // For new users: mark configuration complete when WalletConfig is submitted.
   const finalizeConfig = (wabConfig: WABConfig) => {
-    const { wabUrl, wabInfo, method, network, storageUrl } = wabConfig
+    const { wabUrl, wabInfo, method, network, storageUrl, useWab: useWabSetting } = wabConfig
     try {
-      if (!wabUrl) {
-        toast.error("WAB Server URL is required");
-        return;
-      }
+      if (useWabSetting !== false) {
+        if (!wabUrl) {
+          toast.error("WAB Server URL is required");
+          return;
+        }
 
-      if (!wabInfo || !method) {
-        toast.error("Auth Method selection is required");
-        return;
+        if (!wabInfo || !method) {
+          toast.error("Auth Method selection is required");
+          return;
+        }
       }
 
       if (!network) {
@@ -546,6 +561,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         return;
       }
 
+      setUseWab(useWabSetting !== false)
       setWabUrl(wabUrl)
       setWabInfo(wabInfo)
       setSelectedAuthMethod(method)
@@ -627,6 +643,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     certificateAccessCallback
   ]);
 
+
   // Load snapshot function
   const loadWalletSnapshot = useCallback(async (walletManager: WalletAuthenticationManager) => {
     if (localStorage.snap) {
@@ -671,26 +688,29 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
           networkPreset
         });
 
-        // Create a WAB Client with proper URL
-        const wabClient = new WABClient(wabUrl);
-
-        // Create a phone interactor
-        const phoneInteractor = new TwilioPhoneInteractor();
-
-        // Create the wallet manager with proper error handling
-        const walletManager = new WalletAuthenticationManager(
-          adminOriginator,
-          buildWallet,
-          new OverlayUMPTokenInteractor(
-            resolver,
-            broadcaster
-          ),
-          recoveryKeySaver,
-          passwordRetriever,
-          // Type assertions needed due to interface mismatch between our WABClient and the expected SDK client
-          wabClient,
-          phoneInteractor
-        );
+        let walletManager: any;
+        if (useWab) {
+          const wabClient = new WABClient(wabUrl);
+          const phoneInteractor = new TwilioPhoneInteractor();
+          walletManager = new WalletAuthenticationManager(
+            adminOriginator,
+            buildWallet,
+            new OverlayUMPTokenInteractor(resolver, broadcaster),
+            recoveryKeySaver,
+            passwordRetriever,
+            wabClient,
+            phoneInteractor
+          );
+        } else {
+          walletManager = new CWIStyleWalletManager(
+            adminOriginator,
+            buildWallet,
+            new OverlayUMPTokenInteractor(resolver, broadcaster),
+            recoveryKeySaver,
+            passwordRetriever,
+            walletFunder
+          );
+        }
 
         // Store in window for debugging
         (window as any).walletManager = walletManager;
@@ -715,6 +735,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     managers.walletManager,
     selectedNetwork,
     wabUrl,
+    walletFunder,
+    useWab,
     buildWallet,
     loadWalletSnapshot,
     adminOriginator
@@ -830,6 +852,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     advanceCertificateQueue,
     advanceProtocolQueue,
     advanceSpendingQueue,
+    setWalletFunder,
+    setUseWab,
+    useWab,
     recentApps,
     finalizeConfig,
     setConfigStatus,
@@ -852,6 +877,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     advanceCertificateQueue,
     advanceProtocolQueue,
     advanceSpendingQueue,
+    setWalletFunder,
+    setUseWab,
+    useWab,
     recentApps,
     finalizeConfig,
     setConfigStatus,

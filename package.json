@@ -30,8 +30,8 @@
     "libphonenumber-js": "^1.12.6"
   },
   "peerDependencies": {
-    "@bsv/sdk": "^1.4.20",
-    "@bsv/wallet-toolbox-client": "^1.3.2",
+    "@bsv/sdk": "^1.6.0",
+    "@bsv/wallet-toolbox-client": "^1.4.4",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^6.4.3",

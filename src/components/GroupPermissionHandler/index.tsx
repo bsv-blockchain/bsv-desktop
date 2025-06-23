@@ -3,12 +3,12 @@ import {
   DialogContent, DialogContentText, DialogActions, Button, Typography, Checkbox, FormControlLabel
 } from '@mui/material'
 import { makeStyles } from '@mui/styles'
-import CustomDialog from '../CustomDialog/index.jsx'
+import CustomDialog from '../CustomDialog'
 import { WalletContext, WalletContextValue } from '../../WalletContext'
-import AppChip from '../AppChip/index.jsx'
-import ProtoChip from '../ProtoChip/index.jsx'
-import CertificateChip from '../CertificateChip/index.jsx'
-import BasketChip from '../BasketChip/index.jsx'
+import AppChip from '../AppChip'
+import ProtoChip from '../ProtoChip'
+import CertificateChip from '../CertificateChip'
+import BasketChip from '../BasketChip'
 import AmountDisplay from '../AmountDisplay'
 
 const useStyles = makeStyles({

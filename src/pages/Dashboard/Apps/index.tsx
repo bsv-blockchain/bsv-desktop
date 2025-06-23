@@ -178,7 +178,7 @@ const Apps: React.FC = () => {
         }}
       >
         <Typography variant="h1" color="textPrimary" sx={{ mb: 2 }}>
-          Applications
+          Applications2
         </Typography>
         <Typography variant="body1" color="textSecondary" sx={{ mb: 2 }}>
           Browse and manage your application permissions.

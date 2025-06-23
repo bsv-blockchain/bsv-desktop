@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext } from 'react'
 import style from './style.js'
-import 'react-phone-number-input/style.css'
+// import 'react-phone-number-input/style.css'
 import {
   Accordion,
   AccordionSummary,

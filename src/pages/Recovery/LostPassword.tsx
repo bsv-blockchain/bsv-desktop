@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext } from 'react'
-import 'react-phone-number-input/style.css'
+// import 'react-phone-number-input/style.css'
 import {
   Accordion,
   AccordionSummary,
@@ -20,7 +20,7 @@ import {
 import { makeStyles } from '@mui/styles'
 import { toast } from 'react-toastify'
 import { WalletContext } from '../../WalletContext'
-import PhoneEntry from '../../components/PhoneEntry.js'
+import PhoneEntry from '../../components/PhoneEntry'
 import style from './style.js'
 import { Utils } from '@bsv/sdk'
 

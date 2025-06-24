@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext } from 'react'
 import {
-  DialogContent, DialogContentText, DialogActions, Button, Typography, Checkbox, FormControlLabel
+  DialogContent, DialogContentText, DialogActions, Button, Typography, Checkbox, FormControlLabel, CircularProgress
 } from '@mui/material'
 import { makeStyles } from '@mui/styles'
 import CustomDialog from '../CustomDialog'
@@ -129,6 +129,7 @@ const GroupPermissionHandler = () => {
   const [protocolPermissions, setProtocolPermissions] = useState<ProtocolPermission[]>([])
   const [basketAccess, setBasketAccess] = useState<BasketAccessItem[]>([])
   const [certificateAccess, setCertificateAccess] = useState<CertificateAccessItem[]>([])
+  const [isGranting, setIsGranting] = useState(false)
   const classes = useStyles()
 
   const handleCancel = async () => {
@@ -146,59 +147,64 @@ const GroupPermissionHandler = () => {
   }
 
   const handleGrant = async () => {
-    const granted: GroupPermissions = {
-      protocolPermissions: [],
-      basketAccess: [],
-      certificateAccess: []
-    }
-
-    if (
-      typeof spendingAuthorization === 'object' &&
-      spendingAuthorization?.enabled
-    ) {
-      const spendingAuthCopy = { ...spendingAuthorization }
-      delete spendingAuthCopy.enabled
-      granted.spendingAuthorization = spendingAuthCopy
-    }
-
-    for (const x of protocolPermissions) {
-      if (x.enabled) {
-        const xCopy = { ...x }
-        delete xCopy.enabled
-        granted.protocolPermissions.push(xCopy)
+    setIsGranting(true)
+    try {
+      const granted: GroupPermissions = {
+        protocolPermissions: [],
+        basketAccess: [],
+        certificateAccess: []
       }
-    }
 
-    for (const x of basketAccess) {
-      if (x.enabled) {
-        const xCopy = { ...x }
-        delete xCopy.enabled
-        granted.basketAccess.push(xCopy)
+      if (
+        typeof spendingAuthorization === 'object' &&
+        spendingAuthorization?.enabled
+      ) {
+        const spendingAuthCopy = { ...spendingAuthorization }
+        delete spendingAuthCopy.enabled
+        granted.spendingAuthorization = spendingAuthCopy
       }
-    }
 
-    for (const x of certificateAccess) {
-      if (x.enabled) {
-        const xCopy = { ...x }
-        delete xCopy.enabled
-        granted.certificateAccess.push(xCopy)
+      for (const x of protocolPermissions) {
+        if (x.enabled) {
+          const xCopy = { ...x }
+          delete xCopy.enabled
+          granted.protocolPermissions.push(xCopy)
+        }
       }
-    }
 
-    if (requestID) {
-      try {
-        await managers?.permissionsManager.grantGroupedPermission({
-          requestID,
-          granted: granted as GroupedPermissions, //? TODO: Confirm this is correct
-          expiry: 0 // ?
-        })
-        console.log('Granting group permission for requestID:', requestID, 'with granted:', granted)
-      } catch (error) {
-        console.error('Error granting group permission:', error)
+      for (const x of basketAccess) {
+        if (x.enabled) {
+          const xCopy = { ...x }
+          delete xCopy.enabled
+          granted.basketAccess.push(xCopy)
+        }
       }
-    }
 
-    advanceGroupQueue()
+      for (const x of certificateAccess) {
+        if (x.enabled) {
+          const xCopy = { ...x }
+          delete xCopy.enabled
+          granted.certificateAccess.push(xCopy)
+        }
+      }
+
+      if (requestID) {
+        try {
+          await managers?.permissionsManager.grantGroupedPermission({
+            requestID,
+            granted: granted as GroupedPermissions, //? TODO: Confirm this is correct
+            expiry: 0 // ?
+          })
+          console.log('Granting group permission for requestID:', requestID, 'with granted:', granted)
+        } catch (error) {
+          console.error('Error granting group permission:', error)
+        }
+      }
+
+      advanceGroupQueue()
+    } finally {
+      setIsGranting(false)
+    }
   }
 
   useEffect(() => {
@@ -450,14 +456,17 @@ const GroupPermissionHandler = () => {
         <Button
           onClick={handleCancel}
           color='primary'
+          disabled={isGranting}
         >
           Deny All
         </Button>
         <Button
           color='primary'
           onClick={handleGrant}
+          disabled={isGranting}
+          startIcon={isGranting ? <CircularProgress size={16} /> : undefined}
         >
-          Grant Selected
+          {isGranting ? 'Granting...' : 'Grant Selected'}
         </Button>
       </DialogActions>
     </CustomDialog>

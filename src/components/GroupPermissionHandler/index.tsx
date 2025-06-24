@@ -5,11 +5,13 @@ import {
 import { makeStyles } from '@mui/styles'
 import CustomDialog from '../CustomDialog'
 import { WalletContext, WalletContextValue } from '../../WalletContext'
+import { UserContext, UserContextValue } from '../../UserContext'
 import AppChip from '../AppChip'
 import ProtoChip from '../ProtoChip'
 import CertificateChip from '../CertificateChip'
 import BasketChip from '../BasketChip'
 import AmountDisplay from '../AmountDisplay'
+import { GroupedPermissions } from '@bsv/wallet-toolbox-client'
 
 const useStyles = makeStyles({
   protocol_grid: {
@@ -113,12 +115,16 @@ interface GroupPermissions {
 const GroupPermissionHandler = () => {
   const {
     groupPermissionRequests,
-    advanceGroupQueue
+    advanceGroupQueue,
+    managers
   } = useContext<WalletContextValue>(WalletContext)
+
+  const {
+    groupPermissionModalOpen
+  } = useContext<UserContextValue>(UserContext)
 
   const [originator, setOriginator] = useState('')
   const [requestID, setRequestID] = useState<string | null>(null)
-  const [open, setOpen] = useState(false)
   const [spendingAuthorization, setSpendingAuthorization] = useState<SpendingAuthorization | undefined>(undefined)
   const [protocolPermissions, setProtocolPermissions] = useState<ProtocolPermission[]>([])
   const [basketAccess, setBasketAccess] = useState<BasketAccessItem[]>([])
@@ -129,18 +135,13 @@ const GroupPermissionHandler = () => {
     // Deny the current group permission request
     if (requestID) {
       try {
-        // Call the appropriate API to deny the group permission
-        // This replaces the window.CWI.denyGroupPermission call
-        // We're assuming an appropriate alternative exists in the context or available APIs
+        await managers?.permissionsManager.denyGroupedPermission(requestID)
         console.log('Denying group permission for requestID:', requestID)
       } catch (error) {
         console.error('Error denying group permission:', error)
       }
     }
 
-    setOpen(false)
-
-    // Advance the queue to process the next group permission request
     advanceGroupQueue()
   }
 
@@ -186,17 +187,17 @@ const GroupPermissionHandler = () => {
 
     if (requestID) {
       try {
-        // This replaces the window.CWI.grantGroupPermission call
-        // We're assuming an appropriate alternative exists in the context or available APIs
+        await managers?.permissionsManager.grantGroupedPermission({
+          requestID,
+          granted: granted as GroupedPermissions, //? TODO: Confirm this is correct
+          expiry: 0 // ?
+        })
         console.log('Granting group permission for requestID:', requestID, 'with granted:', granted)
       } catch (error) {
         console.error('Error granting group permission:', error)
       }
     }
 
-    setOpen(false)
-
-    // Advance the queue to process the next group permission request
     advanceGroupQueue()
   }
 
@@ -223,9 +224,6 @@ const GroupPermissionHandler = () => {
 
           // Set the originator
           setOriginator(originator || '')
-
-          // Show the dialog
-          setOpen(true)
 
           // Set protocol permissions
           setProtocolPermissions(
@@ -270,7 +268,12 @@ const GroupPermissionHandler = () => {
       processRequest()
     } else {
       // Reset the dialog when there are no requests
-      setOpen(false)
+      setOriginator('')
+      setRequestID(null)
+      setSpendingAuthorization(undefined)
+      setProtocolPermissions([])
+      setBasketAccess([])
+      setCertificateAccess([])
     }
   }, [groupPermissionRequests, advanceGroupQueue])
 
@@ -309,8 +312,10 @@ const GroupPermissionHandler = () => {
 
   return (
     <CustomDialog
-      open={open}
-      // onClose={handleCancel}
+      open={groupPermissionModalOpen && groupPermissionRequests.length > 0}
+      onClose={handleCancel}
+      maxWidth='md'
+      fullWidth
       title='Select App Permissions'
     >
       <DialogContent>

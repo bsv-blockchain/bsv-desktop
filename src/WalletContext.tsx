@@ -651,11 +651,11 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
       // Setup permissions with provided callbacks.
       const permissionsManager = new WalletPermissionsManager(wallet, adminOriginator, {
-        seekProtocolPermissionsForEncrypting: false,
-        seekProtocolPermissionsForHMAC: false,
-        seekPermissionsForPublicKeyRevelation: false,
-        seekPermissionsForIdentityKeyRevelation: false,
-        seekPermissionsForIdentityResolution: false,
+        seekProtocolPermissionsForEncrypting: true,
+        seekProtocolPermissionsForHMAC: true,
+        seekPermissionsForPublicKeyRevelation: true,
+        seekPermissionsForIdentityKeyRevelation: true,
+        seekPermissionsForIdentityResolution: true,
       });
 
       if (protocolPermissionCallback) {
@@ -672,7 +672,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
 
       if (groupPermissionCallback) {
-        permissionsManager.bindCallback('onGroupedPermissionRequested', groupPermissionCallback as any);
+        permissionsManager.bindCallback('onGroupedPermissionRequested', groupPermissionCallback);
       }
 
       // Store in window for debugging

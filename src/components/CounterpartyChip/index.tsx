@@ -50,7 +50,7 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
   const [avatarError, setAvatarError] = useState(false)
   const [badgeError, setBadgeError] = useState(false)
 
-  const { managers } = useContext(WalletContext)
+  const { managers, adminOriginator } = useContext(WalletContext)
 
   // Handle image loading errors
   const handleAvatarError = () => {
@@ -74,13 +74,13 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
       try {
         // Resolve the counterparty key for 'self' or 'anyone'
         if (counterpartyKey === 'self') {
-          counterpartyKey = (await managers.permissionsManager.getPublicKey({ identityKey: true })).publicKey
+          counterpartyKey = (await managers.permissionsManager.getPublicKey({ identityKey: true }, adminOriginator)).publicKey
         } else if (counterpartyKey === 'anyone') {
           counterpartyKey = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
         }
 
         // Fetch the latest identity info from the server
-        const identityClient = new IdentityClient(managers.permissionsManager)
+        const identityClient = new IdentityClient(managers.permissionsManager, undefined, adminOriginator)
         const results = await identityClient.resolveByIdentityKey({ identityKey: counterpartyKey })
         if (results && results.length > 0) {
           setIdentity(results[0])

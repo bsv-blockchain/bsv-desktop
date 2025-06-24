@@ -29,6 +29,7 @@ import { UserContext } from './UserContext'
 import getApps from './pages/Dashboard/Apps/getApps'
 import isImageUrl from './utils/isImageUrl'
 import parseAppManifest from './utils/parseAppManifest'
+import { GroupPermissionRequest, GroupedPermissions } from './types/GroupedPermissions'
 
 // -----
 // Context Types
@@ -60,10 +61,12 @@ export interface WalletContextValue {
   certificateRequests: CertificateAccessRequest[]
   protocolRequests: ProtocolAccessRequest[]
   spendingRequests: SpendingRequest[]
+  groupPermissionRequests: GroupPermissionRequest[]
   advanceBasketQueue: () => void
   advanceCertificateQueue: () => void
   advanceProtocolQueue: () => void
   advanceSpendingQueue: () => void
+  advanceGroupQueue: () => void
   recentApps: any[]
   finalizeConfig: (wabConfig: WABConfig) => boolean
   setConfigStatus: (status: ConfigStatus) => void
@@ -85,10 +88,12 @@ export const WalletContext = createContext<WalletContextValue>({
   certificateRequests: [],
   protocolRequests: [],
   spendingRequests: [],
+  groupPermissionRequests: [],
   advanceBasketQueue: () => { },
   advanceCertificateQueue: () => { },
   advanceProtocolQueue: () => { },
   advanceSpendingQueue: () => { },
+  advanceGroupQueue: () => { },
   recentApps: [],
   finalizeConfig: () => false,
   setConfigStatus: () => { },
@@ -162,7 +167,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [adminOriginator, setAdminOriginator] = useState(ADMIN_ORIGINATOR);
   const [recentApps, setRecentApps] = useState([])
 
-  const { isFocused, onFocusRequested, onFocusRelinquished, setBasketAccessModalOpen, setCertificateAccessModalOpen, setProtocolAccessModalOpen, setSpendingAuthorizationModalOpen } = useContext(UserContext);
+  const { isFocused, onFocusRequested, onFocusRelinquished, setBasketAccessModalOpen, setCertificateAccessModalOpen, setProtocolAccessModalOpen, setSpendingAuthorizationModalOpen, setGroupPermissionModalOpen } = useContext(UserContext);
 
   // Track if we were originally focused
   const [wasOriginallyFocused, setWasOriginallyFocused] = useState(false)
@@ -172,6 +177,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [certificateRequests, setCertificateRequests] = useState<CertificateAccessRequest[]>([])
   const [protocolRequests, setProtocolRequests] = useState<ProtocolAccessRequest[]>([])
   const [spendingRequests, setSpendingRequests] = useState<SpendingRequest[]>([])
+  const [groupPermissionRequests, setGroupPermissionRequests] = useState<GroupPermissionRequest[]>([])
 
   // Pop the first request from the basket queue, close if empty, relinquish focus if needed
   const advanceBasketQueue = () => {
@@ -221,6 +227,20 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       const newQueue = prev.slice(1)
       if (newQueue.length === 0) {
         setSpendingAuthorizationModalOpen(false)
+        if (!wasOriginallyFocused) {
+          onFocusRelinquished()
+        }
+      }
+      return newQueue
+    })
+  }
+
+  // Pop the first request from the group permission queue, close if empty, relinquish focus if needed
+  const advanceGroupQueue = () => {
+    setGroupPermissionRequests(prev => {
+      const newQueue = prev.slice(1)
+      if (newQueue.length === 0) {
+        setGroupPermissionModalOpen(false)
         if (!wasOriginallyFocused) {
           onFocusRelinquished()
         }
@@ -462,6 +482,52 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     })
   }, [isFocused, onFocusRequested])
 
+  // Provide a handler for group permission requests that enqueues them
+  const groupPermissionCallback = useCallback(async (args: {
+    requestID: string,
+    permissions: GroupedPermissions,
+    originator: string,
+    reason?: string
+  }): Promise<void> => {
+    const {
+      requestID,
+      originator,
+      permissions
+    } = args
+
+    if (!requestID || !permissions) {
+      return Promise.resolve()
+    }
+
+    // Create the new permission request
+    const newItem: GroupPermissionRequest = {
+      requestID,
+      originator,
+      permissions
+    }
+
+    // Enqueue the new request
+    return new Promise<void>(resolve => {
+      setGroupPermissionRequests(prev => {
+        const wasEmpty = prev.length === 0
+
+        // If no requests were queued, handle focusing logic right away
+        if (wasEmpty) {
+          isFocused().then(currentlyFocused => {
+            setWasOriginallyFocused(currentlyFocused)
+            if (!currentlyFocused) {
+              onFocusRequested()
+            }
+            setGroupPermissionModalOpen(true)
+          })
+        }
+
+        resolve()
+        return [...prev, newItem]
+      })
+    })
+  }, [isFocused, onFocusRequested, setGroupPermissionModalOpen])
+
   // ---- WAB + network + storage configuration ----
   const [wabUrl, setWabUrl] = useState<string>(DEFAULT_WAB_URL);
   const [wabInfo, setWabInfo] = useState<{
@@ -585,11 +651,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
       // Setup permissions with provided callbacks.
       const permissionsManager = new WalletPermissionsManager(wallet, adminOriginator, {
-        seekProtocolPermissionsForEncrypting: false,
-        seekProtocolPermissionsForHMAC: false,
-        seekPermissionsForPublicKeyRevelation: false,
-        seekPermissionsForIdentityKeyRevelation: false,
-        seekPermissionsForIdentityResolution: false,
+        seekProtocolPermissionsForEncrypting: true,
+        seekProtocolPermissionsForHMAC: true,
+        seekPermissionsForPublicKeyRevelation: true,
+        seekPermissionsForIdentityKeyRevelation: true,
+        seekPermissionsForIdentityResolution: true,
+        seekGroupedPermission: true
       });
 
       if (protocolPermissionCallback) {
@@ -603,6 +670,10 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
       if (certificateAccessCallback) {
         permissionsManager.bindCallback('onCertificateAccessRequested', certificateAccessCallback);
+      }
+
+      if (groupPermissionCallback) {
+        permissionsManager.bindCallback('onGroupedPermissionRequested', groupPermissionCallback);
       }
 
       // Store in window for debugging
@@ -624,7 +695,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     protocolPermissionCallback,
     basketAccessCallback,
     spendingAuthorizationCallback,
-    certificateAccessCallback
+    certificateAccessCallback,
+    groupPermissionCallback
   ]);
 
   // Load snapshot function
@@ -826,8 +898,10 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     certificateRequests,
     protocolRequests,
     spendingRequests,
+    groupPermissionRequests,
     advanceBasketQueue,
     advanceCertificateQueue,
+    advanceGroupQueue,
     advanceProtocolQueue,
     advanceSpendingQueue,
     recentApps,

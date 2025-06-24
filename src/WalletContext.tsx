@@ -656,6 +656,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         seekPermissionsForPublicKeyRevelation: true,
         seekPermissionsForIdentityKeyRevelation: true,
         seekPermissionsForIdentityResolution: true,
+        seekGroupedPermission: true
       });
 
       if (protocolPermissionCallback) {

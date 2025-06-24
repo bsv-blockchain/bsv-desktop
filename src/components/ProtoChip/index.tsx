@@ -196,6 +196,9 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
           onDelete={canRevoke ? onCloseClick : undefined}
           deleteIcon={canRevoke ? <CloseIcon /> : undefined}
         />
+        <Box px={3}>
+          <Typography variant="body1" sx={{ fontSize: '1rem' }}>{description && `${description}`}</Typography>
+        </Box>
       </Stack>
       {(counterparty && securityLevel > 1) && <CounterpartyChip
         counterparty={counterparty}
@@ -215,7 +218,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
       }}>
         <Typography variant="body1" fontWeight="bold">Scope:</Typography>
         <Box px={3}>
-          <Typography variant="body1" sx={{ fontSize: '1rem' }}>{description && `${description} -`}{securityLevelExplainer(securityLevel)}</Typography>
+          <Typography variant="body1" sx={{ fontSize: '1rem' }}>{securityLevelExplainer(securityLevel)}</Typography>
         </Box>
       </Stack>
     </Stack>

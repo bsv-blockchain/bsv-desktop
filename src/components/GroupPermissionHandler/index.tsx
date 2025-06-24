@@ -332,7 +332,6 @@ const GroupPermissionHandler = () => {
             width: 'min-content',
             gap: '2em'
           }}>
-            <span>app:</span>
             {originator && <div>
               <AppChip
                 size={2.5}

@@ -66,6 +66,8 @@ export interface UserContextValue {
     setProtocolAccessModalOpen: Dispatch<SetStateAction<boolean>>;
     spendingAuthorizationModalOpen: boolean;
     setSpendingAuthorizationModalOpen: Dispatch<SetStateAction<boolean>>;
+    groupPermissionModalOpen: boolean;
+    setGroupPermissionModalOpen: Dispatch<SetStateAction<boolean>>;
     pageLoaded: boolean;
     setPageLoaded: Dispatch<SetStateAction<boolean>>;
 }
@@ -88,6 +90,7 @@ export const UserContextProvider: React.FC<UserContextProps> = ({
     const [certificateAccessModalOpen, setCertificateAccessModalOpen] = useState(false)
     const [protocolAccessModalOpen, setProtocolAccessModalOpen] = useState(false)
     const [spendingAuthorizationModalOpen, setSpendingAuthorizationModalOpen] = useState(false)
+    const [groupPermissionModalOpen, setGroupPermissionModalOpen] = useState(false)
     const [pageLoaded, setPageLoaded] = useState(false)
 
     const userContext = useMemo(() => ({
@@ -105,9 +108,11 @@ export const UserContextProvider: React.FC<UserContextProps> = ({
         setProtocolAccessModalOpen,
         spendingAuthorizationModalOpen,
         setSpendingAuthorizationModalOpen,
+        groupPermissionModalOpen,
+        setGroupPermissionModalOpen,
         pageLoaded,
         setPageLoaded
-    }), [appVersion, appName, basketAccessModalOpen, certificateAccessModalOpen, protocolAccessModalOpen, spendingAuthorizationModalOpen, pageLoaded]);
+    }), [appVersion, appName, basketAccessModalOpen, certificateAccessModalOpen, protocolAccessModalOpen, spendingAuthorizationModalOpen, groupPermissionModalOpen, pageLoaded]);
 
     return (
         <UserContext.Provider value={userContext}>

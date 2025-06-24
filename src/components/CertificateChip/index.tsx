@@ -63,7 +63,8 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
 
   const {
     managers,
-    settings
+    settings,
+    adminOriginator
   } = useContext(WalletContext)
 
   const [certName, setCertName] = useState('Unknown Cert')
@@ -137,7 +138,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
         type: certType,
         serialNumber: serialNumber,
         certifier
-      })
+      }, adminOriginator)
 
       // Set the certificate as revoked locally
       setIsRevoked(true)

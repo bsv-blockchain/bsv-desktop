@@ -12,7 +12,6 @@ import {
   Box,
   Stack
 } from '@mui/material'
-import { Send, Cancel } from '@mui/icons-material'
 import AmountDisplay from '../AmountDisplay/index.js'
 import CustomDialog from '../CustomDialog/index.js'
 import { WalletContext } from '../../WalletContext'

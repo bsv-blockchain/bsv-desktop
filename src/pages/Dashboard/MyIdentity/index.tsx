@@ -105,7 +105,7 @@ const MyIdentity = () => {
       identityKey: true,
       privileged: true,
       privilegedReason: 'Reveal your privileged identity key alongside your everyday one.'
-    })
+    }, adminOriginator)
     setPrivilegedIdentityKey(publicKey)
   }
 

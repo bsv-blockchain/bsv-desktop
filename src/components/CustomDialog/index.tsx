@@ -3,14 +3,14 @@ import {
   Typography,
   useMediaQuery,
   DialogProps,
+  Dialog,
+  DialogTitle,
   DialogContent,
+  DialogActions,
   Stack,
   Box
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-
-// Import styled components
-import { StyledDialog, StyledDialogTitle, StyledDialogActions } from './styles';
 
 interface CustomDialogProps extends DialogProps {
   title: string;
@@ -18,14 +18,12 @@ interface CustomDialogProps extends DialogProps {
   description?: string;
   actions?: ReactNode;
   minWidth?: string;
-  color?: string;
   icon?: ReactNode;
 }
 
 const CustomDialog: React.FC<CustomDialogProps> = ({ 
   title, 
   description,
-  color,
   icon,
   children, 
   actions,
@@ -37,26 +35,26 @@ const CustomDialog: React.FC<CustomDialogProps> = ({
   const isFullscreen = useMediaQuery(theme.breakpoints.down('sm'));
 
   return (
-    <StyledDialog
+    <Dialog
       maxWidth={isFullscreen ? undefined : 'sm'}
       fullWidth={!isFullscreen}
       fullScreen={isFullscreen}
       className={className}
       {...props}
     >
-      <StyledDialogTitle sx={{ color: theme.palette.getContrastText(theme.palette.secondary.main), backgroundColor: theme.palette.secondary.main }}>
+      <DialogTitle>
         <Stack direction="row" spacing={1} alignItems="center">
           {icon} <Typography variant="h5" fontWeight="bold">{title}</Typography>
         </Stack>
-      </StyledDialogTitle>
+      </DialogTitle>
       {description && <Box sx={{ px: 5, py: 3 }}><Typography variant="body1" color="textSecondary">{description}</Typography></Box>}
       <DialogContent>{children}</DialogContent>
       {actions && (
-        <StyledDialogActions>
+        <DialogActions>
           {actions}
-        </StyledDialogActions>
+        </DialogActions>
       )}
-    </StyledDialog>
+    </Dialog>
   );
 };
 

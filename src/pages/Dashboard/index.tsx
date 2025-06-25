@@ -14,6 +14,7 @@ import { Menu as MenuIcon } from '@mui/icons-material';
 import MyIdentity from './MyIdentity'; // Assuming index.tsx or similar
 import Trust from './Trust'; // Assuming index.tsx or similar
 import Apps from './Apps';
+import AppCatalog from './AppCatalog';
 import App from './App/Index'; // Assuming index.tsx or similar
 import Settings from './Settings'; // Assuming index.tsx or similar
 import Security from './Security'; // Assuming index.tsx or similar
@@ -111,6 +112,10 @@ export default function Dashboard() {
             component={Apps}
           />
           <Route
+            path='/dashboard/app-catalog'
+            component={AppCatalog}
+          />
+          <Route
             path='/dashboard/app' // Consider if this needs /:app parameter
             component={App}
           />
@@ -155,4 +160,3 @@ export default function Dashboard() {
     </div>
   );
 }
-

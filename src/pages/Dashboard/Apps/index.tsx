@@ -3,8 +3,6 @@ import React, {
   useState,
   useRef,
   ChangeEvent,
-  FocusEvent,
-  MouseEvent,
   useContext
 } from 'react'
 import {
@@ -13,23 +11,14 @@ import {
   TextField,
   LinearProgress,
   FormControl,
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Box,
-  Chip,
-  IconButton
+  Button
 } from '@mui/material'
 import Grid2 from '@mui/material/Grid2'
 import { makeStyles } from '@mui/styles'
 import SearchIcon from '@mui/icons-material/Search'
-import CloseIcon from '@mui/icons-material/Close'
 import ExploreIcon from '@mui/icons-material/Explore'
 import Fuse from 'fuse.js'
-
-import { openUrl } from '../../../utils/openUrl'
+import { useHistory } from 'react-router-dom'
 
 import style from './style'
 import MetanetApp from '../../../components/MetanetApp'
@@ -37,8 +26,6 @@ import parseAppManifest from '../../../utils/parseAppManifest'
 import isImageUrl from '../../../utils/isImageUrl'
 import getApps from './getApps'
 import { WalletContext } from '../../../WalletContext'
-import { AppCatalog } from 'metanet-apps'
-import type { PublishedApp } from 'metanet-apps/src/types'
 
 // Define an interface to describe your app data
 interface AppData {
@@ -53,13 +40,11 @@ const useStyles = makeStyles(style, {
 
 const Apps: React.FC = () => {
   const classes = useStyles()
+  const history = useHistory()
 
-  // State
+  // State for local apps only
   const [apps, setApps] = useState<AppData[]>([])
   const [filteredApps, setFilteredApps] = useState<AppData[]>([])
-  const [catalogApps, setCatalogApps] = useState<PublishedApp[]>([])
-  const [showCatalogModal, setShowCatalogModal] = useState<boolean>(false)
-  const [catalogLoading, setCatalogLoading] = useState<boolean>(false)
   const [fuseInstance, setFuseInstance] = useState<Fuse<AppData> | null>(null)
   const [search, setSearch] = useState<string>('')
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
@@ -67,7 +52,6 @@ const Apps: React.FC = () => {
 
   const inputRef = useRef<HTMLInputElement>(null)
   const cachedAppsKey = 'cached_apps'
-  const catalog = new AppCatalog({})
 
   // Configuration for Fuse
   const options = {
@@ -81,33 +65,35 @@ const Apps: React.FC = () => {
 
   const { managers, adminOriginator } = useContext(WalletContext)
 
-  // Handler for changes in the search TextField
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setSearch(value)
-
-    if (value === '') {
-      setFilteredApps(apps)
-      return
-    }
     if (fuseInstance) {
-      const results = fuseInstance.search(value).map(match => match.item)
-      setFilteredApps(results)
+      if (value === '') {
+        setFilteredApps(apps)
+      } else {
+        const results = fuseInstance.search(value)
+        setFilteredApps(results.map(result => result.item))
+      }
     }
   }
 
-  // Support the search field expand animation
-  const handleSearchFocus = (e: FocusEvent<HTMLInputElement>) => {
+  const handleFocus = () => {
     setIsExpanded(true)
   }
 
-  const handleSearchBlur = (e: FocusEvent<HTMLInputElement>) => {
+  const handleBlur = () => {
     setIsExpanded(false)
   }
 
-  const handleIconClick = (e: MouseEvent<SVGSVGElement>) => {
-    setIsExpanded(true)
-    inputRef.current?.focus()
+  const handleIconClick = () => {
+    if (inputRef.current) {
+      inputRef.current.focus()
+    }
+  }
+
+  const handleViewCatalog = () => {
+    history.push('/dashboard/app-catalog')
   }
 
   // Resolve additional data (icon, name) for each domain
@@ -144,30 +130,6 @@ const Apps: React.FC = () => {
     })
 
     return Promise.all(dataPromises)
-  }
-
-  // Load catalog apps
-  const loadCatalogApps = async () => {
-    setCatalogLoading(true)
-    try {
-      const apps = await catalog.findApps()
-      setCatalogApps(apps)
-    } catch (error) {
-      console.error('Failed to load catalog apps:', error)
-    }
-    setCatalogLoading(false)
-  }
-
-  // Handle catalog modal
-  const handleViewCatalog = () => {
-    setShowCatalogModal(true)
-    if (catalogApps.length === 0) {
-      loadCatalogApps()
-    }
-  }
-
-  const handleCloseCatalog = () => {
-    setShowCatalogModal(false)
   }
 
   // On mount, load the apps & recent apps
@@ -247,8 +209,8 @@ const Apps: React.FC = () => {
             value={search}
             onChange={handleSearchChange}
             placeholder='Search'
-            onFocus={handleSearchFocus}
-            onBlur={handleSearchBlur}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
             inputRef={inputRef}
             slotProps={{
               input: {
@@ -308,164 +270,6 @@ const Apps: React.FC = () => {
       </Container>
 
       {loading && <LinearProgress style={{ marginTop: '1em' }} />}
-
-      {/* App Catalog Modal */}
-      <Dialog
-        open={showCatalogModal}
-        onClose={handleCloseCatalog}
-        maxWidth="lg"
-        fullWidth
-        PaperProps={{
-          sx: {
-            minHeight: '70vh',
-            maxHeight: '90vh'
-          }
-        }}
-      >
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h5">Popular Apps Catalog</Typography>
-          <IconButton onClick={handleCloseCatalog} size="small">
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-
-        <DialogContent>
-          {catalogLoading ? (
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4 }}>
-              <LinearProgress sx={{ width: '100%', mb: 2 }} />
-              <Typography variant="body2" color="textSecondary">
-                Loading popular apps...
-              </Typography>
-            </Box>
-          ) : catalogApps.length === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-              <Typography variant="body1" color="textSecondary">
-                No apps found in the catalog.
-              </Typography>
-            </Box>
-          ) : (
-            <Grid2 container spacing={3}>
-              {catalogApps.map((app) => (
-                <Grid2 key={`${app.token.txid}-${app.token.outputIndex}`} size={{ xs: 12, sm: 6, md: 4 }}>
-                  <Box
-                    sx={{
-                      border: 1,
-                      borderColor: 'divider',
-                      borderRadius: 2,
-                      p: 2,
-                      height: '100%',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      '&:hover': {
-                        borderColor: 'primary.main',
-                        transform: 'translateY(-2px)',
-                        boxShadow: 2
-                      }
-                    }}
-                    onClick={() => {
-                      if (app.metadata.httpURL) {
-                        openUrl(app.metadata.httpURL)
-                      } else if (app.metadata.domain) {
-                        openUrl(`https://${app.metadata.domain}`)
-                      }
-                    }}
-                  >
-                    {/* App Icon and Name */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      {app.metadata.icon && (
-                        <Box
-                          component="img"
-                          src={app.metadata.icon}
-                          alt={app.metadata.name}
-                          sx={{
-                            width: 48,
-                            height: 48,
-                            borderRadius: 1,
-                            mr: 2,
-                            objectFit: 'cover'
-                          }}
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none'
-                          }}
-                        />
-                      )}
-                      <Box>
-                        <Typography variant="h6" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>
-                          {app.metadata.name}
-                        </Typography>
-                        <Typography variant="caption" color="textSecondary">
-                          {app.metadata.domain}
-                        </Typography>
-                      </Box>
-                    </Box>
-
-                    {/* Description */}
-                    <Typography
-                      variant="body2"
-                      color="textSecondary"
-                      sx={{
-                        mb: 2,
-                        flexGrow: 1,
-                        display: '-webkit-box',
-                        WebkitLineClamp: 3,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden'
-                      }}
-                    >
-                      {app.metadata.description}
-                    </Typography>
-
-                    {/* Tags */}
-                    {app.metadata.tags && app.metadata.tags.length > 0 && (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
-                        {app.metadata.tags.slice(0, 3).map((tag, tagIndex) => (
-                          <Chip
-                            key={tagIndex}
-                            label={tag}
-                            size="small"
-                            variant="outlined"
-                            sx={{ fontSize: '0.7rem' }}
-                          />
-                        ))}
-                        {app.metadata.tags.length > 3 && (
-                          <Chip
-                            label={`+${app.metadata.tags.length - 3}`}
-                            size="small"
-                            variant="outlined"
-                            sx={{ fontSize: '0.7rem' }}
-                          />
-                        )}
-                      </Box>
-                    )}
-
-                    {/* Category and Release Date */}
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      {app.metadata.category && (
-                        <Chip
-                          label={app.metadata.category}
-                          size="small"
-                          color="primary"
-                          variant="filled"
-                          sx={{ fontSize: '0.7rem' }}
-                        />
-                      )}
-                      <Typography variant="caption" color="textSecondary">
-                        {new Date(app.metadata.release_date).toLocaleDateString()}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </Grid2>
-              ))}
-            </Grid2>
-          )}
-        </DialogContent>
-
-        <DialogActions>
-          <Button onClick={handleCloseCatalog}>Close</Button>
-        </DialogActions>
-      </Dialog>
     </div>
   )
 }

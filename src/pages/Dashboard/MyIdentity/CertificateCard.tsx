@@ -10,7 +10,8 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  Avatar
+  Avatar,
+  IconButton
 } from '@mui/material'
 import { Img } from '@bsv/uhrp-react'
 import CounterpartyChip from '../../../components/CounterpartyChip'
@@ -18,18 +19,21 @@ import { DEFAULT_APP_ICON } from '../../../constants/popularApps'
 import { useHistory } from 'react-router-dom'
 import { WalletContext } from '../../../WalletContext'
 import { CertificateDefinitionData, CertificateFieldDescriptor, IdentityCertificate, RegistryClient } from '@bsv/sdk'
+import DeleteIcon from '@mui/icons-material/Delete'
 
 // Props for the CertificateCard component.
 interface CertificateCardProps {
   certificate: IdentityCertificate
   onClick?: (event: React.MouseEvent<HTMLDivElement>) => void
   clickable?: boolean
+  canRevoke?: boolean
+  onRevoke?: (certificate: IdentityCertificate) => void
 }
 
 // Props for the CertificateDetailsModal component.
 interface CertificateDetailsModalProps {
   open: boolean
-  onClose: () => void
+  onClose: (event?: React.SyntheticEvent | Event) => void
   fieldDetails: { [key: string]: CertificateFieldDescriptor }
   actualData: { [key: string]: any }
 }
@@ -38,23 +42,50 @@ interface CertificateDetailsModalProps {
 const CertificateCard: React.FC<CertificateCardProps> = ({
   certificate,
   onClick,
-  clickable = true
+  clickable = true,
+  canRevoke = false,
+  onRevoke
 }) => {
   const history = useHistory()
   const [certName, setCertName] = useState<string>('Unknown Cert')
   const [iconURL, setIconURL] = useState<string>(DEFAULT_APP_ICON)
   const [description, setDescription] = useState<string>('')
   const [fields, setFields] = useState<{ [key: string]: CertificateFieldDescriptor }>({})
-  const { managers, settings } = useContext(WalletContext)
+  const { managers, settings, adminOriginator } = useContext(WalletContext)
   const [modalOpen, setModalOpen] = useState<boolean>(false)
+  const [isRevoked, setIsRevoked] = useState<boolean>(false)
   const registrant = new RegistryClient(managers.walletManager)
 
   // Handle modal actions
   const handleModalOpen = () => {
     setModalOpen(true)
   }
-  const handleModalClose = () => {
+  const handleModalClose = (event?: React.SyntheticEvent | Event) => {
+    if (event) {
+      event.stopPropagation()
+    }
     setModalOpen(false)
+  }
+
+  // Handle certificate revocation
+  const handleRelinquishCertificate = async () => {
+    try {
+      await managers.permissionsManager.relinquishCertificate({
+        type: certificate.type,
+        serialNumber: certificate.serialNumber,
+        certifier: certificate.certifier
+      }, adminOriginator)
+
+      // Set the certificate as revoked locally
+      setIsRevoked(true)
+
+      // Notify parent component about the revocation
+      if (onRevoke) {
+        onRevoke(certificate)
+      }
+    } catch (error) {
+      console.error('Error revoking certificate:', error)
+    }
   }
 
   useEffect(() => {
@@ -117,58 +148,89 @@ const CertificateCard: React.FC<CertificateCardProps> = ({
     }
   }
 
+  // If the certificate has been revoked, don't render anything
+  if (isRevoked) {
+    return null
+  }
+
   return (
-    <Card>
+    <Card
+      sx={{
+        cursor: clickable ? 'pointer' : 'default',
+        transition: 'all 0.3s ease',
+        '&:hover': clickable ? {
+          boxShadow: 3,
+          transform: 'translateY(-2px)'
+        } : {},
+        position: 'relative'
+      }}
+      onClick={handleClick}
+    >
       <CardContent>
-        <Box
-          onClick={handleClick}
-          style={{
-            cursor: clickable ? 'pointer' : 'default',
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'start',
-            flex: 1
-          }}
-        >
-          <Img
-            src={iconURL}
-            style={{ width: 50, height: 50 }}
-          />
-          <Box padding="0 0 0.5em 0.5em">
-            <Typography variant="h5">{certName}</Typography>
-            <Typography variant="body1" fontSize="0.85em">
+        {/* Revoke button - only shown when canRevoke is true */}
+        {canRevoke && (
+          <Box sx={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            zIndex: 1
+          }}>
+            <IconButton
+              color="primary"
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation() // Prevent card click
+                handleRelinquishCertificate()
+              }}
+              aria-label="revoke certificate"
+            >
+              <DeleteIcon />
+            </IconButton>
+          </Box>
+        )}
+
+        <Grid container spacing={2} alignItems="center">
+          <Grid item>
+            <Avatar sx={{ width: 56, height: 56 }}>
+              <Img
+                style={{ width: '75%', height: '75%' }}
+                src={iconURL}
+              />
+            </Avatar>
+          </Grid>
+          <Grid item xs>
+            <Typography variant="h6" component="h3" gutterBottom>
+              {certName}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" paragraph>
               {description}
             </Typography>
-          </Box>
+            <CounterpartyChip
+              counterparty={certificate.certifier}
+              label="Issuer"
+            />
+          </Grid>
+        </Grid>
+
+        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="body2" color="text.secondary">
+            Type: {certificate.type}
+          </Typography>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleModalOpen()
+            }}
+          >
+            View Details
+          </Button>
         </Box>
-        {certificate && certificate.certifier ? (
-          <div>
-            <Box display="flex" alignItems="center">
-              <Box flexGrow={1}>
-                <p
-                  style={{
-                    fontSize: '0.9em',
-                    fontWeight: 'normal',
-                    marginRight: '1em'
-                  }}
-                >
-                  Issuer:
-                </p>
-              </Box>
-              <Box sx={{ pb: 1 }}>
-                <CounterpartyChip size={0.89} counterparty={certificate.certifier} clickable />
-              </Box>
-            </Box>
-          </div>
-        ) : (
-          ''
-        )}
-        <Button onClick={handleModalOpen} color="primary">
-          View Details
-        </Button>
+
         <CertificateDetailsModal
           open={modalOpen}
-          onClose={handleModalClose}
+          onClose={(event) => handleModalClose(event)}
           fieldDetails={fields}
           actualData={certificate.decryptedFields || {}}
         />
@@ -274,7 +336,10 @@ const CertificateDetailsModal: React.FC<CertificateDetailsModalProps> = ({
         {Object.keys(mergedFields).length} field(s) available
       </Typography>
       <DialogActions>
-        <Button onClick={onClose} color="primary">
+        <Button onClick={(e) => {
+          e.stopPropagation()
+          onClose(e)
+        }} color="primary">
           Close
         </Button>
       </DialogActions>

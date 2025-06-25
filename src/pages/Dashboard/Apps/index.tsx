@@ -183,10 +183,14 @@ const Apps: React.FC = () => {
         <Typography variant="body1" color="textSecondary" sx={{ mb: 2 }}>
           Browse and manage your application permissions.
         </Typography>
-        <FormControl sx={{ width: '100%' }}>
+        <FormControl sx={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
           <TextField
             variant='outlined'
-            fullWidth
             value={search}
             onChange={handleSearchChange}
             placeholder='Search'

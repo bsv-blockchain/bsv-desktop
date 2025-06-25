@@ -68,13 +68,29 @@ const Apps: React.FC = () => {
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setSearch(value)
-    if (fuseInstance) {
-      if (value === '') {
-        setFilteredApps(apps)
-      } else {
-        const results = fuseInstance.search(value)
-        setFilteredApps(results.map(result => result.item))
-      }
+    
+    // Apply search immediately, with or without Fuse
+    applySearch(value, apps, fuseInstance)
+  }
+
+  // Separate function to apply search logic
+  const applySearch = (searchValue: string, appList: AppData[], fuse: Fuse<AppData> | null) => {
+    if (searchValue === '') {
+      setFilteredApps(appList)
+      return
+    }
+
+    if (fuse) {
+      // Use Fuse for fuzzy search when available
+      const results = fuse.search(searchValue)
+      setFilteredApps(results.map(result => result.item))
+    } else {
+      // Fallback to simple string matching when Fuse isn't ready
+      const filtered = appList.filter(app => 
+        app.appName.toLowerCase().includes(searchValue.toLowerCase()) ||
+        app.domain.toLowerCase().includes(searchValue.toLowerCase())
+      )
+      setFilteredApps(filtered)
     }
   }
 
@@ -144,7 +160,8 @@ const Apps: React.FC = () => {
 
           if (parsedAppData) {
             setApps(parsedAppData)
-            setFilteredApps(parsedAppData)
+            // Apply current search to cached data (without Fuse initially)
+            applySearch(search, parsedAppData, null)
           } else {
             setLoading(true)
           }
@@ -158,11 +175,12 @@ const Apps: React.FC = () => {
           window.localStorage.setItem(cachedAppsKey, JSON.stringify(parsedAppData))
 
           setApps(parsedAppData)
-          setFilteredApps(parsedAppData)
-
           // Initialize Fuse
           const fuse = new Fuse(parsedAppData, options)
           setFuseInstance(fuse)
+          // Re-apply current search with new data and Fuse instance
+          applySearch(search, parsedAppData, fuse)
+
         } catch (error) {
           console.error(error)
         }

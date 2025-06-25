@@ -27,7 +27,8 @@
   },
   "dependencies": {
     "@bsv/uhrp-react": "^1.0.1",
-    "libphonenumber-js": "^1.12.6"
+    "libphonenumber-js": "^1.12.6",
+    "metanet-apps": "^1.0.4"
   },
   "peerDependencies": {
     "@bsv/sdk": "^1.6.0",

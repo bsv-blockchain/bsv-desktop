@@ -5,7 +5,7 @@ import { withRouter, RouteComponentProps } from 'react-router-dom'
 import makeStyles from '@mui/styles/makeStyles'
 import style from './style'
 import { generateDefaultIcon } from '../../constants/popularApps'
-import { useTheme } from '@mui/styles'
+import { useTheme } from '@mui/material/styles'
 import ShoppingBasket from '@mui/icons-material/ShoppingBasket'
 import { WalletContext } from '../../WalletContext'
 import { RegistryClient } from '@bsv/sdk'
@@ -121,27 +121,33 @@ const BasketChip: React.FC<BasketChipProps> = ({
       }}>
         <Typography variant="body1" fontWeight="bold">Basket:</Typography>
         <Chip
-          style={(theme as any).templates.chip({ size })}
-          sx={{
-            '& .MuiChip-label': {
-              width: '100% !important'
-            }
+          style={theme.templates?.chip ? theme.templates.chip({ size }) : {
+            height: `${size * 32}px`,
+            minHeight: `${size * 32}px`,
+            backgroundColor: 'transparent',
+            borderRadius: '16px',
+            padding: '8px',
+            margin: '4px'
           }}
+          onDelete={onCloseClick}
+          deleteIcon={canRevoke ? <CloseIcon /> : <></>}
+          sx={{ '& .MuiTouchRipple-root': { display: clickable ? 'block' : 'none' } }}
           label={
-            <div style={(theme as any).templates.chipLabel}>
-              <span style={(theme as any).templates.chipLabelTitle({ size })}>
-                <b>{basketName}</b>
+            <div style={theme.templates?.chipLabel || { display: 'flex', flexDirection: 'column' }}>
+              <span style={theme.templates?.chipLabelTitle ? theme.templates.chipLabelTitle({ size }) : {
+                fontSize: `${Math.max(size * 0.8, 0.8)}rem`,
+                fontWeight: '500'
+              }}>
+                {basketName}
               </span>
-              <span style={(theme as any).templates.chipLabelSubtitle}>
-                {lastAccessed || description}
+              <span style={theme.templates?.chipLabelSubtitle || {
+                fontSize: '0.7rem',
+                opacity: 0.7
+              }}>
+                {basketId}
               </span>
             </div>
           }
-          onDelete={() => {
-            onCloseClick()
-          }}
-          deleteIcon={canRevoke ? <CloseIcon /> : <></>}
-          // disableRipple={!clickable}
           icon={
             <Badge
               overlap='circular'

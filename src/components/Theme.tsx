@@ -8,6 +8,7 @@ import {
 } from '@mui/material';
 import { StylesProvider } from '@mui/styles';
 import { WalletContext } from '../WalletContext';
+import { CSSProperties } from 'react';
 
 // Define custom theme types
 declare module '@mui/material/styles' {
@@ -38,10 +39,7 @@ declare module '@mui/material/styles' {
         padding: string | number;
         margin: string | number;
       };
-      chipLabel: {
-        display: string;
-        flexDirection: string;
-      };
+      chipLabel: CSSProperties;
       chipLabelTitle: (props: { size: number }) => {
         fontSize: string | number;
         fontWeight: string;
@@ -84,10 +82,7 @@ declare module '@mui/material/styles' {
         padding?: string | number;
         margin?: string | number;
       };
-      chipLabel?: {
-        display?: string;
-        flexDirection?: string;
-      };
+      chipLabel?: CSSProperties;
       chipLabelTitle?: (props: { size: number }) => {
         fontSize?: string | number;
         fontWeight?: string;
@@ -115,24 +110,26 @@ export function AppThemeProvider({ children }: ThemeProps) {
   const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
   const { settings } = useContext(WalletContext);
 
+  console.log('current settings in Theme view', settings)
+
   const theme = useMemo(() => {
     // Determine the mode based on user settings or system preferences
-    let mode: PaletteMode = 'light';
-    
-    // Check if user has explicitly set a theme preference
-    if (settings?.theme?.mode) {
-      if (settings.theme.mode === 'system') {
-        // Use system preference when set to 'system'
-        mode = prefersDarkMode ? 'dark' : 'light';
-      } else if (settings.theme.mode === 'dark' || settings.theme.mode === 'light') {
-        // Use explicit user preference (ensuring it's a valid PaletteMode)
-        mode = settings.theme.mode;
-      }
-    } else {
-      // Fall back to system preference if no setting exists
-      mode = prefersDarkMode ? 'dark' : 'light';
-    }
-    
+    let mode: PaletteMode = 'dark';
+
+    // // Check if user has explicitly set a theme preference
+    // if (settings?.theme?.mode) {
+    //   if (settings.theme.mode === 'system') {
+    //     // Use system preference when set to 'system'
+    //     mode = prefersDarkMode ? 'dark' : 'light';
+    //   } else if (settings.theme.mode === 'dark' || settings.theme.mode === 'light') {
+    //     // Use explicit user preference (ensuring it's a valid PaletteMode)
+    //     mode = settings.theme.mode;
+    //   }
+    // } else {
+    //   // Fall back to system preference if no setting exists
+    //   mode = prefersDarkMode ? 'dark' : 'light';
+    // }
+
     return createTheme({
       approvals: {
         protocol: '#86c489',
@@ -208,7 +205,7 @@ export function AppThemeProvider({ children }: ThemeProps) {
           styleOverrides: {
             body: {
               backgroundColor: mode === 'light' ? '#FFFFFF' : '#1D2125',
-              backgroundImage: mode === 'light' 
+              backgroundImage: mode === 'light'
                 ? `linear-gradient(45deg, rgba(27, 54, 93, 0.05), rgba(44, 82, 130, 0.05))`
                 : `linear-gradient(45deg, rgba(27, 54, 93, 0.1), rgba(44, 82, 130, 0.1))`,
               backgroundSize: 'cover',
@@ -281,6 +278,42 @@ export function AppThemeProvider({ children }: ThemeProps) {
               borderRadius: 8,
             }
           }
+        },
+        MuiDialog: {
+          styleOverrides: {
+            paper: {
+              backgroundImage: 'none',
+              backgroundColor: mode === 'light' ? '#FFFFFF' : '#1D2125',
+              color: mode === 'light' ? '#4A4A4A' : '#FFFFFF',
+              borderRadius: 8,
+              overflow: 'hidden'
+            }
+          }
+        },
+        MuiDialogTitle: {
+          styleOverrides: {
+            root: {
+              backgroundColor: mode === 'light' ? '#1B365D' : '#1D2125',
+              color: '#FFFFFF',
+              borderBottom: `1px solid ${mode === 'light' ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.12)'}`
+            }
+          }
+        },
+        MuiDialogContent: {
+          styleOverrides: {
+            root: {
+              backgroundColor: mode === 'light' ? '#FFFFFF' : '#1D2125',
+              color: mode === 'light' ? '#4A4A4A' : '#FFFFFF'
+            }
+          }
+        },
+        MuiDialogActions: {
+          styleOverrides: {
+            root: {
+              backgroundColor: mode === 'light' ? '#F6F6F6' : '#1D2125',
+              borderTop: `1px solid ${mode === 'light' ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.12)'}`
+            }
+          }
         }
       },
       shape: {
@@ -313,8 +346,8 @@ export function AppThemeProvider({ children }: ThemeProps) {
           margin: '4px'
         }),
         chipLabel: {
-          display: 'flex',
-          flexDirection: 'column',
+          display: 'flex' as const,
+          flexDirection: 'column' as const,
         },
         chipLabelTitle: ({ size }) => ({
           fontSize: `${Math.max(size * 0.8, 0.8)}rem`,

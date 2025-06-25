@@ -3,7 +3,7 @@ import { Chip, Avatar, Stack, Typography, Divider, Box } from '@mui/material'
 import { withRouter, RouteComponentProps } from 'react-router-dom'
 import CloseIcon from '@mui/icons-material/Close'
 import makeStyles from '@mui/styles/makeStyles'
-import { useTheme } from '@mui/styles'
+import { useTheme } from '@mui/material/styles'
 import style from './style'
 import { deterministicImage } from '../../utils/deterministicImage'
 import CounterpartyChip from '../CounterpartyChip/index'
@@ -49,7 +49,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
   backgroundColor = 'transparent'
 }) => {
   const classes = useStyles()
-  const theme: any = useTheme()
+  const theme = useTheme()
 
   const navToProtocolDocumentation = (e: any) => {
     if (clickable) {
@@ -172,7 +172,14 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
       }}>
         <Typography variant="body1" fontWeight="bold">Protocol:</Typography>
         <Chip
-          style={theme.templates.chip({ size, backgroundColor })}
+          style={theme.templates?.chip ? theme.templates.chip({ size, backgroundColor }) : {
+            height: `${size * 32}px`,
+            minHeight: `${size * 32}px`,
+            backgroundColor: backgroundColor || 'transparent',
+            borderRadius: '16px',
+            padding: '8px',
+            margin: '4px'
+          }}
           icon={
             <Avatar
               src={iconURL}
@@ -186,8 +193,11 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
             />
           }
           label={
-            <div style={(theme as any).templates.chipLabel}>
-              <span style={(theme as any).templates.chipLabelTitle({ size })}>
+            <div style={theme.templates?.chipLabel || { display: 'flex', flexDirection: 'column' }}>
+              <span style={theme.templates?.chipLabelTitle ? theme.templates.chipLabelTitle({ size }) : {
+                fontSize: `${Math.max(size * 0.8, 0.8)}rem`,
+                fontWeight: '500'
+              }}>
                 {protocolID}
               </span>
             </div>

@@ -4,7 +4,7 @@ import { Avatar, Badge, Chip, Divider, Icon, Stack, Typography } from '@mui/mate
 import { withRouter, RouteComponentProps } from 'react-router-dom'
 import makeStyles from '@mui/styles/makeStyles'
 import CloseIcon from '@mui/icons-material/Close'
-import { useTheme } from '@mui/styles'
+import { useTheme } from '@mui/material/styles'
 import style from './style'
 import PlaceholderAvatar from '../PlaceholderAvatar'
 import deterministicImage from '../../utils/deterministicImage'
@@ -106,67 +106,50 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
           {label}:
         </Typography>
         <Chip
-          component="div"
-          style={(theme as any).templates.chip({ size })}
+          style={theme.templates?.chip ? theme.templates.chip({ size }) : {
+            height: `${size * 32}px`,
+            minHeight: `${size * 32}px`,
+            backgroundColor: 'transparent',
+            borderRadius: '16px',
+            padding: '8px',
+            margin: '4px'
+          }}
           onDelete={onCloseClick}
           deleteIcon={canRevoke ? <CloseIcon /> : <></>}
           sx={{ '& .MuiTouchRipple-root': { display: clickable ? 'block' : 'none' } }}
+          icon={
+            identity.avatarURL && !avatarError ? (
+              <Avatar alt={identity.name} sx={{ width: '2.5em', height: '2.5em' }}>
+                <img
+                  src={identity.avatarURL}
+                  alt={identity.name}
+                  className={classes.table_picture}
+                  onError={handleAvatarError}
+                  loading="lazy"
+                />
+              </Avatar>
+            ) : (
+              <PlaceholderAvatar
+                name={identity.name}
+                sx={{ width: '2.5em', height: '2.5em' }}
+              />
+            )
+          }
           label={
-            <div style={(theme as any).templates.chipLabel}>
-              <span style={(theme as any).templates.chipLabelTitle({ size })}>
+            <div style={theme.templates?.chipLabel || { display: 'flex', flexDirection: 'column' }}>
+              <span style={theme.templates?.chipLabelTitle ? theme.templates.chipLabelTitle({ size }) : {
+                fontSize: `${Math.max(size * 0.8, 0.8)}rem`,
+                fontWeight: '500'
+              }}>
                 {counterparty === 'self' ? 'Self' : identity.name}
               </span>
-              <span style={(theme as any).templates.chipLabelSubtitle}>
+              <span style={theme.templates?.chipLabelSubtitle || {
+                fontSize: '0.7rem',
+                opacity: 0.7
+              }}>
                 {counterparty === 'self' ? '' : (identity.abbreviatedKey || `${counterparty.substring(0, 10)}...`)}
               </span>
             </div>
-          }
-          icon={
-            <Badge
-              overlap='circular'
-              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-              badgeContent={
-                !badgeError ? (
-                  <Icon style={{ width: '20px', height: '20px', backgroundColor: 'white', borderRadius: '20%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <img
-                      style={{ width: '95%', height: '95%', objectFit: 'cover', borderRadius: '20%' }}
-                      src={identity.badgeIconURL}
-                      alt={`${identity.badgeLabel} badge`}
-                      onError={handleBadgeError}
-                      loading="lazy"
-                    />
-                  </Icon>
-                ) : (
-                  <Avatar
-                    sx={{
-                      width: '20px',
-                      height: '20px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                      fontSize: '10px'
-                    }}
-                  >
-                    ID
-                  </Avatar>
-                )
-              }
-            >
-              {!avatarError ? (
-                <Avatar alt={identity.name} sx={{ width: '2.5em', height: '2.5em' }}>
-                  <img
-                    src={identity.avatarURL}
-                    alt={identity.name}
-                    className={classes.table_picture}
-                    onError={handleAvatarError}
-                    loading="lazy"
-                  />
-                </Avatar>
-              ) : (
-                <PlaceholderAvatar
-                  name={identity.name !== 'Unknown' ? identity.name : counterparty.substring(0, 10)}
-                  size={2.5 * 16}
-                />
-              )}
-            </Badge>
           }
           onClick={e => {
             if (clickable) {

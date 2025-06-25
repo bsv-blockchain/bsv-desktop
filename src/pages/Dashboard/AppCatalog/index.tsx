@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   Typography,
   Container,
@@ -8,7 +8,8 @@ import {
   Chip,
   Card,
   Modal,
-  IconButton
+  IconButton,
+  FormControl
 } from '@mui/material'
 import Grid2 from '@mui/material/Grid2'
 import { makeStyles } from '@mui/styles'
@@ -52,6 +53,9 @@ const AppCatalog: React.FC = () => {
   const [activeScreenshot, setActiveScreenshot] = useState<number>(0)
   const [openModal, setOpenModal] = useState(false)
   const [modalImage, setModalImage] = useState<string>('')
+  const [isExpanded, setIsExpanded] = useState<boolean>(false)
+
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // Configuration for Fuse
   const options = {
@@ -93,6 +97,20 @@ const AppCatalog: React.FC = () => {
         const results = fuseInstance.search(value)
         setFilteredCatalogApps(results.map(result => result.item))
       }
+    }
+  }
+
+  const handleFocus = () => {
+    setIsExpanded(true)
+  }
+
+  const handleBlur = () => {
+    setIsExpanded(false)
+  }
+
+  const handleIconClick = () => {
+    if (inputRef.current) {
+      inputRef.current.focus()
     }
   }
 
@@ -146,17 +164,43 @@ const AppCatalog: React.FC = () => {
 
           <Container>
             {/* Search */}
-            <Box sx={{ mb: 3 }}>
-              <TextField
-                fullWidth
-                placeholder="Search apps by name, description, category or tags..."
-                variant="outlined"
-                value={search}
-                onChange={handleSearchChange}
-                InputProps={{
-                  startAdornment: <SearchIcon sx={{ mr: 1, color: 'action.active' }} />
-                }}
-              />
+            <Box sx={{ mb: 3, display: 'flex', justifyContent: 'flex-start' }}>
+              <FormControl sx={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'flex-start'
+              }}>
+                <TextField
+                  variant='outlined'
+                  value={search}
+                  onChange={handleSearchChange}
+                  placeholder='Search apps by name, description, category or tags...'
+                  onFocus={handleFocus}
+                  onBlur={handleBlur}
+                  inputRef={inputRef}
+                  slotProps={{
+                    input: {
+                      startAdornment: (
+                        <SearchIcon
+                          onClick={handleIconClick}
+                          style={{ marginRight: '8px', cursor: 'pointer' }}
+                        />
+                      ),
+                      sx: {
+                        borderRadius: '25px',
+                        height: '3em'
+                      }
+                    }
+                  }}
+                  sx={{
+                    marginTop: '24px',
+                    marginBottom: '16px',
+                    width: isExpanded ? 'calc(70%)' : '20em',
+                    transition: 'width 0.3s ease'
+                  }}
+                />
+              </FormControl>
             </Box>
 
             {/* App Grid */}
@@ -181,6 +225,9 @@ const AppCatalog: React.FC = () => {
                         borderColor: 'divider',
                         borderRadius: 2,
                         cursor: 'pointer',
+                        height: 240, // Fixed height for all cards
+                        display: 'flex',
+                        flexDirection: 'column',
                         transition: 'all 0.2s ease-in-out',
                         '&:hover': {
                           borderColor: 'primary.main',
@@ -226,13 +273,14 @@ const AppCatalog: React.FC = () => {
                           textOverflow: 'ellipsis',
                           display: '-webkit-box',
                           WebkitLineClamp: 3,
-                          WebkitBoxOrient: 'vertical'
+                          WebkitBoxOrient: 'vertical',
+                          flexGrow: 1 // This will make the description take up available space
                         }}
                       >
                         {app.metadata.description}
                       </Typography>
 
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2 }}>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2, mt: 'auto' }}>
                         {app.metadata.tags && app.metadata.tags.slice(0, 3).map((tag, index) => (
                           <Chip
                             key={index}
@@ -293,10 +341,10 @@ const AppCatalog: React.FC = () => {
                   <Img
                     src={selectedApp.metadata.banner_image_url}
                     alt={`${selectedApp.metadata.name} banner`}
-                    style={{ 
+                    style={{
                       height: '200px',
                       width: '100%',
-                      objectFit: 'cover' 
+                      objectFit: 'cover'
                     }}
                   />
                 </Card>
@@ -401,10 +449,10 @@ const AppCatalog: React.FC = () => {
                 </Typography>
                 <Box sx={{ position: 'relative' }}>
                   {/* Horizontal scrollable carousel */}
-                  <Box 
-                    sx={{ 
-                      display: 'flex', 
-                      overflowX: 'auto', 
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      overflowX: 'auto',
                       overflowY: 'hidden',
                       pb: 2,
                       scrollBehavior: 'smooth',
@@ -423,10 +471,10 @@ const AppCatalog: React.FC = () => {
                     }}
                   >
                     {selectedApp.metadata.screenshot_urls.map((screenshot, index) => (
-                      <Box 
-                        key={index} 
-                        sx={{ 
-                          mr: 2, 
+                      <Box
+                        key={index}
+                        sx={{
+                          mr: 2,
                           minWidth: '400px',
                           flexShrink: 0,
                           transition: 'transform 0.2s ease, box-shadow 0.2s ease',
@@ -436,8 +484,8 @@ const AppCatalog: React.FC = () => {
                           }
                         }}
                       >
-                        <Card 
-                          sx={{ 
+                        <Card
+                          sx={{
                             borderRadius: 3,
                             overflow: 'hidden',
                             border: index === activeScreenshot ? '2px solid' : '1px solid',
@@ -447,11 +495,11 @@ const AppCatalog: React.FC = () => {
                           <Img
                             src={screenshot}
                             alt={`${selectedApp.metadata.name} screenshot ${index + 1}`}
-                            style={{ 
+                            style={{
                               height: '400px',
                               width: '400px',
-                              objectFit: 'cover', 
-                              cursor: 'pointer' 
+                              objectFit: 'cover',
+                              cursor: 'pointer'
                             }}
                             onClick={() => {
                               setActiveScreenshot(index)
@@ -463,11 +511,11 @@ const AppCatalog: React.FC = () => {
                       </Box>
                     ))}
                   </Box>
-                  
+
                   {/* Dot indicators */}
-                  <Box sx={{ 
-                    display: 'flex', 
-                    justifyContent: 'center', 
+                  <Box sx={{
+                    display: 'flex',
+                    justifyContent: 'center',
                     mt: 2,
                     gap: 1
                   }}>

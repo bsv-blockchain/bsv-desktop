@@ -1,4 +1,4 @@
-import React, { ReactNode, useContext, useMemo } from 'react';
+import React, { ReactNode, useContext, useMemo, useEffect, useState } from 'react';
 import {
   ThemeProvider,
   createTheme,
@@ -119,16 +119,56 @@ export function AppThemeProvider({ children }: ThemeProps) {
   /* Detect OS-level colour-scheme preference */
   const prefersDarkMode = useMediaQuery('(prefers-color-scheme: light)');
 
+  // Track localStorage updates to trigger theme re-calculation
+  const [localStorageVersion, setLocalStorageVersion] = useState(0);
+
   /* Decide the palette mode that should be in force */
   const mode: PaletteMode = useMemo(() => {
-    const pref = settings?.theme?.mode ?? 'system';
-    console.log('PREF', pref)
+    // Always check localStorage first, then fall back to WalletContext settings
+    let pref = settings?.theme?.mode ?? 'system';
+
+    try {
+      const cachedTheme = localStorage.getItem('userTheme');
+      if (cachedTheme && ['light', 'dark', 'system'].includes(cachedTheme)) {
+        pref = cachedTheme;
+      } else {
+        // Update localStorage with the WalletContext value
+        if (pref) {
+          localStorage.setItem('userTheme', pref);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to access localStorage:', error);
+    }
 
     if (pref === 'system') {
       return prefersDarkMode ? 'dark' : 'light';
     }
     return pref as PaletteMode; // 'light' or 'dark'
-  }, [settings?.theme?.mode, prefersDarkMode]);
+  }, [settings?.theme?.mode, prefersDarkMode, localStorageVersion]);
+
+  // Update localStorage only when WalletContext settings actually change (not on every render)
+  const [lastWalletTheme, setLastWalletTheme] = useState<string | undefined>(settings?.theme?.mode);
+  
+  useEffect(() => {
+    // Only update localStorage if WalletContext theme actually changed from what we last saw
+    const currentWalletTheme = settings?.theme?.mode;
+    
+    if (currentWalletTheme && currentWalletTheme !== lastWalletTheme) {
+      try {
+        localStorage.setItem('userTheme', currentWalletTheme);
+        // Trigger useMemo to re-run by updating the version
+        setLocalStorageVersion(prev => prev + 1);
+      } catch (error) {
+        console.warn('Failed to update localStorage:', error);
+      }
+      
+      setLastWalletTheme(currentWalletTheme);
+    } else if (!lastWalletTheme && currentWalletTheme) {
+      // First time WalletContext loads
+      setLastWalletTheme(currentWalletTheme);
+    }
+  }, [settings?.theme?.mode, lastWalletTheme]);
 
   /* Re-compute the theme whenever `mode` flips */
   const theme = useMemo(() => {

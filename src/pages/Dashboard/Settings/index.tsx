@@ -104,9 +104,7 @@ const Settings = () => {
 
       setSelectedTheme(themeOption);
 
-      toast.success('Theme updated!', {
-        position: 'top-center'
-      });
+      toast.success('Theme updated!');
     } catch (e) {
       toast.error(e.message);
       setSelectedTheme(settings?.theme?.mode || 'system');
@@ -127,9 +125,7 @@ const Settings = () => {
         currency,
       });
 
-      toast.success('Currency updated!', {
-        position: 'top-center'
-      });
+      toast.success('Currency updated!');
     } catch (e) {
       toast.error(e.message);
       setSelectedCurrency(settings?.currency || 'BSV');

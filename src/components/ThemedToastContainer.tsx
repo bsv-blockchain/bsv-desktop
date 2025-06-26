@@ -4,9 +4,21 @@ import { useTheme } from '@mui/material'
 
 const ThemedToastContainer = () => {
   const theme = useTheme()
-  
+
   return (
-    <ToastContainer theme={theme.palette.mode === 'dark' ? 'dark' : 'light'} position='top-center' />
+    <ToastContainer
+      closeButton={true}
+      position="top-right"
+      autoClose={3000}
+      hideProgressBar={false}
+      newestOnTop
+      closeOnClick
+      rtl={false}
+      pauseOnFocusLoss
+      draggable
+      pauseOnHover
+      theme={theme.palette.mode === 'dark' ? 'dark' : 'light'}
+    />
   );
 };
 

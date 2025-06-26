@@ -9,6 +9,7 @@ import { useTheme } from '@mui/material/styles'
 import ShoppingBasket from '@mui/icons-material/ShoppingBasket'
 import { WalletContext } from '../../WalletContext'
 import { RegistryClient } from '@bsv/sdk'
+import { Img } from '@bsv/uhrp-react'
 
 const useStyles = makeStyles(style as any, {
   name: 'BasketChip'
@@ -196,11 +197,10 @@ const BasketChip: React.FC<BasketChipProps> = ({
                   backgroundColor: '#000000AF'
                 }}
               >
-                <img // Img (TODO: UHRP)
+                <Img
                   src={iconURL}
                   style={{ width: '75%', height: '75%' }}
                   className={classes.table_picture}
-                // confederacyHost={confederacyHost()}
                 />
               </Avatar>
             </Badge>

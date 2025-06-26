@@ -13,6 +13,7 @@ import {
 } from '@mui/material'
 import Grid2 from '@mui/material/Grid2'
 import { makeStyles } from '@mui/styles'
+import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import CloseIcon from '@mui/icons-material/Close'
@@ -154,11 +155,14 @@ const AppCatalog: React.FC = () => {
             title="App Catalog"
             subheading="Discover and explore apps from the Metanet ecosystem"
             icon="https://metanetapps.com/favicon.ico"
-            buttonTitle=""
-            onClick={() => { }}
+            buttonTitle="Add App"
+            buttonIcon={<AddIcon />}
+            onClick={() => {
+              openUrl('https://metanetapps.com')
+            }}
             history={history}
             showBackButton={true}
-            showButton={false}
+            showButton={true}
             onBackClick={handleBackToApps}
           />
 

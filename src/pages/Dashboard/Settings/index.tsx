@@ -95,7 +95,7 @@ const Settings = () => {
     try {
       setSettingsLoading(true);
 
-      updateSettings({
+      await updateSettings({
         ...settings,
         theme: {
           mode: themeOption
@@ -122,7 +122,7 @@ const Settings = () => {
       setSettingsLoading(true);
       setSelectedCurrency(currency);
 
-      updateSettings({
+      await updateSettings({
         ...settings,
         currency,
       });

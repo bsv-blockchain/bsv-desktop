@@ -922,6 +922,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     certificateRequests,
     protocolRequests,
     spendingRequests,
+    groupPermissionRequests,
     advanceBasketQueue,
     advanceCertificateQueue,
     advanceProtocolQueue,

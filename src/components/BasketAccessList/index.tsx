@@ -130,7 +130,7 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
       console.error('Failed to refresh grants:', error);
       toast.error(`Failed to load access list: ${(error as Error).message}`);
     }
-  }, [app, basket, limit, managers, adminOriginator, onEmptyList]);
+  }, [app, basket, limit]);
 
   const revokeAccess = async (grant: Grant) => {
     setCurrentAccessGrant(grant);

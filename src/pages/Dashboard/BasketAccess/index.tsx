@@ -54,14 +54,13 @@ const BasketAccess: React.FC = () => {
 
   useEffect(() => {
     const fetchBasketData = async () => {
-      if (!managers.walletManager || !basketId) return;
+      if (!managers.permissionsManager || !basketId) return;
 
       setLoading(true);
       setError(null);
       try {
         // We don't need to call listBasketAccess here since BasketAccessList component handles that
         // The BasketAccessList component will fetch and display permissions for this basket
-
         // Update the itemsInBasket state with the outputs
         const { outputs } = await managers.permissionsManager.listOutputs({
           basket: basketId,
@@ -106,7 +105,7 @@ const BasketAccess: React.FC = () => {
     };
 
     fetchBasketData();
-  }, [basketId, managers.walletManager]);
+  }, [basketId, managers.permissionsManager]);
 
   const handleExport = () => {
     if (!itemsInBasket) return;

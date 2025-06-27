@@ -122,11 +122,12 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
   const createSpendingAuthorization = async ({ limit: newLimit = limit }: { limit?: number }): Promise<void> => {
     toast.promise(
       (async () => {
-        // await managers.permissionsManager.grantPermission({
-        //   targetAppDomain: app,
-        //   amount: Math.round(newLimit / (usdPerBsv / 100000000)),
-        //   description: 'Create a spending limit'
-        // })
+        await managers.permissionsManager.ensureSpendingAuthorization({
+          originator: app,
+          satoshis: Math.round(newLimit / (usdPerBsv / 100000000)),
+          reason: 'Create a spending limit',
+          seekPermission: true
+        })
         await refreshAuthorizations()
       })(),
       {

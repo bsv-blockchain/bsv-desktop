@@ -14,6 +14,7 @@ import PageHeader from '../../../components/PageHeader'; // Assuming this compon
 import { WalletContext } from '../../../WalletContext';
 import BasketAccessList from '../../../components/BasketAccessList';
 import SpendingAuthorizationList from '../../../components/SpendingAuthorizationList';
+import CertificateAccessList from '../../../components/CertificateAccessList';
 
 // Placeholder type for App Data - adjust based on actual SDK response
 interface AppData {
@@ -212,16 +213,18 @@ const AppAccess: React.FC = () => {
       {
         tabValue === '3' && (
           <Box sx={{ p: 2 }}>
-            {/* --- CertificateAccessList Placeholder --- */}
-            <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
-              <Typography color="textSecondary">CertificateAccessList component needs to be created/refactored.</Typography>
-              {/* <CertificateAccessList
+            <CertificateAccessList
               app={appData.domain}
-              canRevoke
+              type='certificates'
+              itemsDisplayed='certificates'
               showEmptyList
-            /> */}
-            </Box>
-            {/* --- End Placeholder --- */}
+              canRevoke={true}
+              limit={1}
+              displayCount={true}
+              counterparty={appData.domain}
+              listHeaderTitle='Certificates'
+              onEmptyList={() => { }}
+            />
           </Box>
         )
       }

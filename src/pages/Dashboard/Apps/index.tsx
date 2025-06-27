@@ -68,7 +68,7 @@ const Apps: React.FC = () => {
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setSearch(value)
-    
+
     // Apply search immediately, with or without Fuse
     applySearch(value, apps, fuseInstance)
   }
@@ -86,7 +86,7 @@ const Apps: React.FC = () => {
       setFilteredApps(results.map(result => result.item))
     } else {
       // Fallback to simple string matching when Fuse isn't ready
-      const filtered = appList.filter(app => 
+      const filtered = appList.filter(app =>
         app.appName.toLowerCase().includes(searchValue.toLowerCase()) ||
         app.domain.toLowerCase().includes(searchValue.toLowerCase())
       )
@@ -263,7 +263,7 @@ const Apps: React.FC = () => {
         }}
       >
         {loading && 'Loading your apps...'}
-        {!loading && apps.length === 0 && 'You have no apps yet.'}
+        {!loading && apps.length === 0 && 'You have no recent apps yet.'}
         {!loading && apps.length !== 0 && filteredApps.length === 0 && 'No apps match your search.'}
       </Typography>
 

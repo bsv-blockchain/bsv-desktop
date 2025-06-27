@@ -81,19 +81,20 @@ const BasketAccess: React.FC = () => {
             documentationURL: location.state.documentationURL,
             iconURL: location.state.iconURL,
           });
-        } else {
-          // TODO: Replace with actual SDK call to get basket details by ID
-          // Example: const details = await managers.walletManager.getBasketDetails(basketId);
-          // Using placeholder data for now
-          const placeholderDetails: BasketDetails = {
-            id: basketId,
-            name: `Basket ${basketId.substring(0, 6)}...`,
-            description: 'This is a placeholder description for the basket. Details should be fetched from the wallet manager.',
-            documentationURL: 'https://docs.example.com/basket',
-            iconURL: '', // Add a default icon URL if available
-          };
-          setBasketDetails(placeholderDetails);
         }
+        // else {
+        //   // TODO: Replace with actual SDK call to get basket details by ID
+        //   // Example: const details = await managers.walletManager.getBasketDetails(basketId);
+        //   // Using placeholder data for now
+        //   const placeholderDetails: BasketDetails = {
+        //     id: basketId,
+        //     name: `Basket ${basketId.substring(0, 6)}...`,
+        //     description: 'This is a placeholder description for the basket. Details should be fetched from the wallet manager.',
+        //     documentationURL: 'https://docs.example.com/basket',
+        //     iconURL: '', // Add a default icon URL if available
+        //   };
+        //   setBasketDetails(placeholderDetails);
+        // }
 
       } catch (err: any) {
         console.error('Failed to fetch basket data:', err);
@@ -205,7 +206,6 @@ const BasketAccess: React.FC = () => {
             basket={id}
             itemsDisplayed='apps'
             canRevoke
-            displayCount
             showEmptyList
           />
         </Paper>
@@ -222,4 +222,3 @@ const BasketAccess: React.FC = () => {
 };
 
 export default BasketAccess;
-

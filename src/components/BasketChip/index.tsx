@@ -232,7 +232,7 @@ const BasketChip: React.FC<BasketChipProps> = ({
           <Stack sx={{
             height: '3em', width: '100%'
           }}>
-            {expires}
+            Expires: {expires}
           </Stack>
         </>}
     </Stack>

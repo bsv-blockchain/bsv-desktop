@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import {
+  Box,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogContentText,
   DialogActions,
   Button,
-  ListSubheader
+  ListSubheader,
+  CircularProgress
 } from '@mui/material';
 import makeStyles from '@mui/styles/makeStyles';
 import style from './style';
@@ -16,48 +18,19 @@ import { useHistory } from 'react-router-dom/cjs/react-router-dom.min';
 import AppChip from '../AppChip';
 import { formatDistance } from 'date-fns';
 import { WalletContext } from '../../WalletContext'
+import { PermissionToken } from '@bsv/wallet-toolbox-client';
 
 const useStyles = makeStyles(style, {
   name: 'BasketAccessList'
 });
 
-// Enhanced PermissionToken interface to represent both input and output formats
-interface PermissionToken {
-  id?: string;
-  originator?: string;
-  counterparty?: string;
-  basket?: string;
-  expiry?: number;
-  expires?: string;
-  tags?: Record<string, string>;
-  app?: string;
-  domain?: string;
-  accessGrantID?: string;
-  permissionGrant?: unknown;
-}
-
-// Our component's working Grant type that ensures we have the fields we need
-interface Grant extends PermissionToken {
-  domain?: string; // Will extract from app or originator if needed
-  expiry?: number; // Will convert from expires string if needed
-}
-
-interface AppWithGrants {
-  grant: any;
-  grants: { permissionGrant: any }[];
-}
-
 interface BasketAccessListProps {
   app?: string;
   basket?: string;
-  limit?: number;
-  securityLevel?: number;
   itemsDisplayed?: 'baskets' | 'apps';
-  canRevoke?: boolean;
-  displayCount?: boolean;
-  listHeaderTitle?: string;
   showEmptyList?: boolean;
-  onEmptyList?: () => void;
+  canRevoke?: boolean;
+  limit?: number;
 }
 
 /**
@@ -66,13 +39,10 @@ interface BasketAccessListProps {
 const BasketAccessList: React.FC<BasketAccessListProps> = ({
   app,
   basket,
-  limit,
   itemsDisplayed = 'baskets',
-  canRevoke = false,
-  displayCount = true,
-  listHeaderTitle,
   showEmptyList = false,
-  onEmptyList = () => { }
+  canRevoke = false,
+  limit = 10
 }) => {
   // Validate params
   if (itemsDisplayed === 'apps' && app) {
@@ -83,99 +53,85 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
     const e = new Error('Error in BasketAccessList: baskets cannot be displayed when providing a basket param! Please provide a valid app domain instead.');
     throw e;
   }
+  console.log('app', app);
 
-  const [currentApp, setCurrentApp] = useState<AppWithGrants | null>(null);
-  const [grants, setGrants] = useState<Grant[]>([]);
+  const { managers, adminOriginator } = useContext(WalletContext);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [listHeaderTitle, setListHeaderTitle] = useState<string | null>(null);
+
+  const [grants, setGrants] = useState<PermissionToken[]>([]);
   const [dialogOpen, setDialogOpen] = useState<boolean>(false);
-  const [currentAccessGrant, setCurrentAccessGrant] = useState<Grant | null>(null);
+  const [currentAccessGrant, setCurrentAccessGrant] = useState<PermissionToken | null>(null);
   const [dialogLoading, setDialogLoading] = useState<boolean>(false);
   const classes = useStyles();
   const history = useHistory();
-  const { managers, adminOriginator } = useContext(WalletContext)
 
-  const refreshGrants = useCallback(async () => {
+  const fetchPermissions = useCallback(async () => {
     if (!managers || !adminOriginator) return;
+    setLoading(true);
 
     try {
-      // Use the enhanced listBasketAccess method with basket parameter
       // Call the listBasketAccess API with the appropriate parameters
+      // If we are displaying baskets, we need to provide the app param
+      // If we are displaying apps, we need to provide the basket param
       const tokens = await managers.permissionsManager.listBasketAccess({
         basket: basket,
         originator: app
-      } as { basket?: string; originator?: string });
+      })
 
       // Transform tokens into grants with necessary display properties
       const grants = tokens.map((token: PermissionToken) => {
-        // Extract the domain from the token - may be in different fields based on context
-        const domain = token.originator || token.app || token.domain || 'unknown';
+        // Extract the domain from the token
+        const domain = token.originator || 'unknown';
 
-        // Calculate expiry based on token data
-        const expiry = token.expiry ||
-          (token.expires ? Math.floor(new Date(token.expires).getTime() / 1000) : undefined);
-
+        console.log('token.expiry', token.expiry);
         return {
           ...token,
           domain,
-          expiry,
-          // Use either explicit ID or fallback to accessGrantID
-          accessGrantID: (token as { id?: string }).id || token.accessGrantID || ''
-        } as Grant;
+          basket: (token as any).basketName, // TODO: Update permission token type in wallet toolbox!
+        };
       });
 
       setGrants(grants);
       if (grants.length === 0) {
-        onEmptyList();
+        setListHeaderTitle('No access grants found');
       }
     } catch (error) {
       console.error('Failed to refresh grants:', error);
       toast.error(`Failed to load access list: ${(error as Error).message}`);
+    } finally {
+      setLoading(false);
     }
   }, [app, basket, limit]);
 
-  const revokeAccess = async (grant: Grant) => {
+  const revokeAccess = async (grant?: PermissionToken) => {
+    try {
+      setDialogLoading(true);
+      if (grant) {
+        // Revoke the specific grant passed as parameter
+        await managers.permissionsManager.revokePermission(grant);
+      } else if (currentAccessGrant) {
+        // Revoke the current access grant from dialog
+        await managers.permissionsManager.revokePermission(currentAccessGrant);
+      }
+      // Refresh the list after revoking
+      await fetchPermissions();
+    } catch (error) {
+      console.error('Failed to revoke access:', error);
+    } finally {
+      setDialogLoading(false);
+      setDialogOpen(false);
+      setCurrentAccessGrant(null);
+    }
+  };
+
+  const openRevokeDialog = (grant: PermissionToken) => {
     setCurrentAccessGrant(grant);
     setDialogOpen(true);
   };
 
   const handleConfirm = async () => {
-    if (!managers || !adminOriginator) return;
-
-    try {
-      setDialogLoading(true);
-      if (currentAccessGrant) {
-        // Revoke the specific access grant
-        await managers.permissionsManager.denyPermission(
-          currentAccessGrant.accessGrantID
-        );
-      } else {
-        if (!currentApp || !currentApp.grant) {
-          const e = new Error('Unable to revoke permissions!');
-          throw e;
-        }
-        for (const permission of currentApp.grants) {
-          try {
-            // Revoke each permission in the app grants
-            await managers.permissionsManager.denyPermission(
-              permission.permissionGrant.accessGrantID
-            );
-          } catch (error) {
-            console.error(error);
-          }
-        }
-        setCurrentApp(null);
-      }
-
-      setCurrentAccessGrant(null);
-      setDialogOpen(false);
-      setDialogLoading(false);
-      refreshGrants();
-    } catch (e) {
-      toast.error(`Access may not have been revoked: ${(e as Error).message}`);
-      refreshGrants();
-      setCurrentAccessGrant(null);
-      setDialogOpen(false);
-      setDialogLoading(false);
-    }
+    await revokeAccess();
   };
 
   const handleDialogClose = () => {
@@ -184,8 +140,16 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
   };
 
   useEffect(() => {
-    refreshGrants();
-  }, [refreshGrants]);
+    fetchPermissions();
+  }, [fetchPermissions]);
+
+  if (loading) {
+    return (
+      <Box display='flex' justifyContent='center' p={3}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   if (grants.length === 0 && !showEmptyList) {
     return (<></>);
@@ -217,7 +181,7 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
             disabled={dialogLoading}
             onClick={handleConfirm}
           >
-            Revoke
+            {dialogLoading ? <CircularProgress size={24} color='inherit' /> : 'Revoke'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -232,18 +196,18 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
             {itemsDisplayed === 'apps' && (
               <div className={classes.basketContainer}>
                 <AppChip
-                  label={grant.domain || 'unknown'}
+                  label={grant.originator}
                   showDomain
                   onClick={(e: React.MouseEvent) => {
                     e.stopPropagation();
                     history.push({
-                      pathname: `/dashboard/app/${encodeURIComponent(grant.domain)}`,
+                      pathname: `/dashboard/app/${encodeURIComponent(grant.originator)}`,
                       state: {
-                        domain: grant.domain
+                        domain: grant.originator
                       }
                     });
                   }}
-                  onCloseClick={canRevoke ? () => { revokeAccess(grant); } : undefined}
+                  onCloseClick={canRevoke ? () => { openRevokeDialog(grant); } : undefined}
                   backgroundColor='default'
                   expires={grant.expiry ? formatDistance(new Date(grant.expiry * 1000), new Date(), { addSuffix: true }) : undefined}
                 />
@@ -253,12 +217,12 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
             {itemsDisplayed !== 'apps' && (
               <div style={{ marginRight: '0.4em' }}>
                 <BasketChip
-                  basketId={grant.basket}
-                  lastAccessed={grant.tags?.lastAccessed}
-                  domain={grant.domain}
+                  basketId={grant.basketName}
+                  // lastAccessed={grant.tags?.lastAccessed} // How can we get this data?
+                  domain={grant.originator}
                   clickable
-                  expires={formatDistance(new Date(grant.expiry * 1000), new Date(), { addSuffix: true })}
-                  onCloseClick={() => revokeAccess(grant)}
+                  expires={grant.expiry ? formatDistance(new Date(grant.expiry * 1000), new Date(), { addSuffix: true }) : undefined}
+                  onCloseClick={canRevoke ? () => openRevokeDialog(grant) : undefined}
                   canRevoke={canRevoke}
                 />
               </div>

@@ -12,6 +12,8 @@ import PageHeader from '../../../components/PageHeader'; // Assuming this compon
 // import BasketAccessList from '../../../components/BasketAccessList'; // Needs migration/creation
 // import CertificateAccessList from '../../../components/CertificateAccessList'; // Needs migration/creation
 import { WalletContext } from '../../../WalletContext';
+import BasketAccessList from '../../../components/BasketAccessList';
+import SpendingAuthorizationList from '../../../components/SpendingAuthorizationList';
 
 // Placeholder type for App Data - adjust based on actual SDK response
 interface AppData {
@@ -35,7 +37,7 @@ const AppAccess: React.FC = () => {
     // @ts-ignore - history might have custom property
     history.appAccessTab ? history.appAccessTab : '0'
   );
-  
+
   // State for app data
   const [appData, setAppData] = useState<AppData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -69,7 +71,7 @@ const AppAccess: React.FC = () => {
     const fetchAppData = async () => {
       // TODO: Replace fetchAndCacheAppData with WalletContext/SDK equivalent
       // This might involve managers.appManager or lookupManager.
-      if (!managers.walletManager) return; // Or relevant manager
+      if (!managers.permissionsManager) return; // Or relevant manager
 
       setLoading(true);
       setError(null);
@@ -78,7 +80,7 @@ const AppAccess: React.FC = () => {
         // Placeholder logic:
         const domain = originator;
         const url = domain.startsWith('http') ? domain : `https://${domain}`;
-        
+
         const placeholderAppData: AppData = {
           name: domain.includes('.') ? domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1) : domain,
           iconURL: DEFAULT_APP_ICON,
@@ -108,7 +110,7 @@ const AppAccess: React.FC = () => {
       // @ts-ignore - history might have custom property
       history.appAccessTab = undefined;
     };
-  }, [originator, managers.walletManager, history]);
+  }, [originator, managers.permissionsManager, history]);
 
   if (loading) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;
@@ -153,7 +155,7 @@ const AppAccess: React.FC = () => {
           </Typography>
         </Grid>
       </Grid>
-      
+
       <Tabs
         value={tabValue}
         onChange={handleTabChange}
@@ -167,7 +169,7 @@ const AppAccess: React.FC = () => {
         <Tab label='Baskets' value='2' />
         <Tab label='Certificates' value='3' />
       </Tabs>
-      
+
       {tabValue === '0' && (
         <Box sx={{ p: 2 }}>
           {/* --- ProtocolPermissionList Placeholder --- */}
@@ -182,50 +184,48 @@ const AppAccess: React.FC = () => {
           {/* --- End Placeholder --- */}
         </Box>
       )}
-      
+
       {tabValue === '1' && (
         <Box sx={{ p: 2 }}>
           {/* --- SpendingAuthorizationList Placeholder --- */}
-          <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
-            <Typography color="textSecondary">SpendingAuthorizationList component needs to be created/refactored.</Typography>
-            {/* <SpendingAuthorizationList
-              app={appData.domain}
-            /> */}
-          </Box>
+          {/* <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}> */}
+          <SpendingAuthorizationList
+            app={appData.domain}
+          />
+          {/* </Box> */}
           {/* --- End Placeholder --- */}
         </Box>
       )}
-      
+
       {tabValue === '2' && (
-        <Box sx={{ p: 2 }}>
-          {/* --- BasketAccessList Placeholder --- */}
-          <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
-            <Typography color="textSecondary">BasketAccessList component needs to be created/refactored.</Typography>
-            {/* <BasketAccessList
-              app={appData.domain}
-              showEmptyList
-              canRevoke
-            /> */}
-          </Box>
-          {/* --- End Placeholder --- */}
+        <Box sx={{ p: 4 }}>
+          <BasketAccessList
+            app={appData.domain}
+            itemsDisplayed='baskets'
+            showEmptyList
+            canRevoke
+          />
         </Box>
-      )}
-      
-      {tabValue === '3' && (
-        <Box sx={{ p: 2 }}>
-          {/* --- CertificateAccessList Placeholder --- */}
-          <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
-            <Typography color="textSecondary">CertificateAccessList component needs to be created/refactored.</Typography>
-            {/* <CertificateAccessList
+      )
+      }
+
+      {
+        tabValue === '3' && (
+          <Box sx={{ p: 2 }}>
+            {/* --- CertificateAccessList Placeholder --- */}
+            <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
+              <Typography color="textSecondary">CertificateAccessList component needs to be created/refactored.</Typography>
+              {/* <CertificateAccessList
               app={appData.domain}
               canRevoke
               showEmptyList
             /> */}
+            </Box>
+            {/* --- End Placeholder --- */}
           </Box>
-          {/* --- End Placeholder --- */}
-        </Box>
-      )}
-    </Box>
+        )
+      }
+    </Box >
   );
 };
 

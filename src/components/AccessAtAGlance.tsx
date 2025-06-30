@@ -12,6 +12,7 @@ import CertificateAccessList from './CertificateAccessList'
 // import BasketAccessList from './BasketAccessList'
 import { History } from 'history'
 import { WalletContext } from '../WalletContext'
+import ProtocolPermissionList from './ProtocolPermissionList'
 
 // Define the props interface for AccessAtAGlance.
 // Adjust the setRefresh type if you use a different setter signature.
@@ -79,15 +80,15 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({ originator, loading, 
             ))}
           </>
         )}
-        {/* <ProtocolPermissionList
+        <ProtocolPermissionList
           app={originator}
           limit={1}
           canRevoke={false}
-          clickable
+          clickable={true}
           displayCount={false}
           listHeaderTitle="Most Recent Protocol"
           onEmptyList={() => setProtocolIsEmpty(true)}
-        /> */}
+        />
       </List>
       <Box sx={{ bgcolor: 'background.paper', borderRadius: '0.25em', minHeight: '13em' }}>
         <CertificateAccessList

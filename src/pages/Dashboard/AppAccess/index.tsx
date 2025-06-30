@@ -15,6 +15,7 @@ import { WalletContext } from '../../../WalletContext';
 import BasketAccessList from '../../../components/BasketAccessList';
 import SpendingAuthorizationList from '../../../components/SpendingAuthorizationList';
 import CertificateAccessList from '../../../components/CertificateAccessList';
+import ProtocolPermissionList from '../../../components/ProtocolPermissionList';
 
 // Placeholder type for App Data - adjust based on actual SDK response
 interface AppData {
@@ -172,29 +173,20 @@ const AppAccess: React.FC = () => {
       </Tabs>
 
       {tabValue === '0' && (
-        <Box sx={{ p: 2 }}>
-          {/* --- ProtocolPermissionList Placeholder --- */}
-          <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
-            <Typography color="textSecondary">ProtocolPermissionList component needs to be created/refactored.</Typography>
-            {/* <ProtocolPermissionList
-              app={url}
-              canRevoke
-              showEmptyList
-            /> */}
-          </Box>
-          {/* --- End Placeholder --- */}
+        <Box sx={{ p: 4 }}>
+          <ProtocolPermissionList
+            app={url}
+            canRevoke={true}
+            showEmptyList
+          />
         </Box>
       )}
 
       {tabValue === '1' && (
-        <Box sx={{ p: 2 }}>
-          {/* --- SpendingAuthorizationList Placeholder --- */}
-          {/* <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}> */}
+        <Box sx={{ p: 4 }}>
           <SpendingAuthorizationList
             app={appData.domain}
           />
-          {/* </Box> */}
-          {/* --- End Placeholder --- */}
         </Box>
       )}
 

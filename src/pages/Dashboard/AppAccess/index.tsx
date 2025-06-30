@@ -176,6 +176,7 @@ const AppAccess: React.FC = () => {
         <Box sx={{ p: 4 }}>
           <ProtocolPermissionList
             app={url}
+            clickable
             canRevoke={true}
             showEmptyList
           />

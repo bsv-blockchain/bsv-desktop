@@ -198,7 +198,7 @@ const BasketAccess: React.FC = () => {
       )}
 
       <Grid item>
-        <Paper elevation={3} sx={{ padding: 2, borderRadius: 2 }}> {/* Updated sx */}
+        <Paper elevation={3} sx={{ padding: 2, borderRadius: 2 }}>
           <Typography variant='h4' gutterBottom sx={{ pl: 0.5 }}>
             Apps with Access
           </Typography>

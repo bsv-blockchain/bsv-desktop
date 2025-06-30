@@ -13,6 +13,7 @@ import {
   ListSubheader,
   Divider,
   CircularProgress,
+  Box,
 } from '@mui/material';
 import makeStyles from '@mui/styles/makeStyles';
 import { toast } from 'react-toastify';
@@ -201,6 +202,7 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
 }) => {
   /* ---------------------------- Runtime state ---------------------------- */
   const [perms, setPerms] = useState<PermissionGroup[]>([]);
+  const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogLoading, setDialogLoading] = useState(false);
   const [toRevoke, setToRevoke] = useState<PermissionToken | PermissionGroup | null>(null);
@@ -217,14 +219,16 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
     if (!managers?.permissionsManager) return;
 
     try {
+      setLoading(true);
       // Fetch permission tokens from wallet SDK
       const raw = await managers.permissionsManager.listProtocolPermissions({
         originator: app,
-        privileged: false, // TODO: add support at the component level
+        // privileged: false, // TODO: add support at the component level
         protocolName: protocol,
         protocolSecurityLevel: securityLevel,
         counterparty,
       });
+      console.log('raw', raw)
 
       // Group & optionally limit results
       const grouped: PermissionGroup[] =
@@ -237,8 +241,10 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
     } catch (err) {
       console.error(err);
       toast.error('Unable to load permissions');
+    } finally {
+      setLoading(false);
     }
-  }, [app, protocol, securityLevel, counterparty, limit, itemsDisplayed, managers, onEmptyList]);
+  }, [app, protocol, securityLevel, counterparty, limit, itemsDisplayed]);
 
   const openRevokeDialog = (item: PermissionToken | PermissionGroup) => {
     setToRevoke(item);
@@ -251,17 +257,35 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
     try {
       setDialogLoading(true);
 
-      if ('expiry' in toRevoke) {
-        // Single permission
-        await managers.permissionsManager.revokePermission(toRevoke);
+      if ('permissions' in toRevoke) {
+        console.log('revoking group', toRevoke)
+        // Revoke permissions sequentially to avoid overwhelming the service
+        const results = [];
+        for (const perm of toRevoke.permissions) {
+          try {
+            console.log('revoking individual permission in group:', perm.txid)
+            await managers.permissionsManager.revokePermission(perm);
+            console.log('successfully revoked:', perm.txid)
+            results.push({ success: true, permission: perm });
+          } catch (error) {
+            console.error('failed to revoke permission:', perm.txid, error);
+            results.push({ success: false, permission: perm, error });
+            // Continue with other permissions even if one fails
+          }
+        }
+
+        const failed = results.filter(r => !r.success);
+        if (failed.length > 0) {
+          console.warn(`${failed.length} out of ${results.length} permissions failed to revoke`);
+        }
       } else {
-        // Entire group (best‑effort)
-        await Promise.all(
-          toRevoke.permissions.map((perm) => managers.permissionsManager.revokePermission(perm)),
-        );
+        console.log('revoking single permission', toRevoke)
+        await managers.permissionsManager.revokePermission(toRevoke);
       }
-    } catch (e: any) {
-      toast.error(`Permission may not have been revoked: ${e.message}`);
+
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error occurred';
+      toast.error(`Permission may not have been revoked: ${errorMessage}`);
     } finally {
       setDialogLoading(false);
       setDialogOpen(false);
@@ -308,128 +332,137 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
       <List>
         {listHeaderTitle && <ListSubheader>{listHeaderTitle}</ListSubheader>}
 
-        {perms.map((group, i) => (
-          <React.Fragment key={i}>
-            {/* --------------------------------------------------------- */}
-            {/*                       APP‑CENTRIC                        */}
-            {/* --------------------------------------------------------- */}
-            {itemsDisplayed === 'apps' && isAppGroup(group) && (
-              <div className={classes.appList}>
-                {/* Group header (App domain) */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '1em', alignItems: 'center' }}>
-                  <AppChip
-                    backgroundColor="default"
-                    label={group.originator}
-                    showDomain
-                    onClick={(e: React.MouseEvent) => {
-                      e.stopPropagation();
-                      history.push(`/dashboard/app/${encodeURIComponent(group.originator)}`, {
-                        state: { domain: group.originator },
-                      });
-                    }}
-                  />
+        {loading ? (
+          <Box display="flex" justifyContent="center" alignItems="center" py={4}>
+            <CircularProgress size={24} />
+            <Typography variant="body2" color="textSecondary" sx={{ ml: 2 }}>
+              Loading permissions...
+            </Typography>
+          </Box>
+        ) : (
+          perms.map((group, i) => (
+            <React.Fragment key={i}>
+              {/* --------------------------------------------------------- */}
+              {/*                       APP‑CENTRIC                        */}
+              {/* --------------------------------------------------------- */}
+              {itemsDisplayed === 'apps' && isAppGroup(group) && (
+                <div className={classes.appList}>
+                  {/* Group header (App domain) */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '1em', alignItems: 'center' }}>
+                    <AppChip
+                      backgroundColor="default"
+                      label={group.originator}
+                      showDomain
+                      onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        history.push(`/dashboard/app/${encodeURIComponent(group.originator)}`, {
+                          state: { domain: group.originator },
+                        });
+                      }}
+                    />
 
-                  {canRevoke && (
-                    <Button
-                      onClick={() => openRevokeDialog(group)}
-                      color="secondary"
-                      className={classes.revokeButton}
-                    >
-                      {group.permissions.length > 1 ? 'Revoke All' : 'Revoke'}
-                    </Button>
-                  )}
+                    {canRevoke && (
+                      <Button
+                        onClick={() => openRevokeDialog(group)}
+                        color="secondary"
+                        className={classes.revokeButton}
+                      >
+                        {group.permissions.length > 1 ? 'Revoke All' : 'Revoke'}
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Counter‑parties within the app group */}
+                  <ListItem>
+                    <div className={classes.counterpartyContainer}>
+                      {group.permissions
+                        .filter((x) => x.counterparty)
+                        .map((permission) => (
+                          <div className={classes.gridItem} key={`${permission.counterparty}-${permission.txid}`}>
+                            <CounterpartyChip
+                              counterparty={permission.counterparty!}
+                              size={1.1}
+                              expires={formatDistance(new Date(permission.expiry * 1000), new Date(), {
+                                addSuffix: true,
+                              })}
+                              onCloseClick={() => openRevokeDialog(permission)}
+                              clickable
+                              canRevoke={canRevoke}
+                            />
+                          </div>
+                        ))}
+                    </div>
+                  </ListItem>
                 </div>
+              )}
 
-                {/* Counter‑parties within the app group */}
-                <ListItem>
-                  <div className={classes.counterpartyContainer}>
-                    {group.permissions
-                      .filter((x) => x.counterparty)
-                      .map((permission) => (
+              {/* --------------------------------------------------------- */}
+              {/*                     PROTOCOL‑CENTRIC                      */}
+              {/* --------------------------------------------------------- */}
+              {itemsDisplayed === 'protocols' && isProtocolGroup(group) && (
+                <div className={classes.appList}>
+                  {/* Group header (Protocol) */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '1em', alignItems: 'center' }}>
+                    <ProtoChip
+                      backgroundColor="default"
+                      protocolID={group.protocolName}
+                      securityLevel={group.securityLevel}
+                      originator={group.permissions[0].originator}
+                      clickable={clickable}
+                      canRevoke={false}
+                    />
+
+                    {canRevoke && (
+                      <Button
+                        onClick={() => openRevokeDialog(group)}
+                        color="secondary"
+                        className={classes.revokeButton}
+                      >
+                        {group.permissions.length > 1 ? 'Revoke All' : 'Revoke'}
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Counterparties (or apps if `counterparty` filter is provided) */}
+                  <ListItem>
+                    <div className={classes.counterpartyContainer}>
+                      {group.permissions.map((permission) => (
                         <div className={classes.gridItem} key={`${permission.counterparty}-${permission.txid}`}>
-                          <CounterpartyChip
-                            counterparty={permission.counterparty!}
-                            size={1.1}
-                            expires={formatDistance(new Date(permission.expiry * 1000), new Date(), {
-                              addSuffix: true,
-                            })}
-                            onCloseClick={() => openRevokeDialog(permission)}
-                            clickable
-                            canRevoke={canRevoke}
-                          />
+                          {counterparty ? (
+                            <AppChip
+                              backgroundColor="default"
+                              label={permission.originator}
+                              showDomain
+                              onClick={(e: React.MouseEvent) => {
+                                e.stopPropagation();
+                                history.push(`/dashboard/app/${encodeURIComponent(permission.originator)}`, {
+                                  state: { domain: permission.originator },
+                                });
+                              }}
+                              onCloseClick={() => openRevokeDialog(permission)}
+                            />
+                          ) : (
+                            <CounterpartyChip
+                              counterparty={permission.counterparty!}
+                              size={1.1}
+                              expires={formatDistance(new Date(permission.expiry * 1000), new Date(), {
+                                addSuffix: true,
+                              })}
+                              onCloseClick={() => openRevokeDialog(permission)}
+                              clickable
+                              canRevoke={canRevoke}
+                            />
+                          )}
                         </div>
                       ))}
-                  </div>
-                </ListItem>
-              </div>
-            )}
-
-            {/* --------------------------------------------------------- */}
-            {/*                     PROTOCOL‑CENTRIC                      */}
-            {/* --------------------------------------------------------- */}
-            {itemsDisplayed === 'protocols' && isProtocolGroup(group) && (
-              <div className={classes.appList}>
-                {/* Group header (Protocol) */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '1em', alignItems: 'center' }}>
-                  <ProtoChip
-                    backgroundColor="default"
-                    protocolID={group.protocolName}
-                    securityLevel={group.securityLevel}
-                    originator={group.permissions[0].originator}
-                    clickable={clickable}
-                    canRevoke={false}
-                  />
-
-                  {canRevoke && (
-                    <Button
-                      onClick={() => openRevokeDialog(group)}
-                      color="secondary"
-                      className={classes.revokeButton}
-                    >
-                      {group.permissions.length > 1 ? 'Revoke All' : 'Revoke'}
-                    </Button>
-                  )}
+                    </div>
+                  </ListItem>
+                  <Divider />
                 </div>
-
-                {/* Counterparties (or apps if `counterparty` filter is provided) */}
-                <ListItem>
-                  <div className={classes.counterpartyContainer}>
-                    {group.permissions.map((permission) => (
-                      <div className={classes.gridItem} key={`${permission.counterparty}-${permission.txid}`}>
-                        {counterparty ? (
-                          <AppChip
-                            backgroundColor="default"
-                            label={permission.originator}
-                            showDomain
-                            onClick={(e: React.MouseEvent) => {
-                              e.stopPropagation();
-                              history.push(`/dashboard/app/${encodeURIComponent(permission.originator)}`, {
-                                state: { domain: permission.originator },
-                              });
-                            }}
-                            onCloseClick={() => openRevokeDialog(permission)}
-                          />
-                        ) : (
-                          <CounterpartyChip
-                            counterparty={permission.counterparty!}
-                            size={1.1}
-                            expires={formatDistance(new Date(permission.expiry * 1000), new Date(), {
-                              addSuffix: true,
-                            })}
-                            onCloseClick={() => openRevokeDialog(permission)}
-                            clickable
-                            canRevoke={canRevoke}
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </ListItem>
-                <Divider />
-              </div>
-            )}
-          </React.Fragment>
-        ))}
+              )}
+            </React.Fragment>
+          ))
+        )}
       </List>
 
       {/* ------------------------- Footer – total count ------------------------- */}

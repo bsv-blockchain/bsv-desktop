@@ -16,6 +16,7 @@ import PageHeader from '../../../components/PageHeader'; // Assuming this compon
 // import ProtocolPermissionList from '../../../components/ProtocolPermissionList'; // Needs migration/creation
 import { WalletContext } from '../../../WalletContext';
 import { DEFAULT_APP_ICON } from '../../../constants/popularApps';
+import ProtocolPermissionList from '../../../components/ProtocolPermissionList';
 
 // Placeholder type for protocol details - adjust based on actual SDK response
 interface ProtocolDetails {
@@ -99,7 +100,7 @@ const ProtocolAccess: React.FC = () => {
   const { protocolName, iconURL, securityLevel, protocolID, description, documentationURL } = protocolDetails;
 
   return (
-    <Grid container spacing={3} direction='column' sx={{ p: 2 }}> {/* Added padding */} 
+    <Grid container spacing={3} direction='column' sx={{ p: 2 }}> {/* Added padding */}
       <Grid item>
         <PageHeader
           history={history}
@@ -120,7 +121,7 @@ const ProtocolAccess: React.FC = () => {
           icon={iconURL || DEFAULT_APP_ICON}
           showButton={false}
           buttonTitle="" // Added dummy prop
-          onClick={() => {}} // Added dummy prop
+          onClick={() => { }} // Added dummy prop
         />
       </Grid>
 
@@ -143,24 +144,21 @@ const ProtocolAccess: React.FC = () => {
         </Grid>
       )}
 
-      <Grid item sx={{ p: '1em' }}> {/* Consider adjusting padding */} 
-        <Paper elevation={3} sx={{ p: 2, borderRadius: 2 }}> {/* Use sx prop */} 
-          <Typography variant='h4' gutterBottom sx={{ pl: 0.5 }}> {/* Use sx prop */} 
+      <Grid item sx={{ p: '1em' }}> {/* Consider adjusting padding */}
+        <Paper elevation={3} sx={{ p: 2, borderRadius: 2 }}> {/* Use sx prop */}
+          <Typography variant='h4' gutterBottom sx={{ pl: 0.5 }}> {/* Use sx prop */}
             Apps with Access
           </Typography>
-          {/* --- ProtocolPermissionList Placeholder --- */}
-          <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
-            <Typography color="textSecondary">ProtocolPermissionList component needs to be created/refactored.</Typography>
-            {/* <ProtocolPermissionList 
-                protocol={protocolID} 
-                securityLevel={securityLevel} 
-                // counterparty={counterparty} // Counterparty might not be relevant here, depends on list context
-                itemsDisplayed='apps' 
-                canRevoke 
-                showEmptyList 
-            /> */}
+          <Box sx={{ p: 4 }}>
+            <ProtocolPermissionList
+              protocol={protocolID}
+              securityLevel={securityLevel}
+              // counterparty={counterparty} // Counterparty might not be relevant here, depends on list context
+              itemsDisplayed='apps'
+              canRevoke
+              showEmptyList
+            />
           </Box>
-          {/* --- End Placeholder --- */}
         </Paper>
       </Grid>
     </Grid>

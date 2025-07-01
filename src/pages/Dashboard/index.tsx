@@ -130,7 +130,7 @@ export default function Dashboard() {
             component={BasketAccess}
           />
           <Route
-            path='/dashboard/protocol/:protocolId'
+            path='/dashboard/protocol/:protocolId/:securityLevel'
             component={ProtocolAccess}
           />
           <Route

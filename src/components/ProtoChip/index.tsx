@@ -48,16 +48,16 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
   // iconURL,
   backgroundColor = 'transparent'
 }) => {
-  const classes = useStyles()
   const theme = useTheme()
 
   const navToProtocolDocumentation = (e: any) => {
+    console.log('navToProtocolDocumentation', encodeURIComponent(securityLevel))
     if (clickable) {
       if (typeof onClick === 'function') {
         onClick(e)
       } else {
         e.stopPropagation()
-        history.push(`/dashboard/protocol/${encodeURIComponent(protocolID)}`)
+        history.push(`/dashboard/protocol/${encodeURIComponent(protocolID)}/${encodeURIComponent(securityLevel)}`)
       }
     }
   }

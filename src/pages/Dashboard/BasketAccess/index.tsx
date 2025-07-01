@@ -64,7 +64,8 @@ const BasketAccess: React.FC = () => {
         // Update the itemsInBasket state with the outputs
         const { outputs } = await managers.permissionsManager.listOutputs({
           basket: basketId,
-          includeTags: true
+          includeTags: true,
+          include: 'entire transactions'
         }, adminOriginator)
 
         // Type assertion is needed since permissions and outputs may have different structures

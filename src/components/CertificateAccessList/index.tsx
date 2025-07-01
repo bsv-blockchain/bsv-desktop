@@ -97,7 +97,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
         originator: app,
         privileged: false, //?
         certType: type,
-        verifier: 'anyone' // ?
+        // verifier: 'anyone' // ?
       })
 
       if (itemsDisplayed === 'apps') {

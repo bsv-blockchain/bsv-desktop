@@ -7,7 +7,6 @@ import {
   Grid,
   IconButton,
   CircularProgress,
-  Link as MuiLink
 } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -18,21 +17,9 @@ import CounterpartyChip from '../../../components/CounterpartyChip'; // Assuming
 // import ProtocolPermissionList from '../../../components/ProtocolPermissionList'; // Needs migration/creation
 // import CertificateAccessList from '../../../components/CertificateAccessList'; // Needs migration/creation
 import { WalletContext } from '../../../WalletContext';
-import { UserContext } from '../../../UserContext';
 import { DEFAULT_APP_ICON } from '../../../constants/popularApps';
-
-// Placeholder type for Counterparty Identity - adjust based on actual SDK response
-interface CounterpartyIdentity {
-  name: string;
-  avatarURL?: string;
-  // Add other relevant properties from identity resolution
-}
-
-// Placeholder type for Trust Endorsement - adjust based on actual SDK response
-interface TrustEndorsement {
-  certifier: string; // Public key of the certifier
-  // Add other relevant properties from discovery/Signia equivalent
-}
+import ProtocolPermissionList from '../../../components/ProtocolPermissionList';
+import { DisplayableIdentity, IdentityClient } from '@bsv/sdk';
 
 // Props for TabPanel component
 interface TabPanelProps {
@@ -64,7 +51,7 @@ const TabPanel: React.FC<TabPanelProps> = (props) => {
 // Props for SimpleTabs component
 interface SimpleTabsProps {
   counterparty: string;
-  trustEndorsements: TrustEndorsement[];
+  trustEndorsements: DisplayableIdentity[];
 }
 
 const SimpleTabs: React.FC<SimpleTabsProps> = ({ counterparty, trustEndorsements }) => {
@@ -85,11 +72,11 @@ const SimpleTabs: React.FC<SimpleTabsProps> = ({ counterparty, trustEndorsements
         <Typography variant="body1" sx={{ mb: 2 }}>
           Trust endorsements given to this counterparty by other people.
         </Typography>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}> {/* Use flexbox for chips */} 
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           {trustEndorsements.length > 0 ? (
             trustEndorsements.map((endorsement, index) => (
               <CounterpartyChip
-                counterparty={endorsement.certifier}
+                counterparty={endorsement.identityKey}
                 key={index}
                 clickable
               />
@@ -103,12 +90,9 @@ const SimpleTabs: React.FC<SimpleTabsProps> = ({ counterparty, trustEndorsements
         <Typography variant="body1" sx={{ mb: 2 }}>
           Apps that can be used within specific protocols to interact with this counterparty.
         </Typography>
-        {/* --- ProtocolPermissionList Placeholder --- */}
-        <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
-          <Typography color="textSecondary">ProtocolPermissionList component needs to be created/refactored.</Typography>
-          {/* <ProtocolPermissionList counterparty={counterparty} itemsDisplayed='protocols' showEmptyList canRevoke /> */}
+        <Box sx={{ p: 4 }}>
+          <ProtocolPermissionList counterparty={counterparty} itemsDisplayed='protocols' showEmptyList canRevoke />
         </Box>
-        {/* --- End Placeholder --- */}
       </TabPanel>
       <TabPanel value={value} index={2}>
         <Typography variant="body1" sx={{ mb: 2 }}>
@@ -131,14 +115,16 @@ const SimpleTabs: React.FC<SimpleTabsProps> = ({ counterparty, trustEndorsements
 const CounterpartyAccess: React.FC = () => {
   const { counterparty } = useParams<{ counterparty: string }>();
   const history = useHistory();
-  const { managers, settings } = useContext(WalletContext);
+  const { managers, adminOriginator } = useContext(WalletContext);
 
-  const [identity, setIdentity] = useState<CounterpartyIdentity | null>(null);
-  const [trustEndorsements, setTrustEndorsements] = useState<TrustEndorsement[]>([]);
+  const [identity, setIdentity] = useState<DisplayableIdentity | null>(null);
+  const [trustEndorsements, setTrustEndorsements] = useState<DisplayableIdentity[]>([]);
   const [copied, setCopied] = useState<{ [key: string]: boolean }>({ id: false });
   const [loadingIdentity, setLoadingIdentity] = useState<boolean>(true);
   const [loadingTrust, setLoadingTrust] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const identityClient = new IdentityClient(managers.permissionsManager, undefined, adminOriginator)
 
   const handleCopy = (data: string, type: string) => {
     navigator.clipboard.writeText(data);
@@ -151,26 +137,46 @@ const CounterpartyAccess: React.FC = () => {
   // Fetch Identity
   useEffect(() => {
     const fetchIdentity = async () => {
-      // TODO: Replace discoverByIdentityKey with WalletContext/SDK equivalent
-      // This likely involves managers.lookupManager or similar.
-      if (!managers.walletManager) return; // Or relevant manager
+      if (!managers.permissionsManager) return;
 
       setLoadingIdentity(true);
       setError(null);
       try {
-        console.warn('Counterparty identity fetching logic needs implementation using WalletContext/SDK.');
-        // Placeholder logic:
-        const placeholderIdentity: CounterpartyIdentity = {
-          name: `Counterparty ${counterparty.substring(0, 6)}...`,
-          avatarURL: DEFAULT_APP_ICON, // Use a default avatar
-        };
-        setIdentity(placeholderIdentity);
+        const results = await identityClient.resolveByIdentityKey({
+          identityKey: counterparty,
+        })
+
+        setTrustEndorsements(results)
+
+        const identity = results[0]
+
+        if (!identity) {
+          setIdentity({
+            name: `Counterparty ${counterparty.substring(0, 6)}...`,
+            avatarURL: DEFAULT_APP_ICON, // Use a default avatar
+            abbreviatedKey: counterparty,
+            identityKey: counterparty,
+            badgeIconURL: DEFAULT_APP_ICON,
+            badgeLabel: 'Counterparty',
+            badgeClickURL: '',
+          });
+        }
+
+        setIdentity(identity);
 
       } catch (err: any) {
         console.error('Failed to fetch counterparty identity:', err);
         setError(prev => prev ? `${prev}; Failed to load identity: ${err.message}` : `Failed to load identity: ${err.message}`);
         toast.error(`Failed to load identity: ${err.message}`);
-        setIdentity({ name: 'Unknown Counterparty', avatarURL: DEFAULT_APP_ICON }); // Set default on error
+        setIdentity({
+          name: 'Unknown Counterparty',
+          avatarURL: DEFAULT_APP_ICON,
+          abbreviatedKey: counterparty,
+          identityKey: counterparty,
+          badgeIconURL: DEFAULT_APP_ICON,
+          badgeLabel: 'Counterparty',
+          badgeClickURL: '',
+        }); // Set default on error
       } finally {
         setLoadingIdentity(false);
       }
@@ -184,6 +190,7 @@ const CounterpartyAccess: React.FC = () => {
     const fetchTrust = async () => {
       // TODO: Replace Signia discoverByIdentityKey with WalletContext/SDK equivalent
       // This might involve managers.trustManager or lookupManager.
+      identityClient.resolveByIdentityKey({ identityKey: counterparty })
       if (!managers.walletManager) return; // Or relevant manager
 
       setLoadingTrust(true);
@@ -191,7 +198,7 @@ const CounterpartyAccess: React.FC = () => {
       try {
         console.warn('Trust endorsement fetching logic needs implementation using WalletContext/SDK.');
         // Placeholder logic:
-        const placeholderTrust: TrustEndorsement[] = []; // Assume empty for now
+        const placeholderTrust: DisplayableIdentity[] = []; // Assume empty for now
         setTrustEndorsements(placeholderTrust);
 
       } catch (err: any) {
@@ -227,7 +234,7 @@ const CounterpartyAccess: React.FC = () => {
           icon={isLoading ? undefined : (identity?.avatarURL || DEFAULT_APP_ICON)} // Show icon only when loaded
           showButton={false}
           buttonTitle="" // Added dummy prop
-          onClick={() => {}} // Added dummy prop
+          onClick={() => { }} // Added dummy prop
         />
       </Grid>
       <Grid item>

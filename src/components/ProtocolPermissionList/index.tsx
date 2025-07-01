@@ -226,7 +226,7 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
         // privileged: false, // TODO: add support at the component level
         protocolName: protocol,
         protocolSecurityLevel: securityLevel,
-        counterparty,
+        counterparty
       });
       console.log('raw', raw)
 

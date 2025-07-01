@@ -33,8 +33,9 @@ interface ProtocolDetails {
  * Display the access information for a particular protocol.
  */
 const ProtocolAccess: React.FC = () => {
-  const { protocolId: encodedProtocolId } = useParams<{ protocolId: string }>();
+  const { protocolId: encodedProtocolId, securityLevel: encodedSecurityLevel } = useParams<{ protocolId: string, securityLevel: string }>();
   const protocolId = decodeURIComponent(encodedProtocolId);
+  const securityLevel = Number(decodeURIComponent(encodedSecurityLevel));
   const history = useHistory();
   const { managers } = useContext(WalletContext);
 
@@ -53,6 +54,7 @@ const ProtocolAccess: React.FC = () => {
   };
 
   useEffect(() => {
+    console.log('securityLevel', encodedSecurityLevel)
     const fetchProtocolDetails = async () => {
       // TODO: Replace with actual SDK call to get protocol details by ID
       // This might involve a lookup service or specific manager method.
@@ -66,7 +68,7 @@ const ProtocolAccess: React.FC = () => {
         const placeholderDetails: ProtocolDetails = {
           protocolName: `Protocol: ${protocolId}`,
           iconURL: DEFAULT_APP_ICON,
-          securityLevel: 1, // Placeholder
+          securityLevel,
           protocolID: protocolId,
           description: 'Placeholder description for this protocol. Fetching logic needs implementation.',
           documentationURL: 'https://docs.example.com/protocols',
@@ -97,7 +99,7 @@ const ProtocolAccess: React.FC = () => {
     return <Typography sx={{ p: 2 }}>Protocol details not found for ID: {protocolId}</Typography>;
   }
 
-  const { protocolName, iconURL, securityLevel, protocolID, description, documentationURL } = protocolDetails;
+  const { protocolName, iconURL, protocolID, description, documentationURL } = protocolDetails;
 
   return (
     <Grid container spacing={3} direction='column' sx={{ p: 2 }}> {/* Added padding */}

@@ -9,7 +9,8 @@ import {
   Typography,
   LinearProgress,
   Grid,
-  Box
+  Box,
+  CircularProgress
 } from '@mui/material'
 import { format } from 'date-fns'
 import AmountDisplay from './AmountDisplay'
@@ -30,7 +31,6 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
   const [currentSpending, setCurrentSpending] = useState<number>(0)
   const [authorizedAmount, setAuthorizedAmount] = useState<number>(0)
   const [dialogOpen, setDialogOpen] = useState<boolean>(false)
-  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState<boolean>(false)
   const [dialogLoading, setDialogLoading] = useState<boolean>(false)
   const [usdPerBsv, setUsdPerBSV] = useState<number>(70)
   const services = new Services('main') // TODO: Move to wallet context
@@ -72,9 +72,24 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
     setDialogOpen(true)
   }
 
-  const updateSpendingAuthorization = (auth: PermissionToken): void => {
+  const updateSpendingAuthorization = async (auth: PermissionToken): Promise<void> => {
     setAuthorization(auth)
-    setUpgradeDialogOpen(true)
+    if (!authorization) return
+    setDialogLoading(true)
+    try {
+      await managers.permissionsManager.ensureSpendingAuthorization({
+        originator: app,
+        satoshis: Math.round(determineUpgradeAmount(authorizedAmount)),
+        reason: 'Increase spending limit',
+        seekPermission: true
+      })
+      await refreshAuthorizations()
+    } catch (e: any) {
+      await refreshAuthorizations()
+      // toast.error(`Spending authorization limit may not have been increased: ${e.message}`)
+    } finally {
+      setDialogLoading(false)
+    }
   }
 
   const handleConfirmRevoke = async (): Promise<void> => {
@@ -94,51 +109,18 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
     }
   }
 
-  const handleConfirmUpgradeLimit = async (): Promise<void> => {
-    if (!authorization) return
-    setDialogLoading(true)
-    try {
-      // await managers.permissionsManager.grantPermission({
-      //   requestID: authorization.requestID,
-      //   permissionGrant: authorization, // TODO: Figure this out.
-      //   amount: determineUpgradeAmount(authorizedAmount)
-      // })
-      setUpgradeDialogOpen(false)
-      await refreshAuthorizations()
-    } catch (e: any) {
-      await refreshAuthorizations()
-      toast.error(`Spending authorization limit may not have been increased: ${e.message}`)
-      setUpgradeDialogOpen(false)
-    } finally {
-      setDialogLoading(false)
-    }
-  }
-
   const handleDialogClose = (): void => {
     setDialogOpen(false)
-    setUpgradeDialogOpen(false)
   }
 
   const createSpendingAuthorization = async ({ limit: newLimit = limit }: { limit?: number }): Promise<void> => {
-    toast.promise(
-      (async () => {
-        await managers.permissionsManager.ensureSpendingAuthorization({
-          originator: app,
-          satoshis: Math.round(newLimit / (usdPerBsv / 100000000)),
-          reason: 'Create a spending limit',
-          seekPermission: true
-        })
-        await refreshAuthorizations()
-      })(),
-      {
-        pending: 'Creating spending limit...',
-        success: {
-          render: 'Limit set!',
-          autoClose: 2000
-        },
-        error: 'Failed to set spending limit! 🤯'
-      }
-    )
+    await managers.permissionsManager.ensureSpendingAuthorization({
+      originator: app,
+      satoshis: Math.round(newLimit / (usdPerBsv / 100000000)),
+      reason: 'Create a spending limit',
+      seekPermission: true
+    })
+    await refreshAuthorizations()
   }
 
   useEffect(() => {
@@ -151,7 +133,7 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
       }
     })()
     refreshAuthorizations()
-  }, [refreshAuthorizations, services])
+  }, [])
 
   return (
     <>
@@ -167,12 +149,19 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
             Cancel
           </Button>
           <Button onClick={handleConfirmRevoke} disabled={dialogLoading}>
-            Revoke
+            {dialogLoading ? (
+              <>
+                <CircularProgress size={16} sx={{ mr: 1 }} />
+                Revoking...
+              </>
+            ) : (
+              'Revoke'
+            )}
           </Button>
         </DialogActions>
       </Dialog>
 
-      <Dialog open={upgradeDialogOpen}>
+      {/* <Dialog open={upgradeDialogOpen}>
         <DialogTitle>Increase Spending Limit?</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -191,7 +180,7 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
             Yes
           </Button>
         </DialogActions>
-      </Dialog>
+      </Dialog> */}
 
       {authorization ? (
         <Grid container direction="column" spacing={2} sx={{ p: 2 }}>

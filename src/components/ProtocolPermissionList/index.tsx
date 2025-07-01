@@ -239,8 +239,7 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
       setPerms(limit ? grouped.slice(0, limit) : grouped);
       if (grouped.length === 0) onEmptyList();
     } catch (err) {
-      console.error(err);
-      toast.error('Unable to load permissions');
+      console.error(err)
     } finally {
       setLoading(false);
     }

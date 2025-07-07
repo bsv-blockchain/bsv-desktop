@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { IconButton, Typography } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import CheckIcon from '@mui/icons-material/Check';
@@ -22,7 +22,7 @@ interface TransformedWalletAction extends WalletAction {
   fees?: number;
 }
 
-// Transform function now returns TransformedWalletAction[]
+// Optimized transform function
 function transformActions(actions: WalletAction[]): TransformedWalletAction[] {
   return actions.map((action) => {
     const inputs = action.inputs ?? [];
@@ -80,6 +80,9 @@ const Apps: React.FC<AppsProps> = ({ history }) => {
   const [appActions, setAppActions] = useState<TransformedWalletAction[]>([]);
   // New state for pagination – page 0 returns the most recent 10 actions.
   const [page, setPage] = useState<number>(0);
+  // Add state for progressive loading
+  const [totalActions, setTotalActions] = useState<number>(0);
+  const [actionsLoaded, setActionsLoaded] = useState<boolean>(false);
 
   // Grab managers and adminOriginator from Wallet Context
   const { managers, adminOriginator } = useContext(WalletContext);
@@ -91,93 +94,130 @@ const Apps: React.FC<AppsProps> = ({ history }) => {
     setTimeout(() => setCopied((prev) => ({ ...prev, [type]: false })), 2000);
   };
 
+  // Memoized cache key to avoid recalculation
+  const cacheKey = useMemo(() => `transactions_${appDomain}`, [appDomain]);
+
+  // Load cached data immediately (non-blocking)
   useEffect(() => {
-    (async () => {
+    const cachedData = window.localStorage.getItem(cacheKey);
+    if (cachedData) {
       try {
-        setLoading(true);
-
-        // Only fetch app data if not already provided from previous page
-        if (!passedAppName || !passedIconUrl) {
-          fetchAndCacheAppData(appDomain, setAppIcon, setAppName, DEFAULT_APP_ICON);
-        }
-
-        // Check for local cache (retain existing logic)
-        const cacheKey = `transactions_${appDomain}`;
-        const cachedData = window.localStorage.getItem(cacheKey);
-        if (cachedData) {
-          const cachedParsed = JSON.parse(cachedData) as {
-            totalTransactions: number;
-            transactions: WalletAction[];
-          };
-          const transformedCached = transformActions(cachedParsed.transactions);
-          setAppActions(transformedCached);
-          // (Optionally you could return early if caching is sufficient)
-        }
-
-        // Retrieve the total count of actions first
-        const { totalActions } = await managers.permissionsManager.listActions(
-          {
-            labels: [`admin originator ${appDomain}`],
-            labelQueryMode: 'any',
-            includeLabels: false,
-            limit: 1,
-          },
-          adminOriginator
-        );
-
-        // Use a fixed limit of 10 actions per page
-        const limit = 10;
-        // Calculate offset so that page 0 fetches the last 10 (most recent) actions.
-        // For page n, offset = totalCount - (n + 1) * limit (not going below 0).
-        const offset = Math.max(totalActions - (page + 1) * limit, 0);
-
-        // Now fetch the actions for the current page.
-        const actionsResponse = await managers.permissionsManager.listActions(
-          {
-            labels: [`admin originator ${appDomain}`],
-            labelQueryMode: 'any',
-            includeLabels: true,
-            includeInputs: true,
-            includeOutputs: true,
-            limit,
-            offset,
-          },
-          adminOriginator
-        );
-
-        // Transform the actions
-        let pageActions = transformActions(actionsResponse.actions);
-        // Reverse if API returns ascending order, so most recent appears first.
-        pageActions = pageActions.reverse();
-
-        // Update state: for the first page replace; for later pages append.
-        if (page === 0) {
-          setAppActions(pageActions);
-        } else {
-          setAppActions((prev) => [...prev, ...pageActions]);
-        }
-
-        // If offset is 0, then we've reached the beginning of the list.
-        setAllActionsShown(offset === 0);
-
-        // Only update local cache when on page 0 to store just the 10 most recent transactions
-        if (page === 0) {
-          window.localStorage.setItem(
-            cacheKey,
-            JSON.stringify({
-              totalTransactions: totalActions,
-              transactions: pageActions,
-            })
-          );
-        }
+        const cachedParsed = JSON.parse(cachedData) as {
+          totalTransactions: number;
+          transactions: WalletAction[];
+        };
+        const transformedCached = transformActions(cachedParsed.transactions);
+        setAppActions(transformedCached);
+        setTotalActions(cachedParsed.totalTransactions);
+        setActionsLoaded(true);
       } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-        setRefresh(false);
+        console.error('Error parsing cached data:', e);
       }
-    })();
-  }, [refresh, appDomain, displayLimit, managers.permissionsManager, adminOriginator, page]);
+    }
+  }, [cacheKey]);
+
+  // Async function to load actions progressively
+  const loadActions = useCallback(async () => {
+    if (!managers?.permissionsManager || !adminOriginator) return;
+
+    try {
+      setLoading(true);
+
+      // Only fetch app data if not already provided from previous page
+      if (!passedAppName || !passedIconUrl) {
+        fetchAndCacheAppData(appDomain, setAppIcon, setAppName, DEFAULT_APP_ICON);
+      }
+
+      // Step 1: Get total count (lightweight request)
+      const { totalActions: fetchedTotal } = await managers.permissionsManager.listActions(
+        {
+          labels: [`admin originator ${appDomain}`],
+          labelQueryMode: 'any',
+          includeLabels: false,
+          limit: 1,
+        },
+        adminOriginator
+      );
+
+      setTotalActions(fetchedTotal);
+
+      // Step 2: Fetch actual actions in background
+      const limit = 10;
+      const offset = Math.max(fetchedTotal - (page + 1) * limit, 0);
+
+      // Use setTimeout to yield control back to the main thread
+      setTimeout(async () => {
+        try {
+          const actionsResponse = await managers.permissionsManager.listActions(
+            {
+              labels: [`admin originator ${appDomain}`],
+              labelQueryMode: 'any',
+              includeLabels: true,
+              includeInputs: true,
+              includeOutputs: true,
+              limit,
+              offset,
+            },
+            adminOriginator
+          );
+
+          // Transform actions in chunks to avoid blocking
+          const chunkSize = 5;
+          const actions = actionsResponse.actions;
+          let transformedActions: TransformedWalletAction[] = [];
+
+          for (let i = 0; i < actions.length; i += chunkSize) {
+            const chunk = actions.slice(i, i + chunkSize);
+            const transformedChunk = transformActions(chunk);
+            transformedActions = [...transformedActions, ...transformedChunk];
+            
+            // Yield control after each chunk
+            if (i + chunkSize < actions.length) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+          }
+
+          // Reverse for most recent first
+          const pageActions = transformedActions.reverse();
+
+          // Update state
+          if (page === 0) {
+            setAppActions(pageActions);
+          } else {
+            setAppActions((prev) => [...prev, ...pageActions]);
+          }
+
+          setAllActionsShown(offset === 0);
+          setActionsLoaded(true);
+
+          // Cache only the most recent page
+          if (page === 0) {
+            window.localStorage.setItem(
+              cacheKey,
+              JSON.stringify({
+                totalTransactions: fetchedTotal,
+                transactions: pageActions,
+              })
+            );
+          }
+        } catch (e) {
+          console.error('Error fetching actions:', e);
+        } finally {
+          setLoading(false);
+        }
+      }, 0);
+    } catch (e) {
+      console.error('Error getting total actions:', e);
+      setLoading(false);
+    } finally {
+      setRefresh(false);
+    }
+  }, [refresh, appDomain, managers?.permissionsManager, adminOriginator, page, cacheKey, passedAppName, passedIconUrl]);
+
+  // Load actions when dependencies change
+  useEffect(() => {
+    loadActions();
+  }, [loadActions]);
 
   const recentActionParams = {
     loading,

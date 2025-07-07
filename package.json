@@ -27,7 +27,8 @@
   },
   "dependencies": {
     "@bsv/uhrp-react": "^1.0.1",
-    "libphonenumber-js": "^1.12.6"
+    "libphonenumber-js": "^1.12.6",
+    "metanet-apps": "^1.0.4"
   },
   "peerDependencies": {
     "@bsv/sdk": "^1.6.8",
@@ -44,7 +45,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^5.2.0",
-    "react-toastify": "^11.0.3"
+    "react-toastify": "^11.0.3",
+    "@tauri-apps/plugin-opener": "^2.4.0"
   },
   "scripts": {
     "build": "tsc",

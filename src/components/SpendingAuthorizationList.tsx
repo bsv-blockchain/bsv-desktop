@@ -32,6 +32,7 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
   const [authorizedAmount, setAuthorizedAmount] = useState<number>(0)
   const [dialogOpen, setDialogOpen] = useState<boolean>(false)
   const [dialogLoading, setDialogLoading] = useState<boolean>(false)
+  const [loading, setLoading] = useState<boolean>(true)
   const [usdPerBsv, setUsdPerBSV] = useState<number>(70)
   const services = new Services('main') // TODO: Move to wallet context
 
@@ -64,8 +65,10 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
       }
     } catch {
       onEmptyList()
+    } finally {
+      setLoading(false)
     }
-  }, [app, onEmptyList])
+  }, [app, onEmptyList, managers.permissionsManager])
 
   const revokeAuthorization = (auth: PermissionToken): void => {
     setAuthorization(auth)
@@ -73,20 +76,24 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
   }
 
   const updateSpendingAuthorization = async (auth: PermissionToken): Promise<void> => {
-    setAuthorization(auth)
-    if (!authorization) return
+    if (!auth) return
     setDialogLoading(true)
     try {
       await managers.permissionsManager.ensureSpendingAuthorization({
         originator: app,
-        satoshis: Math.round(determineUpgradeAmount(authorizedAmount)),
+        satoshis: Math.round(determineUpgradeAmount(auth.authorizedAmount)),
         reason: 'Increase spending limit',
         seekPermission: true
       })
+      // Add a delay before refreshing to ensure backend data is updated
+      await new Promise(resolve => setTimeout(resolve, 1000))
       await refreshAuthorizations()
-    } catch (e: any) {
+    } catch (e: unknown) {
+      // Add a delay before refreshing to ensure backend data is updated
+      await new Promise(resolve => setTimeout(resolve, 1000))
       await refreshAuthorizations()
-      // toast.error(`Spending authorization limit may not have been increased: ${e.message}`)
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error'
+      toast.error(`Failed to increase spending authorization: ${errorMessage}`)
     } finally {
       setDialogLoading(false)
     }
@@ -97,12 +104,16 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
     setDialogLoading(true)
     try {
       await managers.permissionsManager.revokePermission(authorization)
-      setAuthorization(null)
       setDialogOpen(false)
+      // Add a delay before refreshing to ensure backend data is updated
+      await new Promise(resolve => setTimeout(resolve, 1000))
       await refreshAuthorizations()
-    } catch (e: any) {
+    } catch (e: unknown) {
+      // Add a delay before refreshing to ensure backend data is updated
+      await new Promise(resolve => setTimeout(resolve, 1000))
       await refreshAuthorizations()
-      toast.error(`Spending Authorization may not have been revoked: ${e.message}`)
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error'
+      toast.error(`Failed to revoke spending authorization: ${errorMessage}`)
       setDialogOpen(false)
     } finally {
       setDialogLoading(false)
@@ -114,13 +125,20 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
   }
 
   const createSpendingAuthorization = async ({ limit: newLimit = limit }: { limit?: number }): Promise<void> => {
-    await managers.permissionsManager.ensureSpendingAuthorization({
-      originator: app,
-      satoshis: Math.round(newLimit / (usdPerBsv / 100000000)),
-      reason: 'Create a spending limit',
-      seekPermission: true
-    })
-    await refreshAuthorizations()
+    try {
+      await managers.permissionsManager.ensureSpendingAuthorization({
+        originator: app,
+        satoshis: Math.round(newLimit / (usdPerBsv / 100000000)),
+        reason: 'Create a spending limit',
+        seekPermission: true
+      })
+      // Add a delay before refreshing to ensure backend data is updated
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      await refreshAuthorizations()
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error'
+      toast.error(`Failed to create spending authorization: ${errorMessage}`)
+    }
   }
 
   useEffect(() => {
@@ -133,7 +151,7 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
       }
     })()
     refreshAuthorizations()
-  }, [])
+  }, [refreshAuthorizations])
 
   return (
     <>
@@ -161,28 +179,16 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
         </DialogActions>
       </Dialog>
 
-      {/* <Dialog open={upgradeDialogOpen}>
-        <DialogTitle>Increase Spending Limit?</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Increase the monthly spending limit to{' '}
-            <AmountDisplay showFiatAsInteger>
-              {determineUpgradeAmount(authorizedAmount)}
-            </AmountDisplay>
-            /mo.?
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleDialogClose} disabled={dialogLoading}>
-            No
-          </Button>
-          <Button onClick={handleConfirmUpgradeLimit} disabled={dialogLoading}>
-            Yes
-          </Button>
-        </DialogActions>
-      </Dialog> */}
 
-      {authorization ? (
+
+      {loading ? (
+        <Box textAlign="center" pt={6}>
+          <CircularProgress size={40} />
+          <Typography variant="body1" sx={{ mt: 2 }}>
+            Loading spending authorizations...
+          </Typography>
+        </Box>
+      ) : authorization ? (
         <Grid container direction="column" spacing={2} sx={{ p: 2 }}>
           {/* Monthly Spending Limits and Revoke Button */}
           <Grid container justifyContent="space-between" alignItems="center">
@@ -221,8 +227,19 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
           {/* Increase Limits Button */}
           <Grid container justifyContent="center" sx={{ pt: 2 }}>
             <Grid item xs={12} sm={6} md={4}>
-              <Button fullWidth onClick={() => updateSpendingAuthorization(authorization)}>
-                Increase Limits
+              <Button 
+                fullWidth 
+                onClick={() => updateSpendingAuthorization(authorization)}
+                disabled={dialogLoading}
+              >
+                {dialogLoading ? (
+                  <>
+                    <CircularProgress size={16} sx={{ mr: 1 }} />
+                    Increasing...
+                  </>
+                ) : (
+                  'Increase Limits'
+                )}
               </Button>
             </Grid>
           </Grid>

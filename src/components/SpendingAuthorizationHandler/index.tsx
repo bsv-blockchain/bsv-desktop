@@ -86,8 +86,6 @@ const SpendingAuthorizationHandler: React.FC = () => {
   // Get the current permission request
   const currentPerm = spendingRequests[0]
 
-  console.log('Description', currentPerm.description)
-
   // Determine the type of request
   const isSpendingLimitIncrease = currentPerm.description === 'Increase spending limit'
   const isCreateSpendingLimit = currentPerm.description === 'Create a spending limit'

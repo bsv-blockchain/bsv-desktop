@@ -228,7 +228,6 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
         protocolSecurityLevel: securityLevel,
         counterparty
       });
-      console.log('raw', raw)
 
       // Group & optionally limit results
       const grouped: PermissionGroup[] =

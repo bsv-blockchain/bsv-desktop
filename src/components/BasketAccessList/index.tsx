@@ -53,7 +53,6 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
     const e = new Error('Error in BasketAccessList: baskets cannot be displayed when providing a basket param! Please provide a valid app domain instead.');
     throw e;
   }
-  console.log('app', app);
 
   const { managers, adminOriginator } = useContext(WalletContext);
   const [loading, setLoading] = useState<boolean>(true);
@@ -84,7 +83,6 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
         // Extract the domain from the token
         const domain = token.originator || 'unknown';
 
-        console.log('token.expiry', token.expiry);
         return {
           ...token,
           domain,

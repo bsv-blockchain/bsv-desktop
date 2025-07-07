@@ -50,6 +50,8 @@ function transformActions(actions: WalletAction[]): TransformedWalletAction[] {
 
 interface LocationState {
   domain?: string;
+  appName?: string;
+  iconImageUrl?: string;
 }
 
 interface AppsProps {
@@ -59,9 +61,11 @@ interface AppsProps {
 const Apps: React.FC<AppsProps> = ({ history }) => {
   const location = useLocation<LocationState>();
   const appDomain = location.state?.domain ?? 'unknown-domain.com';
+  const passedAppName = location.state?.appName;
+  const passedIconUrl = location.state?.iconImageUrl;
 
-  const [appName, setAppName] = useState<string>(appDomain);
-  const [appIcon, setAppIcon] = useState<string>(DEFAULT_APP_ICON);
+  const [appName, setAppName] = useState<string>(passedAppName || appDomain);
+  const [appIcon, setAppIcon] = useState<string>(passedIconUrl || DEFAULT_APP_ICON);
   // Retain displayLimit for UI, though pagination now loads fixed sets of 10.
   const [displayLimit, setDisplayLimit] = useState<number>(5);
   const [loading, setLoading] = useState<boolean>(false);
@@ -92,8 +96,10 @@ const Apps: React.FC<AppsProps> = ({ history }) => {
       try {
         setLoading(true);
 
-        // Optionally fetch app icon & name from your helper
-        fetchAndCacheAppData(appDomain, setAppIcon, setAppName, DEFAULT_APP_ICON);
+        // Only fetch app data if not already provided from previous page
+        if (!passedAppName || !passedIconUrl) {
+          fetchAndCacheAppData(appDomain, setAppIcon, setAppName, DEFAULT_APP_ICON);
+        }
 
         // Check for local cache (retain existing logic)
         const cacheKey = `transactions_${appDomain}`;
@@ -185,14 +191,14 @@ const Apps: React.FC<AppsProps> = ({ history }) => {
   const url = (appDomain.startsWith('http') ? appDomain : `https://${appDomain}`)
 
   return (
-    <Grid 
-      container 
-      spacing={3} 
-      direction="column" 
-      sx={{ 
-        width: '100%', 
-        maxWidth: '100%', 
-        overflow: 'hidden' 
+    <Grid
+      container
+      spacing={3}
+      direction="column"
+      sx={{
+        width: '100%',
+        maxWidth: '100%',
+        overflow: 'hidden'
       }}
     >
       {/* Page Header */}
@@ -224,18 +230,18 @@ const Apps: React.FC<AppsProps> = ({ history }) => {
       </Grid>
 
       {/* Main Content: RecentActions + AccessAtAGlance */}
-      <Grid 
-        item 
+      <Grid
+        item
         xs={12}
       >
-        <Grid 
-          container 
-          spacing={3} 
-          sx={{ 
-            width: '100%', 
-            maxWidth: '100%', 
+        <Grid
+          container
+          spacing={3}
+          sx={{
+            width: '100%',
+            maxWidth: '100%',
             overflow: 'hidden',
-            justifyItems: 'start' 
+            justifyItems: 'start'
           }}
         >
           {/* RecentActions Section */}

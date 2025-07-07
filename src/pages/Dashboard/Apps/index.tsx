@@ -9,29 +9,34 @@ import {
   Typography,
   Container,
   TextField,
-  LinearProgress,
   FormControl,
-  Button
+  Button,
+  Box,
+  Divider,
+  Fade,
+  Tooltip
 } from '@mui/material'
 import Grid2 from '@mui/material/Grid2'
 import { makeStyles } from '@mui/styles'
 import SearchIcon from '@mui/icons-material/Search'
 import ExploreIcon from '@mui/icons-material/Explore'
+import PushPinIcon from '@mui/icons-material/PushPin'
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
 import Fuse from 'fuse.js'
 import { useHistory } from 'react-router-dom'
 
 import style from './style'
 import MetanetApp from '../../../components/MetanetApp'
-import parseAppManifest from '../../../utils/parseAppManifest'
-import isImageUrl from '../../../utils/isImageUrl'
-import getApps from './getApps'
+import AppLogo from '../../../components/AppLogo'
 import { WalletContext } from '../../../WalletContext'
+import useOptimizedApps from '../../../hooks/useOptimizedApps'
 
 // Define an interface to describe your app data
 interface AppData {
   appName: string
   appIconImageUrl?: string
   domain: string
+  isPinned?: boolean
 }
 
 const useStyles = makeStyles(style, {
@@ -41,17 +46,27 @@ const useStyles = makeStyles(style, {
 const Apps: React.FC = () => {
   const classes = useStyles()
   const history = useHistory()
+  const { managers, adminOriginator } = useContext(WalletContext)
 
-  // State for local apps only
-  const [apps, setApps] = useState<AppData[]>([])
+  // State for UI and search
   const [filteredApps, setFilteredApps] = useState<AppData[]>([])
   const [fuseInstance, setFuseInstance] = useState<Fuse<AppData> | null>(null)
   const [search, setSearch] = useState<string>('')
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
-  const [loading, setLoading] = useState<boolean>(false)
+  const [pinnedApps, setPinnedApps] = useState<Set<string>>(new Set())
 
   const inputRef = useRef<HTMLInputElement>(null)
-  const cachedAppsKey = 'cached_apps'
+  const pinnedAppsKey = 'pinned_apps'
+
+  // Use optimized apps hook for progressive loading
+  const { apps, loading, error, refreshApps, progress } = useOptimizedApps({
+    permissionsManager: managers?.permissionsManager,
+    adminOriginator,
+    pinnedApps
+  })
+
+  // Show metanet loading indicator only if we're loading and have no apps to show
+  const showMetanetLoading = loading && apps.length === 0
 
   // Configuration for Fuse
   const options = {
@@ -63,14 +78,47 @@ const Apps: React.FC = () => {
     keys: ['appName']
   }
 
-  const { managers, adminOriginator } = useContext(WalletContext)
-
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setSearch(value)
 
     // Apply search immediately, with or without Fuse
     applySearch(value, apps, fuseInstance)
+  }
+
+  // Load pinned apps from localStorage
+  const loadPinnedApps = () => {
+    try {
+      const stored = window.localStorage.getItem(pinnedAppsKey)
+      if (stored) {
+        setPinnedApps(new Set(JSON.parse(stored)))
+      }
+    } catch (error) {
+      console.error('Error loading pinned apps:', error)
+    }
+  }
+
+  // Save pinned apps to localStorage
+  const savePinnedApps = (pinned: Set<string>) => {
+    try {
+      window.localStorage.setItem(pinnedAppsKey, JSON.stringify(Array.from(pinned)))
+    } catch (error) {
+      console.error('Error saving pinned apps:', error)
+    }
+  }
+
+  // Toggle pin status for an app
+  const togglePin = (domain: string) => {
+    const newPinnedApps = new Set(pinnedApps)
+    if (newPinnedApps.has(domain)) {
+      newPinnedApps.delete(domain)
+    } else {
+      newPinnedApps.add(domain)
+    }
+    setPinnedApps(newPinnedApps)
+    savePinnedApps(newPinnedApps)
+
+    // Apps will be updated automatically by the hook
   }
 
   // Separate function to apply search logic
@@ -112,82 +160,44 @@ const Apps: React.FC = () => {
     history.push('/dashboard/app-catalog')
   }
 
-  // Resolve additional data (icon, name) for each domain
-  const resolveAppDataFromDomain = async ({
-    appDomains
-  }: {
-    appDomains: string[]
-  }): Promise<AppData[]> => {
-    const dataPromises = appDomains.map(async domain => {
-      let formattedDomain = domain
-      if (domain.startsWith('https://')) {
-        formattedDomain = domain.substring(8)
-      }
-      if (domain.startsWith('http://')) {
-        formattedDomain = domain.substring(7)
-      }
-      let appIconImageUrl: string | undefined
-      let appName: string = formattedDomain
-
-      try {
-        if (await isImageUrl(`https://${formattedDomain}/favicon.ico`)) {
-          appIconImageUrl = `https://${formattedDomain}/favicon.ico`
-        }
-        // Attempt to fetch the manifest
-        const manifest = await parseAppManifest({ domain })
-        if (manifest && typeof manifest.name === 'string') {
-          appName = manifest.name
-        }
-      } catch (error) {
-        console.error(error)
-      }
-
-      return { appName, appIconImageUrl, domain }
-    })
-
-    return Promise.all(dataPromises)
-  }
-
   // On mount, load the apps & recent apps
   useEffect(() => {
-    if (typeof managers.permissionsManager === 'object') {
-      (async () => {
-        try {
-          // Check if there is storage app data for this session
-          let parsedAppData: AppData[] | null = JSON.parse(
-            window.localStorage.getItem(cachedAppsKey) || 'null'
-          )
+    // Load pinned apps on component mount
+    loadPinnedApps()
+  }, [])
 
-          if (parsedAppData) {
-            setApps(parsedAppData)
-            // Apply current search to cached data (without Fuse initially)
-            applySearch(search, parsedAppData, null)
-          } else {
-            setLoading(true)
-          }
-
-          // Fetch app domains
-          const appDomains = await getApps({ permissionsManager: managers.permissionsManager, adminOriginator })
-          parsedAppData = await resolveAppDataFromDomain({ appDomains })
-          parsedAppData.sort((a, b) => a.appName.localeCompare(b.appName))
-
-          // Cache them
-          window.localStorage.setItem(cachedAppsKey, JSON.stringify(parsedAppData))
-
-          setApps(parsedAppData)
-          // Initialize Fuse
-          const fuse = new Fuse(parsedAppData, options)
-          setFuseInstance(fuse)
-          // Re-apply current search with new data and Fuse instance
-          applySearch(search, parsedAppData, fuse)
-
-        } catch (error) {
-          console.error(error)
-        }
-        setLoading(false)
-      })()
+  // Update search results when apps change
+  useEffect(() => {
+    if (apps.length > 0) {
+      // Initialize or update Fuse instance
+      const fuse = new Fuse(apps, options)
+      setFuseInstance(fuse)
+      // Apply current search
+      applySearch(search, apps, fuse)
+    } else {
+      setFilteredApps([])
     }
-  }, [managers?.permissionsManager])
+  }, [apps, search])
+
+  // Show metanet loading indicator when no cached apps are available
+  if (showMetanetLoading) {
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'inherit',
+        zIndex: 1000
+      }}>
+        <AppLogo rotate size={128} />
+      </div>
+    )
+  }
 
   return (
     <div className={classes.apps_view}>
@@ -254,40 +264,249 @@ const Apps: React.FC = () => {
         </FormControl>
       </Container>
 
-      <Typography
-        variant="subtitle2"
-        color="textSecondary"
-        align="center"
-        sx={{
-          marginBottom: '1em'
-        }}
-      >
-        {loading && 'Loading your apps...'}
-        {!loading && apps.length === 0 && 'You have no recent apps yet.'}
-        {!loading && apps.length !== 0 && filteredApps.length === 0 && 'No apps match your search.'}
-      </Typography>
+      {/* Show error state only if there's an error and no apps */}
+      {error && apps.length === 0 && (
+        <Typography
+          variant="subtitle2"
+          color="error"
+          align="center"
+          sx={{ marginBottom: '1em' }}
+        >
+          Failed to load apps.
+          <Button
+            size="small"
+            onClick={refreshApps}
+            sx={{ ml: 1 }}
+          >
+            Retry
+          </Button>
+        </Typography>
+      )}
+
+      {/* Show empty state only if no apps and not loading */}
+      {!loading && apps.length === 0 && !error && (
+        <Typography
+          variant="subtitle2"
+          color="textSecondary"
+          align="center"
+          sx={{ marginBottom: '1em' }}
+        >
+          You have no recent apps yet.
+        </Typography>
+      )}
+
+      {/* Show no search results only when we have apps but none match search */}
+      {apps.length > 0 && filteredApps.length === 0 && search.trim() !== '' && (
+        <Typography
+          variant="subtitle2"
+          color="textSecondary"
+          align="center"
+          sx={{ marginBottom: '1em' }}
+        >
+          No apps match your search.
+        </Typography>
+      )}
 
       <Container>
-        <Grid2
-          container
-          spacing={3}
-          alignItems='center'
-          justifyContent='left'
-          className={classes.apps_view}
-        >
-          {filteredApps.map((app) => (
-            <Grid2 key={app.domain} size={{ xs: 6, sm: 6, md: 3, lg: 2 }} className={classes.gridItem}>
-              <MetanetApp
-                appName={app.appName}
-                domain={app.domain}
-                iconImageUrl={app.appIconImageUrl}
-              />
-            </Grid2>
-          ))}
-        </Grid2>
-      </Container>
+        {filteredApps.length > 0 && (
+          <>
+            {/* Pinned Apps Section */}
+            {(() => {
+              const pinnedFilteredApps = filteredApps.filter(app => app.isPinned)
+              if (pinnedFilteredApps.length === 0) return null
 
-      {loading && <LinearProgress style={{ marginTop: '1em' }} />}
+              return (
+                <Fade in={true} timeout={300}>
+                  <Box sx={{ mb: 4 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                      <PushPinIcon sx={{ mr: 1, color: 'primary.main', fontSize: '1.2rem' }} />
+                      <Typography variant="h6" color="primary" sx={{ fontWeight: 600 }}>
+                        Pinned Apps
+                      </Typography>
+                    </Box>
+                    <Grid2
+                      container
+                      spacing={3}
+                      alignItems='center'
+                      justifyContent='left'
+                      className={classes.apps_view}
+                    >
+                      {pinnedFilteredApps.map((app) => (
+                        <Grid2 key={app.domain} size={{ xs: 6, sm: 6, md: 3, lg: 2 }} className={classes.gridItem}>
+                          <Box sx={{ position: 'relative' }}>
+                            <MetanetApp
+                              appName={app.appName}
+                              domain={app.domain}
+                              iconImageUrl={app.appIconImageUrl}
+                            />
+                            <Tooltip title="Unpin app" placement="top">
+                              <Box
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  togglePin(app.domain)
+                                }}
+                                sx={{
+                                  position: 'absolute',
+                                  top: 6,
+                                  right: 6,
+                                  backgroundColor: (theme) => theme.palette.mode === 'dark'
+                                    ? 'rgba(255, 255, 255, 0.15)'
+                                    : 'rgba(0, 0, 0, 0.7)',
+                                  borderRadius: '50%',
+                                  width: 28,
+                                  height: 28,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  opacity: 1,
+                                  transition: 'all 0.2s ease',
+                                  backdropFilter: 'blur(4px)',
+                                  border: (theme) => theme.palette.mode === 'dark'
+                                    ? '1px solid rgba(255, 255, 255, 0.2)'
+                                    : 'none',
+                                  '&:hover': {
+                                    backgroundColor: (theme) => theme.palette.mode === 'dark'
+                                      ? 'rgba(255, 255, 255, 0.25)'
+                                      : 'rgba(0, 0, 0, 0.85)',
+                                    transform: 'scale(1.05)'
+                                  }
+                                }}
+                              >
+                                <PushPinIcon
+                                  sx={{
+                                    color: (theme) => theme.palette.mode === 'dark'
+                                      ? 'rgba(255, 255, 255, 0.9)'
+                                      : 'white',
+                                    fontSize: '1rem'
+                                  }}
+                                />
+                              </Box>
+                            </Tooltip>
+                          </Box>
+                        </Grid2>
+                      ))}
+                    </Grid2>
+                  </Box>
+                </Fade>
+              )
+            })()}
+
+            {/* Regular Apps Section */}
+            {(() => {
+              const unpinnedFilteredApps = filteredApps.filter(app => !app.isPinned)
+              if (unpinnedFilteredApps.length === 0) return null
+
+              const showDivider = filteredApps.some(app => app.isPinned)
+
+              return (
+                <Fade in={true} timeout={400}>
+                  <Box>
+                    {showDivider && (
+                      <>
+                        <Divider sx={{ mb: 3, opacity: 0.3 }} />
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                          <Typography variant="h6" color="textSecondary" sx={{ fontWeight: 500 }}>
+                            All Apps
+                          </Typography>
+                        </Box>
+                      </>
+                    )}
+                    <Grid2
+                      container
+                      spacing={3}
+                      alignItems='center'
+                      justifyContent='left'
+                      className={classes.apps_view}
+                    >
+                      {unpinnedFilteredApps.map((app) => (
+                        <Grid2 key={app.domain} size={{ xs: 6, sm: 6, md: 3, lg: 2 }} className={classes.gridItem}>
+                          <Box
+                            sx={{
+                              position: 'relative',
+                              '&:hover .pin-button': {
+                                opacity: 1,
+                                transform: 'scale(1)'
+                              }
+                            }}
+                          >
+                            <MetanetApp
+                              appName={app.appName}
+                              domain={app.domain}
+                              iconImageUrl={app.appIconImageUrl}
+                            />
+                            <Tooltip title="Pin app" placement="top">
+                              <Box
+                                className="pin-button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  togglePin(app.domain)
+                                }}
+                                sx={{
+                                  position: 'absolute',
+                                  top: 6,
+                                  right: 6,
+                                  backgroundColor: (theme) => theme.palette.mode === 'dark'
+                                    ? 'rgba(255, 255, 255, 0.15)'
+                                    : 'rgba(0, 0, 0, 0.7)',
+                                  borderRadius: '50%',
+                                  width: 28,
+                                  height: 28,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  opacity: 0,
+                                  transform: 'scale(0.8)',
+                                  transition: 'all 0.2s ease',
+                                  backdropFilter: 'blur(4px)',
+                                  border: (theme) => theme.palette.mode === 'dark'
+                                    ? '1px solid rgba(255, 255, 255, 0.2)'
+                                    : 'none',
+                                  '&:hover': {
+                                    backgroundColor: (theme) => theme.palette.mode === 'dark'
+                                      ? 'rgba(255, 255, 255, 0.25)'
+                                      : 'rgba(0, 0, 0, 0.85)',
+                                    transform: 'scale(1.05)'
+                                  }
+                                }}
+                              >
+                                <PushPinOutlinedIcon
+                                  sx={{
+                                    color: (theme) => theme.palette.mode === 'dark'
+                                      ? 'rgba(255, 255, 255, 0.9)'
+                                      : 'white',
+                                    fontSize: '1rem'
+                                  }}
+                                />
+                              </Box>
+                            </Tooltip>
+                          </Box>
+                        </Grid2>
+                      ))}
+                    </Grid2>
+                  </Box>
+                </Fade>
+              )
+            })()}
+          </>
+        )}
+
+        {/* Show a subtle progress indicator at the bottom if still loading */}
+        {loading && apps.length > 0 && (
+          <Box sx={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            mt: 3,
+            opacity: 0.6
+          }}>
+            <Typography variant="caption" color="textSecondary">
+              Updating app details... ({Math.round((progress || 0) * 100)}%)
+            </Typography>
+          </Box>
+        )}
+      </Container>
     </div>
   )
 }

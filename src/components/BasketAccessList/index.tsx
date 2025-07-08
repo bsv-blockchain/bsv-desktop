@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useContext, useMemo } from 'react';
 import {
   Box,
   Dialog,
@@ -18,6 +18,9 @@ import { useHistory } from 'react-router-dom/cjs/react-router-dom.min';
 import AppChip from '../AppChip';
 import { formatDistance } from 'date-fns';
 import { WalletContext } from '../../WalletContext'
+
+// Simple in-memory cache for basket permissions
+const BASKET_CACHE = new Map<string, PermissionToken[]>();
 import { PermissionToken } from '@bsv/wallet-toolbox-client';
 
 const useStyles = makeStyles(style, {
@@ -55,6 +58,9 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
   }
 
   const { managers, adminOriginator } = useContext(WalletContext);
+
+  // Build a stable cache key
+  const queryKey = useMemo(() => JSON.stringify({ app, basket, itemsDisplayed, limit }), [app, basket, itemsDisplayed, limit]);
   const [loading, setLoading] = useState<boolean>(true);
   const [listHeaderTitle, setListHeaderTitle] = useState<string | null>(null);
 
@@ -67,6 +73,13 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
 
   const fetchPermissions = useCallback(async () => {
     if (!managers || !adminOriginator) return;
+    // Return cached data if available
+    if (BASKET_CACHE.has(queryKey)) {
+      setGrants(BASKET_CACHE.get(queryKey)!);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -91,6 +104,8 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
       });
 
       setGrants(grants);
+      // cache for future
+      BASKET_CACHE.set(queryKey, grants);
       if (grants.length === 0) {
         setListHeaderTitle('No access grants found');
       }

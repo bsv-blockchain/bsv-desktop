@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, FC, useContext } from 'react'
+import { useState, useEffect, useCallback, FC, useContext, useMemo } from 'react'
 import {
   Dialog,
   DialogTitle,
@@ -18,6 +18,9 @@ import { toast } from 'react-toastify'
 import { WalletContext } from '../WalletContext'
 import { PermissionToken, Services } from '@bsv/wallet-toolbox-client'
 
+/* Simple cache keyed by app */
+const SPENDING_CACHE = new Map<string, { auth: PermissionToken | null; spent: number }>();
+
 type Props = {
   app: string
   limit?: number
@@ -25,13 +28,16 @@ type Props = {
 }
 
 const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = () => { } }) => {
-  const { managers } = useContext(WalletContext)
+  const { managers, spendingRequests } = useContext(WalletContext)
+
+  const cacheKey = useMemo(() => app, [app]);
 
   const [authorization, setAuthorization] = useState<PermissionToken | null>(null)
   const [currentSpending, setCurrentSpending] = useState<number>(0)
   const [authorizedAmount, setAuthorizedAmount] = useState<number>(0)
   const [dialogOpen, setDialogOpen] = useState<boolean>(false)
-  const [dialogLoading, setDialogLoading] = useState<boolean>(false)
+  const [revokeLoading, setRevokeLoading] = useState<boolean>(false)
+  const [increaseLoading, setIncreaseLoading] = useState<boolean>(false)
   const [loading, setLoading] = useState<boolean>(true)
   const [usdPerBsv, setUsdPerBSV] = useState<number>(70)
   const services = new Services('main') // TODO: Move to wallet context
@@ -52,9 +58,23 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
   }
 
   const refreshAuthorizations = useCallback(async (): Promise<void> => {
+    // return cached
+    if (SPENDING_CACHE.has(cacheKey)) {
+      const cached = SPENDING_CACHE.get(cacheKey)!
+      setAuthorization(cached.auth)
+      setCurrentSpending(cached.spent)
+      setAuthorizedAmount(cached.auth?.authorizedAmount ?? 0)
+      setLoading(false)
+      return
+    }
     try {
       const results = await managers.permissionsManager.listSpendingAuthorizations({ originator: app })
       if (!results || results.length === 0) {
+        // No authorizations exist, clear local state so UI updates accordingly
+        setAuthorization(null)
+        setCurrentSpending(0)
+        setAuthorizedAmount(0)
+        SPENDING_CACHE.delete(cacheKey)
         onEmptyList()
       } else {
         const currentAuthorization = results[0]
@@ -62,6 +82,7 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
         setAuthorization(currentAuthorization)
         setCurrentSpending(currentSpending)
         setAuthorizedAmount(currentAuthorization.authorizedAmount)
+        SPENDING_CACHE.set(cacheKey, { auth: currentAuthorization, spent: currentSpending })
       }
     } catch {
       onEmptyList()
@@ -77,7 +98,7 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
 
   const updateSpendingAuthorization = async (auth: PermissionToken): Promise<void> => {
     if (!auth) return
-    setDialogLoading(true)
+    setIncreaseLoading(true)
     try {
       await managers.permissionsManager.ensureSpendingAuthorization({
         originator: app,
@@ -87,36 +108,44 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
       })
       // Add a delay before refreshing to ensure backend data is updated
       await new Promise(resolve => setTimeout(resolve, 1000))
+      // Invalidate cache to force fresh data
+      SPENDING_CACHE.delete(cacheKey)
       await refreshAuthorizations()
     } catch (e: unknown) {
       // Add a delay before refreshing to ensure backend data is updated
       await new Promise(resolve => setTimeout(resolve, 1000))
+      // Invalidate cache to force fresh data
+      SPENDING_CACHE.delete(cacheKey)
       await refreshAuthorizations()
       const errorMessage = e instanceof Error ? e.message : 'Unknown error'
       toast.error(`Failed to increase spending authorization: ${errorMessage}`)
     } finally {
-      setDialogLoading(false)
+      setIncreaseLoading(false)
     }
   }
 
   const handleConfirmRevoke = async (): Promise<void> => {
     if (!authorization) return
-    setDialogLoading(true)
+    setRevokeLoading(true)
     try {
       await managers.permissionsManager.revokePermission(authorization)
       setDialogOpen(false)
       // Add a delay before refreshing to ensure backend data is updated
       await new Promise(resolve => setTimeout(resolve, 1000))
+      // Invalidate cache to force fresh data
+      SPENDING_CACHE.delete(cacheKey)
       await refreshAuthorizations()
     } catch (e: unknown) {
       // Add a delay before refreshing to ensure backend data is updated
       await new Promise(resolve => setTimeout(resolve, 1000))
+      // Invalidate cache to force fresh data
+      SPENDING_CACHE.delete(cacheKey)
       await refreshAuthorizations()
       const errorMessage = e instanceof Error ? e.message : 'Unknown error'
       toast.error(`Failed to revoke spending authorization: ${errorMessage}`)
       setDialogOpen(false)
     } finally {
-      setDialogLoading(false)
+      setRevokeLoading(false)
     }
   }
 
@@ -149,9 +178,23 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
       } catch {
         // fallback or leave default
       }
-    })()
-    refreshAuthorizations()
+    })();
+    refreshAuthorizations();
   }, [refreshAuthorizations])
+
+  useEffect(() => {
+    // If there are no spending requests and we previously had some, refresh the list
+    // This indicates the SpendingAuthorizationHandler has completed
+    if (spendingRequests && spendingRequests.length === 0) {
+      const timeoutId = setTimeout(() => {
+        // Invalidate cache to force fresh data
+        SPENDING_CACHE.delete(cacheKey)
+        refreshAuthorizations()
+      }, 500) // Small delay to ensure backend is updated
+      
+      return () => clearTimeout(timeoutId)
+    }
+  }, [spendingRequests, cacheKey, refreshAuthorizations])
 
   return (
     <>
@@ -163,11 +206,11 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleDialogClose} disabled={dialogLoading}>
+          <Button onClick={handleDialogClose} disabled={revokeLoading}>
             Cancel
           </Button>
-          <Button onClick={handleConfirmRevoke} disabled={dialogLoading}>
-            {dialogLoading ? (
+          <Button onClick={handleConfirmRevoke} disabled={revokeLoading}>
+            {revokeLoading ? (
               <>
                 <CircularProgress size={16} sx={{ mr: 1 }} />
                 Revoking...
@@ -230,9 +273,9 @@ const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = ()
               <Button 
                 fullWidth 
                 onClick={() => updateSpendingAuthorization(authorization)}
-                disabled={dialogLoading}
+                disabled={increaseLoading}
               >
-                {dialogLoading ? (
+                {increaseLoading ? (
                   <>
                     <CircularProgress size={16} sx={{ mr: 1 }} />
                     Increasing...

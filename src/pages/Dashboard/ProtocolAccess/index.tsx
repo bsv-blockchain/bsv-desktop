@@ -29,6 +29,14 @@ interface ProtocolDetails {
   documentationURL?: string;
 }
 
+// Interface for location state passed from navigation
+interface LocationState {
+  protocolName?: string;
+  iconURL?: string;
+  description?: string;
+  documentationURL?: string;
+}
+
 /**
  * Display the access information for a particular protocol.
  */
@@ -36,12 +44,25 @@ const ProtocolAccess: React.FC = () => {
   const { protocolId: encodedProtocolId, securityLevel: encodedSecurityLevel } = useParams<{ protocolId: string, securityLevel: string }>();
   const protocolId = decodeURIComponent(encodedProtocolId);
   const securityLevel = Number(decodeURIComponent(encodedSecurityLevel));
-  const history = useHistory();
+  const history = useHistory<LocationState>();
   const { managers } = useContext(WalletContext);
 
-  const [protocolDetails, setProtocolDetails] = useState<ProtocolDetails | null>(null);
+  // Get passed data from navigation state
+  const locationState = history.location.state;
+  
+  // Initialize state with passed data if available
+  const [protocolDetails, setProtocolDetails] = useState<ProtocolDetails | null>(
+    locationState ? {
+      protocolName: locationState.protocolName || `Protocol: ${protocolId}`,
+      iconURL: locationState.iconURL || DEFAULT_APP_ICON,
+      securityLevel,
+      protocolID: protocolId,
+      description: locationState.description || 'Loading protocol description...',
+      documentationURL: locationState.documentationURL || 'https://docs.example.com/protocols'
+    } : null
+  );
   const [copied, setCopied] = useState<{ [key: string]: boolean }>({ id: false });
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(!locationState); // Don't show loading if we have data
   const [error, setError] = useState<string | null>(null);
 
   // Copies the data and timeouts the checkmark icon
@@ -55,6 +76,13 @@ const ProtocolAccess: React.FC = () => {
 
   useEffect(() => {
     console.log('securityLevel', encodedSecurityLevel)
+    
+    // Only fetch data if we don't already have it from navigation state
+    if (protocolDetails && locationState) {
+      console.log('Using passed protocol data, skipping fetch');
+      return;
+    }
+    
     const fetchProtocolDetails = async () => {
       // TODO: Replace with actual SDK call to get protocol details by ID
       // This might involve a lookup service or specific manager method.
@@ -85,7 +113,7 @@ const ProtocolAccess: React.FC = () => {
     };
 
     fetchProtocolDetails();
-  }, [protocolId, managers.walletManager]);
+  }, [protocolId, managers.walletManager, protocolDetails, locationState]);
 
   if (loading) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;

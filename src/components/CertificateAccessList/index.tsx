@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useContext } from 'react'
+import React, { useState, useEffect, useCallback, useContext, useMemo } from 'react'
 import {
   List,
   ListItem,
@@ -19,6 +19,9 @@ import { withRouter, RouteComponentProps } from 'react-router-dom'
 import { formatDistance } from 'date-fns'
 import CloseIcon from '@mui/icons-material/Close'
 import { WalletContext } from '../../WalletContext'
+
+// Simple cache for certificate permissions
+const CERT_CACHE = new Map<string, GrantItem[]>();
 import CertificateChip from '../CertificateChip'
 import AppChip from '../AppChip'
 import sortPermissions from './sortPermissions'
@@ -79,6 +82,9 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
   onEmptyList = () => { },
   history
 }) => {
+  // Build stable query key
+  const queryKey = useMemo(() => JSON.stringify({ app, itemsDisplayed, counterparty, type, limit }), [app, itemsDisplayed, counterparty, type, limit]);
+
   const [grants, setGrants] = useState<GrantItem[]>([])
   const [dialogOpen, setDialogOpen] = useState<boolean>(false)
   const [currentAccessGrant, setCurrentAccessGrant] = useState<PermissionToken | null>(null)
@@ -88,6 +94,11 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
   const { managers, adminOriginator } = useContext(WalletContext)
 
   const refreshGrants = useCallback(async () => {
+    // Return cached
+    if (CERT_CACHE.has(queryKey)) {
+      setGrants(CERT_CACHE.get(queryKey)!);
+      return;
+    }
     try {
       if (!managers?.permissionsManager) {
         return
@@ -103,8 +114,10 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
       if (itemsDisplayed === 'apps') {
         const results = sortPermissions(permissions)
         setGrants(results)
+        CERT_CACHE.set(queryKey, results)
       } else {
         setGrants(permissions)
+        CERT_CACHE.set(queryKey, permissions)
       }
 
       if (permissions.length === 0) {

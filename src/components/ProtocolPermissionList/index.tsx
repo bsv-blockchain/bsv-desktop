@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useContext, useMemo } from 'react';
 import { useHistory } from 'react-router-dom';
 import {
   List,
@@ -176,6 +176,12 @@ function groupPermissionsByProtocol(tokens: PermissionToken[]): ProtocolPermissi
 }
 
 /* -------------------------------------------------------------------------- */
+/*                            Simple In-Memory Cache                           */
+/* -------------------------------------------------------------------------- */
+// Keyed by a JSON-stringified query descriptor
+const PERM_CACHE = new Map<string, PermissionGroup[]>();
+
+/* -------------------------------------------------------------------------- */
 /*                              Main Component                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -200,6 +206,13 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
     /* noop */
   },
 }) => {
+  /* ---------------------------- Memo Key ---------------------------- */
+  const queryKey = useMemo(
+    () =>
+      JSON.stringify({ app, protocol, securityLevel, counterparty, itemsDisplayed, limit }),
+    [app, protocol, securityLevel, counterparty, itemsDisplayed, limit]
+  );
+
   /* ---------------------------- Runtime state ---------------------------- */
   const [perms, setPerms] = useState<PermissionGroup[]>([]);
   const [loading, setLoading] = useState(false);
@@ -218,6 +231,12 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
   const refreshPerms = useCallback(async () => {
     if (!managers?.permissionsManager) return;
 
+    // Return cached results if present
+    if (PERM_CACHE.has(queryKey)) {
+      setPerms(PERM_CACHE.get(queryKey)!);
+      return;
+    }
+
     try {
       setLoading(true);
       // Fetch permission tokens from wallet SDK
@@ -235,7 +254,10 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
           ? groupPermissionsByApp(raw)
           : groupPermissionsByProtocol(raw);
 
-      setPerms(limit ? grouped.slice(0, limit) : grouped);
+      const finalGroups = limit ? grouped.slice(0, limit) : grouped;
+      setPerms(finalGroups);
+      // Cache the result
+      PERM_CACHE.set(queryKey, finalGroups);
       if (grouped.length === 0) onEmptyList();
     } catch (err) {
       console.error(err)
@@ -288,6 +310,8 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
       setDialogLoading(false);
       setDialogOpen(false);
       setToRevoke(null);
+      // Invalidate cached permissions for this query so we fetch fresh data
+      PERM_CACHE.delete(queryKey);
       refreshPerms();
     }
   };

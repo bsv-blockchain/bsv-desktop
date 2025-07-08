@@ -1,312 +1,349 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useState, useEffect, useContext, useMemo, useCallback } from 'react';
-import { IconButton, Typography } from '@mui/material';
-import Grid from '@mui/material/Grid';
-import CheckIcon from '@mui/icons-material/Check';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+/* ------------------------------------------------------------------
+ * Apps.tsx — clean, performant version
+ * ------------------------------------------------------------------ */
 
-import { useLocation } from 'react-router-dom';
-import { WalletContext } from '../../../WalletContext';
-import { WalletAction } from '@bsv/sdk';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import {
+  Grid,
+  Typography,
+  IconButton,
+} from '@mui/material'
+import CheckIcon from '@mui/icons-material/Check'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
+import { useLocation } from 'react-router-dom'
+import { History } from 'history'
 
-import { DEFAULT_APP_ICON } from '../../../constants/popularApps';
-import PageHeader from '../../../components/PageHeader';
-import RecentActions from '../../../components/RecentActions';
-import fetchAndCacheAppData from '../../../utils/fetchAndCacheAppData';
-import AccessAtAGlance from '../../../components/AccessAtAGlance';
+import { WalletContext } from '../../../WalletContext'
+import { WalletAction } from '@bsv/sdk'
+import { DEFAULT_APP_ICON } from '../../../constants/popularApps'
+import PageHeader from '../../../components/PageHeader'
+import RecentActions from '../../../components/RecentActions'
+import AccessAtAGlance from '../../../components/AccessAtAGlance'
+import fetchAndCacheAppData from '../../../utils/fetchAndCacheAppData'
 
-// Extended interface for transformed wallet actions
-interface TransformedWalletAction extends WalletAction {
-  amount: number;
-  fees?: number;
+/* ------------------------------------------------------------------
+ *  Constants & helpers
+ * ------------------------------------------------------------------ */
+
+const LIMIT = 10
+const CACHE_CAPACITY = 25 // max # of apps kept in RAM
+
+/** Simple LRU cache for per-app pages */
+class LruCache<K, V> {
+  private map = new Map<K, V>()
+
+  constructor(private capacity = 50) { }
+
+  get(key: K): V | undefined {
+    const item = this.map.get(key)
+    if (!item) return undefined
+    // bump to most-recent
+    this.map.delete(key)
+    this.map.set(key, item)
+    return item
+  }
+
+  set(key: K, value: V): void {
+    if (this.map.has(key)) this.map.delete(key)
+    this.map.set(key, value)
+    if (this.map.size > this.capacity) {
+      // delete least-recent
+      const first = this.map.keys().next().value
+      this.map.delete(first)
+    }
+  }
 }
+const APP_PAGE_CACHE = new LruCache<
+  string,
+  { actions: TransformedWalletAction[]; totalActions: number }
+>(CACHE_CAPACITY)
 
-// Optimized transform function
-function transformActions(actions: WalletAction[]): TransformedWalletAction[] {
-  return actions.map((action) => {
-    const inputs = action.inputs ?? [];
-    const outputs = action.outputs ?? [];
-
-    // Calculate total input and output amounts
-    const totalInputAmount = inputs.reduce((sum, input) => sum + Number(input.sourceSatoshis), 0);
-    const totalOutputAmount = outputs.reduce((sum, output) => sum + Number(output.satoshis), 0);
-
-    // Calculate fees
-    const fees = totalInputAmount - totalOutputAmount;
-
-    // Always show the total output amount as the main amount
-    const amount = action.satoshis;
+/** Transform raw actions for UI */
+interface TransformedWalletAction extends WalletAction {
+  amount: number
+  fees?: number
+}
+const transformActions = (actions: WalletAction[]): TransformedWalletAction[] =>
+  actions.map(a => {
+    const inputSum = (a.inputs ?? []).reduce(
+      (s, i) => s + Number(i.sourceSatoshis),
+      0,
+    )
+    const outputSum = (a.outputs ?? []).reduce(
+      (s, o) => s + Number(o.satoshis),
+      0,
+    )
 
     return {
-      ...action,
-      amount,
-      inputs,
-      outputs,
-      fees: fees > 0 ? fees : undefined,
-    };
-  });
-}
+      ...a,
+      amount: a.satoshis,
+      fees: inputSum - outputSum || undefined,
+    }
+  })
 
+/* ------------------------------------------------------------------
+ *  Router state
+ * ------------------------------------------------------------------ */
 interface LocationState {
-  domain?: string;
-  appName?: string;
-  iconImageUrl?: string;
+  domain?: string
+  appName?: string
+  iconImageUrl?: string
 }
 
 interface AppsProps {
-  history?: any; // or ReactRouter history type
+  history?: History
 }
 
-const Apps: React.FC<AppsProps> = ({ history }) => {
-  const location = useLocation<LocationState>();
-  const appDomain = location.state?.domain ?? 'unknown-domain.com';
-  const passedAppName = location.state?.appName;
-  const passedIconUrl = location.state?.iconImageUrl;
+/* ------------------------------------------------------------------
+ *  Component
+ * ------------------------------------------------------------------ */
+const App: React.FC<AppsProps> = ({ history }) => {
+  /* ---------- Router & persisted params -------------------------- */
+  const { state } = useLocation<LocationState>()
+  const initialDomain =
+    state?.domain || sessionStorage.getItem('lastAppDomain') || 'unknown.com'
+  const initialName =
+    state?.appName || sessionStorage.getItem('lastAppName') || initialDomain
+  const initialIcon =
+    state?.iconImageUrl ||
+    sessionStorage.getItem('lastAppIcon') ||
+    DEFAULT_APP_ICON
 
-  const [appName, setAppName] = useState<string>(passedAppName || appDomain);
-  const [appIcon, setAppIcon] = useState<string>(passedIconUrl || DEFAULT_APP_ICON);
-  // Retain displayLimit for UI, though pagination now loads fixed sets of 10.
-  const [displayLimit, setDisplayLimit] = useState<number>(5);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [refresh, setRefresh] = useState<boolean>(false);
-  const [allActionsShown, setAllActionsShown] = useState<boolean>(true);
+  /* ---------- Context ------------------------------------------- */
+  const { managers, adminOriginator } = useContext(WalletContext)
+  const permissionsManager = managers?.permissionsManager
 
-  const [copied, setCopied] = useState<{ id: boolean; registryOperator?: boolean }>({
-    id: false,
-  });
+  /* ---------- Local state --------------------------------------- */
+  const [appDomain, setAppDomain] = useState(initialDomain)
+  const [appName, setAppName] = useState(initialName)
+  const [appIcon, setAppIcon] = useState(initialIcon)
 
-  // Store fetched actions here.
-  const [appActions, setAppActions] = useState<TransformedWalletAction[]>([]);
-  // New state for pagination – page 0 returns the most recent 10 actions.
-  const [page, setPage] = useState<number>(0);
-  // Add state for progressive loading
-  const [totalActions, setTotalActions] = useState<number>(0);
-  const [actionsLoaded, setActionsLoaded] = useState<boolean>(false);
+  const [appActions, setAppActions] = useState<TransformedWalletAction[]>(
+    () => APP_PAGE_CACHE.get(initialDomain)?.actions || [],
+  )
+  const [totalActions, setTotalActions] = useState(
+    () => APP_PAGE_CACHE.get(initialDomain)?.totalActions || 0,
+  )
+  const [page, setPage] = useState(0)
+  const [isFetching, setIsFetching] = useState(false)
+  const [allActionsShown, setAllActionsShown] = useState(false)
+  const [copied, setCopied] = useState(false)
 
-  // Grab managers and adminOriginator from Wallet Context
-  const { managers, adminOriginator } = useContext(WalletContext);
+  /* ---------- Refs to avoid stale closures ---------------------- */
+  const abortRef = useRef<AbortController | null>(null)
 
-  // Copy handler for UI
-  const handleCopy = (data: string, type: 'id' | 'registryOperator') => {
-    navigator.clipboard.writeText(data);
-    setCopied((prev) => ({ ...prev, [type]: true }));
-    setTimeout(() => setCopied((prev) => ({ ...prev, [type]: false })), 2000);
-  };
+  /* ---------- Derived values ------------------------------------ */
+  const url = useMemo(
+    () => (appDomain.startsWith('http') ? appDomain : `https://${appDomain}`),
+    [appDomain],
+  )
 
-  // Memoized cache key to avoid recalculation
-  const cacheKey = useMemo(() => `transactions_${appDomain}`, [appDomain]);
+  const cacheKey = useMemo(() => `transactions_${appDomain}`, [appDomain])
 
-  // Load cached data immediately (non-blocking)
+  /* ---------- Cache hydration (localStorage) -------------------- */
   useEffect(() => {
-    const cachedData = window.localStorage.getItem(cacheKey);
-    if (cachedData) {
+    const cached = localStorage.getItem(cacheKey)
+    if (cached) {
       try {
-        const cachedParsed = JSON.parse(cachedData) as {
-          totalTransactions: number;
-          transactions: WalletAction[];
-        };
-        const transformedCached = transformActions(cachedParsed.transactions);
-        setAppActions(transformedCached);
-        setTotalActions(cachedParsed.totalTransactions);
-        setActionsLoaded(true);
-      } catch (e) {
-        console.error('Error parsing cached data:', e);
+        const parsed = JSON.parse(cached) as {
+          totalTransactions: number
+          transactions: WalletAction[]
+        }
+        setTotalActions(parsed.totalTransactions)
+        setAppActions(transformActions(parsed.transactions))
+        setAllActionsShown(parsed.transactions.length >= parsed.totalTransactions)
+      } catch (err) {
+        console.error('Local cache parse error', err)
       }
     }
-  }, [cacheKey]);
+  }, [cacheKey])
 
-  // Async function to load actions progressively
-  const loadActions = useCallback(async () => {
-    if (!managers?.permissionsManager || !adminOriginator) return;
+  /* ---------- Persist router state ------------------------------ */
+  useEffect(() => {
+    sessionStorage.setItem('lastAppDomain', appDomain)
+    sessionStorage.setItem('lastAppName', appName)
+    sessionStorage.setItem('lastAppIcon', appIcon)
+  }, [appDomain, appName, appIcon])
 
+  /* ---------- Clipboard helper ---------------------------------- */
+  const handleCopy = async () => {
     try {
-      setLoading(true);
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+    } finally {
+      setTimeout(() => setCopied(false), 2_000)
+    }
+  }
 
-      // Only fetch app data if not already provided from previous page
-      if (!passedAppName || !passedIconUrl) {
-        fetchAndCacheAppData(appDomain, setAppIcon, setAppName, DEFAULT_APP_ICON);
-      }
+  /* ---------- Core: fetch a page of actions --------------------- */
+  const fetchPage = useCallback(
+    async (pageToLoad = 0) => {
+      if (!permissionsManager || !adminOriginator) return
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+      setIsFetching(true)
 
-      // Step 1: Get total count (lightweight request)
-      const { totalActions: fetchedTotal } = await managers.permissionsManager.listActions(
-        {
-          labels: [`admin originator ${appDomain}`],
-          labelQueryMode: 'any',
-          includeLabels: false,
-          limit: 1,
-        },
-        adminOriginator
-      );
-
-      setTotalActions(fetchedTotal);
-
-      // Step 2: Fetch actual actions in background
-      const limit = 10;
-      const offset = Math.max(fetchedTotal - (page + 1) * limit, 0);
-
-      // Use setTimeout to yield control back to the main thread
-      setTimeout(async () => {
-        try {
-          const actionsResponse = await managers.permissionsManager.listActions(
+      try {
+        /* Fetch page in ascending order; backend returns totalActions */
+        const { actions, totalActions: total } =
+          await permissionsManager.listActions(
             {
               labels: [`admin originator ${appDomain}`],
               labelQueryMode: 'any',
               includeLabels: true,
               includeInputs: true,
               includeOutputs: true,
-              limit,
-              offset,
+              limit: LIMIT,
+              offset: pageToLoad * LIMIT,
             },
             adminOriginator
-          );
+          )
 
-          // Transform actions in chunks to avoid blocking
-          const chunkSize = 5;
-          const actions = actionsResponse.actions;
-          let transformedActions: TransformedWalletAction[] = [];
+        const transformed = transformActions(actions)
 
-          for (let i = 0; i < actions.length; i += chunkSize) {
-            const chunk = actions.slice(i, i + chunkSize);
-            const transformedChunk = transformActions(chunk);
-            transformedActions = [...transformedActions, ...transformedChunk];
-            
-            // Yield control after each chunk
-            if (i + chunkSize < actions.length) {
-              await new Promise(resolve => setTimeout(resolve, 0));
-            }
-          }
+        setTotalActions(total)
+        setAllActionsShown((pageToLoad + 1) * LIMIT >= total)
+        setAppActions(prev =>
+          pageToLoad === 0 ? transformed : [...prev, ...transformed],
+        )
 
-          // Reverse for most recent first
-          const pageActions = transformedActions.reverse();
-
-          // Update state
-          if (page === 0) {
-            setAppActions(pageActions);
-          } else {
-            setAppActions((prev) => [...prev, ...pageActions]);
-          }
-
-          setAllActionsShown(offset === 0);
-          setActionsLoaded(true);
-
-          // Cache only the most recent page
-          if (page === 0) {
-            window.localStorage.setItem(
-              cacheKey,
-              JSON.stringify({
-                totalTransactions: fetchedTotal,
-                transactions: pageActions,
-              })
-            );
-          }
-        } catch (e) {
-          console.error('Error fetching actions:', e);
-        } finally {
-          setLoading(false);
+        /* Cache only first page in localStorage */
+        if (pageToLoad === 0) {
+          localStorage.setItem(
+            cacheKey,
+            JSON.stringify({
+              totalTransactions: total,
+              transactions: actions,
+            }),
+          )
         }
-      }, 0);
-    } catch (e) {
-      console.error('Error getting total actions:', e);
-      setLoading(false);
-    } finally {
-      setRefresh(false);
-    }
-  }, [refresh, appDomain, managers?.permissionsManager, adminOriginator, page, cacheKey, passedAppName, passedIconUrl]);
 
-  // Load actions when dependencies change
+        /* In-memory cache */
+        APP_PAGE_CACHE.set(appDomain, {
+          actions:
+            pageToLoad === 0
+              ? transformed
+              : [...APP_PAGE_CACHE.get(appDomain)?.actions ?? [], ...transformed],
+          totalActions: total,
+        })
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError')
+          console.error('listActions error', err)
+      } finally {
+        setIsFetching(false)
+      }
+    },
+    [appDomain, adminOriginator, cacheKey, permissionsManager],
+  )
+
+  /* ---------- Initial load & page changes ----------------------- */
   useEffect(() => {
-    loadActions();
-  }, [loadActions]);
+    /* If we already have cached data for this page, skip fetch */
+    const cachedPageCount =
+      Math.ceil(APP_PAGE_CACHE.get(appDomain)?.actions.length ?? 0 / LIMIT) - 1
+    if (page > cachedPageCount) fetchPage(page)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, appDomain]) // fetchPage excluded on purpose
 
-  const recentActionParams = {
-    loading,
+  /* ---------- Handle domain change via router ------------------- */
+  useEffect(() => {
+    if (state?.domain && state.domain !== appDomain) {
+      setAppDomain(state.domain)
+      setAppName(state.appName || state.domain)
+      setAppIcon(state.iconImageUrl || DEFAULT_APP_ICON)
+      setPage(0)
+      setAppActions([])
+      setAllActionsShown(false)
+    }
+  }, [state, appDomain])
+
+  /* ---------- Load lightweight app metadata --------------------- */
+  useEffect(() => {
+    if (!state?.appName || !state?.iconImageUrl) {
+      fetchAndCacheAppData(appDomain, setAppIcon, setAppName, DEFAULT_APP_ICON)
+    }
+  }, [appDomain, state])
+
+  /* ---------- Cleanup pending requests on unmount --------------- */
+  useEffect(
+    () => () => {
+      abortRef.current?.abort()
+    },
+    [],
+  )
+
+  /* ---------- UI props ------------------------------------------ */
+  const recentActionProps = {
+    loading: isFetching,
     appActions,
-    displayLimit,
-    setDisplayLimit,
-    setRefresh,
+    displayLimit: LIMIT,
+    setDisplayLimit: () => { },
+    setRefresh: () => {
+      if (isFetching || allActionsShown) return;
+      const next = page + 1;
+      setPage(next);
+      fetchPage(next);
+    },
     allActionsShown,
-  };
+  }
 
-  const url = (appDomain.startsWith('http') ? appDomain : `https://${appDomain}`)
-
+  /* ---------- Render -------------------------------------------- */
   return (
-    <Grid
-      container
-      spacing={3}
-      direction="column"
-      sx={{
-        width: '100%',
-        maxWidth: '100%',
-        overflow: 'hidden'
-      }}
-    >
-      {/* Page Header */}
+    <Grid container direction="column" spacing={3} sx={{ maxWidth: '100%' }}>
+      {/* Header */}
       <Grid item xs={12}>
         <PageHeader
           history={history}
           title={appName}
           subheading={
-            <div>
-              <Typography variant="caption" color="textSecondary">
-                {url}
-                <IconButton
-                  size="small"
-                  onClick={() => handleCopy(url, 'id')}
-                  disabled={copied.id}
-                >
-                  {copied.id ? <CheckIcon /> : <ContentCopyIcon fontSize="small" />}
-                </IconButton>
-              </Typography>
-            </div>
+            <Typography variant="caption" color="textSecondary">
+              {url}
+              <IconButton size="small" onClick={handleCopy} disabled={copied}>
+                {copied ? (
+                  <CheckIcon fontSize="small" />
+                ) : (
+                  <ContentCopyIcon fontSize="small" />
+                )}
+              </IconButton>
+            </Typography>
           }
           icon={appIcon}
           buttonTitle="Launch"
           buttonIcon={<OpenInNewIcon />}
-          onClick={() => {
-            window.open(url, '_blank', 'noopener,noreferrer')
-          }}
+          onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
         />
       </Grid>
 
-      {/* Main Content: RecentActions + AccessAtAGlance */}
-      <Grid
-        item
-        xs={12}
-      >
-        <Grid
-          container
-          spacing={3}
-          sx={{
-            width: '100%',
-            maxWidth: '100%',
-            overflow: 'hidden',
-            justifyItems: 'start'
-          }}
-        >
-          {/* RecentActions Section */}
+      {/* Body */}
+      <Grid item xs={12}>
+        <Grid container spacing={3}>
+          {/* Recent actions */}
           <Grid item lg={6} md={6} xs={12}>
-            <RecentActions
-              appActions={appActions}
-              displayLimit={displayLimit}
-              setDisplayLimit={setDisplayLimit}
-              loading={loading}
-              setRefresh={setRefresh}
-            />
+            <RecentActions {...recentActionProps} />
           </Grid>
-          {/* AccessAtAGlance Section */}
+
+          {/* Access at a Glance */}
           <Grid item lg={6} md={6} xs={12}>
             <AccessAtAGlance
               originator={appDomain}
-              loading={loading}
-              setRefresh={setRefresh}
+              loading={isFetching}
+              setRefresh={() => fetchPage(0)}
               history={history}
             />
           </Grid>
         </Grid>
       </Grid>
     </Grid>
-  );
-};
+  )
+}
 
-export default Apps;
+export default App

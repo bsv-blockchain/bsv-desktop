@@ -57,7 +57,14 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
         onClick(e)
       } else {
         e.stopPropagation()
-        history.push(`/dashboard/protocol/${encodeURIComponent(protocolID)}/${encodeURIComponent(securityLevel)}`)
+        // Pass protocol data forward to prevent re-fetching
+        history.push(`/dashboard/protocol/${encodeURIComponent(protocolID)}/${encodeURIComponent(securityLevel)}`, {
+          protocolName,
+          iconURL,
+          description,
+          documentationURL,
+          previousAppDomain: originator
+        })
       }
     }
   }

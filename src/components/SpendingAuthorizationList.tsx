@@ -1,316 +1,249 @@
-import { useState, useEffect, useCallback, FC, useContext, useMemo } from 'react'
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogContentText,
-  DialogActions,
-  Button,
-  Typography,
-  LinearProgress,
-  Grid,
-  Box,
-  CircularProgress
-} from '@mui/material'
-import { format } from 'date-fns'
-import AmountDisplay from './AmountDisplay'
-import { toast } from 'react-toastify'
-import { WalletContext } from '../WalletContext'
-import { PermissionToken, Services } from '@bsv/wallet-toolbox-client'
-
-/* Simple cache keyed by app */
-const SPENDING_CACHE = new Map<string, { auth: PermissionToken | null; spent: number }>();
+  Dialog, DialogTitle, DialogContent, DialogContentText,
+  DialogActions, Button, Typography, LinearProgress,
+  Grid, Box, CircularProgress
+} from '@mui/material';
+import { FC, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { format } from 'date-fns';
+import { toast } from 'react-toastify';
+import AmountDisplay from './AmountDisplay';
+import { WalletContext } from '../WalletContext';
+import { PermissionToken, Services } from '@bsv/wallet-toolbox-client';
+import { determineUpgradeAmount } from '../utils/determineUpgradeAmount';
+import { useBsvExchangeRate } from '../hooks/useBsvExchangeRate';
 
 type Props = {
-  app: string
-  limit?: number
-  onEmptyList?: () => void
-}
+  app: string;
+  limit?: number;
+  onEmptyList?: () => void;
+};
 
-const SpendingAuthorizationList: FC<Props> = ({ app, limit = 5, onEmptyList = () => { } }) => {
-  const { managers, spendingRequests } = useContext(WalletContext)
+/** Local in-memory cache keyed by `app` */
+const SPENDING_CACHE = new Map<string, { auth: PermissionToken | null; spent: number }>();
 
-  const cacheKey = useMemo(() => app, [app]);
+export const SpendingAuthorizationList: FC<Props> = ({
+  app,
+  limit = 5,
+  onEmptyList = () => { },
+}) => {
+  const { managers, spendingRequests } = useContext(WalletContext);
 
-  const [authorization, setAuthorization] = useState<PermissionToken | null>(null)
-  const [currentSpending, setCurrentSpending] = useState<number>(0)
-  const [authorizedAmount, setAuthorizedAmount] = useState<number>(0)
-  const [dialogOpen, setDialogOpen] = useState<boolean>(false)
-  const [revokeLoading, setRevokeLoading] = useState<boolean>(false)
-  const [increaseLoading, setIncreaseLoading] = useState<boolean>(false)
-  const [loading, setLoading] = useState<boolean>(true)
-  const [usdPerBsv, setUsdPerBSV] = useState<number>(70)
-  const services = new Services('main') // TODO: Move to wallet context
+  // --------------------------------------------------------------------------
+  //   STATE
+  // --------------------------------------------------------------------------
+  const [authorization, setAuthorization] = useState<PermissionToken | null>(null);
+  const [currentSpending, setCurrentSpending] = useState(0);
+  const [authorizedAmount, setAuthorizedAmount] = useState(0);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [busy, setBusy] = useState<{ revoke?: boolean; increase?: boolean; list?: boolean }>({ list: true });
 
-  // Determine the next upgrade tier in sats or USD
-  const determineUpgradeAmount = (previousAmountInSats: number, returnType: 'sats' | 'usd' = 'sats'): number => {
-    let nextTierUsdAmount: number
-    const previousAmountInUsd = Math.round(previousAmountInSats * (usdPerBsv / 100000000))
+  // --------------------------------------------------------------------------
+  //   CONSTANTS & HOOKS
+  // --------------------------------------------------------------------------
+  const usdPerBsv = useBsvExchangeRate();
+  const cacheKey = app;
+  const services = useMemo(() => new Services('main'), []);
+  const prevRqRef = useRef<number>(spendingRequests.length);   // <-- bug-fix
 
-    if (previousAmountInUsd < 5) nextTierUsdAmount = 5
-    else if (previousAmountInUsd < 10) nextTierUsdAmount = 10
-    else if (previousAmountInUsd < 20) nextTierUsdAmount = 20
-    else nextTierUsdAmount = 50
-
-    return returnType === 'sats'
-      ? Math.round((nextTierUsdAmount * 100000000) / usdPerBsv)
-      : nextTierUsdAmount
-  }
-
-  const refreshAuthorizations = useCallback(async (): Promise<void> => {
-    // return cached
+  // --------------------------------------------------------------------------
+  //   HELPERS
+  // --------------------------------------------------------------------------
+  const refreshAuthorizations = useCallback(async () => {
+    // return cached data if available
     if (SPENDING_CACHE.has(cacheKey)) {
-      const cached = SPENDING_CACHE.get(cacheKey)!
-      setAuthorization(cached.auth)
-      setCurrentSpending(cached.spent)
-      setAuthorizedAmount(cached.auth?.authorizedAmount ?? 0)
-      setLoading(false)
-      return
+      const { auth, spent } = SPENDING_CACHE.get(cacheKey)!;
+      setAuthorization(auth);
+      setCurrentSpending(spent);
+      setAuthorizedAmount(auth?.authorizedAmount ?? 0);
+      setBusy(b => ({ ...b, list: false }));
+      return;
     }
+
     try {
-      const results = await managers.permissionsManager.listSpendingAuthorizations({ originator: app })
-      if (!results || results.length === 0) {
-        // No authorizations exist, clear local state so UI updates accordingly
-        setAuthorization(null)
-        setCurrentSpending(0)
-        setAuthorizedAmount(0)
-        SPENDING_CACHE.delete(cacheKey)
-        onEmptyList()
+      const auths = await managers.permissionsManager.listSpendingAuthorizations({ originator: app });
+      if (!auths?.length) {
+        setAuthorization(null);
+        setCurrentSpending(0);
+        setAuthorizedAmount(0);
+        SPENDING_CACHE.delete(cacheKey);
+        onEmptyList();
       } else {
-        const currentAuthorization = results[0]
-        const currentSpending = await managers.permissionsManager.querySpentSince(currentAuthorization)
-        setAuthorization(currentAuthorization)
-        setCurrentSpending(currentSpending)
-        setAuthorizedAmount(currentAuthorization.authorizedAmount)
-        SPENDING_CACHE.set(cacheKey, { auth: currentAuthorization, spent: currentSpending })
+        const auth = auths[0];
+        const spent = await managers.permissionsManager.querySpentSince(auth);
+        setAuthorization(auth);
+        setCurrentSpending(spent);
+        setAuthorizedAmount(auth.authorizedAmount);
+        SPENDING_CACHE.set(cacheKey, { auth, spent });
       }
     } catch {
-      onEmptyList()
+      onEmptyList();
     } finally {
-      setLoading(false)
+      setBusy(b => ({ ...b, list: false }));
     }
-  }, [app, onEmptyList, managers.permissionsManager])
+  }, [app, cacheKey, managers.permissionsManager, onEmptyList]);
 
-  const revokeAuthorization = (auth: PermissionToken): void => {
-    setAuthorization(auth)
-    setDialogOpen(true)
-  }
-
-  const updateSpendingAuthorization = async (auth: PermissionToken): Promise<void> => {
-    if (!auth) return
-    setIncreaseLoading(true)
+  // --------------------------------------------------------------------------
+  //   MUTATIONS
+  // --------------------------------------------------------------------------
+  const createSpendingAuthorization = async (usdLimit: number) => {
     try {
       await managers.permissionsManager.ensureSpendingAuthorization({
         originator: app,
-        satoshis: Math.round(determineUpgradeAmount(auth.authorizedAmount)),
-        reason: 'Increase spending limit',
-        seekPermission: true
-      })
-      // Add a delay before refreshing to ensure backend data is updated
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      // Invalidate cache to force fresh data
-      SPENDING_CACHE.delete(cacheKey)
-      await refreshAuthorizations()
-    } catch (e: unknown) {
-      // Add a delay before refreshing to ensure backend data is updated
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      // Invalidate cache to force fresh data
-      SPENDING_CACHE.delete(cacheKey)
-      await refreshAuthorizations()
-      const errorMessage = e instanceof Error ? e.message : 'Unknown error'
-      toast.error(`Failed to increase spending authorization: ${errorMessage}`)
-    } finally {
-      setIncreaseLoading(false)
-    }
-  }
-
-  const handleConfirmRevoke = async (): Promise<void> => {
-    if (!authorization) return
-    setRevokeLoading(true)
-    try {
-      await managers.permissionsManager.revokePermission(authorization)
-      setDialogOpen(false)
-      // Add a delay before refreshing to ensure backend data is updated
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      // Invalidate cache to force fresh data
-      SPENDING_CACHE.delete(cacheKey)
-      await refreshAuthorizations()
-    } catch (e: unknown) {
-      // Add a delay before refreshing to ensure backend data is updated
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      // Invalidate cache to force fresh data
-      SPENDING_CACHE.delete(cacheKey)
-      await refreshAuthorizations()
-      const errorMessage = e instanceof Error ? e.message : 'Unknown error'
-      toast.error(`Failed to revoke spending authorization: ${errorMessage}`)
-      setDialogOpen(false)
-    } finally {
-      setRevokeLoading(false)
-    }
-  }
-
-  const handleDialogClose = (): void => {
-    setDialogOpen(false)
-  }
-
-  const createSpendingAuthorization = async ({ limit: newLimit = limit }: { limit?: number }): Promise<void> => {
-    try {
-      await managers.permissionsManager.ensureSpendingAuthorization({
-        originator: app,
-        satoshis: Math.round(newLimit / (usdPerBsv / 100000000)),
+        satoshis: Math.round((usdLimit * 1e8) / usdPerBsv),
         reason: 'Create a spending limit',
-        seekPermission: true
-      })
-      // Add a delay before refreshing to ensure backend data is updated
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      await refreshAuthorizations()
+        seekPermission: true,
+      });
+      // Give the backend a brief moment to commit the new authorization
+      await new Promise(res => setTimeout(res, 800));
+      SPENDING_CACHE.delete(cacheKey);
+      await refreshAuthorizations();
     } catch (e: unknown) {
-      const errorMessage = e instanceof Error ? e.message : 'Unknown error'
-      toast.error(`Failed to create spending authorization: ${errorMessage}`)
+      toast.error(`Failed to create spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`);
     }
+  };
+
+  const updateSpendingAuthorization = async (auth: PermissionToken) => {
+    setBusy(b => ({ ...b, increase: true }));
+    try {
+      await managers.permissionsManager.ensureSpendingAuthorization({
+        originator: app,
+        satoshis: determineUpgradeAmount(auth.authorizedAmount, usdPerBsv),
+        reason: 'Increase spending limit',
+        seekPermission: true,
+      });
+      // Give the backend a brief moment to commit the new authorization
+      await new Promise(res => setTimeout(res, 800));
+      SPENDING_CACHE.delete(cacheKey);
+      await refreshAuthorizations();
+    } catch (e: unknown) {
+      toast.error(`Failed to increase spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`);
+    } finally {
+      setBusy(b => ({ ...b, increase: false }));
+    }
+  };
+
+  const handleConfirmRevoke = async () => {
+    if (!authorization) return;
+    setBusy(b => ({ ...b, revoke: true }));
+    try {
+      await managers.permissionsManager.revokePermission(authorization);
+      setDialogOpen(false);
+      SPENDING_CACHE.delete(cacheKey);
+      await refreshAuthorizations();
+    } catch (e: unknown) {
+      toast.error(`Failed to revoke spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`);
+    } finally {
+      setBusy(b => ({ ...b, revoke: false }));
+    }
+  };
+
+  // --------------------------------------------------------------------------
+  //   EFFECTS
+  // --------------------------------------------------------------------------
+  useEffect(() => { refreshAuthorizations(); }, [refreshAuthorizations]);
+
+  /**
+   * Refresh **once** when the queue transitions from non-empty → empty.
+   */
+  useEffect(() => {
+    if (prevRqRef.current > 0 && spendingRequests.length === 0) {
+      // Small delay to let backend commit changes
+      setTimeout(() => {
+        SPENDING_CACHE.delete(cacheKey);
+        refreshAuthorizations();
+      }, 500);
+    }
+    prevRqRef.current = spendingRequests.length;
+  }, [spendingRequests, cacheKey, refreshAuthorizations]);
+
+  // --------------------------------------------------------------------------
+  //   RENDER
+  // --------------------------------------------------------------------------
+  if (busy.list) {
+    return (
+      <Box textAlign="center" pt={6}>
+        <CircularProgress size={40} />
+        <Typography variant="body1" sx={{ mt: 2 }}>Loading spending authorizations…</Typography>
+      </Box>
+    );
   }
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const rate: number = await services.getBsvExchangeRate()
-        setUsdPerBSV(rate)
-      } catch {
-        // fallback or leave default
-      }
-    })();
-    refreshAuthorizations();
-  }, [refreshAuthorizations])
-
-  useEffect(() => {
-    // If there are no spending requests and we previously had some, refresh the list
-    // This indicates the SpendingAuthorizationHandler has completed
-    if (spendingRequests && spendingRequests.length === 0) {
-      const timeoutId = setTimeout(() => {
-        // Invalidate cache to force fresh data
-        SPENDING_CACHE.delete(cacheKey)
-        refreshAuthorizations()
-      }, 500) // Small delay to ensure backend is updated
-      
-      return () => clearTimeout(timeoutId)
-    }
-  }, [spendingRequests, cacheKey, refreshAuthorizations])
 
   return (
     <>
-      <Dialog open={dialogOpen}>
-        <DialogTitle>Revoke Authorization?</DialogTitle>
+      {/* revoke-confirmation dialog */}
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
+        <DialogTitle>Revoke authorization?</DialogTitle>
         <DialogContent>
-          <DialogContentText>
-            You can re-authorize spending next time you use this app.
-          </DialogContentText>
+          <DialogContentText>You can re-authorise spending the next time you use this app.</DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleDialogClose} disabled={revokeLoading}>
-            Cancel
-          </Button>
-          <Button onClick={handleConfirmRevoke} disabled={revokeLoading}>
-            {revokeLoading ? (
-              <>
-                <CircularProgress size={16} sx={{ mr: 1 }} />
-                Revoking...
-              </>
-            ) : (
-              'Revoke'
-            )}
+          <Button onClick={() => setDialogOpen(false)} disabled={busy.revoke}>Cancel</Button>
+          <Button onClick={handleConfirmRevoke} disabled={busy.revoke}>
+            {busy.revoke ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Revoking…</>) : 'Revoke'}
           </Button>
         </DialogActions>
       </Dialog>
 
-
-
-      {loading ? (
-        <Box textAlign="center" pt={6}>
-          <CircularProgress size={40} />
-          <Typography variant="body1" sx={{ mt: 2 }}>
-            Loading spending authorizations...
-          </Typography>
-        </Box>
-      ) : authorization ? (
-        <Grid container direction="column" spacing={2} sx={{ p: 2 }}>
-          {/* Monthly Spending Limits and Revoke Button */}
-          <Grid container justifyContent="space-between" alignItems="center">
-            <Box sx={{ flexGrow: 1 }}>
-              <Typography variant="h2" gutterBottom>
-                Monthly Spending Limits
-              </Typography>
-              <Typography variant="body1">
-                This app is allowed to spend up to:
-              </Typography>
+      {/* authorised state ---------------------------------------------------- */}
+      {authorization ? (
+        <Grid container direction="column" spacing={3} sx={{ p: 2 }}>
+          <Grid item container justifyContent="space-between" alignItems="center">
+            <Box>
+              <Typography variant="h2" gutterBottom>Monthly spending limits</Typography>
+              <Typography variant="body1">This app is allowed to spend up to:</Typography>
               <Typography variant="h1" sx={{ pt: 1 }}>
                 <AmountDisplay showFiatAsInteger>{authorizedAmount}</AmountDisplay>/mo.
               </Typography>
             </Box>
-            <Button onClick={() => revokeAuthorization(authorization)}>
-              Revoke
-            </Button>
+            <Button onClick={() => setDialogOpen(true)}>Revoke</Button>
           </Grid>
 
-          {/* Current Spending Display */}
-          <Box sx={{ pt: 2 }}>
+          <Box>
             <Typography variant="h5" paragraph>
               <b>
-                Current Spending (since {format(new Date(new Date().setDate(1)), 'MMMM do')}):
+                Current spending (since {format(new Date(new Date().setDate(1)), 'MMMM do')}):
               </b>{' '}
               <AmountDisplay>{currentSpending}</AmountDisplay>
             </Typography>
-            {authorizedAmount > 0 && (
+            {!!authorizedAmount && (
               <LinearProgress
                 variant="determinate"
-                value={Math.max(1, Math.min(100, (currentSpending / authorizedAmount) * 100))}
+                value={Math.min(100, (currentSpending / authorizedAmount) * 100)}
               />
             )}
           </Box>
 
-          {/* Increase Limits Button */}
-          <Grid container justifyContent="center" sx={{ pt: 2 }}>
-            <Grid item xs={12} sm={6} md={4}>
-              <Button 
-                fullWidth 
-                onClick={() => updateSpendingAuthorization(authorization)}
-                disabled={increaseLoading}
-              >
-                {increaseLoading ? (
-                  <>
-                    <CircularProgress size={16} sx={{ mr: 1 }} />
-                    Increasing...
-                  </>
-                ) : (
-                  'Increase Limits'
-                )}
-              </Button>
-            </Grid>
+          <Grid item xs={12} sm={6} md={4} alignSelf="center">
+            <Button
+              fullWidth
+              onClick={() => updateSpendingAuthorization(authorization)}
+              disabled={busy.increase}
+            >
+              {busy.increase ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Increasing…</>) : 'Increase limits'}
+            </Button>
           </Grid>
         </Grid>
       ) : (
+        /* unauthorised state -------------------------------------------------- */
         <Box textAlign="center" pt={6}>
-          <Typography variant="body1">
-            This app must ask for permission before spending.
-          </Typography>
-          <Typography variant="h3" gutterBottom sx={{ pt: 2 }}>
-            Choose Your Spending Limit
-          </Typography>
+          <Typography variant="body1">This app must ask for permission before spending.</Typography>
+          <Typography variant="h3" gutterBottom sx={{ pt: 2 }}>Choose your spending limit</Typography>
           <Box>
-            {[5, 10, 20].map((amt) => (
+            {[5, 10, 20].map(usd =>
               <Button
-                key={amt}
+                key={usd}
                 variant="contained"
                 sx={{ m: 1, textTransform: 'none' }}
-                onClick={() => createSpendingAuthorization({ limit: amt })}
+                onClick={() => createSpendingAuthorization(usd)}
               >
-                ${amt}/mo.
+                ${usd}/mo.
               </Button>
-            ))}
+            )}
           </Box>
         </Box>
       )}
     </>
-  )
-}
+  );
+};
 
-export default SpendingAuthorizationList
+export default SpendingAuthorizationList;

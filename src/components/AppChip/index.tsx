@@ -72,27 +72,49 @@ const AppChip: React.FC<AppChipProps> = ({
   const [appIconImageUrl, setAppIconImageUrl] = useState(generateDefaultIcon(label))
   const [imageError, setImageError] = useState(false)
 
+  // Reset state values when label changes to prevent stale data
+  useEffect(() => {
+    // When label changes, reset to default state first to avoid showing stale data
+    setParsedLabel(label)
+    setAppIconImageUrl(generateDefaultIcon(label))
+    setImageError(false)
+  }, [label])
+
+  // Handle data fetching in a separate effect
   useEffect(() => {
     const fetchAndCacheData = async () => {
+      console.log(`AppChip: Fetching data for ${label}`)
+      
+      // Generate unique keys for this label
       const faviconKey = `favicon_label_${label}`
       const manifestKey = `manifest_label_${label}`
 
-      // Load favicon from local storage
+      // Try to load favicon from local storage
       const cachedFavicon = window.localStorage.getItem(faviconKey)
       if (cachedFavicon) {
         setAppIconImageUrl(cachedFavicon)
       }
+      
+      // Always try to fetch the latest favicon
       const faviconUrl = `https://${label}/favicon.ico`
       if (await isImageUrl(faviconUrl)) {
         setAppIconImageUrl(faviconUrl)
-        window.localStorage.setItem(faviconKey, faviconUrl) // Cache the favicon URL
+        window.localStorage.setItem(faviconKey, faviconUrl) 
       }
 
-      // Load manifest from local storage
+      // Try to load manifest from local storage
       const cachedManifest = window.localStorage.getItem(manifestKey)
       if (cachedManifest) {
-        const manifest = JSON.parse(cachedManifest)
-        setParsedLabel(manifest.name)
+        try {
+          const manifest = JSON.parse(cachedManifest)
+          if (manifest && manifest.name) {
+            setParsedLabel(manifest.name)
+          }
+        } catch (e) {
+          console.error('Error parsing cached manifest:', e)
+          // If cache is corrupted, remove it
+          window.localStorage.removeItem(manifestKey)
+        }
       }
 
       try {
@@ -116,7 +138,7 @@ const AppChip: React.FC<AppChipProps> = ({
     }
 
     fetchAndCacheData()
-  }, [label, setAppIconImageUrl, setParsedLabel])
+  }, [label])
 
   // Handle image loading events
   const handleImageLoad = () => {

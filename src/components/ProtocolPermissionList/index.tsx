@@ -52,6 +52,8 @@ interface ProtocolPermissionGroup {
   securityLevel: number;
   /** All permissions for this protocol/security level (unique counterparties) */
   permissions: PermissionToken[];
+  /** Preserved original app name for display consistency */
+  _displayOriginator?: string;
 }
 
 /**
@@ -276,12 +278,12 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
     const updatedPerms = perms.map(group => {
       if (isAppGroup(group) || isProtocolGroup(group)) {
         // For grouped permissions, filter out revoked ones
-        const remainingPermissions = group.permissions.filter(perm => 
-          !revokedPermissions.some(revoked => 
+        const remainingPermissions = group.permissions.filter(perm =>
+          !revokedPermissions.some(revoked =>
             revoked.txid === perm.txid && revoked.counterparty === perm.counterparty
           )
         );
-        
+
         // If no permissions remain in this group, it will be filtered out below
         return {
           ...group,
@@ -291,7 +293,7 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
         // This should never happen with current types, but handle individual permissions
         // by treating the group as a PermissionToken
         const permissionToken = group as PermissionToken;
-        const shouldRemove = revokedPermissions.some(revoked => 
+        const shouldRemove = revokedPermissions.some(revoked =>
           revoked.txid === permissionToken.txid && revoked.counterparty === permissionToken.counterparty
         );
         return shouldRemove ? null : group;
@@ -308,7 +310,7 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
     setPerms(updatedPerms);
     // Update cache with the new state
     PERM_CACHE.set(queryKey, updatedPerms);
-    
+
     // Check if list is now empty and call callback
     if (updatedPerms.length === 0) {
       onEmptyList();
@@ -426,7 +428,7 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
               {/*                       APP‑CENTRIC                        */}
               {/* --------------------------------------------------------- */}
               {itemsDisplayed === 'apps' && isAppGroup(group) && (
-                <div className={classes.appList}>
+                <div className={classes.appList} key={`app-group-${group.originator}`}>
                   {/* Group header (App domain) */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '1em', alignItems: 'center' }}>
                     <AppChip
@@ -480,14 +482,14 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
               {/*                     PROTOCOL‑CENTRIC                      */}
               {/* --------------------------------------------------------- */}
               {itemsDisplayed === 'protocols' && isProtocolGroup(group) && (
-                <div className={classes.appList}>
+                <div className={classes.appList} key={`protocol-${group.protocolName}-${group.securityLevel}`}>
                   {/* Group header (Protocol) */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: '1em', alignItems: 'center' }}>
                     <ProtoChip
                       backgroundColor="default"
                       protocolID={group.protocolName}
                       securityLevel={group.securityLevel}
-                      originator={group.permissions[0].originator}
+                      originator={group._displayOriginator || group.permissions[0].originator}
                       clickable={clickable}
                       canRevoke={false}
                     />
@@ -504,7 +506,7 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
                   </div>
 
                   {/* Counterparties (or apps if `counterparty` filter is provided) */}
-                  <ListItem>
+                  <ListItem key={group.permissions[0].txid}>
                     <div className={classes.counterpartyContainer}>
                       {group.permissions.map((permission) => (
                         <div className={classes.gridItem} key={`${permission.counterparty}-${permission.txid}`}>
@@ -513,6 +515,7 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
                               backgroundColor="default"
                               label={permission.originator}
                               showDomain
+                              key={`app-${permission.txid}-${permission.originator}`}
                               onClick={(e: React.MouseEvent) => {
                                 e.stopPropagation();
                                 history.push(`/dashboard/app/${encodeURIComponent(permission.originator)}`, {

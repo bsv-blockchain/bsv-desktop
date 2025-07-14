@@ -266,6 +266,55 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
     }
   }, [app, protocol, securityLevel, counterparty, limit, itemsDisplayed]);
 
+  /**
+   * Optimistically update the UI by removing revoked permissions from the current state
+   * without refetching from the API. This provides instant feedback to the user.
+   */
+  const updateUIAfterRevoke = useCallback((revokedPermissions: PermissionToken[]) => {
+    if (revokedPermissions.length === 0) return;
+
+    const updatedPerms = perms.map(group => {
+      if (isAppGroup(group) || isProtocolGroup(group)) {
+        // For grouped permissions, filter out revoked ones
+        const remainingPermissions = group.permissions.filter(perm => 
+          !revokedPermissions.some(revoked => 
+            revoked.txid === perm.txid && revoked.counterparty === perm.counterparty
+          )
+        );
+        
+        // If no permissions remain in this group, it will be filtered out below
+        return {
+          ...group,
+          permissions: remainingPermissions
+        };
+      } else {
+        // This should never happen with current types, but handle individual permissions
+        // by treating the group as a PermissionToken
+        const permissionToken = group as PermissionToken;
+        const shouldRemove = revokedPermissions.some(revoked => 
+          revoked.txid === permissionToken.txid && revoked.counterparty === permissionToken.counterparty
+        );
+        return shouldRemove ? null : group;
+      }
+    }).filter((group): group is PermissionGroup => {
+      // Remove null entries and groups with no remaining permissions
+      if (!group) return false;
+      if (isAppGroup(group) || isProtocolGroup(group)) {
+        return group.permissions.length > 0;
+      }
+      return true;
+    });
+
+    setPerms(updatedPerms);
+    // Update cache with the new state
+    PERM_CACHE.set(queryKey, updatedPerms);
+    
+    // Check if list is now empty and call callback
+    if (updatedPerms.length === 0) {
+      onEmptyList();
+    }
+  }, [perms, queryKey, onEmptyList]);
+
   const openRevokeDialog = (item: PermissionToken | PermissionGroup) => {
     setToRevoke(item);
     setDialogOpen(true);
@@ -273,6 +322,10 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
 
   const handleConfirmRevoke = async () => {
     if (!managers?.permissionsManager || !toRevoke) return;
+
+    // Store the original permissions for potential rollback
+    const originalPerms = [...perms];
+    const revokedPermissions: PermissionToken[] = [];
 
     try {
       setDialogLoading(true);
@@ -287,6 +340,7 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
             await managers.permissionsManager.revokePermission(perm);
             console.log('successfully revoked:', perm.txid)
             results.push({ success: true, permission: perm });
+            revokedPermissions.push(perm);
           } catch (error) {
             console.error('failed to revoke permission:', perm.txid, error);
             results.push({ success: false, permission: perm, error });
@@ -301,18 +355,22 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
       } else {
         console.log('revoking single permission', toRevoke)
         await managers.permissionsManager.revokePermission(toRevoke);
+        revokedPermissions.push(toRevoke);
       }
+
+      // Optimistically update the UI by removing revoked permissions
+      updateUIAfterRevoke(revokedPermissions);
 
     } catch (e: unknown) {
       const errorMessage = e instanceof Error ? e.message : 'Unknown error occurred';
       toast.error(`Permission may not have been revoked: ${errorMessage}`);
+      // Rollback to original state on error
+      setPerms(originalPerms);
+      PERM_CACHE.set(queryKey, originalPerms);
     } finally {
       setDialogLoading(false);
       setDialogOpen(false);
       setToRevoke(null);
-      // Invalidate cached permissions for this query so we fetch fresh data
-      PERM_CACHE.delete(queryKey);
-      refreshPerms();
     }
   };
 

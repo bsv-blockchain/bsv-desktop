@@ -49,7 +49,7 @@ const ProtocolAccess: React.FC = () => {
 
   // Get passed data from navigation state
   const locationState = history.location.state;
-  
+
   // Initialize state with passed data if available
   const [protocolDetails, setProtocolDetails] = useState<ProtocolDetails | null>(
     locationState ? {
@@ -76,13 +76,13 @@ const ProtocolAccess: React.FC = () => {
 
   useEffect(() => {
     console.log('securityLevel', encodedSecurityLevel)
-    
+
     // Only fetch data if we don't already have it from navigation state
     if (protocolDetails && locationState) {
       console.log('Using passed protocol data, skipping fetch');
       return;
     }
-    
+
     const fetchProtocolDetails = async () => {
       // TODO: Replace with actual SDK call to get protocol details by ID
       // This might involve a lookup service or specific manager method.
@@ -113,7 +113,7 @@ const ProtocolAccess: React.FC = () => {
     };
 
     fetchProtocolDetails();
-  }, [protocolId, managers.walletManager, protocolDetails, locationState]);
+  }, [protocolId, managers.walletManager]);
 
   if (loading) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;

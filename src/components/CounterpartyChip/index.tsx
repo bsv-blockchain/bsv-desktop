@@ -1,6 +1,5 @@
-/* eslint-disable react/prop-types */
 import { useContext, useEffect, useState } from 'react'
-import { Avatar, Badge, Chip, Divider, Icon, Stack, Typography } from '@mui/material'
+import { Avatar, Chip, Divider, Stack, Typography } from '@mui/material'
 import { withRouter, RouteComponentProps } from 'react-router-dom'
 import makeStyles from '@mui/styles/makeStyles'
 import CloseIcon from '@mui/icons-material/Close'
@@ -10,6 +9,7 @@ import PlaceholderAvatar from '../PlaceholderAvatar'
 import deterministicImage from '../../utils/deterministicImage'
 import { WalletContext } from '../../WalletContext'
 import { IdentityClient } from '@bsv/sdk'
+import { Img } from '@bsv/uhrp-react'
 
 const useStyles = makeStyles(style, {
   name: 'CounterpartyChip'
@@ -120,7 +120,7 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
           icon={
             identity.avatarURL && !avatarError ? (
               <Avatar alt={identity.name} sx={{ width: '2.5em', height: '2.5em' }}>
-                <img
+                <Img
                   src={identity.avatarURL}
                   alt={identity.name}
                   className={classes.table_picture}

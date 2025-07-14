@@ -39,6 +39,61 @@ interface AccessAtAGlanceProps {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Caching utilities                                                 */
+/* ------------------------------------------------------------------ */
+
+interface BasketAccessCache {
+  data: string[]
+  timestamp: number
+  originator: string
+}
+
+const CACHE_KEY_PREFIX = 'basket_access_cache_'
+const CACHE_EXPIRY_MS = 5 * 60 * 1000 // 5 minutes
+
+const getCacheKey = (originator: string) => `${CACHE_KEY_PREFIX}${originator}`
+
+const getCachedBasketAccess = (originator: string): string[] | null => {
+  try {
+    const cached = localStorage.getItem(getCacheKey(originator))
+    if (!cached) return null
+
+    const parsedCache: BasketAccessCache = JSON.parse(cached)
+    const now = Date.now()
+    
+    // Check if cache is expired
+    if (now - parsedCache.timestamp > CACHE_EXPIRY_MS) {
+      localStorage.removeItem(getCacheKey(originator))
+      return null
+    }
+
+    // Verify originator matches (extra safety)
+    if (parsedCache.originator !== originator) {
+      localStorage.removeItem(getCacheKey(originator))
+      return null
+    }
+
+    return parsedCache.data
+  } catch (error) {
+    console.warn('Error reading basket access cache:', error)
+    return null
+  }
+}
+
+const setCachedBasketAccess = (originator: string, data: string[]) => {
+  try {
+    const cacheData: BasketAccessCache = {
+      data,
+      timestamp: Date.now(),
+      originator
+    }
+    localStorage.setItem(getCacheKey(originator), JSON.stringify(cacheData))
+  } catch (error) {
+    console.warn('Error saving basket access cache:', error)
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                         */
 /* ------------------------------------------------------------------ */
 
@@ -85,37 +140,56 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({
     [],
   )
 
-  /* ------------- Effect: load basket access ----------------------- */
+  /* ------------- Effect: load cached data immediately ------------- */
+  useEffect(() => {
+    if (!originator) return
+
+    // Load cached data immediately for instant feedback
+    const cachedData = getCachedBasketAccess(originator)
+    if (cachedData) {
+      setRecentBasketAccess(cachedData)
+    }
+  }, [originator])
+
+  /* ------------- Effect: load fresh basket access ----------------- */
   useEffect(() => {
     if (!originator) return
 
     const controller = new AbortController()
 
-      ; (async () => {
-        setIsLoadingBaskets(true)
+    // Use setTimeout to yield control back to main thread immediately
+    setTimeout(async () => {
+      if (controller.signal.aborted) return
+      
+      setIsLoadingBaskets(true)
 
-        try {
-          const { actions } = await permissionsManager.listActions(
-            {
-              labels: [`admin originator ${originator}`],
-              labelQueryMode: 'any',
-              includeOutputs: true,
-            },
-            adminOriginator
-          )
+      try {
+        const { actions } = await permissionsManager.listActions(
+          {
+            labels: [`admin originator ${originator}`],
+            labelQueryMode: 'any',
+            includeOutputs: true,
+          },
+          adminOriginator
+        )
 
-          const filteredResults = await processActionsInChunks(
-            actions,
-            controller.signal
-          )
-          if (!controller.signal.aborted) setRecentBasketAccess(filteredResults)
-        } catch (err: unknown) {
-          if ((err as Error).name !== 'AbortError')
-            console.error('Error loading basket access:', err)
-        } finally {
-          if (!controller.signal.aborted) setIsLoadingBaskets(false)
+        const filteredResults = await processActionsInChunks(
+          actions,
+          controller.signal
+        )
+        
+        if (!controller.signal.aborted) {
+          setRecentBasketAccess(filteredResults)
+          // Cache the fresh data
+          setCachedBasketAccess(originator, filteredResults)
         }
-      })()
+      } catch (err: unknown) {
+        if ((err as Error).name !== 'AbortError')
+          console.error('Error loading basket access:', err)
+      } finally {
+        if (!controller.signal.aborted) setIsLoadingBaskets(false)
+      }
+    }, 0)
 
     return () => controller.abort()
   }, [originator, adminOriginator, permissionsManager, processActionsInChunks])

@@ -71,12 +71,12 @@ export class RequestInterceptorWallet implements WalletInterface {
   /**
    * Call the tracking hook, swallowing any error so the wallet op proceeds.
    */
-  private async record(
+  private record(
     originator?: OriginatorDomainNameStringUnder250Bytes
   ): Promise<void> {
     if (!originator) return;
     try {
-      await this.updateRecentApp(this.profileId, originator);
+      this.updateRecentApp(this.profileId, originator);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[RequestInterceptorWallet] updateRecentApp failed:', err);
@@ -86,12 +86,12 @@ export class RequestInterceptorWallet implements WalletInterface {
   /**
    * Small helper to avoid boilerplate in every method.
    */
-  private async passthrough<TArgs, TResult>(
+  private passthrough<TArgs, TResult>(
     fn: (args: TArgs, origin?: OriginatorDomainNameStringUnder250Bytes) => Promise<TResult>,
     args: TArgs,
     originator?: OriginatorDomainNameStringUnder250Bytes
   ): Promise<TResult> {
-    await this.record(originator);
+    this.record(originator);
     // Preserve `this` binding for underlying wallet methods.
     return fn.call(this.underlying, args, originator);
   }

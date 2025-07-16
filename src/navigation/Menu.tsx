@@ -136,7 +136,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
 
   // Helper function to refresh profiles
   const refreshProfiles = useCallback(async () => {
-    if (!managers?.walletManager || !managers.walletManager.listProfiles) return;
+    if (!managers?.walletManager || !managers.walletManager?.listProfiles) return;
 
     try {
       setProfilesLoading(true);
@@ -144,7 +144,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       if (managers.walletManager.saveSnapshot) {
         localStorage.snap = Utils.toBase64(managers.walletManager.saveSnapshot())
       }
-      const profileList = await Promise.resolve(managers.walletManager.listProfiles());
+      const profileList = await Promise.resolve(managers.walletManager?.listProfiles());
       setProfiles(profileList);
     } catch (error) {
       toast.error(`Error loading profiles: ${error.message || error}`);

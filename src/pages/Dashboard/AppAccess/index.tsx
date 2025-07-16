@@ -71,8 +71,6 @@ const AppAccess: React.FC = () => {
 
   useEffect(() => {
     const fetchAppData = async () => {
-      // TODO: Replace fetchAndCacheAppData with WalletContext/SDK equivalent
-      // This might involve managers.appManager or lookupManager.
       if (!managers.permissionsManager) return; // Or relevant manager
 
       setLoading(true);

@@ -119,8 +119,6 @@ export default function Dashboard() {
             path='/dashboard/app' // Consider if this needs /:app parameter
             component={App}
           />
-
-          {/* === ADDED MISSING ROUTES === */}
           <Route
             path='/dashboard/manage-app/:originator'
             component={AppAccess}
@@ -141,7 +139,6 @@ export default function Dashboard() {
             path='/dashboard/certificate/:certType'
             component={CertificateAccess}
           />
-          {/* === END ADDED MISSING ROUTES === */}
 
           {/* Default Fallback Route */}
           <Route

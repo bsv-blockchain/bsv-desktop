@@ -26,10 +26,12 @@ import { toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { DEFAULT_WAB_URL, DEFAULT_STORAGE_URL, DEFAULT_CHAIN, ADMIN_ORIGINATOR } from './config'
 import { UserContext } from './UserContext'
-import getApps from './pages/Dashboard/Apps/getApps'
+// import getApps from './pages/Dashboard/Apps/getApps'
 import isImageUrl from './utils/isImageUrl'
 import parseAppManifest from './utils/parseAppManifest'
 import { GroupPermissionRequest, GroupedPermissions } from './types/GroupedPermissions'
+import { updateRecentApp } from './pages/Dashboard/Apps/getApps'
+import { listen } from '@tauri-apps/api/event'
 
 // -----
 // Context Types
@@ -828,7 +830,48 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       let unlistenFn: (() => void) | undefined;
 
       const setupListener = async () => {
+        // Set up the original onWalletReady listener
         unlistenFn = await onWalletReady(wallet);
+
+        // Set up additional listener for recent apps tracking
+        const recentAppsUnlisten = await listen('http-request', async (event) => {
+          try {
+            const req = JSON.parse(event.payload as string)
+            req.headers = (req.headers as string[][]).map(([k, v]) => [k.toLowerCase(), v])
+            req.headers = Object.fromEntries(req.headers)
+            console.log('incoming req', req.path)
+            // Extract origin from request
+            const origin = req.headers.origin || req.headers.referer || 'unknown'
+
+            // Get the active profile ID
+            const activeProfile = wallet.listProfiles().find((p: any) => p.active)
+            if (activeProfile?.id && origin && origin !== 'unknown') {
+              // Update recent apps for this profile and origin
+              await updateRecentApp(
+                Utils.toBase64(activeProfile.id),
+                origin
+              )
+              
+              // Dispatch custom event to notify components of recent apps update
+              window.dispatchEvent(new CustomEvent('recentAppsUpdated', {
+                detail: {
+                  profileId: Utils.toBase64(activeProfile.id),
+                  origin: origin
+                }
+              }))
+            }
+          } catch (error) {
+            // Silently ignore errors in recent apps tracking
+            console.debug('Error tracking recent app:', error)
+          }
+        })
+
+        // Return combined cleanup function
+        const originalUnlisten = unlistenFn
+        unlistenFn = () => {
+          if (originalUnlisten) originalUnlisten()
+          recentAppsUnlisten()
+        }
       };
 
       setupListener();
@@ -841,44 +884,53 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     }
   }, [managers]);
 
-  const resolveAppDataFromDomain = async ({ appDomains }) => {
-    const dataPromises = appDomains.map(async (domain, index) => {
-      let appIconImageUrl
-      let appName = domain
-      try {
-        const url = domain.startsWith('http') ? domain : `https://${domain}/favicon.ico`
-        if (await isImageUrl(url)) {
-          appIconImageUrl = url
-        }
-        // Try to parse the app manifest to find the app info
-        const manifest = await parseAppManifest({ domain })
-        if (manifest && typeof manifest.name === 'string') {
-          appName = manifest.name
-        }
-      } catch (e) {
-        console.error(e)
-      }
+  // TODO: Determine if apps should be fetched here.
+  // const resolveAppDataFromDomain = async ({ appDomains }) => {
+  //   const dataPromises = appDomains.map(async (domain, index) => {
+  //     let appIconImageUrl
+  //     let appName = domain
+  //     try {
+  //       const url = domain.startsWith('http') ? domain : `https://${domain}/favicon.ico`
+  //       if (await isImageUrl(url)) {
+  //         appIconImageUrl = url
+  //       }
+  //       // Try to parse the app manifest to find the app info
+  //       const manifest = await parseAppManifest({ domain })
+  //       if (manifest && typeof manifest.name === 'string') {
+  //         appName = manifest.name
+  //       }
+  //     } catch (e) {
+  //       console.error(e)
+  //     }
 
-      return { appName, appIconImageUrl, domain }
-    })
-    return Promise.all(dataPromises)
-  }
+  //     return { appName, appIconImageUrl, domain }
+  //   })
+  //   return Promise.all(dataPromises)
+  // }
+
+  // useEffect(() => {
+  //   if (typeof managers.permissionsManager === 'object') {
+  //     (async () => {
+  //       const storedApps = window.localStorage.getItem('recentApps')
+  //       if (storedApps) {
+  //         setRecentApps(JSON.parse(storedApps))
+  //       }
+  //       // Parse out the app data from the domains
+  //       const appDomains = await getApps({ permissionsManager: managers.permissionsManager, adminOriginator })
+  //       const parsedAppData = await resolveAppDataFromDomain({ appDomains })
+  //       parsedAppData.sort((a, b) => a.appName.localeCompare(b.appName))
+  //       setRecentApps(parsedAppData)
+
+  //       // store for next app load
+  //       window.localStorage.setItem('recentApps', JSON.stringify(parsedAppData))
+  //     })()
+  //   }
+  // }, [adminOriginator, managers?.permissionsManager])
 
   useEffect(() => {
-    if (typeof managers.permissionsManager === 'object') {
+    if (typeof managers.walletManager === 'object') {
       (async () => {
-        const storedApps = window.localStorage.getItem('recentApps')
-        if (storedApps) {
-          setRecentApps(JSON.parse(storedApps))
-        }
-        // Parse out the app data from the domains
-        const appDomains = await getApps({ permissionsManager: managers.permissionsManager, adminOriginator })
-        const parsedAppData = await resolveAppDataFromDomain({ appDomains })
-        parsedAppData.sort((a, b) => a.appName.localeCompare(b.appName))
-        setRecentApps(parsedAppData)
 
-        // store for next app load
-        window.localStorage.setItem('recentApps', JSON.stringify(parsedAppData))
       })()
     }
   }, [adminOriginator, managers?.permissionsManager])

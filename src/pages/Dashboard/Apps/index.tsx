@@ -27,17 +27,9 @@ import { useHistory } from 'react-router-dom'
 
 import style from './style'
 import MetanetApp from '../../../components/MetanetApp'
-import AppLogo from '../../../components/AppLogo'
 import { WalletContext } from '../../../WalletContext'
-import useOptimizedApps from '../../../hooks/useOptimizedApps'
-
-// Define an interface to describe your app data
-interface AppData {
-  appName: string
-  appIconImageUrl?: string
-  domain: string
-  isPinned?: boolean
-}
+import { getRecentApps, RecentApp, updateRecentApp } from './getApps'
+import { Utils } from '@bsv/sdk'
 
 const useStyles = makeStyles(style, {
   name: 'Actions'
@@ -46,27 +38,16 @@ const useStyles = makeStyles(style, {
 const Apps: React.FC = () => {
   const classes = useStyles()
   const history = useHistory()
-  const { managers, adminOriginator } = useContext(WalletContext)
+  const { managers } = useContext(WalletContext)
 
   // State for UI and search
-  const [filteredApps, setFilteredApps] = useState<AppData[]>([])
-  const [fuseInstance, setFuseInstance] = useState<Fuse<AppData> | null>(null)
+  const [apps, setApps] = useState<RecentApp[]>([])
+  const [filteredApps, setFilteredApps] = useState<RecentApp[]>([])
+  const [fuseInstance, setFuseInstance] = useState<Fuse<RecentApp> | null>(null)
   const [search, setSearch] = useState<string>('')
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
-  const [pinnedApps, setPinnedApps] = useState<Set<string>>(new Set())
 
   const inputRef = useRef<HTMLInputElement>(null)
-  const pinnedAppsKey = 'pinned_apps'
-
-  // Use optimized apps hook for progressive loading
-  const { apps, loading, error, refreshApps, progress } = useOptimizedApps({
-    permissionsManager: managers?.permissionsManager,
-    adminOriginator,
-    pinnedApps
-  })
-
-  // Show metanet loading indicator only if we're loading and have no apps to show
-  const showMetanetLoading = loading && apps.length === 0
 
   // Configuration for Fuse
   const options = {
@@ -75,7 +56,7 @@ const Apps: React.FC = () => {
     distance: 100,
     includeMatches: true,
     useExtendedSearch: true,
-    keys: ['appName']
+    keys: ['name', 'domain'] // Search both app name and domain
   }
 
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -86,43 +67,41 @@ const Apps: React.FC = () => {
     applySearch(value, apps, fuseInstance)
   }
 
-  // Load pinned apps from localStorage
-  const loadPinnedApps = () => {
+  // Toggle pin status for an app
+  const togglePin = async (domain: string) => {
+    const profileId = managers.walletManager?.listProfiles()[0]?.id
+    if (!profileId) return
+
+    // Find the app to toggle
+    const appToToggle = apps.find(app => app.domain === domain)
+    if (!appToToggle) return
+
+    // Create updated app with toggled pin status
+    const updatedApp: RecentApp = {
+      ...appToToggle,
+      isPinned: !appToToggle.isPinned
+    }
+
     try {
-      const stored = window.localStorage.getItem(pinnedAppsKey)
-      if (stored) {
-        setPinnedApps(new Set(JSON.parse(stored)))
+      // Update the app in localStorage
+      const updatedApps = await updateRecentApp(Utils.toBase64(profileId), updatedApp)
+
+      // Update local state
+      setApps(updatedApps)
+
+      // If we're currently searching, re-apply the search to update filtered results
+      if (search.trim() !== '') {
+        applySearch(search, updatedApps, fuseInstance)
+      } else {
+        setFilteredApps(updatedApps)
       }
     } catch (error) {
-      console.error('Error loading pinned apps:', error)
+      console.error('Error toggling pin status:', error)
     }
-  }
-
-  // Save pinned apps to localStorage
-  const savePinnedApps = (pinned: Set<string>) => {
-    try {
-      window.localStorage.setItem(pinnedAppsKey, JSON.stringify(Array.from(pinned)))
-    } catch (error) {
-      console.error('Error saving pinned apps:', error)
-    }
-  }
-
-  // Toggle pin status for an app
-  const togglePin = (domain: string) => {
-    const newPinnedApps = new Set(pinnedApps)
-    if (newPinnedApps.has(domain)) {
-      newPinnedApps.delete(domain)
-    } else {
-      newPinnedApps.add(domain)
-    }
-    setPinnedApps(newPinnedApps)
-    savePinnedApps(newPinnedApps)
-
-    // Apps will be updated automatically by the hook
   }
 
   // Separate function to apply search logic
-  const applySearch = (searchValue: string, appList: AppData[], fuse: Fuse<AppData> | null) => {
+  const applySearch = (searchValue: string, appList: RecentApp[], fuse: Fuse<RecentApp> | null) => {
     if (searchValue === '') {
       setFilteredApps(appList)
       return
@@ -135,7 +114,7 @@ const Apps: React.FC = () => {
     } else {
       // Fallback to simple string matching when Fuse isn't ready
       const filtered = appList.filter(app =>
-        app.appName.toLowerCase().includes(searchValue.toLowerCase()) ||
+        app.name.toLowerCase().includes(searchValue.toLowerCase()) ||
         app.domain.toLowerCase().includes(searchValue.toLowerCase())
       )
       setFilteredApps(filtered)
@@ -145,28 +124,60 @@ const Apps: React.FC = () => {
   const handleFocus = () => {
     setIsExpanded(true)
   }
-
   const handleBlur = () => {
     setIsExpanded(false)
   }
-
   const handleIconClick = () => {
     if (inputRef.current) {
       inputRef.current.focus()
     }
   }
-
   const handleViewCatalog = () => {
     history.push('/dashboard/app-catalog')
   }
 
   // On mount, load the apps & recent apps
   useEffect(() => {
-    // Load pinned apps on component mount
-    loadPinnedApps()
-  }, [])
+    const loadApps = () => {
+      const profileId = managers.walletManager?.listProfiles()[0]?.id
+      if (profileId) {
+        const recentApps = getRecentApps(Utils.toBase64(profileId))
+        setApps(recentApps)
+        setFilteredApps(recentApps)
+      }
+    }
 
-  // Update search results when apps change
+    loadApps()
+  }, [managers.walletManager])
+
+  // Listen for recent apps updates from wallet requests
+  useEffect(() => {
+    const handleRecentAppsUpdate = (event: CustomEvent) => {
+      const { profileId } = event.detail
+      const currentProfileId = managers.walletManager?.listProfiles()[0]?.id
+      
+      // Only reload if the update is for the current profile
+      if (currentProfileId && Utils.toBase64(currentProfileId) === profileId) {
+        const recentApps = getRecentApps(profileId)
+        setApps(recentApps)
+        
+        // If we're currently searching, re-apply the search
+        if (search.trim() !== '') {
+          applySearch(search, recentApps, fuseInstance)
+        } else {
+          setFilteredApps(recentApps)
+        }
+      }
+    }
+
+    window.addEventListener('recentAppsUpdated', handleRecentAppsUpdate as EventListener)
+    
+    return () => {
+      window.removeEventListener('recentAppsUpdated', handleRecentAppsUpdate as EventListener)
+    }
+  }, [managers.walletManager, search, fuseInstance])
+
+  // Update search results when apps or search changes
   useEffect(() => {
     if (apps.length > 0) {
       // Initialize or update Fuse instance
@@ -178,26 +189,6 @@ const Apps: React.FC = () => {
       setFilteredApps([])
     }
   }, [apps, search])
-
-  // Show metanet loading indicator when no cached apps are available
-  if (showMetanetLoading) {
-    return (
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'inherit',
-        zIndex: 1000
-      }}>
-        <AppLogo rotate size={128} />
-      </div>
-    )
-  }
 
   return (
     <div className={classes.apps_view}>
@@ -264,27 +255,8 @@ const Apps: React.FC = () => {
         </FormControl>
       </Container>
 
-      {/* Show error state only if there's an error and no apps */}
-      {error && apps.length === 0 && (
-        <Typography
-          variant="subtitle2"
-          color="error"
-          align="center"
-          sx={{ marginBottom: '1em' }}
-        >
-          Failed to load apps.
-          <Button
-            size="small"
-            onClick={refreshApps}
-            sx={{ ml: 1 }}
-          >
-            Retry
-          </Button>
-        </Typography>
-      )}
-
       {/* Show empty state only if no apps and not loading */}
-      {!loading && apps.length === 0 && !error && (
+      {apps.length === 0 && (
         <Typography
           variant="subtitle2"
           color="textSecondary"
@@ -313,6 +285,7 @@ const Apps: React.FC = () => {
             {/* Pinned Apps Section */}
             {(() => {
               const pinnedFilteredApps = filteredApps.filter(app => app.isPinned)
+              console.log('pinnedFilteredApps', pinnedFilteredApps)
               if (pinnedFilteredApps.length === 0) return null
 
               return (
@@ -335,9 +308,9 @@ const Apps: React.FC = () => {
                         <Grid2 key={app.domain} size={{ xs: 6, sm: 6, md: 3, lg: 2 }} className={classes.gridItem}>
                           <Box sx={{ position: 'relative' }}>
                             <MetanetApp
-                              appName={app.appName}
+                              appName={app.name}
                               domain={app.domain}
-                              iconImageUrl={app.appIconImageUrl}
+                              iconImageUrl={app.iconImageUrl}
                             />
                             <Tooltip title="Unpin app" placement="top">
                               <Box
@@ -431,9 +404,9 @@ const Apps: React.FC = () => {
                             }}
                           >
                             <MetanetApp
-                              appName={app.appName}
+                              appName={app.name}
                               domain={app.domain}
-                              iconImageUrl={app.appIconImageUrl}
+                              iconImageUrl={app.iconImageUrl}
                             />
                             <Tooltip title="Pin app" placement="top">
                               <Box
@@ -490,21 +463,6 @@ const Apps: React.FC = () => {
               )
             })()}
           </>
-        )}
-
-        {/* Show a subtle progress indicator at the bottom if still loading */}
-        {loading && apps.length > 0 && (
-          <Box sx={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            mt: 3,
-            opacity: 0.6
-          }}>
-            <Typography variant="caption" color="textSecondary">
-              Updating app details... ({Math.round((progress || 0) * 100)}%)
-            </Typography>
-          </Box>
         )}
       </Container>
     </div>

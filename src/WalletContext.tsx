@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useMemo, useCallback, useContext } from 'react'
+import React, { useState, useEffect, createContext, useMemo, useCallback, useContext, useRef } from 'react'
 import {
   Wallet,
   WalletPermissionsManager,
@@ -11,7 +11,8 @@ import {
   StorageClient,
   TwilioPhoneInteractor,
   WABClient,
-  PermissionRequest
+  PermissionRequest,
+  Profile
 } from '@bsv/wallet-toolbox-client'
 import {
   KeyDeriver,
@@ -32,10 +33,18 @@ import parseAppManifest from './utils/parseAppManifest'
 import { GroupPermissionRequest, GroupedPermissions } from './types/GroupedPermissions'
 import { updateRecentApp } from './pages/Dashboard/Apps/getApps'
 import { listen } from '@tauri-apps/api/event'
+import { RequestInterceptorWallet } from './RequestInterceptorWallet'
 
 // -----
 // Context Types
 // -----
+
+export interface ActiveProfile {
+  id: number[];
+  name: string;
+  createdAt: number | null;
+  active: boolean;
+}
 
 interface ManagerState {
   walletManager?: WalletAuthenticationManager;
@@ -53,6 +62,9 @@ export interface WalletContextValue {
   settings: WalletSettings;
   updateSettings: (newSettings: WalletSettings) => Promise<void>;
   network: 'mainnet' | 'testnet';
+  // Active Profile
+  activeProfile: ActiveProfile | null;
+  setActiveProfile: (profile: ActiveProfile | null) => void;
   // Logout
   logout: () => void;
   adminOriginator: string;
@@ -81,6 +93,8 @@ export const WalletContext = createContext<WalletContextValue>({
   settings: DEFAULT_SETTINGS,
   updateSettings: async () => { },
   network: 'mainnet',
+  activeProfile: null,
+  setActiveProfile: () => { },
   logout: () => { },
   adminOriginator: ADMIN_ORIGINATOR,
   setPasswordRetriever: () => { },
@@ -168,6 +182,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [adminOriginator, setAdminOriginator] = useState(ADMIN_ORIGINATOR);
   const [recentApps, setRecentApps] = useState([])
+  const [activeProfile, setActiveProfile] = useState<ActiveProfile | null>(null)
 
   const { isFocused, onFocusRequested, onFocusRelinquished, setBasketAccessModalOpen, setCertificateAccessModalOpen, setProtocolAccessModalOpen, setSpendingAuthorizationModalOpen, setGroupPermissionModalOpen } = useContext(UserContext);
 
@@ -824,65 +839,79 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     setSnapshotLoaded(false);
   }, []);
 
+  // Automatically set active profile when wallet manager becomes available
+  useEffect(() => {
+    if (managers?.walletManager?.authenticated) {
+      const profiles = managers.walletManager.listProfiles()
+      const profileToSet = profiles.find((p: any) => p.active) || profiles[0]
+      if (profileToSet?.id) {
+        console.log('PROFILE IS NOW BEING SET!', profileToSet)
+        setActiveProfile(profileToSet)
+      }
+    } else {
+      setActiveProfile(null)
+    }
+  }, [managers?.walletManager?.authenticated])
+
+  // Track recent origins to prevent duplicate updates in a short time period
+  const recentOriginsRef = useRef<Map<string, number>>(new Map());
+  const DEBOUNCE_TIME_MS = 5000; // 5 seconds debounce
+
   useEffect(() => {
     if (managers?.walletManager?.authenticated) {
       const wallet = managers.walletManager;
       let unlistenFn: (() => void) | undefined;
 
       const setupListener = async () => {
-        // Set up the original onWalletReady listener
-        unlistenFn = await onWalletReady(wallet);
-
-        // Set up additional listener for recent apps tracking
-        const recentAppsUnlisten = await listen('http-request', async (event) => {
+        // Create a wrapper function that adapts updateRecentApp to the signature expected by RequestInterceptorWallet
+        // and implements debouncing to prevent multiple updates for the same origin
+        const updateRecentAppWrapper = async (profileId: string, origin: string): Promise<void> => {
           try {
-            const req = JSON.parse(event.payload as string)
-            req.headers = (req.headers as string[][]).map(([k, v]) => [k.toLowerCase(), v])
-            req.headers = Object.fromEntries(req.headers)
-            console.log('incoming req', req.path)
-            // Extract origin from request
-            const origin = req.headers.origin || req.headers.referer || 'unknown'
+            // Create a cache key combining profile ID and origin
+            const cacheKey = `${profileId}:${origin}`;
+            const now = Date.now();
 
-            // Get the active profile ID
-            const activeProfile = wallet.listProfiles().find((p: any) => p.active)
-            if (activeProfile?.id && origin && origin !== 'unknown') {
-              // Update recent apps for this profile and origin
-              await updateRecentApp(
-                Utils.toBase64(activeProfile.id),
-                origin
-              )
-              
-              // Dispatch custom event to notify components of recent apps update
-              window.dispatchEvent(new CustomEvent('recentAppsUpdated', {
-                detail: {
-                  profileId: Utils.toBase64(activeProfile.id),
-                  origin: origin
-                }
-              }))
+            // Check if we've recently processed this origin
+            const lastProcessed = recentOriginsRef.current.get(cacheKey);
+            if (lastProcessed && (now - lastProcessed) < DEBOUNCE_TIME_MS) {
+              // Skip this update as we've recently processed this origin
+              console.debug('Skipping recent app update for', origin, '- too soon');
+              return;
             }
+
+            // Update the timestamp for this origin
+            recentOriginsRef.current.set(cacheKey, now);
+
+            // Call the original updateRecentApp but ignore the return value
+            await updateRecentApp(profileId, origin);
+
+            // Dispatch custom event to notify components of recent apps update
+            window.dispatchEvent(new CustomEvent('recentAppsUpdated', {
+              detail: {
+                profileId,
+                origin
+              }
+            }));
           } catch (error) {
             // Silently ignore errors in recent apps tracking
-            console.debug('Error tracking recent app:', error)
+            console.debug('Error tracking recent app:', error);
           }
-        })
+        };
 
-        // Return combined cleanup function
-        const originalUnlisten = unlistenFn
-        unlistenFn = () => {
-          if (originalUnlisten) originalUnlisten()
-          recentAppsUnlisten()
-        }
+        // Set up the original onWalletReady listener
+        const interceptorWallet = new RequestInterceptorWallet(wallet, Utils.toBase64(activeProfile.id), updateRecentAppWrapper);
+        unlistenFn = await onWalletReady(interceptorWallet);
       };
 
       setupListener();
 
       return () => {
         if (unlistenFn) {
-          unlistenFn();
+          unlistenFn()
         }
-      };
+      }
     }
-  }, [managers]);
+  }, [managers])
 
   // TODO: Determine if apps should be fetched here.
   // const resolveAppDataFromDomain = async ({ appDomains }) => {
@@ -941,6 +970,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     settings,
     updateSettings,
     network: selectedNetwork === 'test' ? 'testnet' : 'mainnet',
+    activeProfile: activeProfile,
+    setActiveProfile: setActiveProfile,
     logout,
     adminOriginator,
     setPasswordRetriever,
@@ -965,6 +996,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     settings,
     updateSettings,
     selectedNetwork,
+    activeProfile,
     logout,
     adminOriginator,
     setPasswordRetriever,

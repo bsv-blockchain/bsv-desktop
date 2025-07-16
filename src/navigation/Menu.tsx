@@ -79,7 +79,7 @@ interface MenuProps {
 export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const history = useHistory()
   const breakpoints = useBreakpoint()
-  const { logout, managers } = useContext(WalletContext)
+  const { logout, managers, activeProfile, setActiveProfile } = useContext(WalletContext)
   const { appName, appVersion } = useContext(UserContext)
 
   // Profile management state
@@ -184,11 +184,9 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       // Show loading state
       setProfilesLoading(true);
 
-      // Create a copy of the profile ID to prevent any reference issues
-      const profileIdCopy = [...profileId];
-
       // Perform the async operation
-      await managers.walletManager.switchProfile(profileIdCopy);
+      await managers.walletManager.switchProfile(profileId);
+      setActiveProfile(profiles.find(profile => profile.id == profileId))
 
       // Refresh the profile list to update active status
       await refreshProfiles();

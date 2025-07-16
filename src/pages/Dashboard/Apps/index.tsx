@@ -38,7 +38,8 @@ const useStyles = makeStyles(style, {
 const Apps: React.FC = () => {
   const classes = useStyles()
   const history = useHistory()
-  const { managers } = useContext(WalletContext)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const { managers, activeProfile, setActiveProfile } = useContext(WalletContext)
 
   // State for UI and search
   const [apps, setApps] = useState<RecentApp[]>([])
@@ -46,8 +47,6 @@ const Apps: React.FC = () => {
   const [fuseInstance, setFuseInstance] = useState<Fuse<RecentApp> | null>(null)
   const [search, setSearch] = useState<string>('')
   const [isExpanded, setIsExpanded] = useState<boolean>(false)
-
-  const inputRef = useRef<HTMLInputElement>(null)
 
   // Configuration for Fuse
   const options = {
@@ -69,8 +68,7 @@ const Apps: React.FC = () => {
 
   // Toggle pin status for an app
   const togglePin = async (domain: string) => {
-    const profileId = managers.walletManager?.listProfiles()[0]?.id
-    if (!profileId) return
+    if (!activeProfile) return
 
     // Find the app to toggle
     const appToToggle = apps.find(app => app.domain === domain)
@@ -84,7 +82,7 @@ const Apps: React.FC = () => {
 
     try {
       // Update the app in localStorage
-      const updatedApps = await updateRecentApp(Utils.toBase64(profileId), updatedApp)
+      const updatedApps = await updateRecentApp(Utils.toBase64(activeProfile.id), updatedApp)
 
       // Update local state
       setApps(updatedApps)
@@ -139,28 +137,35 @@ const Apps: React.FC = () => {
   // On mount, load the apps & recent apps
   useEffect(() => {
     const loadApps = () => {
-      const profileId = managers.walletManager?.listProfiles()[0]?.id
-      if (profileId) {
-        const recentApps = getRecentApps(Utils.toBase64(profileId))
+      if (activeProfile) {
+        console.log('Apps loading with active profile', activeProfile)
+        const recentApps = getRecentApps(Utils.toBase64(activeProfile.id))
         setApps(recentApps)
         setFilteredApps(recentApps)
       }
     }
 
     loadApps()
-  }, [managers.walletManager])
+  }, [activeProfile])
 
   // Listen for recent apps updates from wallet requests
   useEffect(() => {
     const handleRecentAppsUpdate = (event: CustomEvent) => {
       const { profileId } = event.detail
-      const currentProfileId = managers.walletManager?.listProfiles()[0]?.id
-      
+
       // Only reload if the update is for the current profile
-      if (currentProfileId && Utils.toBase64(currentProfileId) === profileId) {
+      console.log('apps incoming request', profileId)
+      console.log('apps active profile id', activeProfile)
+      // Note: This is a bit hacking. Figure out why the active profile is not set.
+      if (!activeProfile) {
+        setActiveProfile(managers.walletManager?.listProfiles().find(p => p.active))
+      }
+      if (activeProfile && profileId === Utils.toBase64(activeProfile.id)) {
+        console.log('Received handler and now updating apps with active profile', activeProfile)
         const recentApps = getRecentApps(profileId)
         setApps(recentApps)
-        
+        setFilteredApps(recentApps)
+
         // If we're currently searching, re-apply the search
         if (search.trim() !== '') {
           applySearch(search, recentApps, fuseInstance)
@@ -171,7 +176,7 @@ const Apps: React.FC = () => {
     }
 
     window.addEventListener('recentAppsUpdated', handleRecentAppsUpdate as EventListener)
-    
+
     return () => {
       window.removeEventListener('recentAppsUpdated', handleRecentAppsUpdate as EventListener)
     }
@@ -285,7 +290,6 @@ const Apps: React.FC = () => {
             {/* Pinned Apps Section */}
             {(() => {
               const pinnedFilteredApps = filteredApps.filter(app => app.isPinned)
-              console.log('pinnedFilteredApps', pinnedFilteredApps)
               if (pinnedFilteredApps.length === 0) return null
 
               return (

@@ -87,8 +87,8 @@ const FundingHandler: React.FC = () => {
           </Tooltip>
         </Box>
         <TextField
-          label="Transaction Hex"
-          placeholder="Paste your funding transaction hex here"
+          label="Funding Transaction"
+          placeholder="Paste your internalizable transaction JSON here (Can export from WUI)."
           multiline
           fullWidth
           rows={4}

@@ -12,6 +12,7 @@ import { WalletContext } from '../../../WalletContext'
 import { ProtoWallet, VerifiableCertificate } from '@bsv/sdk'
 // import CertificateChip from '../../../components/CertificateChip'
 import CertificateCard from './CertificateCard'
+import CertificateChip from '../../../components/CertificateChip/index.js'
 
 const useStyles = makeStyles((style as any), {
   name: 'MyIdentity'
@@ -221,7 +222,7 @@ const MyIdentity = () => {
           {shownCertificates.map((cert) => (
             <Grid2 key={cert.serialNumber} size={1}>
               <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover', border: 1, borderColor: 'action.main' }}>
-                <CertificateCard certificate={cert} />
+                <CertificateCard certificate={cert} canRevoke={true} onRevoke={handleCertificateRevoke} />
                 {/* <CertificateChip
                   certType={cert.type}
                   serialNumber={cert.serialNumber}

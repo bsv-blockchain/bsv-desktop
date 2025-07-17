@@ -1,13 +1,11 @@
 import { useState, useEffect, useContext, useCallback } from 'react'
 import AmountDisplay from './AmountDisplay'
-// import confederacyHost from '../utils/confederacyHost'
 import { Skeleton, Stack, Typography } from '@mui/material'
 import { WalletContext } from '../WalletContext'
-import AppLogo from './AppLogo'
 
 const Profile = () => {
   const { managers, adminOriginator } = useContext(WalletContext)
-  const [accountBalance, setAccountBalance] = useState<any>(null)
+  const [accountBalance, setAccountBalance] = useState<number | null>(null)
   const [balanceLoading, setBalanceLoading] = useState(true)
 
   const refreshBalance = useCallback(async () => {

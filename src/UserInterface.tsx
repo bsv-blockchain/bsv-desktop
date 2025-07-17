@@ -49,9 +49,9 @@ interface UserInterfaceProps {
 
 const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHandlers, appVersion, appName }) => {
   return (
-    <AppThemeProvider>
-      <UserContextProvider nativeHandlers={nativeHandlers} appVersion={appVersion} appName={appName}>
-        <WalletContextProvider onWalletReady={onWalletReady}>
+    <UserContextProvider nativeHandlers={nativeHandlers} appVersion={appVersion} appName={appName}>
+      <WalletContextProvider onWalletReady={onWalletReady}>
+        <AppThemeProvider>
           <ExchangeRateContextProvider>
             <Router>
               <AuthRedirector />
@@ -74,9 +74,9 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
               </BreakpointProvider>
             </Router>
           </ExchangeRateContextProvider>
-        </WalletContextProvider>
-      </UserContextProvider>
-    </AppThemeProvider>
+        </AppThemeProvider>
+      </WalletContextProvider>
+    </UserContextProvider>
   )
 }
 

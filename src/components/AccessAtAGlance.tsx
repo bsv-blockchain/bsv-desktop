@@ -1,20 +1,36 @@
-import React, { useContext, useEffect, useState } from 'react'
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import {
   Typography,
   Button,
   List,
   ListSubheader,
-  Box
+  Box,
+  CircularProgress,
 } from '@mui/material'
 import BasketChip from './BasketChip'
-// import ProtocolPermissionList from './ProtocolPermissionList'
 import CertificateAccessList from './CertificateAccessList'
-// import BasketAccessList from './BasketAccessList'
+import ProtocolPermissionList from './ProtocolPermissionList'
 import { History } from 'history'
 import { WalletContext } from '../WalletContext'
 
-// Define the props interface for AccessAtAGlance.
-// Adjust the setRefresh type if you use a different setter signature.
+/* ------------------------------------------------------------------ */
+/*  Type helpers                                                      */
+/* ------------------------------------------------------------------ */
+
+interface ActionOutput {
+  basket?: string
+}
+
+interface Action {
+  outputs?: ActionOutput[]
+}
+
 interface AccessAtAGlanceProps {
   originator: string
   loading: boolean
@@ -22,64 +38,201 @@ interface AccessAtAGlanceProps {
   history: History
 }
 
-const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({ originator, loading, setRefresh, history }) => {
-  const [recentBasketAccess, setRecentBasketAccess] = useState<string[]>([])
-  const [protocolIsEmpty, setProtocolIsEmpty] = useState<boolean>(false)
-  const [certificateIsEmpty, setCertificateIsEmpty] = useState<boolean>(false)
+/* ------------------------------------------------------------------ */
+/*  Caching utilities                                                 */
+/* ------------------------------------------------------------------ */
 
+interface BasketAccessCache {
+  data: string[]
+  timestamp: number
+  originator: string
+}
+
+const CACHE_KEY_PREFIX = 'basket_access_cache_'
+const CACHE_EXPIRY_MS = 5 * 60 * 1000 // 5 minutes
+
+const getCacheKey = (originator: string) => `${CACHE_KEY_PREFIX}${originator}`
+
+const getCachedBasketAccess = (originator: string): string[] | null => {
+  try {
+    const cached = localStorage.getItem(getCacheKey(originator))
+    if (!cached) return null
+
+    const parsedCache: BasketAccessCache = JSON.parse(cached)
+    const now = Date.now()
+    
+    // Check if cache is expired
+    if (now - parsedCache.timestamp > CACHE_EXPIRY_MS) {
+      localStorage.removeItem(getCacheKey(originator))
+      return null
+    }
+
+    // Verify originator matches (extra safety)
+    if (parsedCache.originator !== originator) {
+      localStorage.removeItem(getCacheKey(originator))
+      return null
+    }
+
+    return parsedCache.data
+  } catch (error) {
+    console.warn('Error reading basket access cache:', error)
+    return null
+  }
+}
+
+const setCachedBasketAccess = (originator: string, data: string[]) => {
+  try {
+    const cacheData: BasketAccessCache = {
+      data,
+      timestamp: Date.now(),
+      originator
+    }
+    localStorage.setItem(getCacheKey(originator), JSON.stringify(cacheData))
+  } catch (error) {
+    console.warn('Error saving basket access cache:', error)
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Component                                                         */
+/* ------------------------------------------------------------------ */
+
+const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({
+  originator,
+  loading,
+  setRefresh,
+  history,
+}) => {
+  /* ------------- Context / state ---------------------------------- */
   const { managers, adminOriginator } = useContext(WalletContext)
+  const permissionsManager = managers.permissionsManager
 
+  const [recentBasketAccess, setRecentBasketAccess] = useState<string[]>([])
+  const [protocolIsEmpty, setProtocolIsEmpty] = useState(false)
+  const [certificateIsEmpty, setCertificateIsEmpty] = useState(false)
+  const [isLoadingBaskets, setIsLoadingBaskets] = useState(false)
+
+  /* ------------- Helpers ------------------------------------------ */
+
+  /** Process actions in small chunks to keep the main thread responsive */
+  const processActionsInChunks = useCallback(
+    async (actions: Action[], signal: AbortSignal) => {
+      const baskets = new Set<string>()
+      const chunkSize = 5
+
+      for (let i = 0; i < actions.length && !signal.aborted; i += chunkSize) {
+        const chunk = actions.slice(i, i + chunkSize)
+
+        chunk.forEach(action => {
+          action.outputs?.forEach(output => {
+            if (output.basket && output.basket !== 'default')
+              baskets.add(output.basket)
+          })
+        })
+
+        // Yield back to the event loop after each chunk
+        if (i + chunkSize < actions.length)
+          await new Promise(r => setTimeout(r, 0))
+      }
+
+      return Array.from(baskets)
+    },
+    [],
+  )
+
+  /* ------------- Effect: load cached data immediately ------------- */
   useEffect(() => {
-    (async () => {
+    if (!originator) return
+
+    // Load cached data immediately for instant feedback
+    const cachedData = getCachedBasketAccess(originator)
+    if (cachedData) {
+      setRecentBasketAccess(cachedData)
+    }
+  }, [originator])
+
+  /* ------------- Effect: load fresh basket access ----------------- */
+  useEffect(() => {
+    if (!originator) return
+
+    const controller = new AbortController()
+
+    // Use setTimeout to yield control back to main thread immediately
+    setTimeout(async () => {
+      if (controller.signal.aborted) return
+      
+      setIsLoadingBaskets(true)
+
       try {
-        const actionsResponse = await managers.permissionsManager.listActions(
+        const { actions } = await permissionsManager.listActions(
           {
             labels: [`admin originator ${originator}`],
             labelQueryMode: 'any',
             includeOutputs: true,
           },
           adminOriginator
-        );
+        )
 
-        const filteredResults: string[] = []
-        actionsResponse.actions.forEach(action => {
-          if (action.outputs) {
-            action.outputs.forEach(output => {
-              if (output.basket && output.basket !== 'default' && !filteredResults.some(basket => basket === output.basket)) {
-                filteredResults.push(output.basket)
-              }
-            })
-          }
-        })
-
-
-        // const filteredResults = result.filter(x => x.basket)
-        setRecentBasketAccess(filteredResults)
-      } catch (error) {
-        console.error(error)
+        const filteredResults = await processActionsInChunks(
+          actions,
+          controller.signal
+        )
+        
+        if (!controller.signal.aborted) {
+          setRecentBasketAccess(filteredResults)
+          // Cache the fresh data
+          setCachedBasketAccess(originator, filteredResults)
+        }
+      } catch (err: unknown) {
+        if ((err as Error).name !== 'AbortError')
+          console.error('Error loading basket access:', err)
+      } finally {
+        if (!controller.signal.aborted) setIsLoadingBaskets(false)
       }
-    })()
-  }, [originator])
+    }, 0)
+
+    return () => controller.abort()
+  }, [originator, adminOriginator, permissionsManager, processActionsInChunks])
+
+  /* ------------- Memo: path for manage-app link ------------------- */
+  const manageAppPath = useMemo(
+    () => `/dashboard/manage-app/${encodeURIComponent(originator)}`,
+    [originator],
+  )
+
+  /* ------------- Render ------------------------------------------- */
 
   return (
     <div style={{ paddingTop: '1em' }}>
-      <Typography variant="h3" color="textPrimary" gutterBottom style={{ paddingBottom: '0.2em' }}>
+      <Typography
+        variant="h3"
+        color="textPrimary"
+        gutterBottom
+        style={{ paddingBottom: '0.2em' }}
+      >
         Access At A Glance
       </Typography>
-      <List sx={{ bgcolor: 'background.paper', borderRadius: '0.25em', padding: '1em', minHeight: '13em' }}>
-        {recentBasketAccess.length !== 0 && (
+
+      {/* ---------------------- Basket + Protocol list ---------------- */}
+      <List
+        sx={{
+          bgcolor: 'background.paper',
+          borderRadius: '0.25em',
+          p: '1em',
+          minHeight: '13em',
+          position: 'relative',
+        }}
+      >
+        {!isLoadingBaskets && recentBasketAccess.length !== 0 && (
           <>
             <ListSubheader>Most Recent Basket</ListSubheader>
-            {recentBasketAccess.map((basket, itemIndex) => (
-              <div key={itemIndex}>
-                {basket && (
-                  <BasketChip basketId={basket} clickable />
-                )}
-              </div>
+            {recentBasketAccess.map(basket => (
+              <BasketChip key={basket} basketId={basket} clickable />
             ))}
           </>
         )}
-        {/* <ProtocolPermissionList
+
+        <ProtocolPermissionList
           app={originator}
           limit={1}
           canRevoke={false}
@@ -87,9 +240,17 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({ originator, loading, 
           displayCount={false}
           listHeaderTitle="Most Recent Protocol"
           onEmptyList={() => setProtocolIsEmpty(true)}
-        /> */}
+        />
       </List>
-      <Box sx={{ bgcolor: 'background.paper', borderRadius: '0.25em', minHeight: '13em' }}>
+
+      {/* ---------------------- Certificate list ---------------------- */}
+      <Box
+        sx={{
+          bgcolor: 'background.paper',
+          borderRadius: '0.25em',
+          minHeight: '13em',
+        }}
+      >
         <CertificateAccessList
           app={originator}
           itemsDisplayed="certificates"
@@ -101,28 +262,46 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({ originator, loading, 
           listHeaderTitle="Most Recent Certificate"
           onEmptyList={() => setCertificateIsEmpty(true)}
         />
-        {recentBasketAccess.length === 0 && certificateIsEmpty && protocolIsEmpty && (
-          <Typography color="textSecondary" align="center" style={{ paddingTop: '5em' }}>
-            No recent access
-          </Typography>
+
+        {isLoadingBaskets && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <CircularProgress size={32} />
+          </Box>
         )}
+
+        {recentBasketAccess.length === 0 &&
+          certificateIsEmpty &&
+          protocolIsEmpty && (
+            <Typography
+              color="textSecondary"
+              align="center"
+              sx={{ pt: '5em' }}
+            >
+              No recent access
+            </Typography>
+          )}
       </Box>
 
-      <center style={{ padding: '1em' }}>
+      {/* ---------------------- Manage app button --------------------- */}
+      <Box textAlign="center" sx={{ p: '1em' }}>
         <Button
-          onClick={() => {
-            history.push({
-              pathname: `/dashboard/manage-app/${encodeURIComponent(originator)}`,
-              state: {}
-            })
-          }}
+          onClick={() => history.push({ pathname: manageAppPath })}
           sx={{
-            backgroundColor: history.location.pathname === `/dashboard/manage-app/${encodeURIComponent(originator)}` ? 'action.selected' : 'inherit'
+            backgroundColor:
+              history.location.pathname === manageAppPath
+                ? 'action.selected'
+                : 'inherit',
           }}
         >
           Manage App
         </Button>
-      </center>
+      </Box>
     </div>
   )
 }

@@ -221,7 +221,6 @@ const Trust = ({ history }) => {
         setOpen={setAddEntityModalOpen}
         trustedEntities={trustedEntities}
         setTrustedEntities={setTrustedEntities}
-        classes={classes}
       />
 
       <Snackbar

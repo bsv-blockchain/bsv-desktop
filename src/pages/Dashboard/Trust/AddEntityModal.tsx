@@ -1,6 +1,5 @@
-/* eslint-disable react/prop-types */
-import React, { SetStateAction, useState } from 'react'
-import { Typography, Button, TextField, DialogContent, DialogContentText, DialogActions, LinearProgress, InputAdornment } from '@mui/material'
+import { useState } from 'react'
+import { Typography, Button, TextField, DialogContent, DialogContentText, DialogActions, LinearProgress, InputAdornment, Box } from '@mui/material'
 import DomainIcon from '@mui/icons-material/Public'
 import ExpandMore from '@mui/icons-material/ExpandMore'
 import ExpandLess from '@mui/icons-material/ExpandLess'
@@ -15,8 +14,8 @@ import validateTrust from '../../../utils/validateTrust'
 import { Certifier } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 
 const AddEntityModal = ({
-  open, setOpen, trustedEntities, setTrustedEntities, classes
-}: { open: boolean, setOpen: Function, trustedEntities: any, setTrustedEntities: Function, classes: any }) => {
+  open, setOpen, trustedEntities, setTrustedEntities
+}: { open: boolean, setOpen: Function, trustedEntities: any, setTrustedEntities: Function }) => {
   const [domain, setDomain] = useState('')
   const [advanced, setAdvanced] = useState(false)
   const [name, setName] = useState('')
@@ -126,12 +125,12 @@ const AddEntityModal = ({
       style={{ minWidth: 'lg' }}
     >
       <DialogContent>
-        <br />
+        <Box sx={{ mb: 2 }} />
         {!advanced &&
           <form onSubmit={handleDomainSubmit}>
             <DialogContentText>Enter the domain name for the provider you'd like to add.</DialogContentText>
-            <br />
-            <center className={classes.add_trusted_main}>
+            <Box sx={{ mt: 2 }} />
+            <Box sx={{ display: 'flex', justifyContent: 'center' }}>
               <TextField
                 label='Domain Name'
                 placeholder='trustedentity.com'
@@ -155,11 +154,12 @@ const AddEntityModal = ({
                   }
                 }}
               />
-              <br />
-              <br />
-              {loading
-                ? <LinearProgress />
-                : <Button
+            </Box>
+            <Box sx={{ mt: 2 }} />
+            {loading
+              ? <LinearProgress />
+              : <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                <Button
                   variant='contained'
                   size='large'
                   endIcon={<GetTrust />}
@@ -167,13 +167,13 @@ const AddEntityModal = ({
                   disabled={loading}
                 >
                   Get Provider Details
-                </Button>}
-            </center>
+                </Button>
+              </Box>}
           </form>}
         {advanced && (
           <form onSubmit={handleDirectSubmit}>
             <DialogContentText>Directly enter the details for the provider you'd like to add.</DialogContentText>
-            <br />
+            <Box sx={{ mt: 2 }} />
             <TextField
               label='Entity Name'
               placeholder='Identity Certifier'
@@ -197,8 +197,7 @@ const AddEntityModal = ({
                 }
               }}
             />
-            <br />
-            <br />
+            <Box sx={{ mt: 2 }} />
             <TextField
               label='Icon URL'
               placeholder='https://trustedentity.com/icon.png'
@@ -222,8 +221,7 @@ const AddEntityModal = ({
                 }
               }}
             />
-            <br />
-            <br />
+            <Box sx={{ mt: 2 }} />
             <TextField
               label='Entity Public Key'
               placeholder='0295bf1c7842d14babf60daf2c733956c331f9dcb2c79e41f85fd1dda6a3fa4549'
@@ -247,24 +245,23 @@ const AddEntityModal = ({
                 }
               }}
             />
-            <br />
-            <br />
+            <Box sx={{ mt: 2 }} />
             {loading
               ? <LinearProgress />
-              : <center><Button
-                variant='contained'
-                size='large'
-                endIcon={<GetTrust />}
-                type='submit'
-                disabled={loading}
-              >
-                Validate Details
-              </Button>
-              </center>}
+              : <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                <Button
+                  variant='contained'
+                  size='large'
+                  endIcon={<GetTrust />}
+                  type='submit'
+                  disabled={loading}
+                >
+                  Validate Details
+                </Button>
+              </Box>}
           </form>
         )}
-        <br />
-        <br />
+        <Box sx={{ mt: 2 }} />
         <Button
           onClick={() => setAdvanced(x => !x)}
           startIcon={!advanced ? <ExpandMore /> : <ExpandLess />}
@@ -272,15 +269,29 @@ const AddEntityModal = ({
           {advanced ? 'Hide' : 'Show'} Advanced
         </Button>
         {fieldsValid && (
-          <div className={classes.fields_display}>
-            <div className={classes.entity_icon_name_grid}>
-              <img src={icon} className={classes.entity_icon} />
-              <div>
+          <Box sx={{
+            padding: 2,
+            backgroundColor: 'background.paper',
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 1,
+            marginTop: 2
+          }}>
+            <Box sx={{
+              display: 'grid',
+              gridTemplateColumns: '4em 1fr',
+              alignItems: 'center',
+              gap: 2,
+              padding: 1,
+              borderRadius: '6px'
+            }}>
+              <img src={icon} style={{ width: '4em', height: '4em', borderRadius: '6px' }} />
+              <Box>
                 <Typography><b>{name}</b></Typography>
                 <Typography variant='caption' color='textSecondary'>{identityKey}</Typography>
-              </div>
-            </div>
-            <br />
+              </Box>
+            </Box>
+            <Box sx={{ mt: 2 }} />
             <TextField
               value={description}
               onChange={e => setDescription(e.target.value)}
@@ -299,7 +310,7 @@ const AddEntityModal = ({
                 }
               }}
             />
-          </div>
+          </Box>
         )}
       </DialogContent>
       <DialogActions>

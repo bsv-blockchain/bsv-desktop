@@ -2,27 +2,31 @@ import { useState, useEffect, useContext } from 'react'
 import { DialogContent, DialogActions, Button, Typography } from '@mui/material'
 import CustomDialog from './CustomDialog'
 import { WalletContext } from '../WalletContext'
+import { WalletInterface } from '@bsv/sdk'
 
 const FundingHandler: React.FC = () => {
   const { setWalletFunder } = useContext(WalletContext)
   const [open, setOpen] = useState(false)
   const [rootKey, setRootKey] = useState('')
-  const [resolveFn, setResolveFn] = useState<Function>(() => {})
+  const [resolveFn, setResolveFn] = useState<Function>(() => { })
 
   useEffect(() => {
-    setWalletFunder((presentationKey: number[], wallet: any, adminOriginator: string): Promise<void> => {
-      return new Promise<void>(resolve => {
-        try {
-          const keyHex = wallet.signer.keyDeriver.rootKey.toString()
-          setRootKey(keyHex)
-        } catch (e) {
-          setRootKey('')
-        }
-        setResolveFn(() => resolve)
-        setOpen(true)
-      })
-    })
-  }, [setWalletFunder])
+    setWalletFunder((() => {
+      return async (presentationKey: number[], wallet: WalletInterface, adminOriginator: string): Promise<void> => {
+        return new Promise<void>(async resolve => {
+          try {
+            console.log('WalletFunder has been called')
+            const identityKey = (await wallet.getPublicKey({ identityKey: true })).publicKey
+            setRootKey(identityKey)
+          } catch (e) {
+            setRootKey('')
+          }
+          setResolveFn(() => resolve)
+          setOpen(true)
+        })
+      }
+    }) as any)
+  }, [])
 
   const handleClose = () => {
     setOpen(false)

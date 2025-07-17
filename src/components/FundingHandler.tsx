@@ -1,9 +1,10 @@
 import { useState, useEffect, useContext } from 'react'
-import { DialogContent, DialogActions, Button, Typography, TextField } from '@mui/material'
+import { DialogContent, DialogActions, Button, Typography, TextField, Box, IconButton, Tooltip } from '@mui/material'
 import CustomDialog from './CustomDialog'
 import { WalletContext } from '../WalletContext'
 import { WalletInterface } from '@bsv/sdk'
 import { toast } from 'react-toastify'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 
 const FundingHandler: React.FC = () => {
   const { setWalletFunder } = useContext(WalletContext)
@@ -18,7 +19,7 @@ const FundingHandler: React.FC = () => {
       return async (_: number[], wallet: WalletInterface, adminOriginator: string): Promise<void> => {
         return new Promise<void>(async resolve => {
           try {
-            const identityKey = (await wallet.getPublicKey({ identityKey: true })).publicKey
+            const identityKey = (await wallet.getPublicKey({ identityKey: true }, adminOriginator)).publicKey
             setIdentityKey(identityKey)
           } catch (e) {
             setIdentityKey('')
@@ -68,9 +69,23 @@ const FundingHandler: React.FC = () => {
         <Typography variant="body1" sx={{ wordBreak: 'break-all' }}>
           Please fund the following root key with satoshis to activate your wallet:
         </Typography>
-        <Typography variant="body2" sx={{ mt: 2, userSelect: 'all', wordBreak: 'break-all' }}>
-          {identityKey}
-        </Typography>
+        <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', bgcolor: 'background.paper', p: 1 }}>
+          <Typography variant="body2" sx={{ flexGrow: 1, userSelect: 'all', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+            {identityKey}
+          </Typography>
+          <Tooltip title="Copy to clipboard">
+            <IconButton
+              size="small"
+              onClick={() => {
+                navigator.clipboard.writeText(identityKey)
+                  .then(() => toast.success('Identity key copied to clipboard'))
+                  .catch(err => toast.error('Failed to copy: ' + err.message))
+              }}
+            >
+              <ContentCopyIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
         <TextField
           label="Transaction Hex"
           placeholder="Paste your funding transaction hex here"
@@ -79,7 +94,24 @@ const FundingHandler: React.FC = () => {
           rows={4}
           value={paymentTX}
           onChange={e => setPaymentTX(e.target.value)}
-          sx={{ mt: 2 }}
+          variant="outlined"
+          sx={{
+            mt: 2,
+            '& .MuiInputBase-input': { fontFamily: 'monospace' },
+            '& .MuiOutlinedInput-root': {
+              '& fieldset': {
+                borderColor: 'rgba(0, 0, 0, 0.1)',
+                borderWidth: '1px'
+              },
+              '&:hover fieldset': {
+                borderColor: 'rgba(0, 0, 0, 0.2)'
+              },
+              '&.Mui-focused fieldset': {
+                borderColor: 'rgba(0, 0, 0, 0.3)',
+                borderWidth: '1px'
+              }
+            }
+          }}
         />
         {/* <Button component="label" sx={{ mt: 1 }}>
           Upload Transaction File
@@ -99,4 +131,5 @@ const FundingHandler: React.FC = () => {
     </CustomDialog>
   )
 }
+
 export default FundingHandler

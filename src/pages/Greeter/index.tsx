@@ -1,4 +1,4 @@
-import { useContext, useState, useRef, useCallback } from 'react'
+import { useContext, useState, useRef, useCallback, useEffect } from 'react'
 import {
   Typography,
   Button,
@@ -21,6 +21,7 @@ import {
   PermPhoneMsg as SMSIcon,
   Lock as LockIcon,
   Restore as RestoreIcon,
+  VpnKey as KeyIcon,
   Visibility,
   VisibilityOff,
   CheckCircle as CheckCircleIcon,
@@ -35,31 +36,7 @@ import { Utils } from '@bsv/sdk'
 import { Link as RouterLink } from 'react-router-dom'
 import WalletConfig from '../../components/WalletConfig.js'
 
-// Helper functions for the Stepper
-const viewToStepIndex = {
-  'phone': 0,
-  'code': 1,
-  'password': 2
-};
-
-// Steps for the stepper
-const steps = [
-  {
-    label: 'Phone Number',
-    icon: <PhoneIcon />,
-    description: 'Enter your phone number for verification',
-  },
-  {
-    label: 'Verification Code',
-    icon: <SMSIcon />,
-    description: 'Enter the code you received via SMS',
-  },
-  {
-    label: 'Password',
-    icon: <LockIcon />,
-    description: 'Enter your password',
-  },
-];
+// Helper functions for the Stepper will be defined inside the component
 
 // Phone form component to reduce cognitive complexity
 const PhoneForm = ({ phone, setPhone, loading, handleSubmitPhone, phoneFieldRef }) => {
@@ -149,6 +126,41 @@ const CodeForm = ({ code, setCode, loading, handleSubmitCode, handleResendCode, 
   );
 };
 
+// Presentation key form component
+const PresentationKeyForm = ({ presentationKey, setPresentationKey, loading, handleSubmitPresentationKey, presentationKeyFieldRef }) => {
+  const theme = useTheme();
+  return (
+    <form onSubmit={handleSubmitPresentationKey}>
+      <TextField
+        label="Presentation Key"
+        value={presentationKey}
+        onChange={(e) => setPresentationKey(e.target.value)}
+        variant="outlined"
+        fullWidth
+        disabled={loading}
+        slotProps={{
+          input: { ref: presentationKeyFieldRef }
+        }}
+        sx={{ mb: 2 }}
+      />
+      <Button
+        variant='contained'
+        type='submit'
+        disabled={loading || !presentationKey}
+        fullWidth
+        sx={{
+          mt: 2,
+          borderRadius: theme.shape.borderRadius,
+          textTransform: 'none',
+          py: 1.2
+        }}
+      >
+        {loading ? <CircularProgress size={24} /> : 'Continue'}
+      </Button>
+    </form>
+  );
+};
+
 // Password form component
 const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPassword, showPassword, setShowPassword, loading, handleSubmitPassword, accountStatus, passwordFieldRef }) => {
   const theme = useTheme();
@@ -232,14 +244,46 @@ const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPasswo
 
 // Main Greeter component with reduced complexity
 const Greeter: React.FC<any> = ({ history }) => {
-  const { managers, configStatus } = useContext(WalletContext)
+  const { managers, configStatus, useWab } = useContext(WalletContext)
   const { appVersion, appName, pageLoaded } = useContext(UserContext)
   const theme = useTheme()
 
-  // We keep the same Accordion steps: phone, code, password
-  const [step, setStep] = useState('phone')
+  const viewToStepIndex = useWab ? { phone: 0, code: 1, password: 2 } : { presentation: 0, password: 1 }
+  const steps = useWab
+    ? [
+        {
+          label: 'Phone Number',
+          icon: <PhoneIcon />,
+          description: 'Enter your phone number for verification'
+        },
+        {
+          label: 'Verification Code',
+          icon: <SMSIcon />,
+          description: 'Enter the code you received via SMS'
+        },
+        {
+          label: 'Password',
+          icon: <LockIcon />,
+          description: 'Enter your password'
+        }
+      ]
+    : [
+        {
+          label: 'Presentation Key',
+          icon: <KeyIcon />,
+          description: 'Paste your presentation key'
+        },
+        {
+          label: 'Password',
+          icon: <LockIcon />,
+          description: 'Enter your password'
+        }
+      ]
+
+  const [step, setStep] = useState(useWab ? 'phone' : 'presentation')
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
+  const [presentationKey, setPresentationKey] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [accountStatus, setAccountStatus] = useState<string | undefined>(undefined)
@@ -248,9 +292,14 @@ const Greeter: React.FC<any> = ({ history }) => {
 
   const phoneFieldRef = useRef(null)
   const codeFieldRef = useRef(null)
+  const presentationKeyFieldRef = useRef(null)
   const passwordFieldRef = useRef(null)
 
   const walletManager = managers?.walletManager
+
+  useEffect(() => {
+    setStep(useWab ? 'phone' : 'presentation')
+  }, [useWab])
 
   // Step 1: The user enters a phone number, we call manager.startAuth(...)
   const handleSubmitPhone = useCallback(async (e: React.FormEvent) => {
@@ -321,6 +370,33 @@ const Greeter: React.FC<any> = ({ history }) => {
       setLoading(false)
     }
   }, [walletManager, phone])
+
+  // Step for manually providing presentation key when not using WAB
+  const handleSubmitPresentationKey = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!walletManager) {
+      toast.error('Wallet Manager not ready yet.')
+      return
+    }
+    try {
+      setLoading(true)
+      await walletManager.providePresentationKey(Utils.toArray(presentationKey, 'hex'))
+      if (walletManager.authenticationFlow === 'new-user') {
+        setAccountStatus('new-user')
+      } else {
+        setAccountStatus('existing-user')
+      }
+      setStep('password')
+      if (passwordFieldRef.current) {
+        passwordFieldRef.current.focus()
+      }
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err.message || 'Failed to set presentation key')
+    } finally {
+      setLoading(false)
+    }
+  }, [walletManager, presentationKey])
 
   // Step 3: Provide a password for the final step.
   const handleSubmitPassword = useCallback(async (e: React.FormEvent) => {
@@ -435,16 +511,26 @@ const Greeter: React.FC<any> = ({ history }) => {
               </StepLabel>
               <StepContent>
                 {index === 0 && (
-                  <PhoneForm 
-                    phone={phone}
-                    setPhone={setPhone}
-                    loading={loading}
-                    handleSubmitPhone={handleSubmitPhone}
-                    phoneFieldRef={phoneFieldRef}
-                  />
+                  useWab ? (
+                    <PhoneForm
+                      phone={phone}
+                      setPhone={setPhone}
+                      loading={loading}
+                      handleSubmitPhone={handleSubmitPhone}
+                      phoneFieldRef={phoneFieldRef}
+                    />
+                  ) : (
+                    <PresentationKeyForm
+                      presentationKey={presentationKey}
+                      setPresentationKey={setPresentationKey}
+                      loading={loading}
+                      handleSubmitPresentationKey={handleSubmitPresentationKey}
+                      presentationKeyFieldRef={presentationKeyFieldRef}
+                    />
+                  )
                 )}
-                
-                {index === 1 && (
+
+                {useWab && index === 1 && (
                   <CodeForm
                     code={code}
                     setCode={setCode}
@@ -454,9 +540,9 @@ const Greeter: React.FC<any> = ({ history }) => {
                     codeFieldRef={codeFieldRef}
                   />
                 )}
-                
-                {index === 2 && (
-                  <PasswordForm 
+
+                {(useWab ? index === 2 : index === 1) && (
+                  <PasswordForm
                     password={password}
                     setPassword={setPassword}
                     confirmPassword={confirmPassword}

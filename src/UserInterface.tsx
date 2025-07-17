@@ -14,6 +14,7 @@ import CertificateAccessHandler from './components/CertificateAccessHandler'
 import ProtocolPermissionHandler from './components/ProtocolPermissionHandler'
 import PasswordHandler from './components/PasswordHandler'
 import RecoveryKeyHandler from './components/RecoveryKeyHandler'
+import FundingHandler from './components/FundingHandler'
 import SpendingAuthorizationHandler from './components/SpendingAuthorizationHandler'
 import AuthRedirector from './navigation/AuthRedirector'
 import ThemedToastContainer from './components/ThemedToastContainer'
@@ -58,6 +59,7 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
               <BreakpointProvider queries={queries}>
                 <PasswordHandler />
                 <RecoveryKeyHandler />
+                <FundingHandler />
                 <BasketAccessHandler />
                 <CertificateAccessHandler />
                 <ProtocolPermissionHandler />

@@ -2,19 +2,36 @@ import { useState, useEffect } from 'react'
 import { Chip, Badge, Tooltip, Avatar, Stack, Typography } from '@mui/material'
 import { withRouter, RouteComponentProps } from 'react-router-dom'
 import isImageUrl from '../../utils/isImageUrl'
-import { useTheme } from '@mui/styles'
-// import confederacyHost from '../../utils/confederacyHost'
-// import { Img } from 'uhrp-react'
+import { useTheme, styled } from '@mui/material/styles'
+import { Img } from '@bsv/uhrp-react'
 import Memory from '@mui/icons-material/Memory'
-import makeStyles from '@mui/styles/makeStyles'
 import CloseIcon from '@mui/icons-material/Close'
-import style from './style'
 import { generateDefaultIcon } from '../../constants/popularApps'
 import PlaceholderAvatar from '../PlaceholderAvatar'
 
-const useStyles = makeStyles(style, {
-  name: 'AppChip'
-})
+// Create styled components for elements that need specific styling
+const ChipContainer = styled('div')(() => ({
+  position: 'relative',
+  display: 'inline-flex',
+  alignItems: 'center',
+}))
+
+const ExpiryText = styled('span')(({ theme }) => ({
+  position: 'absolute',
+  opacity: 0,
+  transition: 'opacity 0.3s ease',
+  bottom: '-20px',
+  left: '50%',
+  transform: 'translateX(-50%)',
+  backgroundColor: theme.palette.background.paper,
+  padding: '2px 6px',
+  borderRadius: '4px',
+  boxShadow: theme.shadows[1],
+  fontSize: '0.75rem',
+  [`${ChipContainer}:hover &`]: {
+    opacity: 1
+  }
+}))
 
 interface AppChipProps extends RouteComponentProps {
   label: string
@@ -39,7 +56,6 @@ const AppChip: React.FC<AppChipProps> = ({
   onCloseClick
 }) => {
   const theme = useTheme()
-  const classes = useStyles()
   if (typeof label !== 'string') {
     throw new Error('Error in AppChip: label prop must be a string!')
   }
@@ -56,27 +72,49 @@ const AppChip: React.FC<AppChipProps> = ({
   const [appIconImageUrl, setAppIconImageUrl] = useState(generateDefaultIcon(label))
   const [imageError, setImageError] = useState(false)
 
+  // Reset state values when label changes to prevent stale data
+  useEffect(() => {
+    // When label changes, reset to default state first to avoid showing stale data
+    setParsedLabel(label)
+    setAppIconImageUrl(generateDefaultIcon(label))
+    setImageError(false)
+  }, [label])
+
+  // Handle data fetching in a separate effect
   useEffect(() => {
     const fetchAndCacheData = async () => {
+      console.log(`AppChip: Fetching data for ${label}`)
+      
+      // Generate unique keys for this label
       const faviconKey = `favicon_label_${label}`
       const manifestKey = `manifest_label_${label}`
 
-      // Load favicon from local storage
+      // Try to load favicon from local storage
       const cachedFavicon = window.localStorage.getItem(faviconKey)
       if (cachedFavicon) {
         setAppIconImageUrl(cachedFavicon)
       }
+      
+      // Always try to fetch the latest favicon
       const faviconUrl = `https://${label}/favicon.ico`
       if (await isImageUrl(faviconUrl)) {
         setAppIconImageUrl(faviconUrl)
-        window.localStorage.setItem(faviconKey, faviconUrl) // Cache the favicon URL
+        window.localStorage.setItem(faviconKey, faviconUrl) 
       }
 
-      // Load manifest from local storage
+      // Try to load manifest from local storage
       const cachedManifest = window.localStorage.getItem(manifestKey)
       if (cachedManifest) {
-        const manifest = JSON.parse(cachedManifest)
-        setParsedLabel(manifest.name)
+        try {
+          const manifest = JSON.parse(cachedManifest)
+          if (manifest && manifest.name) {
+            setParsedLabel(manifest.name)
+          }
+        } catch (e) {
+          console.error('Error parsing cached manifest:', e)
+          // If cache is corrupted, remove it
+          window.localStorage.removeItem(manifestKey)
+        }
       }
 
       try {
@@ -100,7 +138,7 @@ const AppChip: React.FC<AppChipProps> = ({
     }
 
     fetchAndCacheData()
-  }, [label, setAppIconImageUrl, setParsedLabel])
+  }, [label])
 
   // Handle image loading events
   const handleImageLoad = () => {
@@ -112,26 +150,46 @@ const AppChip: React.FC<AppChipProps> = ({
   }
 
   return (
-    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{
-      height: '3em', width: '100%'
-    }}>
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      justifyContent="flex-start"
+      sx={{
+        height: '3em',
+        width: '100%',
+        gap: '0.75rem' // Add a more reasonable gap between the label and chip
+      }}>
       <Typography variant="body1" fontWeight="bold">Application:</Typography>
-      <div className={classes.chipContainer}>
+      <ChipContainer>
         <Chip
-          style={(theme as any).templates.chip({ size, backgroundColor })}
+          style={theme.templates?.chip ? theme.templates.chip({ size, backgroundColor }) : {
+            height: `${size * 32}px`,
+            minHeight: `${size * 32}px`,
+            backgroundColor: backgroundColor || 'transparent',
+            borderRadius: '16px',
+            padding: '8px',
+            margin: '4px'
+          }}
           label={
             (showDomain && label !== parsedLabel)
               ? <div style={{
                 textAlign: 'left'
               }}>
                 <span
-                  style={(theme as any).templates.chipLabelTitle({ size })}
+                  style={theme.templates?.chipLabelTitle ? theme.templates.chipLabelTitle({ size }) : {
+                    fontSize: `${Math.max(size * 0.8, 0.8)}rem`,
+                    fontWeight: '500'
+                  }}
                 >
                   {parsedLabel}
                 </span>
                 <br />
                 <span
-                  style={(theme as any).templates.chipLabelSubtitle}
+                  style={theme.templates?.chipLabelSubtitle || {
+                    fontSize: '0.7rem',
+                    opacity: 0.7
+                  }}
                 >
                   {label}
                 </span>
@@ -161,8 +219,8 @@ const AppChip: React.FC<AppChipProps> = ({
                 >
                   <Avatar
                     sx={{
-                      backgroundColor: '#FFFFFF',
-                      color: 'darkRed',
+                      backgroundColor: theme.palette.error.contrastText,
+                      color: theme.palette.error.main,
                       width: 20,
                       height: 20,
                       borderRadius: '10px',
@@ -186,14 +244,17 @@ const AppChip: React.FC<AppChipProps> = ({
                     width: '2.2em',
                     height: '2.2em',
                     borderRadius: '4px',
-                    backgroundColor: '#000000AF',
+                    backgroundColor: theme.palette.action.hover,
                     marginRight: '0.5em'
                   }}
                 >
-                  <img
+                  <Img
                     src={appIconImageUrl}
-                    style={{ width: '75%', height: '75%' }}
-                    className={classes.table_picture}
+                    style={{
+                      width: '75%',
+                      height: '75%',
+                      maxWidth: '5em'
+                    }}
                     alt={`${parsedLabel} app icon`}
                     onLoad={handleImageLoad}
                     onError={handleImageError}
@@ -222,8 +283,8 @@ const AppChip: React.FC<AppChipProps> = ({
             }
           }}
         />
-        <span className={classes.expiryHoverText}>{expires}</span>
-      </div>
+        {expires && <ExpiryText>{expires}</ExpiryText>}
+      </ChipContainer>
     </Stack>
   )
 }

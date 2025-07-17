@@ -23,6 +23,7 @@ interface PageHeaderProps {
   history: History
   showButton?: boolean
   showBackButton?: boolean
+  onBackClick?: () => void
 }
 
 const PageHeader: FC<PageHeaderProps> = ({
@@ -35,6 +36,7 @@ const PageHeader: FC<PageHeaderProps> = ({
   history,
   showButton = true,
   showBackButton = true,
+  onBackClick,
 }) => {
   const classes = useStyles()
 
@@ -45,7 +47,7 @@ const PageHeader: FC<PageHeaderProps> = ({
           <div>
             <IconButton
               className={(classes as any).back_button}
-              onClick={() => history.go(-1)}
+              onClick={onBackClick || (() => history.go(-1))}
               size="large"
             >
               <ArrowBack />

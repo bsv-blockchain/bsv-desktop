@@ -95,7 +95,7 @@ const Settings = () => {
     try {
       setSettingsLoading(true);
 
-      updateSettings({
+      await updateSettings({
         ...settings,
         theme: {
           mode: themeOption
@@ -104,9 +104,7 @@ const Settings = () => {
 
       setSelectedTheme(themeOption);
 
-      toast.success('Theme updated!', {
-        position: 'top-center'
-      });
+      toast.success('Theme updated!');
     } catch (e) {
       toast.error(e.message);
       setSelectedTheme(settings?.theme?.mode || 'system');
@@ -122,14 +120,12 @@ const Settings = () => {
       setSettingsLoading(true);
       setSelectedCurrency(currency);
 
-      updateSettings({
+      await updateSettings({
         ...settings,
         currency,
       });
 
-      toast.success('Currency updated!', {
-        position: 'top-center'
-      });
+      toast.success('Currency updated!');
     } catch (e) {
       toast.error(e.message);
       setSelectedCurrency(settings?.currency || 'BSV');

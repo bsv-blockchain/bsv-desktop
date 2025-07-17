@@ -1,8 +1,7 @@
 import { FC } from 'react';
-import { Typography, Button, LinearProgress, Box } from '@mui/material';
+import { Typography, Button, Box } from '@mui/material';
 import Action from './Action';
 import { WalletAction } from '@bsv/sdk';
-import PageLoading from './PageLoading';
 import AppLogo from './AppLogo';
 
 // Import the TransformedWalletAction interface
@@ -51,12 +50,12 @@ const RecentActions: FC<RecentActionsProps> = ({
           return <Action key={index} {...actionToDisplay} />
         }) : !loading && (
           <Typography
-              color="textSecondary"
-              align="center"
-              style={{ paddingTop: '6em' }}
-            >
-              You haven't made any actions yet.
-            </Typography>
+            color="textSecondary"
+            align="center"
+            style={{ paddingTop: '6em' }}
+          >
+            You haven't made any actions yet.
+          </Typography>
         )}
       {loading && <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={100} /></Box>}
       {appActions && appActions.length !== 0 && (

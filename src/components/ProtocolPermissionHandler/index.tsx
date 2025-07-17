@@ -69,8 +69,8 @@ const ProtocolPermissionHandler = () => {
   };
 
   const getIconAvatar = () => (
-    <Avatar 
-      sx={{ 
+    <Avatar
+      sx={{
         width: 40,
         height: 40,
         display: 'flex',
@@ -138,14 +138,14 @@ const ProtocolPermissionHandler = () => {
       </Tooltip>
 
       <DialogActions sx={{ justifyContent: 'space-between' }}>
-        <Button 
+        <Button
           onClick={handleDeny}
           variant="outlined"
           color="inherit"
         >
           Deny
         </Button>
-        <Button 
+        <Button
           onClick={handleGrant}
           variant="contained"
           color="primary"

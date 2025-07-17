@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useMemo, useCallback, useContext } from 'react'
+import React, { useState, useEffect, createContext, useMemo, useCallback, useContext, useRef } from 'react'
 import {
   Wallet,
   WalletPermissionsManager,
@@ -12,7 +12,7 @@ import {
   StorageClient,
   TwilioPhoneInteractor,
   WABClient,
-  PermissionRequest
+  PermissionRequest,
 } from '@bsv/wallet-toolbox-client'
 import {
   KeyDeriver,
@@ -27,13 +27,20 @@ import { toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { DEFAULT_WAB_URL, DEFAULT_STORAGE_URL, DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB } from './config'
 import { UserContext } from './UserContext'
-import getApps from './pages/Dashboard/Apps/getApps'
-import isImageUrl from './utils/isImageUrl'
-import parseAppManifest from './utils/parseAppManifest'
+import { GroupPermissionRequest, GroupedPermissions } from './types/GroupedPermissions'
+import { updateRecentApp } from './pages/Dashboard/Apps/getApps'
+import { RequestInterceptorWallet } from './RequestInterceptorWallet'
 
 // -----
 // Context Types
 // -----
+
+export interface ActiveProfile {
+  id: number[];
+  name: string;
+  createdAt: number | null;
+  active: boolean;
+}
 
 interface ManagerState {
   walletManager?: WalletAuthenticationManager;
@@ -51,6 +58,9 @@ export interface WalletContextValue {
   settings: WalletSettings;
   updateSettings: (newSettings: WalletSettings) => Promise<void>;
   network: 'mainnet' | 'testnet';
+  // Active Profile
+  activeProfile: ActiveProfile | null;
+  setActiveProfile: (profile: ActiveProfile | null) => void;
   // Logout
   logout: () => void;
   adminOriginator: string;
@@ -61,6 +71,7 @@ export interface WalletContextValue {
   certificateRequests: CertificateAccessRequest[]
   protocolRequests: ProtocolAccessRequest[]
   spendingRequests: SpendingRequest[]
+  groupPermissionRequests: GroupPermissionRequest[]
   advanceBasketQueue: () => void
   advanceCertificateQueue: () => void
   advanceProtocolQueue: () => void
@@ -68,6 +79,7 @@ export interface WalletContextValue {
   setWalletFunder: (funder: (presentationKey: number[], wallet: WalletInterface, adminOriginator: string) => Promise<void>) => void
   setUseWab: (use: boolean) => void
   useWab: boolean
+  advanceGroupQueue: () => void
   recentApps: any[]
   finalizeConfig: (wabConfig: WABConfig) => boolean
   setConfigStatus: (status: ConfigStatus) => void
@@ -80,6 +92,8 @@ export const WalletContext = createContext<WalletContextValue>({
   settings: DEFAULT_SETTINGS,
   updateSettings: async () => { },
   network: 'mainnet',
+  activeProfile: null,
+  setActiveProfile: () => { },
   logout: () => { },
   adminOriginator: ADMIN_ORIGINATOR,
   setPasswordRetriever: () => { },
@@ -89,6 +103,7 @@ export const WalletContext = createContext<WalletContextValue>({
   certificateRequests: [],
   protocolRequests: [],
   spendingRequests: [],
+  groupPermissionRequests: [],
   advanceBasketQueue: () => { },
   advanceCertificateQueue: () => { },
   advanceProtocolQueue: () => { },
@@ -96,6 +111,7 @@ export const WalletContext = createContext<WalletContextValue>({
   setWalletFunder: () => { },
   setUseWab: () => { },
   useWab: true,
+  advanceGroupQueue: () => { },
   recentApps: [],
   finalizeConfig: () => false,
   setConfigStatus: () => { },
@@ -169,8 +185,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [adminOriginator, setAdminOriginator] = useState(ADMIN_ORIGINATOR);
   const [recentApps, setRecentApps] = useState([])
+  const [activeProfile, setActiveProfile] = useState<ActiveProfile | null>(null)
 
-  const { isFocused, onFocusRequested, onFocusRelinquished, setBasketAccessModalOpen, setCertificateAccessModalOpen, setProtocolAccessModalOpen, setSpendingAuthorizationModalOpen } = useContext(UserContext);
+  const { isFocused, onFocusRequested, onFocusRelinquished, setBasketAccessModalOpen, setCertificateAccessModalOpen, setProtocolAccessModalOpen, setSpendingAuthorizationModalOpen, setGroupPermissionModalOpen } = useContext(UserContext);
 
   // Track if we were originally focused
   const [wasOriginallyFocused, setWasOriginallyFocused] = useState(false)
@@ -184,6 +201,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     (presentationKey: number[], wallet: WalletInterface, adminOriginator: string) => Promise<void>
   >()
   const [useWab, setUseWab] = useState<boolean>(DEFAULT_USE_WAB)
+  const [groupPermissionRequests, setGroupPermissionRequests] = useState<GroupPermissionRequest[]>([])
 
   // Pop the first request from the basket queue, close if empty, relinquish focus if needed
   const advanceBasketQueue = () => {
@@ -233,6 +251,20 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       const newQueue = prev.slice(1)
       if (newQueue.length === 0) {
         setSpendingAuthorizationModalOpen(false)
+        if (!wasOriginallyFocused) {
+          onFocusRelinquished()
+        }
+      }
+      return newQueue
+    })
+  }
+
+  // Pop the first request from the group permission queue, close if empty, relinquish focus if needed
+  const advanceGroupQueue = () => {
+    setGroupPermissionRequests(prev => {
+      const newQueue = prev.slice(1)
+      if (newQueue.length === 0) {
+        setGroupPermissionModalOpen(false)
         if (!wasOriginallyFocused) {
           onFocusRelinquished()
         }
@@ -474,6 +506,52 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     })
   }, [isFocused, onFocusRequested])
 
+  // Provide a handler for group permission requests that enqueues them
+  const groupPermissionCallback = useCallback(async (args: {
+    requestID: string,
+    permissions: GroupedPermissions,
+    originator: string,
+    reason?: string
+  }): Promise<void> => {
+    const {
+      requestID,
+      originator,
+      permissions
+    } = args
+
+    if (!requestID || !permissions) {
+      return Promise.resolve()
+    }
+
+    // Create the new permission request
+    const newItem: GroupPermissionRequest = {
+      requestID,
+      originator,
+      permissions
+    }
+
+    // Enqueue the new request
+    return new Promise<void>(resolve => {
+      setGroupPermissionRequests(prev => {
+        const wasEmpty = prev.length === 0
+
+        // If no requests were queued, handle focusing logic right away
+        if (wasEmpty) {
+          isFocused().then(currentlyFocused => {
+            setWasOriginallyFocused(currentlyFocused)
+            if (!currentlyFocused) {
+              onFocusRequested()
+            }
+            setGroupPermissionModalOpen(true)
+          })
+        }
+
+        resolve()
+        return [...prev, newItem]
+      })
+    })
+  }, [isFocused, onFocusRequested, setGroupPermissionModalOpen])
+
   // ---- WAB + network + storage configuration ----
   const [wabUrl, setWabUrl] = useState<string>(DEFAULT_WAB_URL);
   const [wabInfo, setWabInfo] = useState<{
@@ -589,7 +667,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       const chain = selectedNetwork;
       const keyDeriver = new KeyDeriver(new PrivateKey(primaryKey));
       const storageManager = new WalletStorageManager(keyDeriver.identityKey);
-      const signer = new WalletSigner(chain, keyDeriver, storageManager);
+      const signer = new WalletSigner(chain, keyDeriver as any, storageManager);
       const services = new Services(chain);
       const wallet = new Wallet(signer, services, undefined, privilegedKeyManager);
       newManagers.settingsManager = wallet.settingsManager;
@@ -601,11 +679,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
       // Setup permissions with provided callbacks.
       const permissionsManager = new WalletPermissionsManager(wallet, adminOriginator, {
-        seekProtocolPermissionsForEncrypting: false,
-        seekProtocolPermissionsForHMAC: false,
-        seekPermissionsForPublicKeyRevelation: false,
-        seekPermissionsForIdentityKeyRevelation: false,
-        seekPermissionsForIdentityResolution: false,
+        seekProtocolPermissionsForEncrypting: true,
+        seekProtocolPermissionsForHMAC: true,
+        seekPermissionsForPublicKeyRevelation: true,
+        seekPermissionsForIdentityKeyRevelation: true,
+        seekPermissionsForIdentityResolution: true,
+        seekGroupedPermission: true
       });
 
       if (protocolPermissionCallback) {
@@ -619,6 +698,10 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
       if (certificateAccessCallback) {
         permissionsManager.bindCallback('onCertificateAccessRequested', certificateAccessCallback);
+      }
+
+      if (groupPermissionCallback) {
+        permissionsManager.bindCallback('onGroupedPermissionRequested', groupPermissionCallback);
       }
 
       // Store in window for debugging
@@ -640,7 +723,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     protocolPermissionCallback,
     basketAccessCallback,
     spendingAuthorizationCallback,
-    certificateAccessCallback
+    certificateAccessCallback,
+    groupPermissionCallback
   ]);
 
 
@@ -711,7 +795,6 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
             walletFunder
           );
         }
-
         // Store in window for debugging
         (window as any).walletManager = walletManager;
 
@@ -772,63 +855,84 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     setSnapshotLoaded(false);
   }, []);
 
+  // Automatically set active profile when wallet manager becomes available
+  useEffect(() => {
+    if (managers?.walletManager?.authenticated) {
+      const profiles = managers.walletManager.listProfiles()
+      const profileToSet = profiles.find((p: any) => p.active) || profiles[0]
+      if (profileToSet?.id) {
+        console.log('PROFILE IS NOW BEING SET!', profileToSet)
+        setActiveProfile(profileToSet)
+      }
+    } else {
+      setActiveProfile(null)
+    }
+  }, [managers?.walletManager?.authenticated])
+
+  // Track recent origins to prevent duplicate updates in a short time period
+  const recentOriginsRef = useRef<Map<string, number>>(new Map());
+  const DEBOUNCE_TIME_MS = 5000; // 5 seconds debounce
+
   useEffect(() => {
     if (managers?.walletManager?.authenticated) {
       const wallet = managers.walletManager;
       let unlistenFn: (() => void) | undefined;
 
       const setupListener = async () => {
-        unlistenFn = await onWalletReady(wallet);
+        // Create a wrapper function that adapts updateRecentApp to the signature expected by RequestInterceptorWallet
+        // and implements debouncing to prevent multiple updates for the same origin
+        const updateRecentAppWrapper = async (profileId: string, origin: string): Promise<void> => {
+          try {
+            // Create a cache key combining profile ID and origin
+            const cacheKey = `${profileId}:${origin}`;
+            const now = Date.now();
+
+            // Check if we've recently processed this origin
+            const lastProcessed = recentOriginsRef.current.get(cacheKey);
+            if (lastProcessed && (now - lastProcessed) < DEBOUNCE_TIME_MS) {
+              // Skip this update as we've recently processed this origin
+              console.debug('Skipping recent app update for', origin, '- too soon');
+              return;
+            }
+
+            // Update the timestamp for this origin
+            recentOriginsRef.current.set(cacheKey, now);
+
+            // Call the original updateRecentApp but ignore the return value
+            await updateRecentApp(profileId, origin);
+
+            // Dispatch custom event to notify components of recent apps update
+            window.dispatchEvent(new CustomEvent('recentAppsUpdated', {
+              detail: {
+                profileId,
+                origin
+              }
+            }));
+          } catch (error) {
+            // Silently ignore errors in recent apps tracking
+            console.debug('Error tracking recent app:', error);
+          }
+        };
+
+        // Set up the original onWalletReady listener
+        const interceptorWallet = new RequestInterceptorWallet(wallet, Utils.toBase64(activeProfile.id), updateRecentAppWrapper);
+        unlistenFn = await onWalletReady(interceptorWallet);
       };
 
       setupListener();
 
       return () => {
         if (unlistenFn) {
-          unlistenFn();
+          unlistenFn()
         }
-      };
-    }
-  }, [managers]);
-
-  const resolveAppDataFromDomain = async ({ appDomains }) => {
-    const dataPromises = appDomains.map(async (domain, index) => {
-      let appIconImageUrl
-      let appName = domain
-      try {
-        const url = domain.startsWith('http') ? domain : `https://${domain}/favicon.ico`
-        if (await isImageUrl(url)) {
-          appIconImageUrl = url
-        }
-        // Try to parse the app manifest to find the app info
-        const manifest = await parseAppManifest({ domain })
-        if (manifest && typeof manifest.name === 'string') {
-          appName = manifest.name
-        }
-      } catch (e) {
-        console.error(e)
       }
-
-      return { appName, appIconImageUrl, domain }
-    })
-    return Promise.all(dataPromises)
-  }
+    }
+  }, [managers])
 
   useEffect(() => {
-    if (typeof managers.permissionsManager === 'object') {
+    if (typeof managers.walletManager === 'object') {
       (async () => {
-        const storedApps = window.localStorage.getItem('recentApps')
-        if (storedApps) {
-          setRecentApps(JSON.parse(storedApps))
-        }
-        // Parse out the app data from the domains
-        const appDomains = await getApps({ permissionsManager: managers.permissionsManager, adminOriginator })
-        const parsedAppData = await resolveAppDataFromDomain({ appDomains })
-        parsedAppData.sort((a, b) => a.appName.localeCompare(b.appName))
-        setRecentApps(parsedAppData)
 
-        // store for next app load
-        window.localStorage.setItem('recentApps', JSON.stringify(parsedAppData))
       })()
     }
   }, [adminOriginator, managers?.permissionsManager])
@@ -839,6 +943,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     settings,
     updateSettings,
     network: selectedNetwork === 'test' ? 'testnet' : 'mainnet',
+    activeProfile: activeProfile,
+    setActiveProfile: setActiveProfile,
     logout,
     adminOriginator,
     setPasswordRetriever,
@@ -848,8 +954,10 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     certificateRequests,
     protocolRequests,
     spendingRequests,
+    groupPermissionRequests,
     advanceBasketQueue,
     advanceCertificateQueue,
+    advanceGroupQueue,
     advanceProtocolQueue,
     advanceSpendingQueue,
     setWalletFunder,
@@ -864,6 +972,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     settings,
     updateSettings,
     selectedNetwork,
+    activeProfile,
     logout,
     adminOriginator,
     setPasswordRetriever,
@@ -873,6 +982,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     certificateRequests,
     protocolRequests,
     spendingRequests,
+    groupPermissionRequests,
     advanceBasketQueue,
     advanceCertificateQueue,
     advanceProtocolQueue,

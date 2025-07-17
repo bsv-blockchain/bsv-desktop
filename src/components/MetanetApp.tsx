@@ -43,7 +43,11 @@ const MetanetApp: React.FC<MetanetAppProps> = ({
         e.stopPropagation()
         history.push({
           pathname: `/dashboard/app/${encodeURIComponent(domain)}`,
-          state: { domain },
+          state: { 
+            domain,
+            appName: displayName,
+            iconImageUrl: iconImageUrl
+          },
         })
       }
     }

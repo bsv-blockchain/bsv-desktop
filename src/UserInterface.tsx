@@ -31,6 +31,7 @@ const queries = {
 
 // Import NativeHandlers from UserContext to avoid circular dependency
 import { NativeHandlers, UserContextProvider } from './UserContext'
+import GroupPermissionHandler from './components/GroupPermissionHandler'
 
 interface UserInterfaceProps {
   onWalletReady: (wallet: WalletInterface) => Promise<(() => void) | undefined>;
@@ -49,9 +50,9 @@ interface UserInterfaceProps {
 
 const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHandlers, appVersion, appName }) => {
   return (
-    <AppThemeProvider>
-      <UserContextProvider nativeHandlers={nativeHandlers} appVersion={appVersion} appName={appName}>
-        <WalletContextProvider onWalletReady={onWalletReady}>
+    <UserContextProvider nativeHandlers={nativeHandlers} appVersion={appVersion} appName={appName}>
+      <WalletContextProvider onWalletReady={onWalletReady}>
+        <AppThemeProvider>
           <ExchangeRateContextProvider>
             <Router>
               <AuthRedirector />
@@ -64,6 +65,7 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
                 <ProtocolPermissionHandler />
                 <SpendingAuthorizationHandler />
                 <ThemedToastContainer />
+                <GroupPermissionHandler />
                 <Switch>
                   <Route exact path='/' component={Greeter} />
                   <Route path='/dashboard' component={Dashboard} />
@@ -74,9 +76,9 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
               </BreakpointProvider>
             </Router>
           </ExchangeRateContextProvider>
-        </WalletContextProvider>
-      </UserContextProvider>
-    </AppThemeProvider>
+        </AppThemeProvider>
+      </WalletContextProvider>
+    </UserContextProvider>
   )
 }
 

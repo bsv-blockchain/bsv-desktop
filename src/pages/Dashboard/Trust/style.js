@@ -22,11 +22,11 @@ export default theme => ({
     margin: '0 auto',
     minWidth: '10em',
     padding: '0.8em',
-    border: `1px solid ${theme.palette.primary.secondary}`,
+    border: `1px solid ${theme.palette.divider}`,
     borderRadius: '8px',
     '&:hover': {
-      border: '1px solid #eeeeee00',
-      background: theme.palette.background.default
+      border: `1px solid ${theme.palette.primary.main}`,
+      background: theme.palette.action.hover
     }
   },
   oracle_icon: {
@@ -87,6 +87,13 @@ export default theme => ({
     width: '4em',
     height: '4em',
     borderRadius: '6px'
+  },
+  fields_display: {
+    padding: theme.spacing(2),
+    backgroundColor: theme.palette.background.paper,
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: theme.shape.borderRadius,
+    marginTop: theme.spacing(2)
   },
   slider_label_grid: {
     display: 'grid',

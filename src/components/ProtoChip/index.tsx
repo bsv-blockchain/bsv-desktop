@@ -3,7 +3,7 @@ import { Chip, Avatar, Stack, Typography, Divider, Box } from '@mui/material'
 import { withRouter, RouteComponentProps } from 'react-router-dom'
 import CloseIcon from '@mui/icons-material/Close'
 import makeStyles from '@mui/styles/makeStyles'
-import { useTheme } from '@mui/styles'
+import { useTheme } from '@mui/material/styles'
 import style from './style'
 import { deterministicImage } from '../../utils/deterministicImage'
 import CounterpartyChip from '../CounterpartyChip/index'
@@ -48,16 +48,23 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
   // iconURL,
   backgroundColor = 'transparent'
 }) => {
-  const classes = useStyles()
-  const theme: any = useTheme()
+  const theme = useTheme()
 
   const navToProtocolDocumentation = (e: any) => {
+    console.log('navToProtocolDocumentation', encodeURIComponent(securityLevel))
     if (clickable) {
       if (typeof onClick === 'function') {
         onClick(e)
       } else {
         e.stopPropagation()
-        history.push(`/dashboard/protocol/${encodeURIComponent(protocolID)}`)
+        // Pass protocol data forward to prevent re-fetching
+        history.push(`/dashboard/protocol/${encodeURIComponent(protocolID)}/${encodeURIComponent(securityLevel)}`, {
+          protocolName,
+          iconURL,
+          description,
+          documentationURL,
+          previousAppDomain: originator
+        })
       }
     }
   }
@@ -167,12 +174,22 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
 
   return (
     <Stack direction="column" spacing={1} alignItems="space-between">
-      <Stack direction="row" alignItems="center" spacing={1} justifyContent="space-between" sx={{
-        height: '3em', width: '100%'
+      <Stack direction="row" alignItems="center" spacing={1} sx={{
+        height: '3em', 
+        width: '100%',
+        overflow: 'hidden'
       }}>
-        <Typography variant="body1" fontWeight="bold">Protocol:</Typography>
+        <Typography variant="body1" fontWeight="bold" sx={{ flexShrink: 0 }}>Protocol:</Typography>
         <Chip
-          style={theme.templates.chip({ size, backgroundColor })}
+          style={theme.templates?.chip ? theme.templates.chip({ size, backgroundColor }) : {
+            height: `${size * 32}px`,
+            minHeight: `${size * 32}px`,
+            backgroundColor: backgroundColor || 'transparent',
+            borderRadius: '16px',
+            padding: '8px',
+            margin: '4px',
+            maxWidth: '300px'
+          }}
           icon={
             <Avatar
               src={iconURL}
@@ -180,14 +197,30 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
               sx={{
                 width: '2.5em',
                 height: '2.5em',
+                flexShrink: 0
               }}
               onLoad={handleImageLoad}
               onError={handleImageError}
             />
           }
           label={
-            <div style={(theme as any).templates.chipLabel}>
-              <span style={(theme as any).templates.chipLabelTitle({ size })}>
+            <div style={{
+              ...theme.templates?.chipLabel,
+              display: 'flex', 
+              flexDirection: 'column',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              maxWidth: '200px'
+            }}>
+              <span style={{
+                ...theme.templates?.chipLabelTitle ? theme.templates.chipLabelTitle({ size }) : {},
+                fontSize: `${Math.max(size * 0.8, 0.8)}rem`,
+                fontWeight: '500',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
                 {protocolID}
               </span>
             </div>
@@ -196,6 +229,24 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
           onDelete={canRevoke ? onCloseClick : undefined}
           deleteIcon={canRevoke ? <CloseIcon /> : undefined}
         />
+        <Box sx={{ 
+          flex: 1, 
+          minWidth: 0, 
+          px: 1,
+          overflow: 'hidden'
+        }}>
+          <Typography 
+            variant="body1" 
+            sx={{ 
+              fontSize: '1rem',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {description || 'Protocol description not found.'}
+          </Typography>
+        </Box>
       </Stack>
       {(counterparty && securityLevel > 1) && <CounterpartyChip
         counterparty={counterparty}
@@ -215,7 +266,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
       }}>
         <Typography variant="body1" fontWeight="bold">Scope:</Typography>
         <Box px={3}>
-          <Typography variant="body1" sx={{ fontSize: '1rem' }}>{description && `${description} -`}{securityLevelExplainer(securityLevel)}</Typography>
+          <Typography variant="body1" sx={{ fontSize: '1rem' }}>{securityLevelExplainer(securityLevel)}</Typography>
         </Box>
       </Stack>
     </Stack>

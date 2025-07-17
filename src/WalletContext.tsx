@@ -12,7 +12,6 @@ import {
   TwilioPhoneInteractor,
   WABClient,
   PermissionRequest,
-  Profile
 } from '@bsv/wallet-toolbox-client'
 import {
   KeyDeriver,
@@ -27,12 +26,8 @@ import { toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { DEFAULT_WAB_URL, DEFAULT_STORAGE_URL, DEFAULT_CHAIN, ADMIN_ORIGINATOR } from './config'
 import { UserContext } from './UserContext'
-// import getApps from './pages/Dashboard/Apps/getApps'
-import isImageUrl from './utils/isImageUrl'
-import parseAppManifest from './utils/parseAppManifest'
 import { GroupPermissionRequest, GroupedPermissions } from './types/GroupedPermissions'
 import { updateRecentApp } from './pages/Dashboard/Apps/getApps'
-import { listen } from '@tauri-apps/api/event'
 import { RequestInterceptorWallet } from './RequestInterceptorWallet'
 
 // -----
@@ -912,49 +907,6 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
     }
   }, [managers])
-
-  // TODO: Determine if apps should be fetched here.
-  // const resolveAppDataFromDomain = async ({ appDomains }) => {
-  //   const dataPromises = appDomains.map(async (domain, index) => {
-  //     let appIconImageUrl
-  //     let appName = domain
-  //     try {
-  //       const url = domain.startsWith('http') ? domain : `https://${domain}/favicon.ico`
-  //       if (await isImageUrl(url)) {
-  //         appIconImageUrl = url
-  //       }
-  //       // Try to parse the app manifest to find the app info
-  //       const manifest = await parseAppManifest({ domain })
-  //       if (manifest && typeof manifest.name === 'string') {
-  //         appName = manifest.name
-  //       }
-  //     } catch (e) {
-  //       console.error(e)
-  //     }
-
-  //     return { appName, appIconImageUrl, domain }
-  //   })
-  //   return Promise.all(dataPromises)
-  // }
-
-  // useEffect(() => {
-  //   if (typeof managers.permissionsManager === 'object') {
-  //     (async () => {
-  //       const storedApps = window.localStorage.getItem('recentApps')
-  //       if (storedApps) {
-  //         setRecentApps(JSON.parse(storedApps))
-  //       }
-  //       // Parse out the app data from the domains
-  //       const appDomains = await getApps({ permissionsManager: managers.permissionsManager, adminOriginator })
-  //       const parsedAppData = await resolveAppDataFromDomain({ appDomains })
-  //       parsedAppData.sort((a, b) => a.appName.localeCompare(b.appName))
-  //       setRecentApps(parsedAppData)
-
-  //       // store for next app load
-  //       window.localStorage.setItem('recentApps', JSON.stringify(parsedAppData))
-  //     })()
-  //   }
-  // }, [adminOriginator, managers?.permissionsManager])
 
   useEffect(() => {
     if (typeof managers.walletManager === 'object') {

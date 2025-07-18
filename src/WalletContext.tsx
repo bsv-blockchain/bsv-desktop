@@ -15,12 +15,12 @@ import {
   PermissionRequest,
 } from '@bsv/wallet-toolbox-client'
 import {
-  KeyDeriver,
   PrivateKey,
   SHIPBroadcaster,
   Utils,
   LookupResolver,
-  WalletInterface
+  WalletInterface,
+  CachedKeyDeriver
 } from '@bsv/sdk'
 import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 import { toast } from 'react-toastify'
@@ -665,7 +665,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     try {
       const newManagers = {} as any;
       const chain = selectedNetwork;
-      const keyDeriver = new KeyDeriver(new PrivateKey(primaryKey));
+      const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey));
       const storageManager = new WalletStorageManager(keyDeriver.identityKey);
       const signer = new WalletSigner(chain, keyDeriver as any, storageManager);
       const services = new Services(chain);

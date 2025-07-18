@@ -31,13 +31,14 @@
     "metanet-apps": "^1.0.4"
   },
   "peerDependencies": {
-    "@bsv/sdk": "^1.6.8",
+    "@bsv/sdk": "^1.6.16",
     "@bsv/wallet-toolbox-client": "^1.5.6",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^6.4.3",
     "@mui/material": "^6.4.3",
     "@mui/styles": "^6.4.3",
+    "@tauri-apps/plugin-opener": "^2.4.0",
     "date-fns": "^4.1.0",
     "fuse.js": "^7.1.0",
     "iso-3166-ts": "^2.2.0",
@@ -45,8 +46,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^5.2.0",
-    "react-toastify": "^11.0.3",
-    "@tauri-apps/plugin-opener": "^2.4.0"
+    "react-toastify": "^11.0.3"
   },
   "scripts": {
     "build": "tsc",

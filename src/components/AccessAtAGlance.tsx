@@ -18,6 +18,7 @@ import CertificateAccessList from './CertificateAccessList'
 import ProtocolPermissionList from './ProtocolPermissionList'
 import { History } from 'history'
 import { WalletContext } from '../WalletContext'
+import AppLogo from './AppLogo'
 
 /* ------------------------------------------------------------------ */
 /*  Type helpers                                                      */
@@ -263,17 +264,8 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({
           onEmptyList={() => setCertificateIsEmpty(true)}
         />
 
-        {isLoadingBaskets && (
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <CircularProgress size={32} />
-          </Box>
-        )}
+
+        {isLoadingBaskets && <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={50} /></Box>}
 
         {recentBasketAccess.length === 0 &&
           certificateIsEmpty &&

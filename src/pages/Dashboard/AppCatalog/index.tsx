@@ -27,7 +27,7 @@ import { openUrl } from '../../../utils/openUrl'
 import { AppCatalog as AppCatalogAPI } from 'metanet-apps'
 import type { PublishedApp } from 'metanet-apps/src/types'
 import CounterpartyChip from '../../../components/CounterpartyChip'
-
+import AppLogo from '../../../components/AppLogo';
 // Define a type for our views
 type AppCatalogView = 'list' | 'details'
 
@@ -209,9 +209,7 @@ const AppCatalog: React.FC = () => {
 
             {/* App Grid */}
             {catalogLoading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                <LinearProgress style={{ width: '80%' }} />
-              </Box>
+              <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={150} /></Box>
             ) : filteredCatalogApps.length === 0 ? (
               <Box sx={{ textAlign: 'center', p: 4 }}>
                 <Typography variant="h6" color="textSecondary">

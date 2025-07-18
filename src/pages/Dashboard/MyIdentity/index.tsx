@@ -19,7 +19,7 @@ const useStyles = makeStyles((style as any), {
 })
 
 const MyIdentity = () => {
-  const { managers, network, adminOriginator } = useContext(WalletContext)
+  const { managers, network, adminOriginator, activeProfile } = useContext(WalletContext)
 
   const [search, setSearch] = useState('')
   const [addPopularSigniaCertifiersModalOpen, setAddPopularSigniaCertifiersModalOpen] = useState(false)
@@ -99,7 +99,7 @@ const MyIdentity = () => {
 
       setIdentityKey()
     }
-  }, [setCertificates, setPrimaryIdentityKey, adminOriginator])
+  }, [setCertificates, setPrimaryIdentityKey, adminOriginator, activeProfile])
 
   const handleRevealPrivilegedKey = async () => {
     const { publicKey } = await managers.permissionsManager.getPublicKey({

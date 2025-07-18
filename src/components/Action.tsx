@@ -275,26 +275,80 @@ const Action: FC<ActionProps> = ({
             <div className={classes.sectionTitle}>
               <Typography variant="h6">Transaction Summary</Typography>
             </div>
-            <Grid container spacing={2}>
-              <Grid sx={{ xs: 12, sm: 4 }}>
-                <Typography variant="body2" color="textSecondary">Total Input</Typography>
-                <Typography variant="h6">
+            <Box sx={{ 
+              display: 'grid', 
+              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, 
+              gap: 2 
+            }}>
+              <Box sx={{
+                p: 2,
+                bgcolor: 'background.paper',
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                textAlign: 'center'
+              }}>
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                  Total Input
+                </Typography>
+                <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    fontFamily: 'monospace',
+                    fontWeight: 600,
+                    color: 'success.main'
+                  }}
+                >
                   <AmountDisplay>{totalInputAmount}</AmountDisplay>
                 </Typography>
-              </Grid>
-              <Grid sx={{ xs: 12, sm: 4 }}>
-                <Typography variant="body2" color="textSecondary">Total Output</Typography>
-                <Typography variant="h6">
+              </Box>
+              
+              <Box sx={{
+                p: 2,
+                bgcolor: 'background.paper',
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                textAlign: 'center'
+              }}>
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                  Total Output
+                </Typography>
+                <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    fontFamily: 'monospace',
+                    fontWeight: 600,
+                    color: 'primary.main'
+                  }}
+                >
                   <AmountDisplay>{totalOutputAmount}</AmountDisplay>
                 </Typography>
-              </Grid>
-              <Grid sx={{ xs: 12, sm: 4 }}>
-                <Typography variant="body2" color="textSecondary">Network Fees</Typography>
-                <Typography variant="h6">
+              </Box>
+              
+              <Box sx={{
+                p: 2,
+                bgcolor: 'background.paper',
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                textAlign: 'center'
+              }}>
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                  Network Fees
+                </Typography>
+                <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    fontFamily: 'monospace',
+                    fontWeight: 600,
+                    color: 'warning.main'
+                  }}
+                >
                   <AmountDisplay>{fees || 0}</AmountDisplay>
                 </Typography>
-              </Grid>
-            </Grid>
+              </Box>
+            </Box>
           </Paper>
 
           {/* Inputs Section */}
@@ -307,31 +361,51 @@ const Action: FC<ActionProps> = ({
                   ({inputs.length})
                 </Typography>
               </div>
-              <Grid container direction="column" spacing={2}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 {inputs.map((input, index) => (
-                  <Grid key={index}>
-                    <Paper variant="outlined" style={{ padding: '16px' }}>
-                      <Grid container spacing={2}>
-                        <Grid sx={{ xs: 12 }}>
-                          <Typography variant="body2" color="textSecondary">
-                            Input #{index + 1}
-                          </Typography>
-                          <Typography variant="body1" style={{ wordBreak: 'break-word' }}>
-                            {input.inputDescription}
-                          </Typography>
-                        </Grid>
-                        <Grid sx={{ xs: 12 }}>
-                          <div className={classes.amountChip}>
-                            <AmountDisplay description={input.inputDescription}>
-                              {input.sourceSatoshis}
-                            </AmountDisplay>
-                          </div>
-                        </Grid>
-                      </Grid>
-                    </Paper>
-                  </Grid>
+                  <Box
+                    key={index}
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      p: 2,
+                      bgcolor: 'background.paper',
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                    }}
+                  >
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography 
+                        variant="body2" 
+                        color="textSecondary" 
+                        sx={{ fontSize: '0.75rem', mb: 0.5 }}
+                      >
+                        Input #{index + 1}
+                      </Typography>
+                      <Typography>
+                        {input.inputDescription}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ ml: 2, flexShrink: 0 }}>
+                      <Typography 
+                        variant="body1" 
+                        sx={{ 
+                          fontWeight: 500,
+                          fontFamily: 'monospace',
+                          fontSize: '0.875rem',
+                          color: 'text.primary'
+                        }}
+                      >
+                        <AmountDisplay description={input.inputDescription}>
+                          {input.sourceSatoshis}
+                        </AmountDisplay>
+                      </Typography>
+                    </Box>
+                  </Box>
                 ))}
-              </Grid>
+              </Box>
             </Paper>
           )}
 
@@ -345,31 +419,61 @@ const Action: FC<ActionProps> = ({
                   ({outputs.length})
                 </Typography>
               </div>
-              <Grid container direction="column" spacing={2}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 {outputs.map((output, index) => (
-                  <Grid key={index}>
-                    <Paper variant="outlined" style={{ padding: '16px' }}>
-                      <Grid container spacing={2}>
-                        <Grid sx={{ xs: 12 }}>
-                          <Typography variant="body2" color="textSecondary">
-                            Output #{index + 1}
-                          </Typography>
-                          <Typography variant="body1" style={{ wordBreak: 'break-word' }}>
-                            {output.outputDescription}
-                          </Typography>
-                        </Grid>
-                        <Grid sx={{ xs: 12 }}>
-                          <div className={classes.amountChip}>
-                            <AmountDisplay description={output.outputDescription}>
-                              {output.satoshis}
-                            </AmountDisplay>
-                          </div>
-                        </Grid>
-                      </Grid>
-                    </Paper>
-                  </Grid>
+                  <Box
+                    key={index}
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      p: 2,
+                      bgcolor: 'background.paper',
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                    }}
+                  >
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography 
+                        variant="body2" 
+                        color="textSecondary" 
+                        sx={{ fontSize: '0.75rem', mb: 0.5 }}
+                      >
+                        Output #{index + 1}
+                      </Typography>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          wordBreak: 'break-word',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                        }}
+                      >
+                        {output.outputDescription}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ ml: 2, flexShrink: 0 }}>
+                      <Typography 
+                        variant="body1" 
+                        sx={{ 
+                          fontWeight: 500,
+                          fontFamily: 'monospace',
+                          fontSize: '0.875rem',
+                          color: 'text.primary'
+                        }}
+                      >
+                        <AmountDisplay description={output.outputDescription}>
+                          {output.satoshis}
+                        </AmountDisplay>
+                      </Typography>
+                    </Box>
+                  </Box>
                 ))}
-              </Grid>
+              </Box>
             </Paper>
           )}
         </Box>

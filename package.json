@@ -32,7 +32,7 @@
   },
   "peerDependencies": {
     "@bsv/sdk": "^1.6.16",
-    "@bsv/wallet-toolbox-client": "^1.5.12",
+    "@bsv/wallet-toolbox-client": "^1.5.17",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^6.4.3",

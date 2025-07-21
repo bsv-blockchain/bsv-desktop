@@ -37,7 +37,6 @@ export const SpendingAuthorizationList: FC<Props> = ({
   const [authorizedAmount, setAuthorizedAmount] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [busy, setBusy] = useState<{ revoke?: boolean; increase?: boolean; list?: boolean; create?: boolean }>({ list: true });
-  const [customSpendLimit, setCustomSpendLimit] = useState<number>(0) 
   const [isEditingLimit, setIsEditingLimit] = useState(false);
   const [tempLimit, setTempLimit] = useState<string>('');
   const [originalLimit, setOriginalLimit] = useState<string>(''); // Add this state
@@ -111,10 +110,16 @@ export const SpendingAuthorizationList: FC<Props> = ({
   };
   const updateSpendingAuthorization = async (auth: PermissionToken) => {
     setBusy(b => ({ ...b, increase: true }));
+    if(tempLimit < originalLimit + 1)
+    {
+      setBusy(b => ({ ...b, increase: false }));
+      throw("new limit must be higher than old limit by at least $1");
+    }
+    const newLimit = parseFloat(tempLimit);
     try {
       await managers.permissionsManager.ensureSpendingAuthorization({
         originator: app,
-        satoshis: determineUpgradeAmount(auth.authorizedAmount, usdPerBsv),
+        satoshis: Math.round((newLimit * 1e8) / usdPerBsv),
         reason: 'Increase spending limit',
         seekPermission: true,
       });
@@ -174,72 +179,6 @@ export const SpendingAuthorizationList: FC<Props> = ({
       </Box>
     );
   }
-  // --------------------------------------------------------------------------
-  //   HANDLERS
-  // --------------------------------------------------------------------------
-  const handleEditLimit = () => {
-    const currentLimitStr = String(Math.round((authorizedAmount * usdPerBsv) / 1e8));
-    setIsEditingLimit(true);
-    setTempLimit(currentLimitStr);
-    setOriginalLimit(currentLimitStr); // Store the original value
-  }
-
-const handleSubmitLimit = async () => {
-    const newUsdLimit = parseFloat(tempLimit)
-    if (isNaN(newUsdLimit) || newUsdLimit <= 0) {
-      toast.error('Please enter a valid spending limit')
-      return
-    }
-    
-    const currentUsdLimit = Math.round((authorizedAmount * usdPerBsv) / 1e8)
-    const newSatoshis = Math.round((newUsdLimit * 1e8) / usdPerBsv)
-    
-    console.log('Current USD limit:', currentUsdLimit)
-    console.log('New USD limit:', newUsdLimit)
-    console.log('New satoshis:', newSatoshis)
-    
-    setBusy(b => ({ ...b, increase: true }))
-    try {
-      // If we're decreasing or setting a different amount, revoke first
-      if (newUsdLimit !== currentUsdLimit && authorization) {
-        console.log('Revoking existing authorization...')
-        await managers.permissionsManager.revokePermission(authorization)
-        await new Promise(res => setTimeout(res, 800))
-        SPENDING_CACHE.delete(cacheKey)
-      }
-      
-      console.log('Creating new authorization...')
-      await managers.permissionsManager.ensureSpendingAuthorization({
-        originator: app,
-        satoshis: newSatoshis,
-        reason: 'Set spending limit',
-        seekPermission: true,
-      })
-      
-      // Give the backend a brief moment to commit the new authorization
-      await new Promise(res => setTimeout(res, 1000))
-      SPENDING_CACHE.delete(cacheKey)
-      await refreshAuthorizations()
-      setIsEditingLimit(false)
-      setTempLimit('')
-      setOriginalLimit('')
-      
-      console.log('Authorization updated successfully')
-    } catch (e: unknown) {
-      console.error('Failed to update authorization:', e)
-      toast.error(`Failed to update spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`)
-    } finally {
-      setBusy(b => ({ ...b, increase: false }))
-    }
-  }
-
-  const handleCancelEdit = () => {
-    setIsEditingLimit(false)
-    setTempLimit('')
-    setOriginalLimit('')
-  }
-
-
   
   return (
     <>
@@ -308,14 +247,26 @@ const handleSubmitLimit = async () => {
                   }
                 }}
               />
-              {isEditingLimit && tempLimit !== originalLimit && (
-                <Button
-                  onClick={handleSubmitLimit}
-                  disabled={busy.increase || !tempLimit}
-                  size="small"
-                >
-                  {busy.increase ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Updating…</>) : 'Submit'}
-                </Button>
+                            {isEditingLimit && tempLimit !== originalLimit && (
+                <>
+                  <Button
+                    onClick={() =>updateSpendingAuthorization(authorization)}
+                    disabled={
+                      busy.increase || 
+                      !tempLimit || 
+                      isNaN(parseFloat(tempLimit)) || 
+                      parseFloat(tempLimit) <= parseFloat(originalLimit)
+                    }
+                    size="small"
+                  >
+                    {busy.increase ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Updating…</>) : 'Submit'}
+                  </Button>
+                  {tempLimit && parseFloat(tempLimit) <= parseFloat(originalLimit) && (
+                    <Typography variant="caption" color="error" sx={{ ml: 1 }}>
+                      New limit must be higher than current limit
+                    </Typography>
+                  )}
+                </>
               )}
             </Box>
           </Box>
@@ -324,12 +275,12 @@ const handleSubmitLimit = async () => {
             <Typography variant="body1" gutterBottom>Current spending</Typography>
             <LinearProgress
               variant="determinate"
-              value={Math.min((currentSpending / authorizedAmount) * 100, 100)}
+              value={Math.min(((currentSpending * -1)/ authorizedAmount) * 100, 100)}
               sx={{ height: 8, borderRadius: 4, mb: 1 }}
             />
             <Box display="flex" justifyContent="space-between" alignItems="center">
               <Typography variant="body2" color="text.secondary">
-                <AmountDisplay showFiatAsInteger>{currentSpending}</AmountDisplay> spent
+                <AmountDisplay showFiatAsInteger>{currentSpending * -1}</AmountDisplay> spent
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 <AmountDisplay showFiatAsInteger>{authorizedAmount}</AmountDisplay> limit
@@ -351,7 +302,7 @@ const handleSubmitLimit = async () => {
                /* unauthorised state -------------------------------------------------- */
       <Box textAlign="center" pt={6}>
           <Typography variant="body1">This app must ask for permission before spending.</Typography>
-          <Typography variant="h3" gutterBottom sx={{ pt: 2 }}>Allow this app to spend a certain amount?</Typography>
+          <Typography variant="body1" gutterBottom sx={{ pt: 2 }}>Allow this app to spend a certain amount?</Typography>
           <Box display="flex" alignItems="center" gap={2} justifyContent="center">
              <TextField
                 value={isEditingLimit ? tempLimit : ''}

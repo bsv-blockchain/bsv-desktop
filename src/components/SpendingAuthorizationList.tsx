@@ -12,7 +12,7 @@ import { WalletContext } from '../WalletContext';
 import { PermissionToken, Services } from '@bsv/wallet-toolbox-client';
 import { determineUpgradeAmount } from '../utils/determineUpgradeAmount';
 import { useBsvExchangeRate } from '../hooks/useBsvExchangeRate';
-
+import AppLogo from './AppLogo';
 type Props = {
   app: string;
   limit?: number;
@@ -174,7 +174,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
   if (busy.list) {
     return (
       <Box textAlign="center" pt={6}>
-        <CircularProgress size={40} />
+        <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={50} /></Box>
         <Typography variant="body1" sx={{ mt: 2 }}>Loading spending authorizations…</Typography>
       </Box>
     );
@@ -199,13 +199,13 @@ export const SpendingAuthorizationList: FC<Props> = ({
       {/* authorised state ---------------------------------------------------- */}
       {authorization ? (
         <Box>
-          <Typography variant="h2" gutterBottom>Monthly spending limit</Typography>
-          
+          <Typography variant="h2" gutterBottom>Monthly spending limit: ${(Math.round((authorizedAmount * usdPerBsv) / 1e8))}</Typography>
+
+          <Typography variant="body2" gutterBottom></Typography>
           {/* Current monthly spending limit section */}
          <Box mb={3}>
             <Box display="flex" alignItems="center" gap={2}>
              <TextField
-                value={isEditingLimit ? tempLimit : `${Math.round((authorizedAmount * usdPerBsv) / 1e8)}`}
                 onChange={(e) => {
                   if (!isEditingLimit) {
                     const currentLimitStr = String(Math.round((authorizedAmount * usdPerBsv) / 1e8));
@@ -224,15 +224,22 @@ export const SpendingAuthorizationList: FC<Props> = ({
                     setOriginalLimit(currentLimitStr);
                   }
                 }}
-                placeholder="Enter limit in USD"
+                onBlur={() =>{ 
+                  if (isEditingLimit && tempLimit === originalLimit) {
+                    const currentLimitStr = String(Math.round((authorizedAmount * usdPerBsv) / 1e8));
+                    setIsEditingLimit(false);
+                    setTempLimit('');
+                    setOriginalLimit('');
+                  }
+                }}
+                placeholder={isEditingLimit? '' :"Edit Limit..." } 
                 size="small"
                 type={isEditingLimit ? "number" : "text"}
-                inputProps={isEditingLimit ? { min: 0, step: 0.01 } : { readOnly: true }}
-                 InputProps={{
+                 InputProps={isEditingLimit? {
                   startAdornment: '$'
-                }}
+                }: undefined}
                 sx={{ 
-                  width: 150,
+                  width: 200,
                   '& input': { cursor: isEditingLimit ? 'text' : 'pointer' },
                   '& input[type=number]': {
                     MozAppearance: 'textfield'
@@ -250,17 +257,22 @@ export const SpendingAuthorizationList: FC<Props> = ({
                             {isEditingLimit && tempLimit !== originalLimit && (
                 <>
                   <Button
-                    onClick={() =>updateSpendingAuthorization(authorization)}
-                    disabled={
-                      busy.increase || 
-                      !tempLimit || 
-                      isNaN(parseFloat(tempLimit)) || 
-                      parseFloat(tempLimit) <= parseFloat(originalLimit)
+                      onClick={() => createSpendingAuthorization(parseFloat(tempLimit))}
+                  disabled={busy.create || !tempLimit}
+                  size="small"
+                  variant="contained"
+                  sx={{
+                    boxShadow: 3,
+                    '&:hover': {
+                      boxShadow: 6
+                    },
+                    '&:active': {
+                      boxShadow: 1
                     }
-                    size="small"
-                  >
-                    {busy.increase ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Updating…</>) : 'Submit'}
-                  </Button>
+                  }}
+                >
+                  {busy.create ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Creating…</>) : 'Submit'}
+                </Button>
                   {tempLimit && parseFloat(tempLimit) <= parseFloat(originalLimit) && (
                     <Typography variant="caption" color="error" sx={{ ml: 1 }}>
                       New limit must be higher than current limit
@@ -330,7 +342,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                   startAdornment: '$'
                 }}
                 sx={{ 
-                  width: 150,
+                  width: 200,
                   '& input[type=number]': {
                     MozAppearance: 'textfield'
                   },

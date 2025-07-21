@@ -1,6 +1,6 @@
 {
   "name": "@bsv/brc100-ui-react-components",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -31,7 +31,7 @@
     "metanet-apps": "^1.0.4"
   },
   "peerDependencies": {
-    "@bsv/sdk": "^1.6.16",
+    "@bsv/sdk": "^1.6.18",
     "@bsv/wallet-toolbox-client": "^1.5.17",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",

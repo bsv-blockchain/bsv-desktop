@@ -18,7 +18,7 @@ import { WalletContext } from '../../../WalletContext';
 import { DEFAULT_APP_ICON } from '../../../constants/popularApps';
 import ProtocolPermissionList from '../../../components/ProtocolPermissionList';
 import { RegistryClient, SecurityLevel } from '@bsv/sdk';
-
+import AppLogo from '../../../components/AppLogo';
 // Placeholder type for protocol details - adjust based on actual SDK response
 interface ProtocolDetails {
   protocolName: string;
@@ -121,6 +121,15 @@ const ProtocolAccess: React.FC = () => {
         console.error('Failed to fetch protocol details:', err);
         setError(`Failed to load protocol details: ${err.message}`);
         toast.error(`Failed to load protocol details: ${err.message}`);
+        const placeholderDetails: ProtocolDetails = {
+          protocolName: `Protocol: ${protocolId}`,
+          iconURL: DEFAULT_APP_ICON,
+          securityLevel,
+          protocolID: protocolId,
+          description: 'Placeholder description for this protocol. Fetching logic needs implementation.',
+          documentationURL: 'https://docs.example.com/protocols',
+        };
+        setProtocolDetails(placeholderDetails);
       } finally {
         setLoading(false);
       }
@@ -130,12 +139,12 @@ const ProtocolAccess: React.FC = () => {
   }, [protocolId, managers.walletManager]);
 
   if (loading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;
+    return <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={100} /></Box>;
   }
 
-  if (error) {
-    return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
-  }
+  // if (error) {
+  //   return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
+  // }
 
   if (!protocolDetails) {
     return <Typography sx={{ p: 2 }}>Protocol details not found for ID: {protocolId}</Typography>;

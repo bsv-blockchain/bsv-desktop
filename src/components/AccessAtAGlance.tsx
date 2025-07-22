@@ -11,7 +11,6 @@ import {
   List,
   ListSubheader,
   Box,
-  CircularProgress,
 } from '@mui/material'
 import BasketChip from './BasketChip'
 import CertificateAccessList from './CertificateAccessList'

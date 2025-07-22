@@ -19,6 +19,7 @@ import PageHeader from '../../../components/PageHeader'; // Assuming this compon
 import { WalletContext } from '../../../WalletContext';
 import { Img } from '@bsv/uhrp-react'; // Use uhrp-react from new dependencies
 import {RegistryClient} from '@bsv/sdk'
+import AppLogo from '../../../components/AppLogo';
 // Placeholder type for certificate definition - adjust based on actual SDK response
 interface CertificateDefinition {
   name: string;
@@ -88,6 +89,20 @@ const CertificateAccess: React.FC = () => {
         console.error('Failed to fetch certificate definition:', err);
         setError(`Failed to load certificate definition: ${err.message}`);
         toast.error(`Failed to load certificate definition: ${err.message}`);
+         const placeholderDef: CertificateDefinition = {
+          name: `Certificate: ${certType}`,
+          iconURL: DEFAULT_APP_ICON,
+          description: 'Placeholder description for this certificate type. Fetching logic needs implementation.',
+          documentationURL: 'https://docs.example.com/certificates',
+          fields: {
+            field1: {
+              friendlyName: 'Example Field 1',
+              description: 'Description for example field 1.',
+              fieldIcon: ''
+            }
+          }
+        };
+        setCertDefinition(placeholderDef);
       } finally {
         setLoading(false);
       }
@@ -105,12 +120,12 @@ const CertificateAccess: React.FC = () => {
   };
 
   if (loading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;
+    return <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={100} /></Box>;
   }
 
-  if (error) {
-    return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
-  }
+  // if (error) {
+  //   return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
+  // }
 
   if (!certDefinition) {
     return <Typography sx={{ p: 2 }}>Certificate definition not found for type: {certType}</Typography>;

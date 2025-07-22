@@ -11,6 +11,7 @@ import { UserContext } from '../../../UserContext';
 import { WalletOutput } from '@bsv/sdk';
 import BasketAccessList from '../../../components/BasketAccessList';
 import { RegistryClient } from '@bsv/sdk';
+import AppLogo from '../../../components/AppLogo';
 // Placeholder type for basket details - adjust based on actual SDK response
 interface BasketDetails {
   id: string;
@@ -115,6 +116,14 @@ const BasketAccess: React.FC = () => {
         console.error('Failed to fetch basket data:', err);
         setError(`Failed to load basket data: ${err.message}`);
         toast.error(`Failed to load basket data: ${err.message}`);
+         const placeholderDetails: BasketDetails = {
+            id: basketId,
+            name: `Basket ${basketId.substring(0, 6)}...`,
+            description: 'This is a placeholder description for the basket. Details should be fetched from the wallet manager.',
+            documentationURL: 'https://docs.example.com/basket',
+            iconURL: '', // Add a default icon URL if available
+          };
+          setBasketDetails(placeholderDetails);
       } finally {
         setLoading(false);
       }
@@ -151,12 +160,12 @@ const BasketAccess: React.FC = () => {
   };
 
   if (loading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;
+    return <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={100} /></Box>;
   }
 
-  if (error) {
-    return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
-  }
+  // if (error) {
+  //   return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
+  // }
 
   if (!basketDetails) {
     return <Typography sx={{ p: 2 }}>Basket not found.</Typography>;

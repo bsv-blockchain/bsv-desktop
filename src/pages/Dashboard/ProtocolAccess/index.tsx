@@ -17,7 +17,8 @@ import PageHeader from '../../../components/PageHeader'; // Assuming this compon
 import { WalletContext } from '../../../WalletContext';
 import { DEFAULT_APP_ICON } from '../../../constants/popularApps';
 import ProtocolPermissionList from '../../../components/ProtocolPermissionList';
-
+import { RegistryClient, SecurityLevel } from '@bsv/sdk';
+import AppLogo from '../../../components/AppLogo';
 // Placeholder type for protocol details - adjust based on actual SDK response
 interface ProtocolDetails {
   protocolName: string;
@@ -45,7 +46,7 @@ const ProtocolAccess: React.FC = () => {
   const protocolId = decodeURIComponent(encodedProtocolId);
   const securityLevel = Number(decodeURIComponent(encodedSecurityLevel));
   const history = useHistory<LocationState>();
-  const { managers } = useContext(WalletContext);
+  const { managers, settings } = useContext(WalletContext);
 
   // Get passed data from navigation state
   const locationState = history.location.state;
@@ -64,7 +65,6 @@ const ProtocolAccess: React.FC = () => {
   const [copied, setCopied] = useState<{ [key: string]: boolean }>({ id: false });
   const [loading, setLoading] = useState<boolean>(!locationState); // Don't show loading if we have data
   const [error, setError] = useState<string | null>(null);
-
   // Copies the data and timeouts the checkmark icon
   const handleCopy = (data: string, type: string) => {
     navigator.clipboard.writeText(data);
@@ -84,22 +84,36 @@ const ProtocolAccess: React.FC = () => {
     }
 
     const fetchProtocolDetails = async () => {
-      // TODO: Replace with actual SDK call to get protocol details by ID
-      // This might involve a lookup service or specific manager method.
       if (!managers.walletManager) return; // Or relevant manager
-
+      
       setLoading(true);
       setError(null);
       try {
-        console.warn('Protocol details fetching logic needs implementation using WalletContext/SDK.');
+        const registrant = new RegistryClient(managers.walletManager)
+        const certifiers = settings.trustSettings.trustedCertifiers.map(x => x.identityKey)
+        const results = await registrant.resolve('protocol', {
+        protocolID: [securityLevel as SecurityLevel, protocolId],
+        registryOperators: certifiers
+        })
+
+        let mostTrustedIndex = 0
+        let maxTrustPoints = 0
+        for(let i = 0; i < results.length; i ++) { 
+          const resultTrustLevel = settings.trustSettings.trustedCertifiers.find(x => x.identityKey === results[i].registryOperator)?.trust || 0
+          if(resultTrustLevel > maxTrustPoints){
+            mostTrustedIndex = i
+            maxTrustPoints = resultTrustLevel
+          }
+        }
+        const trusted = results[mostTrustedIndex]
         // Placeholder logic:
         const placeholderDetails: ProtocolDetails = {
-          protocolName: `Protocol: ${protocolId}`,
-          iconURL: DEFAULT_APP_ICON,
+          protocolName: `Protocol: ${trusted.name}`,
+          iconURL: trusted.iconURL,
           securityLevel,
           protocolID: protocolId,
-          description: 'Placeholder description for this protocol. Fetching logic needs implementation.',
-          documentationURL: 'https://docs.example.com/protocols',
+          description: trusted.description,
+          documentationURL: trusted.documentationURL,
         };
         setProtocolDetails(placeholderDetails);
 
@@ -107,6 +121,15 @@ const ProtocolAccess: React.FC = () => {
         console.error('Failed to fetch protocol details:', err);
         setError(`Failed to load protocol details: ${err.message}`);
         toast.error(`Failed to load protocol details: ${err.message}`);
+        const placeholderDetails: ProtocolDetails = {
+          protocolName: `Protocol: ${protocolId}`,
+          iconURL: DEFAULT_APP_ICON,
+          securityLevel,
+          protocolID: protocolId,
+          description: 'default description',
+          documentationURL: 'https://docs.default.com/protocols',
+        };
+        setProtocolDetails(placeholderDetails);
       } finally {
         setLoading(false);
       }
@@ -116,12 +139,12 @@ const ProtocolAccess: React.FC = () => {
   }, [protocolId, managers.walletManager]);
 
   if (loading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;
+    return <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={100} /></Box>;
   }
 
-  if (error) {
-    return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
-  }
+  // if (error) {
+  //   return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
+  // }
 
   if (!protocolDetails) {
     return <Typography sx={{ p: 2 }}>Protocol details not found for ID: {protocolId}</Typography>;

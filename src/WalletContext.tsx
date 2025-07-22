@@ -843,6 +843,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
   const logout = useCallback(() => {
     // Clear localStorage to prevent auto-login
+    localStorage.clear();
     if (localStorage.snap) {
       localStorage.removeItem('snap');
     }

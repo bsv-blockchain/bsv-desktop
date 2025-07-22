@@ -437,8 +437,11 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
                       showDomain
                       onClick={(e: React.MouseEvent) => {
                         e.stopPropagation();
-                        history.push(`/dashboard/app/${encodeURIComponent(group.originator)}`, {
-                          state: { domain: group.originator },
+                        history.push({ 
+                          pathname: `/dashboard/app/${encodeURIComponent(group.originator)}`,
+                          state: { 
+                            domain: group.originator,
+                            appName:group.originator },
                         });
                       }}
                     />

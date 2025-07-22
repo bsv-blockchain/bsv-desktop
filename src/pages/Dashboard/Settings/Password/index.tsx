@@ -4,13 +4,14 @@ import {
   Typography,
   Button,
   TextField,
-  CircularProgress
+  Box
 } from '@mui/material'
 import { makeStyles } from '@mui/styles'
 import { toast } from 'react-toastify'
 import { WalletContext } from '../../../../WalletContext'
 import { Utils } from '@bsv/sdk'
-
+import AppLogo
+ from '../../../../components/AppLogo'
 const useStyles = makeStyles(style, { name: 'PasswordSettings' })
 
 const PasswordSettings = ({ history }) => {
@@ -72,7 +73,7 @@ const PasswordSettings = ({ history }) => {
           </Button>
           <div />
           {loading
-            ? <CircularProgress />
+            ? <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={75} /></Box>
             : (
               <Button
                 color='primary'

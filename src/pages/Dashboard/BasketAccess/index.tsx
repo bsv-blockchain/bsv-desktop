@@ -10,7 +10,8 @@ import { WalletContext } from '../../../WalletContext';
 import { UserContext } from '../../../UserContext';
 import { WalletOutput } from '@bsv/sdk';
 import BasketAccessList from '../../../components/BasketAccessList';
-
+import { RegistryClient } from '@bsv/sdk';
+import AppLogo from '../../../components/AppLogo';
 // Placeholder type for basket details - adjust based on actual SDK response
 interface BasketDetails {
   id: string;
@@ -34,7 +35,7 @@ const BasketAccess: React.FC = () => {
     iconURL?: string;
     documentationURL?: string;
   }>();
-  const { managers, adminOriginator } = useContext(WalletContext);
+  const { managers, adminOriginator, settings } = useContext(WalletContext);
   const { onDownloadFile } = useContext(UserContext);
 
   const [basketDetails, setBasketDetails] = useState<BasketDetails | null>(null);
@@ -59,6 +60,7 @@ const BasketAccess: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
+      const registrant = new RegistryClient(managers.permissionsManager)
         // We don't need to call listBasketAccess here since BasketAccessList component handles that
         // The BasketAccessList component will fetch and display permissions for this basket
         // Update the itemsInBasket state with the outputs
@@ -83,24 +85,45 @@ const BasketAccess: React.FC = () => {
             iconURL: location.state.iconURL,
           });
         }
-        // else {
-        //   // TODO: Replace with actual SDK call to get basket details by ID
-        //   // Example: const details = await managers.walletManager.getBasketDetails(basketId);
-        //   // Using placeholder data for now
-        //   const placeholderDetails: BasketDetails = {
-        //     id: basketId,
-        //     name: `Basket ${basketId.substring(0, 6)}...`,
-        //     description: 'This is a placeholder description for the basket. Details should be fetched from the wallet manager.',
-        //     documentationURL: 'https://docs.example.com/basket',
-        //     iconURL: '', // Add a default icon URL if available
-        //   };
-        //   setBasketDetails(placeholderDetails);
-        // }
+        else {
+          const trustedEntities = settings.trustSettings.trustedCertifiers.map(x => x.identityKey)
+          const results = await registrant.resolve('basket', {
+            basketID: basketId,
+            registryOperators: trustedEntities
+          })
+          let mostTrustedIndex = 0
+          let maxTrustPoints = 0
+          for (let i =0; i < results.length; i++){
+            const resultTrustLevel = settings.trustSettings.trustedCertifiers.find(x => x.identityKey === results[i].registryOperator)?.trust || 0
+            if(resultTrustLevel > maxTrustPoints)
+            {
+              mostTrustedIndex = i
+              maxTrustPoints = resultTrustLevel
+            }
+          }
+          const basket = results[mostTrustedIndex]
+          const placeholderDetails: BasketDetails = {
+            id: basketId,
+            name: basket.name,
+            description: basket.description,
+            documentationURL: basket.documentationURL,
+            iconURL: basket.iconURL, // Add a default icon URL if available
+          };
+          setBasketDetails(placeholderDetails);
+        }
 
       } catch (err: any) {
         console.error('Failed to fetch basket data:', err);
         setError(`Failed to load basket data: ${err.message}`);
         toast.error(`Failed to load basket data: ${err.message}`);
+         const placeholderDetails: BasketDetails = {
+            id: basketId,
+            name: `Basket ${basketId.substring(0, 6)}...`,
+            description: 'default description.',
+            documentationURL: 'https://docs.default.com/basket',
+            iconURL: '', // Add a default icon URL if available
+          };
+          setBasketDetails(placeholderDetails);
       } finally {
         setLoading(false);
       }
@@ -137,12 +160,12 @@ const BasketAccess: React.FC = () => {
   };
 
   if (loading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;
+    return <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={100} /></Box>;
   }
 
-  if (error) {
-    return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
-  }
+  // if (error) {
+  //   return <Typography color="error" sx={{ p: 2 }}>{error}</Typography>;
+  // }
 
   if (!basketDetails) {
     return <Typography sx={{ p: 2 }}>Basket not found.</Typography>;

@@ -8,7 +8,7 @@ import Memory from '@mui/icons-material/Memory'
 import CloseIcon from '@mui/icons-material/Close'
 import { generateDefaultIcon } from '../../constants/popularApps'
 import PlaceholderAvatar from '../PlaceholderAvatar'
-
+import { Box } from '@mui/material'
 // Create styled components for elements that need specific styling
 const ChipContainer = styled('div')(() => ({
   position: 'relative',
@@ -152,52 +152,87 @@ const AppChip: React.FC<AppChipProps> = ({
   return (
     <Stack
       direction="row"
-      spacing={1}
+      spacing={2}
       alignItems="center"
       justifyContent="flex-start"
       sx={{
-        height: '3em',
+        minHeight: '60px',
         width: '100%',
-        gap: '0.75rem' // Add a more reasonable gap between the label and chip
-      }}>
-      <Typography variant="body1" fontWeight="bold">Application:</Typography>
-      <ChipContainer>
+        p: 1
+      }}
+    >
+      <ChipContainer sx={{ width: '100%' }}>
         <Chip
           style={theme.templates?.chip ? theme.templates.chip({ size, backgroundColor }) : {
-            height: `${size * 32}px`,
-            minHeight: `${size * 32}px`,
-            backgroundColor: backgroundColor || 'transparent',
-            borderRadius: '16px',
-            padding: '8px',
-            margin: '4px'
+            height: '48px',
+            minHeight: '48px',
+            width: '255px',
+            backgroundColor: backgroundColor || 'rgba(0, 0, 0, 0.04)',
+            borderRadius: '12px',
+            padding: '4px 12px',
+            border: '1px solid rgba(0, 0, 0, 0.12)',
+            justifyContent: 'flex-start'
           }}
           label={
             (showDomain && label !== parsedLabel)
-              ? <div style={{
-                textAlign: 'left'
-              }}>
-                <span
-                  style={theme.templates?.chipLabelTitle ? theme.templates.chipLabelTitle({ size }) : {
-                    fontSize: `${Math.max(size * 0.8, 0.8)}rem`,
-                    fontWeight: '500'
-                  }}
-                >
-                  {parsedLabel}
-                </span>
-                <br />
-                <span
-                  style={theme.templates?.chipLabelSubtitle || {
-                    fontSize: '0.7rem',
-                    opacity: 0.7
-                  }}
-                >
-                  {label}
-                </span>
-              </div>
-              : <span style={{ fontSize: `${size}em` }}>{parsedLabel}</span>
+              ? <Box sx={{ 
+                  textAlign: 'left', 
+                  py: 0.5,
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: 'hidden'
+                }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      fontSize: '0.875rem',
+                      fontWeight: 600,
+                      lineHeight: 1.2,
+                      mb: 0.25,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {parsedLabel}
+                  </Typography>
+                  <Tooltip title={label} arrow placement="bottom">
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontSize: '0.75rem',
+                        opacity: 0.7,
+                        lineHeight: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        display: 'block',
+                        // cursor: 'help'
+                      }}
+                    >
+                      {label}
+                    </Typography>
+                  </Tooltip>
+                </Box>
+              : <Tooltip title={parsedLabel} arrow placement="bottom">
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      fontSize: '0.875rem',
+                      fontWeight: 500,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      flex: 1,
+                      // cursor: 'help'
+                    }}
+                  >
+                    {parsedLabel}
+                  </Typography>
+                </Tooltip>
           }
           onDelete={onCloseClick}
-          deleteIcon={typeof onCloseClick === 'function' ? <CloseIcon /> : undefined}
+          deleteIcon={typeof onCloseClick === 'function' ? <CloseIcon sx={{ fontSize: 18 }} /> : undefined}
           icon={(
             <Badge
               overlap='circular'
@@ -219,41 +254,41 @@ const AppChip: React.FC<AppChipProps> = ({
                 >
                   <Avatar
                     sx={{
-                      backgroundColor: theme.palette.error.contrastText,
-                      color: theme.palette.error.main,
-                      width: 20,
-                      height: 20,
-                      borderRadius: '10px',
+                      backgroundColor: 'primary.main',
+                      color: 'primary.contrastText',
+                      width: 18,
+                      height: 18,
+                      borderRadius: '9px',
                       display: 'flex',
                       justifyContent: 'center',
                       alignItems: 'center',
-                      fontSize: '1.2em',
-                      marginRight: '0.25em',
-                      marginBottom: '0.3em'
+                      marginRight: '0.2em',
+                      marginBottom: '0.2em',
+                      border: '2px solid white'
                     }}
                   >
-                    <Memory style={{ width: 16, height: 16 }} />
+                    <Memory sx={{ fontSize: 12 }} />
                   </Avatar>
                 </Tooltip>
               }
             >
               {!imageError ? (
                 <Avatar
-                  variant='square'
+                  variant='rounded'
                   sx={{
-                    width: '2.2em',
-                    height: '2.2em',
-                    borderRadius: '4px',
+                    width: 36,
+                    height: 36,
                     backgroundColor: theme.palette.action.hover,
-                    marginRight: '0.5em'
+                    marginRight: '12px',
+                    flexShrink: 0
                   }}
                 >
                   <Img
                     src={appIconImageUrl}
                     style={{
-                      width: '75%',
-                      height: '75%',
-                      maxWidth: '5em'
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover'
                     }}
                     alt={`${parsedLabel} app icon`}
                     onLoad={handleImageLoad}
@@ -263,9 +298,12 @@ const AppChip: React.FC<AppChipProps> = ({
               ) : (
                 <PlaceholderAvatar
                   name={parsedLabel || label}
-                  variant="square"
-                  size={2.2 * 16}
-                  sx={{ borderRadius: '4px', marginRight: '0.5em' }}
+                  variant="rounded"
+                  size={36}
+                  sx={{ 
+                    marginRight: '12px',
+                    flexShrink: 0
+                  }}
                 />
               )}
             </Badge>
@@ -280,6 +318,13 @@ const AppChip: React.FC<AppChipProps> = ({
                   `/dashboard/app/${encodeURIComponent(label)}`
                 )
               }
+            }
+          }}
+          sx={{
+            '& .MuiChip-label': {
+              flex: 1,
+              overflow: 'hidden',
+              padding: '0 8px'
             }
           }}
         />

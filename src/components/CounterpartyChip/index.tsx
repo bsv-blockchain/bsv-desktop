@@ -46,6 +46,7 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
     badgeIconURL: 'https://bsvblockchain.org/favicon.ico',
     avatarURL: deterministicImage(counterparty)
   })
+  const [resolvedCounterparty, setResolvedCounterparty] = useState(counterparty)
 
   const [avatarError, setAvatarError] = useState(false)
   const [badgeError, setBadgeError] = useState(false)
@@ -65,6 +66,8 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
   useEffect(() => {
     // Function to load and potentially update identity for a specific counterparty
     const loadIdentity = async (counterpartyKey) => {
+      let actualCounterpartyKey = counterpartyKey // Store the actual key
+      
       // Initial load from local storage for a specific counterparty
       const cachedIdentity = window.localStorage.getItem(`identity_${counterpartyKey}`)
       if (cachedIdentity) {
@@ -74,18 +77,22 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
       try {
         // Resolve the counterparty key for 'self' or 'anyone'
         if (counterpartyKey === 'self') {
-          counterpartyKey = (await managers.permissionsManager.getPublicKey({ identityKey: true }, adminOriginator)).publicKey
+          actualCounterpartyKey = (await managers.permissionsManager.getPublicKey({ identityKey: true }, adminOriginator)).publicKey
+          setResolvedCounterparty(actualCounterpartyKey) // Update resolved counterparty
         } else if (counterpartyKey === 'anyone') {
-          counterpartyKey = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+          actualCounterpartyKey = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+          setResolvedCounterparty(actualCounterpartyKey) // Update resolved counterparty
+        } else {
+          setResolvedCounterparty(counterpartyKey) // Keep original for regular counterparties
         }
 
         // Fetch the latest identity info from the server
         const identityClient = new IdentityClient(managers.permissionsManager, undefined, adminOriginator)
-        const results = await identityClient.resolveByIdentityKey({ identityKey: counterpartyKey })
+        const results = await identityClient.resolveByIdentityKey({ identityKey: actualCounterpartyKey })
         if (results && results.length > 0) {
           setIdentity(results[0])
           // Update component state and cache in local storage
-          window.localStorage.setItem(`identity_${counterpartyKey}`, JSON.stringify(results[0]))
+          window.localStorage.setItem(`identity_${actualCounterpartyKey}`, JSON.stringify(results[0]))
         }
       } catch (e) {
         console.error(e)
@@ -94,7 +101,7 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
 
     // Execute the loading function with the initial counterparty
     loadIdentity(counterparty)
-  }, [counterparty])
+  }, [counterparty, managers.permissionsManager, adminOriginator])
 
   return (
     <>
@@ -157,8 +164,9 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
                 onClick(e)
               } else {
                 e.stopPropagation()
+                // Use the resolved counterparty key instead of the original
                 history.push({
-                  pathname: `/dashboard/counterparty/${encodeURIComponent(counterparty)}`
+                  pathname: `/dashboard/counterparty/${encodeURIComponent(resolvedCounterparty)}`
                 })
               }
             }

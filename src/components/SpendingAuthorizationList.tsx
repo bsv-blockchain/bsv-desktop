@@ -1,7 +1,8 @@
 import {
   Dialog, DialogTitle, DialogContent, DialogContentText,
   DialogActions, Button, Typography, LinearProgress,
-  Grid, Box, CircularProgress
+  Grid, Box, CircularProgress,
+  TextField
 } from '@mui/material';
 import { FC, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
@@ -11,7 +12,7 @@ import { WalletContext } from '../WalletContext';
 import { PermissionToken, Services } from '@bsv/wallet-toolbox-client';
 import { determineUpgradeAmount } from '../utils/determineUpgradeAmount';
 import { useBsvExchangeRate } from '../hooks/useBsvExchangeRate';
-
+import AppLogo from './AppLogo';
 type Props = {
   app: string;
   limit?: number;
@@ -35,8 +36,10 @@ export const SpendingAuthorizationList: FC<Props> = ({
   const [currentSpending, setCurrentSpending] = useState(0);
   const [authorizedAmount, setAuthorizedAmount] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [busy, setBusy] = useState<{ revoke?: boolean; increase?: boolean; list?: boolean }>({ list: true });
-
+  const [busy, setBusy] = useState<{ revoke?: boolean; increase?: boolean; list?: boolean; create?: boolean }>({ list: true });
+  const [isEditingLimit, setIsEditingLimit] = useState(false);
+  const [tempLimit, setTempLimit] = useState<string>('');
+  const [originalLimit, setOriginalLimit] = useState<string>(''); // Add this state
   // --------------------------------------------------------------------------
   //   CONSTANTS & HOOKS
   // --------------------------------------------------------------------------
@@ -85,7 +88,8 @@ export const SpendingAuthorizationList: FC<Props> = ({
   // --------------------------------------------------------------------------
   //   MUTATIONS
   // --------------------------------------------------------------------------
-  const createSpendingAuthorization = async (usdLimit: number) => {
+ const createSpendingAuthorization = async (usdLimit: number) => {
+    setBusy(b => ({ ...b, create: true }));
     try {
       await managers.permissionsManager.ensureSpendingAuthorization({
         originator: app,
@@ -97,17 +101,25 @@ export const SpendingAuthorizationList: FC<Props> = ({
       await new Promise(res => setTimeout(res, 800));
       SPENDING_CACHE.delete(cacheKey);
       await refreshAuthorizations();
+      setIsEditingLimit(false);
     } catch (e: unknown) {
       toast.error(`Failed to create spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`);
+    } finally {
+      setBusy(b => ({ ...b, create: false }));
     }
   };
-
   const updateSpendingAuthorization = async (auth: PermissionToken) => {
     setBusy(b => ({ ...b, increase: true }));
+    if(tempLimit < originalLimit + 1)
+    {
+      setBusy(b => ({ ...b, increase: false }));
+      throw("new limit must be higher than old limit by at least $1");
+    }
+    const newLimit = parseFloat(tempLimit);
     try {
       await managers.permissionsManager.ensureSpendingAuthorization({
         originator: app,
-        satoshis: determineUpgradeAmount(auth.authorizedAmount, usdPerBsv),
+        satoshis: Math.round((newLimit * 1e8) / usdPerBsv),
         reason: 'Increase spending limit',
         seekPermission: true,
       });
@@ -162,12 +174,12 @@ export const SpendingAuthorizationList: FC<Props> = ({
   if (busy.list) {
     return (
       <Box textAlign="center" pt={6}>
-        <CircularProgress size={40} />
+        <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={50} /></Box>
         <Typography variant="body1" sx={{ mt: 2 }}>Loading spending authorizations…</Typography>
       </Box>
     );
   }
-
+  
   return (
     <>
       {/* revoke-confirmation dialog */}
@@ -186,60 +198,174 @@ export const SpendingAuthorizationList: FC<Props> = ({
 
       {/* authorised state ---------------------------------------------------- */}
       {authorization ? (
-        <Grid container direction="column" spacing={3} sx={{ p: 2 }}>
-          <Grid item container justifyContent="space-between" alignItems="center">
-            <Box>
-              <Typography variant="h2" gutterBottom>Monthly spending limits</Typography>
-              <Typography variant="body1">This app is allowed to spend up to:</Typography>
-              <Typography variant="h1" sx={{ pt: 1 }}>
-                <AmountDisplay showFiatAsInteger>{authorizedAmount}</AmountDisplay>/mo.
+        <Box>
+          <Typography variant="h2" gutterBottom>Monthly spending limit: ${(Math.round((authorizedAmount * usdPerBsv) / 1e8))}</Typography>
+
+          <Typography variant="body2" gutterBottom></Typography>
+          {/* Current monthly spending limit section */}
+         <Box mb={3}>
+            <Box display="flex" alignItems="center" gap={2}>
+             <TextField
+                onChange={(e) => {
+                  if (!isEditingLimit) {
+                    const currentLimitStr = String(Math.round((authorizedAmount * usdPerBsv) / 1e8));
+                    setIsEditingLimit(true);
+                    setTempLimit(e.target.value);
+                    setOriginalLimit(currentLimitStr);
+                  } else {
+                    setTempLimit(e.target.value);
+                  }
+                }}
+                onFocus={() => {
+                  if (!isEditingLimit) {
+                    const currentLimitStr = String(Math.round((authorizedAmount * usdPerBsv) / 1e8));
+                    setIsEditingLimit(true);
+                    setTempLimit(currentLimitStr);
+                    setOriginalLimit(currentLimitStr);
+                  }
+                }}
+                onBlur={() =>{ 
+                  if (isEditingLimit && tempLimit === originalLimit) {
+                    const currentLimitStr = String(Math.round((authorizedAmount * usdPerBsv) / 1e8));
+                    setIsEditingLimit(false);
+                    setTempLimit('');
+                    setOriginalLimit('');
+                  }
+                }}
+                placeholder={isEditingLimit? '' :"Edit Limit..." } 
+                size="small"
+                type={isEditingLimit ? "number" : "text"}
+                 InputProps={isEditingLimit? {
+                  startAdornment: '$'
+                }: undefined}
+                sx={{ 
+                  width: 200,
+                  '& input': { cursor: isEditingLimit ? 'text' : 'pointer' },
+                  '& input[type=number]': {
+                    MozAppearance: 'textfield'
+                  },
+                  '& input[type=number]::-webkit-outer-spin-button': {
+                    WebkitAppearance: 'none',
+                    margin: 0
+                  },
+                  '& input[type=number]::-webkit-inner-spin-button': {
+                    WebkitAppearance: 'none',
+                    margin: 0
+                  }
+                }}
+              />
+                            {isEditingLimit && tempLimit !== originalLimit && (
+                <>
+                  <Button
+                      onClick={() => createSpendingAuthorization(parseFloat(tempLimit))}
+                  disabled={busy.create || !tempLimit}
+                  size="small"
+                  variant="contained"
+                  sx={{
+                    boxShadow: 3,
+                    '&:hover': {
+                      boxShadow: 6
+                    },
+                    '&:active': {
+                      boxShadow: 1
+                    }
+                  }}
+                >
+                  {busy.create ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Creating…</>) : 'Submit'}
+                </Button>
+                  {tempLimit && parseFloat(tempLimit) <= parseFloat(originalLimit) && (
+                    <Typography variant="caption" color="error" sx={{ ml: 1 }}>
+                      New limit must be higher than current limit
+                    </Typography>
+                  )}
+                </>
+              )}
+            </Box>
+          </Box>
+          {/* Current spending progress section */}
+          <Box>
+            <Typography variant="body1" gutterBottom>Current spending</Typography>
+            <LinearProgress
+              variant="determinate"
+              value={Math.min(((currentSpending * -1)/ authorizedAmount) * 100, 100)}
+              sx={{ height: 8, borderRadius: 4, mb: 1 }}
+            />
+            <Box display="flex" justifyContent="space-between" alignItems="center">
+              <Typography variant="body2" color="text.secondary">
+                <AmountDisplay showFiatAsInteger>{currentSpending * -1}</AmountDisplay> spent
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <AmountDisplay showFiatAsInteger>{authorizedAmount}</AmountDisplay> limit
               </Typography>
             </Box>
-            <Button onClick={() => setDialogOpen(true)}>Revoke</Button>
-          </Grid>
-
-          <Box>
-            <Typography variant="h5" paragraph>
-              <b>
-                Current spending (since {format(new Date(new Date().setDate(1)), 'MMMM do')}):
-              </b>{' '}
-              <AmountDisplay>{currentSpending}</AmountDisplay>
-            </Typography>
-            {!!authorizedAmount && (
-              <LinearProgress
-                variant="determinate"
-                value={Math.min(100, (currentSpending / authorizedAmount) * 100)}
-              />
-            )}
           </Box>
-
-          <Grid item xs={12} sm={6} md={4} alignSelf="center">
+          <Box mt={3} textAlign="center">
             <Button
-              fullWidth
-              onClick={() => updateSpendingAuthorization(authorization)}
-              disabled={busy.increase}
+              variant="outlined"
+              color="error"
+              onClick={() => setDialogOpen(true)}
+              size="small"
             >
-              {busy.increase ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Increasing…</>) : 'Increase limits'}
+              Revoke
             </Button>
-          </Grid>
-        </Grid>
-      ) : (
-        /* unauthorised state -------------------------------------------------- */
-        <Box textAlign="center" pt={6}>
-          <Typography variant="body1">This app must ask for permission before spending.</Typography>
-          <Typography variant="h3" gutterBottom sx={{ pt: 2 }}>Choose your spending limit</Typography>
-          <Box>
-            {[5, 10, 20].map(usd =>
-              <Button
-                key={usd}
-                variant="contained"
-                sx={{ m: 1, textTransform: 'none' }}
-                onClick={() => createSpendingAuthorization(usd)}
-              >
-                ${usd}/mo.
-              </Button>
-            )}
           </Box>
+        </Box>
+      ) : (
+               /* unauthorised state -------------------------------------------------- */
+      <Box textAlign="center" pt={6}>
+          <Typography variant="body1">This app must ask for permission before spending.</Typography>
+          <Typography variant="body1" gutterBottom sx={{ pt: 2 }}>Allow this app to spend a certain amount?</Typography>
+          <Box display="flex" alignItems="center" gap={2} justifyContent="center">
+             <TextField
+                value={isEditingLimit ? tempLimit : ''}
+                onChange={(e) => {
+                  if (!isEditingLimit) {
+                    setIsEditingLimit(true);
+                    setTempLimit(e.target.value);
+                    setOriginalLimit('');
+                  } else {
+                    setTempLimit(e.target.value);
+                  }
+                }}
+                onFocus={() => {
+                  if (!isEditingLimit) {
+                    setIsEditingLimit(true);
+                    setTempLimit('');
+                    setOriginalLimit('');
+                  }
+                }}
+                placeholder="Enter limit in USD"
+                size="small"
+                type="number"
+                inputProps={{ min: 0, step: 0.01 }}
+                InputProps={{
+                  startAdornment: '$'
+                }}
+                sx={{ 
+                  width: 200,
+                  '& input[type=number]': {
+                    MozAppearance: 'textfield'
+                  },
+                  '& input[type=number]::-webkit-outer-spin-button': {
+                    WebkitAppearance: 'none',
+                    margin: 0
+                  },
+                  '& input[type=number]::-webkit-inner-spin-button': {
+                    WebkitAppearance: 'none',
+                    margin: 0
+                  }
+                }}
+              />
+              {tempLimit && (
+                <Button
+                  onClick={() => createSpendingAuthorization(parseFloat(tempLimit))}
+                  disabled={busy.create || !tempLimit}
+                  size="small"
+                >
+                  {busy.create ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Creating…</>) : 'Submit'}
+                </Button>
+              )}
+            </Box>
         </Box>
       )}
     </>

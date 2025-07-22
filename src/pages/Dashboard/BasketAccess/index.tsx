@@ -119,8 +119,8 @@ const BasketAccess: React.FC = () => {
          const placeholderDetails: BasketDetails = {
             id: basketId,
             name: `Basket ${basketId.substring(0, 6)}...`,
-            description: 'This is a placeholder description for the basket. Details should be fetched from the wallet manager.',
-            documentationURL: 'https://docs.example.com/basket',
+            description: 'default description.',
+            documentationURL: 'https://docs.default.com/basket',
             iconURL: '', // Add a default icon URL if available
           };
           setBasketDetails(placeholderDetails);

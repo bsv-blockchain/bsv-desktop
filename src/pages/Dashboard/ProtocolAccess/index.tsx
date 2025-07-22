@@ -126,8 +126,8 @@ const ProtocolAccess: React.FC = () => {
           iconURL: DEFAULT_APP_ICON,
           securityLevel,
           protocolID: protocolId,
-          description: 'Placeholder description for this protocol. Fetching logic needs implementation.',
-          documentationURL: 'https://docs.example.com/protocols',
+          description: 'default description',
+          documentationURL: 'https://docs.default.com/protocols',
         };
         setProtocolDetails(placeholderDetails);
       } finally {

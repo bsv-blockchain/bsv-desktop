@@ -92,12 +92,12 @@ const CertificateAccess: React.FC = () => {
          const placeholderDef: CertificateDefinition = {
           name: `Certificate: ${certType}`,
           iconURL: DEFAULT_APP_ICON,
-          description: 'Placeholder description for this certificate type. Fetching logic needs implementation.',
-          documentationURL: 'https://docs.example.com/certificates',
+          description: 'default description.',
+          documentationURL: 'https://docs.default.com/certificates',
           fields: {
             field1: {
-              friendlyName: 'Example Field 1',
-              description: 'Description for example field 1.',
+              friendlyName: 'default Field 1',
+              description: 'Description for defau;t field 1.',
               fieldIcon: ''
             }
           }

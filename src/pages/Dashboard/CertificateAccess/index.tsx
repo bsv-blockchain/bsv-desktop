@@ -18,7 +18,7 @@ import PageHeader from '../../../components/PageHeader'; // Assuming this compon
 // import CertificateAccessList from '../../../components/CertificateAccessList'; // Needs migration/creation
 import { WalletContext } from '../../../WalletContext';
 import { Img } from '@bsv/uhrp-react'; // Use uhrp-react from new dependencies
-
+import {RegistryClient} from '@bsv/sdk'
 // Placeholder type for certificate definition - adjust based on actual SDK response
 interface CertificateDefinition {
   name: string;
@@ -53,29 +53,35 @@ const CertificateAccess: React.FC = () => {
 
   useEffect(() => {
     const fetchCertDefinition = async () => {
-      // TODO: Replace CertMap logic with WalletContext/SDK equivalent
-      // Need to determine how certificate definitions are resolved in the new architecture.
-      // It might involve managers.lookupManager or a specific certificate manager.
       if (!managers.walletManager) return; // Or relevant manager
-
+      const registryOperators: string[] = settings.trustSettings.trustedCertifiers.map((x: any) => x.identityKey)
       setLoading(true);
       setError(null);
       try {
-        console.warn('Certificate definition fetching logic needs implementation using WalletContext/SDK.');
-        // Placeholder logic:
-        const placeholderDef: CertificateDefinition = {
-          name: `Certificate: ${certType}`,
-          iconURL: DEFAULT_APP_ICON,
-          description: 'Placeholder description for this certificate type. Fetching logic needs implementation.',
-          documentationURL: 'https://docs.example.com/certificates',
-          fields: {
-            field1: {
-              friendlyName: 'Example Field 1',
-              description: 'Description for example field 1.',
-              fieldIcon: ''
-            }
+        const registrant = new RegistryClient(managers.walletManager)
+        const results = await registrant.resolve('certificate', {
+          type: certType,
+          registryOperators,
+        })
+
+        let mostTrustedIndex = 0
+        let maxTrustedPoints = 0
+        for(let i = 0; i < results.length; i++){
+          const resultTrustLevel = settings.trustSettings.trustedCertifiers.find(x => x.identityKey === results[i].registryOperator)?.trust || 0
+          if(resultTrustLevel > maxTrustedPoints){
+            mostTrustedIndex = i
+            maxTrustedPoints = resultTrustLevel
           }
-        };
+        }
+        const trusted = results[mostTrustedIndex]
+
+        const placeholderDef: CertificateDefinition = {
+          name: trusted.name,
+          iconURL: trusted.iconURL,
+          description: trusted.description,
+          documentationURL: trusted.documentationURL,
+          fields: (trusted as any).fields || {}
+        }
         setCertDefinition(placeholderDef);
 
       } catch (err: any) {

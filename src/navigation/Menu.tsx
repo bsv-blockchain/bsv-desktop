@@ -189,6 +189,9 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       setActiveProfile(profiles.find(profile => profile.id == profileId))
 
       // Refresh the profile list to update active status
+      if( history.location.pathname.startsWith('/dashboard/app/')){
+        history.push('/dashboard/apps')
+      }
       await refreshProfiles();
     } catch (error) {
       toast.error(`Error switching profile: ${error.message || error}`);

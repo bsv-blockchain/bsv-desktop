@@ -36,7 +36,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
   const [currentSpending, setCurrentSpending] = useState(0);
   const [authorizedAmount, setAuthorizedAmount] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [busy, setBusy] = useState<{ revoke?: boolean; increase?: boolean; list?: boolean; create?: boolean; waitingForAuth?: boolean }>({ list: true });
+  const [busy, setBusy] = useState<{ revoke?: boolean; increase?: boolean; list?: boolean; create?: boolean; waitingForAuth?: boolean; renewLimit?: boolean }>({ list: true });
   const [isEditingLimit, setIsEditingLimit] = useState(false);
   const [tempLimit, setTempLimit] = useState<string>('');
   const [originalLimit, setOriginalLimit] = useState<string>(''); // Add this state
@@ -53,7 +53,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
   // --------------------------------------------------------------------------
   const refreshAuthorizations = useCallback(async () => {
   // Skip cache when waiting for authorization to ensure we fetch fresh data
-  if (!busy.waitingForAuth && SPENDING_CACHE.has(cacheKey)) {
+  if (!busy.waitingForAuth && !busy.renewLimit && SPENDING_CACHE.has(cacheKey)) {
     const { auth, spent } = SPENDING_CACHE.get(cacheKey)!;
     setAuthorization(auth);
     setCurrentSpending(spent);
@@ -65,12 +65,12 @@ export const SpendingAuthorizationList: FC<Props> = ({
   try {
     const auths = await managers.permissionsManager.listSpendingAuthorizations({ originator: app });
     if (!auths?.length) {
-      setAuthorization(null);
-      setCurrentSpending(0);
-      setAuthorizedAmount(0);
-      SPENDING_CACHE.delete(cacheKey);
-      // Only call onEmptyList if we're not waiting for auth
-      if (!busy.waitingForAuth) {
+      // Only update authorization state if we're not waiting for auth or renewLimit
+      if (!busy.waitingForAuth && !busy.renewLimit) {
+        setAuthorization(null);
+        setCurrentSpending(0);
+        setAuthorizedAmount(0);
+        SPENDING_CACHE.delete(cacheKey);
         onEmptyList();
       }
     } else {
@@ -82,14 +82,14 @@ export const SpendingAuthorizationList: FC<Props> = ({
       SPENDING_CACHE.set(cacheKey, { auth, spent });
     }
   } catch {
-    // Only call onEmptyList if we're not waiting for auth
-    if (!busy.waitingForAuth) {
+    // Only call onEmptyList if we're not waiting for auth or renewLimit
+    if (!busy.waitingForAuth && !busy.renewLimit) {
       onEmptyList();
     }
   } finally {
     setBusy(b => ({ ...b, list: false }));
   }
-}, [app, cacheKey, managers.permissionsManager, onEmptyList, busy.waitingForAuth]);
+}, [app, cacheKey, managers.permissionsManager, onEmptyList, busy.waitingForAuth, busy.renewLimit]);
 
   // --------------------------------------------------------------------------
   //   MUTATIONS
@@ -117,28 +117,30 @@ export const SpendingAuthorizationList: FC<Props> = ({
     }
   };
   const updateSpendingAuthorization = async (auth: PermissionToken) => {
-    setBusy(b => ({ ...b, increase: true }));
-    if(tempLimit < originalLimit + 1)
+    setBusy(b => ({ ...b, renewLimit: true }));
+    if(tempLimit < originalLimit)
     {
-      setBusy(b => ({ ...b, increase: false }));
+      setBusy(b => ({ ...b, renewLimit: false }));
       throw("new limit must be higher than old limit by at least $1");
     }
     const newLimit = parseFloat(tempLimit);
     try {
-      await managers.permissionsManager.ensureSpendingAuthorization({
+      let ret = await managers.permissionsManager.ensureSpendingAuthorization({
         originator: app,
         satoshis: Math.round((newLimit * 1e8) / usdPerBsv),
         reason: 'Increase spending limit',
         seekPermission: true,
       });
+      console.log(`returned: ${ret}`)
       // Give the backend a brief moment to commit the new authorization
-      await new Promise(res => setTimeout(res, 800));
+      await new Promise(res => setTimeout(res, 2000));
       SPENDING_CACHE.delete(cacheKey);
       await refreshAuthorizations();
+      setIsEditingLimit(false);
     } catch (e: unknown) {
       toast.error(`Failed to increase spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`);
     } finally {
-      setBusy(b => ({ ...b, increase: false }));
+      setBusy(b => ({ ...b, renewLimit: false }));
     }
   };
 
@@ -205,10 +207,16 @@ export const SpendingAuthorizationList: FC<Props> = ({
       </Dialog>
 
       {/* authorised state ---------------------------------------------------- */}
-      {authorization ? (
+      {(authorization || busy.renewLimit) ? (
         <Box>
-          <Typography variant="h2" gutterBottom>Monthly spending limit: ${(((authorizedAmount * usdPerBsv) / 1e8)).toFixed(2)}</Typography>
-
+          {busy.renewLimit ? (
+            <Box textAlign="center" pt={6}>
+              <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={50} /></Box>
+              <Typography variant="body1" sx={{ mt: 2 }}>Updating spending authorization…</Typography>
+            </Box>
+          ) : (
+            <>
+              <Typography variant="h2" gutterBottom>Monthly spending limit: ${(((authorization.authorizedAmount * usdPerBsv) / 1e8)).toFixed(5)}</Typography>
           <Typography variant="body2" gutterBottom></Typography>
           {/* Current monthly spending limit section */}
          <Box mb={3}>
@@ -266,7 +274,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                 <>
                   <Button
                       onClick={() => {updateSpendingAuthorization(authorization)}}
-                  disabled={busy.create || !tempLimit}
+                  disabled={busy.renewLimit || !tempLimit}
                   size="small"
                   variant="contained"
                   sx={{
@@ -279,7 +287,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                     }
                   }}
                 >
-                  {busy.create ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Creating…</>) : 'Submit'}
+                  {busy.renewLimit ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Updating…</>) : 'Submit'}
                 </Button>
                   {tempLimit && parseFloat(tempLimit) <= parseFloat(originalLimit) && (
                     <Typography variant="caption" color="error" sx={{ ml: 1 }}>
@@ -295,7 +303,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
             <Typography variant="body1" gutterBottom>Current spending</Typography>
             <LinearProgress
               variant="determinate"
-              value={Math.min(((currentSpending * -1)/ authorizedAmount) * 100, 100)}
+              value={Math.min(((currentSpending * -1)/ authorization.authorizedAmount) * 100, 100)}
               sx={{ height: 8, borderRadius: 4, mb: 1 }}
             />
             <Box display="flex" justifyContent="space-between" alignItems="center">
@@ -305,8 +313,8 @@ export const SpendingAuthorizationList: FC<Props> = ({
                 </AmountDisplay> spent
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                <AmountDisplay showFiatAsInteger={((authorizedAmount * usdPerBsv) / 1e8) >= 1}>
-                  {authorizedAmount}
+                <AmountDisplay showFiatAsInteger={((authorization.authorizedAmount * usdPerBsv) / 1e8) >= 1}>
+                  {authorization.authorizedAmount}
                 </AmountDisplay> limit
               </Typography>
             </Box>
@@ -321,6 +329,8 @@ export const SpendingAuthorizationList: FC<Props> = ({
               Revoke
             </Button>
           </Box>
+            </>
+          )}
         </Box>
       ) : (
                /* unauthorised state -------------------------------------------------- */

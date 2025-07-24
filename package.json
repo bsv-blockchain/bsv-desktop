@@ -32,7 +32,7 @@
   },
   "peerDependencies": {
     "@bsv/sdk": "^1.6.18",
-    "@bsv/wallet-toolbox-client": "^1.5.17",
+    "@bsv/wallet-toolbox-client": "../wallet-toolbox/client/",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^6.4.3",
@@ -48,8 +48,16 @@
     "react-router-dom": "^5.2.0",
     "react-toastify": "^11.0.3"
   },
-  "scripts": {
+   "scripts": {
     "build": "tsc",
+    "clean": "npm run clean:build && npm run clean:deps",
+    "clean:build": "rm -rf dist",
+    "clean:deps": "rm -rf node_modules package-lock.json yarn.lock",
+    "clean:all": "npm run clean && rm -rf .cache tmp temp coverage *.log .DS_Store && npm cache clean --force",
+    "rebuild": "npm run clean && npm install && npm run build",
+    "rebuild:toolbox": "npm run clean:deps && npm install && npm run build",
+    "link:toolbox": "cd ../wallet-toolbox && npm run build && cd - && npm run rebuild:toolbox",
+    "verify:toolbox": "node -e \"console.log('Toolbox path:', require.resolve('@bsv/wallet-toolbox-client'))\"",
     "lint:ci": "echo 'No linting'",
     "test": "echo 'No tests'"
   },

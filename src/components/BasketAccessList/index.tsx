@@ -8,7 +8,8 @@ import {
   DialogActions,
   Button,
   ListSubheader,
-  CircularProgress
+  CircularProgress,
+  Typography
 } from '@mui/material';
 import makeStyles from '@mui/styles/makeStyles';
 import style from './style';
@@ -18,7 +19,7 @@ import { useHistory } from 'react-router-dom/cjs/react-router-dom.min';
 import AppChip from '../AppChip';
 import { formatDistance } from 'date-fns';
 import { WalletContext } from '../../WalletContext'
-
+import AppLogo from '../AppLogo';
 // Simple in-memory cache for basket permissions
 const BASKET_CACHE = new Map<string, PermissionToken[]>();
 import { PermissionToken } from '@bsv/wallet-toolbox-client';
@@ -86,6 +87,9 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
       // Call the listBasketAccess API with the appropriate parameters
       // If we are displaying baskets, we need to provide the app param
       // If we are displaying apps, we need to provide the basket param
+       const normalizedApp = app ? app.replace(/^https?:\/\//, '') : app;
+      console.log(app)
+      console.log(normalizedApp)
       const tokens = await managers.permissionsManager.listBasketAccess({
         basket: basket,
         originator: app
@@ -115,7 +119,7 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [app, basket, limit]);
+  }, [app, basket, limit, managers, adminOriginator, queryKey]);
 
   const revokeAccess = async (grant?: PermissionToken) => {
     try {
@@ -127,6 +131,7 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
         // Revoke the current access grant from dialog
         await managers.permissionsManager.revokePermission(currentAccessGrant);
       }
+      BASKET_CACHE.delete(queryKey);
       // Refresh the list after revoking
       await fetchPermissions();
     } catch (error) {
@@ -158,9 +163,12 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
 
   if (loading) {
     return (
-      <Box display='flex' justifyContent='center' p={3}>
-        <CircularProgress />
-      </Box>
+      <Box display="flex" justifyContent="center" alignItems="center" py={4}>
+            <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={50} /></Box>
+            <Typography variant="body2" color="textSecondary" sx={{ ml: 2 }}>
+              Loading baskets...
+            </Typography>
+          </Box>
     );
   }
 

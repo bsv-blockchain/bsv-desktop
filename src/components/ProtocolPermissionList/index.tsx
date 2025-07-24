@@ -27,7 +27,7 @@ import CounterpartyChip from '../CounterpartyChip';
 // Wallet context (replace with the actual path)
 import { WalletContext } from '../../WalletContext';
 import { PermissionToken } from '@bsv/wallet-toolbox-client';
-
+import AppLogo from '../AppLogo';
 /* -------------------------------------------------------------------------- */
 /*                              Types & Helpers                               */
 /* -------------------------------------------------------------------------- */
@@ -417,7 +417,7 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
 
         {loading ? (
           <Box display="flex" justifyContent="center" alignItems="center" py={4}>
-            <CircularProgress size={24} />
+            <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={50} /></Box>
             <Typography variant="body2" color="textSecondary" sx={{ ml: 2 }}>
               Loading permissions...
             </Typography>

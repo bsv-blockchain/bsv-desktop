@@ -242,8 +242,9 @@ const ProtocolPermissionList: React.FC<ProtocolPermissionListProps> = ({
     try {
       setLoading(true);
       // Fetch permission tokens from wallet SDK
+       const normalizedApp = app ? app.replace(/^https?:\/\//, '') : app;
       const raw = await managers.permissionsManager.listProtocolPermissions({
-        originator: app,
+        originator: normalizedApp,
         // privileged: false, // TODO: add support at the component level
         protocolName: protocol,
         protocolSecurityLevel: securityLevel,

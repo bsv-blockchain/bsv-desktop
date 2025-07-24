@@ -207,7 +207,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
       {/* authorised state ---------------------------------------------------- */}
       {authorization ? (
         <Box>
-          <Typography variant="h2" gutterBottom>Monthly spending limit: ${(Math.round((authorizedAmount * usdPerBsv) / 1e8))}</Typography>
+          <Typography variant="h2" gutterBottom>Monthly spending limit: ${(((authorizedAmount * usdPerBsv) / 1e8)).toFixed(2)}</Typography>
 
           <Typography variant="body2" gutterBottom></Typography>
           {/* Current monthly spending limit section */}
@@ -216,7 +216,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
              <TextField
                 onChange={(e) => {
                   if (!isEditingLimit) {
-                    const currentLimitStr = String(Math.round((authorizedAmount * usdPerBsv) / 1e8));
+                    const currentLimitStr = String(((authorizedAmount * usdPerBsv) / 1e8));
                     setIsEditingLimit(true);
                     setTempLimit(e.target.value);
                     setOriginalLimit(currentLimitStr);
@@ -226,7 +226,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                 }}
                 onFocus={() => {
                   if (!isEditingLimit) {
-                    const currentLimitStr = String(Math.round((authorizedAmount * usdPerBsv) / 1e8));
+                    const currentLimitStr = String(((authorizedAmount * usdPerBsv) / 1e8));
                     setIsEditingLimit(true);
                     setTempLimit(currentLimitStr);
                     setOriginalLimit(currentLimitStr);
@@ -234,7 +234,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                 }}
                 onBlur={() =>{ 
                   if (isEditingLimit && tempLimit === originalLimit) {
-                    const currentLimitStr = String(Math.round((authorizedAmount * usdPerBsv) / 1e8));
+                    const currentLimitStr = String(((authorizedAmount * usdPerBsv) / 1e8));
                     setIsEditingLimit(false);
                     setTempLimit('');
                     setOriginalLimit('');
@@ -262,7 +262,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                   }
                 }}
               />
-                            {isEditingLimit && tempLimit !== originalLimit && (
+                {isEditingLimit && tempLimit !== originalLimit && (
                 <>
                   <Button
                       onClick={() => {updateSpendingAuthorization(authorization)}}
@@ -300,10 +300,14 @@ export const SpendingAuthorizationList: FC<Props> = ({
             />
             <Box display="flex" justifyContent="space-between" alignItems="center">
               <Typography variant="body2" color="text.secondary">
-                <AmountDisplay showFiatAsInteger>{currentSpending * -1}</AmountDisplay> spent
+                <AmountDisplay showFiatAsInteger={((currentSpending * -1 * usdPerBsv) / 1e8) >= 1}>
+                  {currentSpending * -1}
+                </AmountDisplay> spent
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                <AmountDisplay showFiatAsInteger>{authorizedAmount}</AmountDisplay> limit
+                <AmountDisplay showFiatAsInteger={((authorizedAmount * usdPerBsv) / 1e8) >= 1}>
+                  {authorizedAmount}
+                </AmountDisplay> limit
               </Typography>
             </Box>
           </Box>

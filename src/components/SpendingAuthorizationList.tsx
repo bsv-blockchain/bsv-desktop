@@ -36,7 +36,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
   const [currentSpending, setCurrentSpending] = useState(0);
   const [authorizedAmount, setAuthorizedAmount] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [busy, setBusy] = useState<{ revoke?: boolean; increase?: boolean; list?: boolean; create?: boolean }>({ list: true });
+  const [busy, setBusy] = useState<{ revoke?: boolean; increase?: boolean; list?: boolean; create?: boolean; waitingForAuth?: boolean }>({ list: true });
   const [isEditingLimit, setIsEditingLimit] = useState(false);
   const [tempLimit, setTempLimit] = useState<string>('');
   const [originalLimit, setOriginalLimit] = useState<string>(''); // Add this state
@@ -52,38 +52,44 @@ export const SpendingAuthorizationList: FC<Props> = ({
   //   HELPERS
   // --------------------------------------------------------------------------
   const refreshAuthorizations = useCallback(async () => {
-    // return cached data if available
-    if (SPENDING_CACHE.has(cacheKey)) {
-      const { auth, spent } = SPENDING_CACHE.get(cacheKey)!;
+  // Skip cache when waiting for authorization to ensure we fetch fresh data
+  if (!busy.waitingForAuth && SPENDING_CACHE.has(cacheKey)) {
+    const { auth, spent } = SPENDING_CACHE.get(cacheKey)!;
+    setAuthorization(auth);
+    setCurrentSpending(spent);
+    setAuthorizedAmount(auth?.authorizedAmount ?? 0);
+    setBusy(b => ({ ...b, list: false }));
+    return;
+  }
+
+  try {
+    const auths = await managers.permissionsManager.listSpendingAuthorizations({ originator: app });
+    if (!auths?.length) {
+      setAuthorization(null);
+      setCurrentSpending(0);
+      setAuthorizedAmount(0);
+      SPENDING_CACHE.delete(cacheKey);
+      // Only call onEmptyList if we're not waiting for auth
+      if (!busy.waitingForAuth) {
+        onEmptyList();
+      }
+    } else {
+      const auth = auths[0];
+      const spent = await managers.permissionsManager.querySpentSince(auth);
       setAuthorization(auth);
       setCurrentSpending(spent);
-      setAuthorizedAmount(auth?.authorizedAmount ?? 0);
-      setBusy(b => ({ ...b, list: false }));
-      return;
+      setAuthorizedAmount(auth.authorizedAmount);
+      SPENDING_CACHE.set(cacheKey, { auth, spent });
     }
-
-    try {
-      const auths = await managers.permissionsManager.listSpendingAuthorizations({ originator: app });
-      if (!auths?.length) {
-        setAuthorization(null);
-        setCurrentSpending(0);
-        setAuthorizedAmount(0);
-        SPENDING_CACHE.delete(cacheKey);
-        onEmptyList();
-      } else {
-        const auth = auths[0];
-        const spent = await managers.permissionsManager.querySpentSince(auth);
-        setAuthorization(auth);
-        setCurrentSpending(spent);
-        setAuthorizedAmount(auth.authorizedAmount);
-        SPENDING_CACHE.set(cacheKey, { auth, spent });
-      }
-    } catch {
+  } catch {
+    // Only call onEmptyList if we're not waiting for auth
+    if (!busy.waitingForAuth) {
       onEmptyList();
-    } finally {
-      setBusy(b => ({ ...b, list: false }));
     }
-  }, [app, cacheKey, managers.permissionsManager, onEmptyList]);
+  } finally {
+    setBusy(b => ({ ...b, list: false }));
+  }
+}, [app, cacheKey, managers.permissionsManager, onEmptyList, busy.waitingForAuth]);
 
   // --------------------------------------------------------------------------
   //   MUTATIONS
@@ -98,14 +104,16 @@ export const SpendingAuthorizationList: FC<Props> = ({
         seekPermission: true,
       });
       // Give the backend a brief moment to commit the new authorization
-      await new Promise(res => setTimeout(res, 800));
+      setBusy(b => ({ ...b, create: false, waitingForAuth: true }));
+      await new Promise(res => setTimeout(res, 6000));
       SPENDING_CACHE.delete(cacheKey);
       await refreshAuthorizations();
       setIsEditingLimit(false);
     } catch (e: unknown) {
       toast.error(`Failed to create spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`);
     } finally {
-      setBusy(b => ({ ...b, create: false }));
+      setBusy(b => ({ ...b, create: false, waitingForAuth: false }));
+      // setBusy(b => ({ ...b, create: false }));
     }
   };
   const updateSpendingAuthorization = async (auth: PermissionToken) => {
@@ -257,7 +265,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                             {isEditingLimit && tempLimit !== originalLimit && (
                 <>
                   <Button
-                      onClick={() => createSpendingAuthorization(parseFloat(tempLimit))}
+                      onClick={() => {updateSpendingAuthorization(authorization)}}
                   disabled={busy.create || !tempLimit}
                   size="small"
                   variant="contained"
@@ -312,60 +320,69 @@ export const SpendingAuthorizationList: FC<Props> = ({
         </Box>
       ) : (
                /* unauthorised state -------------------------------------------------- */
-      <Box textAlign="center" pt={6}>
-          <Typography variant="body1">This app must ask for permission before spending.</Typography>
-          <Typography variant="body1" gutterBottom sx={{ pt: 2 }}>Allow this app to spend a certain amount?</Typography>
-          <Box display="flex" alignItems="center" gap={2} justifyContent="center">
-             <TextField
-                value={isEditingLimit ? tempLimit : ''}
-                onChange={(e) => {
-                  if (!isEditingLimit) {
-                    setIsEditingLimit(true);
-                    setTempLimit(e.target.value);
-                    setOriginalLimit('');
-                  } else {
-                    setTempLimit(e.target.value);
-                  }
-                }}
-                onFocus={() => {
-                  if (!isEditingLimit) {
-                    setIsEditingLimit(true);
-                    setTempLimit('');
-                    setOriginalLimit('');
-                  }
-                }}
-                placeholder="Enter limit in USD"
-                size="small"
-                type="number"
-                inputProps={{ min: 0, step: 0.01 }}
-                InputProps={{
-                  startAdornment: '$'
-                }}
-                sx={{ 
-                  width: 200,
-                  '& input[type=number]': {
-                    MozAppearance: 'textfield'
-                  },
-                  '& input[type=number]::-webkit-outer-spin-button': {
-                    WebkitAppearance: 'none',
-                    margin: 0
-                  },
-                  '& input[type=number]::-webkit-inner-spin-button': {
-                    WebkitAppearance: 'none',
-                    margin: 0
-                  }
-                }}
-              />
-              {tempLimit && (
-                <Button
-                  onClick={() => createSpendingAuthorization(parseFloat(tempLimit))}
-                  disabled={busy.create || !tempLimit}
+        <Box textAlign="center" pt={6}>
+          {busy.waitingForAuth ? (
+            <>
+              <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={50} /></Box>
+              <Typography variant="body1" sx={{ mt: 2 }}>Setting up spending authorization…</Typography>
+            </>
+          ) : (
+            <>
+              <Typography variant="body1">This app must ask for permission before spending.</Typography>
+              <Typography variant="body1" gutterBottom sx={{ pt: 2 }}>Allow this app to spend a certain amount?</Typography>
+              <Box display="flex" alignItems="center" gap={2} justifyContent="center">
+                <TextField
+                  value={isEditingLimit ? tempLimit : ''}
+                  onChange={(e) => {
+                    if (!isEditingLimit) {
+                      setIsEditingLimit(true);
+                      setTempLimit(e.target.value);
+                      setOriginalLimit('');
+                    } else {
+                      setTempLimit(e.target.value);
+                    }
+                  }}
+                  onFocus={() => {
+                    if (!isEditingLimit) {
+                      setIsEditingLimit(true);
+                      setTempLimit('');
+                      setOriginalLimit('');
+                    }
+                  }}
+                  placeholder="Enter limit in USD"
                   size="small"
-                >
-                  {busy.create ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Creating…</>) : 'Submit'}
-                </Button>
-              )}
-            </Box>
+                  type="number"
+                  inputProps={{ min: 0, step: 0.01 }}
+                  InputProps={{
+                    startAdornment: '$'
+                  }}
+                  sx={{ 
+                    width: 200,
+                    '& input[type=number]': {
+                      MozAppearance: 'textfield'
+                    },
+                    '& input[type=number]::-webkit-outer-spin-button': {
+                      WebkitAppearance: 'none',
+                      margin: 0
+                    },
+                    '& input[type=number]::-webkit-inner-spin-button': {
+                      WebkitAppearance: 'none',
+                      margin: 0
+                    }
+                  }}
+                />
+                {tempLimit && (
+                  <Button
+                    onClick={() => createSpendingAuthorization(parseFloat(tempLimit))}
+                    disabled={busy.create || busy.waitingForAuth || !tempLimit}
+                    size="small"
+                  >
+                    {busy.create ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Creating…</>) : 'Submit'}
+                  </Button>
+                )}
+              </Box>
+            </>
+          )}
         </Box>
       )}
     </>

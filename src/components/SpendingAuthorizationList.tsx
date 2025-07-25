@@ -36,7 +36,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
   const [currentSpending, setCurrentSpending] = useState(0);
   const [authorizedAmount, setAuthorizedAmount] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [busy, setBusy] = useState<{ revoke?: boolean; increase?: boolean; list?: boolean; create?: boolean; waitingForAuth?: boolean; renewLimit?: boolean }>({ list: true });
+  const [busy, setBusy] = useState<{ revoke?: boolean; list?: boolean; create?: boolean; waitingForAuth?: boolean; renewLimit?: boolean }>({ list: true });
   const [isEditingLimit, setIsEditingLimit] = useState(false);
   const [tempLimit, setTempLimit] = useState<string>('');
   const [originalLimit, setOriginalLimit] = useState<string>(''); // Add this state
@@ -116,14 +116,32 @@ export const SpendingAuthorizationList: FC<Props> = ({
       // setBusy(b => ({ ...b, create: false }));
     }
   };
+    const revokeAndSetNewLimit = async (usdLimit: number) => {
+    if (!authorization) return;
+    setBusy(b => ({ ...b, renewLimit: true }));
+    try {
+      await managers.permissionsManager.revokePermission(authorization);
+      SPENDING_CACHE.delete(cacheKey);
+      await refreshAuthorizations();
+      // Wait a moment for backend to commit revocation
+      await new Promise(res => setTimeout(res, 2000));
+      await createSpendingAuthorization(usdLimit);
+    } catch (e: unknown) {
+      toast.error(`Failed to update spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`);
+    } finally {
+      setBusy(b => ({ ...b, renewLimit: false }));
+      setIsEditingLimit(false);
+    }
+  };
+
   const updateSpendingAuthorization = async (auth: PermissionToken) => {
     setBusy(b => ({ ...b, renewLimit: true }));
-    if(tempLimit < originalLimit)
-    {
-      setBusy(b => ({ ...b, renewLimit: false }));
-      throw("new limit must be higher than old limit by at least $1");
-    }
     const newLimit = parseFloat(tempLimit);
+    if (newLimit < ((authorizedAmount * usdPerBsv) / 1e8)) {
+    setBusy(b => ({ ...b, renewLimit: true }));
+    await revokeAndSetNewLimit(newLimit);
+    return;
+    }
     try {
       let ret = await managers.permissionsManager.ensureSpendingAuthorization({
         originator: app,
@@ -273,7 +291,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                 {isEditingLimit && tempLimit !== originalLimit && (
                 <>
                   <Button
-                      onClick={() => {updateSpendingAuthorization(authorization)}}
+                  onClick={() => {updateSpendingAuthorization(authorization)}}
                   disabled={busy.renewLimit || !tempLimit}
                   size="small"
                   variant="contained"
@@ -289,11 +307,6 @@ export const SpendingAuthorizationList: FC<Props> = ({
                 >
                   {busy.renewLimit ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Updating…</>) : 'Submit'}
                 </Button>
-                  {tempLimit && parseFloat(tempLimit) <= parseFloat(originalLimit) && (
-                    <Typography variant="caption" color="error" sx={{ ml: 1 }}>
-                      New limit must be higher than current limit
-                    </Typography>
-                  )}
                 </>
               )}
             </Box>

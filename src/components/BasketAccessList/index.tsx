@@ -88,7 +88,6 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
       // If we are displaying baskets, we need to provide the app param
       // If we are displaying apps, we need to provide the basket param
        const normalizedApp = app ? app.replace(/^https?:\/\//, '') : app;
-      console.log(app)
       console.log(normalizedApp)
       const tokens = await managers.permissionsManager.listBasketAccess({
         basket: basket,

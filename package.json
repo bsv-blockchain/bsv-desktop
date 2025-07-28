@@ -26,13 +26,13 @@
     }
   },
   "dependencies": {
-    "@bsv/uhrp-react": "^1.0.1",
+    "@bsv/uhrp-react": "^1.0.3",
     "libphonenumber-js": "^1.12.6",
     "metanet-apps": "^1.0.4"
   },
   "peerDependencies": {
-    "@bsv/sdk": "^1.6.18",
-    "@bsv/wallet-toolbox-client": "^1.5.17",
+    "@bsv/sdk": "^1.6.20",
+    "@bsv/wallet-toolbox-client": "^1.5.20",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^6.4.3",
@@ -48,7 +48,7 @@
     "react-router-dom": "^5.2.0",
     "react-toastify": "^11.0.3"
   },
-"scripts": {
+  "scripts": {
     "build": "tsc",
     "lint:ci": "echo 'No linting'",
     "test": "echo 'No tests'"

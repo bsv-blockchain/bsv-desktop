@@ -48,7 +48,7 @@
     "react-router-dom": "^5.2.0",
     "react-toastify": "^11.0.3"
   },
-  "scripts": {
+"scripts": {
     "build": "tsc",
     "lint:ci": "echo 'No linting'",
     "test": "echo 'No tests'"

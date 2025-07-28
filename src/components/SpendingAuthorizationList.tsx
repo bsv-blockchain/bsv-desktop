@@ -151,7 +151,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
       });
       console.log(`returned: ${ret}`)
       // Give the backend a brief moment to commit the new authorization
-      await new Promise(res => setTimeout(res, 2000));
+      await new Promise(res => setTimeout(res, 2300));
       SPENDING_CACHE.delete(cacheKey);
       await refreshAuthorizations();
       setIsEditingLimit(false);

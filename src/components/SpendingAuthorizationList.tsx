@@ -113,7 +113,6 @@ export const SpendingAuthorizationList: FC<Props> = ({
       toast.error(`Failed to create spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`);
     } finally {
       setBusy(b => ({ ...b, create: false, waitingForAuth: false }));
-      // setBusy(b => ({ ...b, create: false }));
     }
   };
     const revokeAndSetNewLimit = async (usdLimit: number) => {

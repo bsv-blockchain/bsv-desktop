@@ -85,22 +85,22 @@ const ProtocolAccess: React.FC = () => {
 
     const fetchProtocolDetails = async () => {
       if (!managers.walletManager) return; // Or relevant manager
-      
+
       setLoading(true);
       setError(null);
       try {
         const registrant = new RegistryClient(managers.walletManager)
         const certifiers = settings.trustSettings.trustedCertifiers.map(x => x.identityKey)
         const results = await registrant.resolve('protocol', {
-        protocolID: [securityLevel as SecurityLevel, protocolId],
-        registryOperators: certifiers
+          protocolID: [securityLevel as SecurityLevel, protocolId],
+          registryOperators: certifiers
         })
 
         let mostTrustedIndex = 0
         let maxTrustPoints = 0
-        for(let i = 0; i < results.length; i ++) { 
+        for (let i = 0; i < results.length; i++) {
           const resultTrustLevel = settings.trustSettings.trustedCertifiers.find(x => x.identityKey === results[i].registryOperator)?.trust || 0
-          if(resultTrustLevel > maxTrustPoints){
+          if (resultTrustLevel > maxTrustPoints) {
             mostTrustedIndex = i
             maxTrustPoints = resultTrustLevel
           }
@@ -120,7 +120,7 @@ const ProtocolAccess: React.FC = () => {
       } catch (err: any) {
         console.error('Failed to fetch protocol details:', err);
         setError(`Failed to load protocol details: ${err.message}`);
-        toast.error(`Failed to load protocol details: ${err.message}`);
+        // toast.error(`Failed to load protocol details: ${err.message}`);
         const placeholderDetails: ProtocolDetails = {
           protocolName: `Protocol: ${protocolId}`,
           iconURL: DEFAULT_APP_ICON,
@@ -136,7 +136,7 @@ const ProtocolAccess: React.FC = () => {
     };
 
     fetchProtocolDetails();
-  }, [protocolId, managers.walletManager]);
+  }, [protocolId, securityLevel, managers.walletManager]);
 
   if (loading) {
     return <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={100} /></Box>;

@@ -18,6 +18,14 @@ type Props = {
  * AmountDisplay component shows an amount in either satoshis or fiat currency.
  * The component allows the user to toggle between viewing amounts in satoshis or fiat,
  * and cycle through different formatting options.
+ * 
+ * @param {object} props - The props that are passed to this component
+ * @param {boolean} props.abbreviate - Flag indicating if the displayed amount should be abbreviated
+ * @param {boolean} props.showPlus - Flag indicating whether to show a plus sign before the amount
+ * @param {number|string} props.children - The amount (in satoshis) to display, passed as the child of this component
+ *
+ * Note: The component depends on the ExchangeRateContext for several pieces of data related to
+ * currency preference, exchange rates, and formatting options.
  */
 const AmountDisplay: React.FC<Props> = ({ abbreviate, showPlus, description, children, showFiatAsInteger }) => {
   // State variables for the amount in satoshis and the corresponding formatted strings

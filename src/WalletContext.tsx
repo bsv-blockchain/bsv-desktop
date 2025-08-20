@@ -118,6 +118,19 @@ export const WalletContext = createContext<WalletContextValue>({
   configStatus: 'initial'
 })
 
+// ---- Group-gating types ----
+type GroupPhase = 'idle' | 'pending';
+
+type GroupDecision = {
+  allow: {
+    // permissive model; we build this from the granted payload
+    protocols?: Set<string> | 'all';
+    baskets?: Set<string>;
+    certificates?: Array<{ type: string; fields?: Set<string> }>;
+    spendingUpTo?: number; // satoshis
+  };
+};
+
 type PermissionType = 'identity' | 'protocol' | 'renewal' | 'basket';
 
 type BasketAccessRequest = {
@@ -203,75 +216,138 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [useWab, setUseWab] = useState<boolean>(DEFAULT_USE_WAB)
   const [groupPermissionRequests, setGroupPermissionRequests] = useState<GroupPermissionRequest[]>([])
 
-  // Pop the first request from the basket queue, close if empty, relinquish focus if needed
-  const advanceBasketQueue = () => {
-    setBasketRequests(prev => {
-      const newQueue = prev.slice(1)
-      if (newQueue.length === 0) {
-        setBasketAccessModalOpen(false)
-        if (!wasOriginallyFocused) {
-          onFocusRelinquished()
-        }
-      }
-      return newQueue
-    })
-  }
+  // ---- Group gate & deferred buffers ----
+  const [groupPhase, setGroupPhase] = useState<GroupPhase>('idle');
+  const groupDecisionRef = useRef<GroupDecision | null>(null);
+  const groupTimerRef = useRef<number | null>(null);
+  const GROUP_GRACE_MS = 20000; // release if no answer within 20s (tweak as desired)
+  const [deferred, setDeferred] = useState<{
+    basket: BasketAccessRequest[],
+    certificate: CertificateAccessRequest[],
+    protocol: ProtocolAccessRequest[],
+    spending: SpendingRequest[],
+  }>({ basket: [], certificate: [], protocol: [], spending: [] });
 
-  // Pop the first request from the certificate queue, close if empty, relinquish focus if needed
-  const advanceCertificateQueue = () => {
-    setCertificateRequests(prev => {
-      const newQueue = prev.slice(1)
-      if (newQueue.length === 0) {
-        setCertificateAccessModalOpen(false)
-        if (!wasOriginallyFocused) {
-          onFocusRelinquished()
-        }
-      }
-      return newQueue
-    })
-  }
+  const deferRequest = <T,>(key: keyof typeof deferred, item: T) => {
+    setDeferred(prev => ({ ...prev, [key]: [...(prev as any)[key], item] as any }));
+  };
 
-  // Pop the first request from the protocol queue, close if empty, relinquish focus if needed
-  const advanceProtocolQueue = () => {
-    setProtocolRequests(prev => {
-      const newQueue = prev.slice(1)
-      if (newQueue.length === 0) {
-        setProtocolAccessModalOpen(false)
-        if (!wasOriginallyFocused) {
-          onFocusRelinquished()
-        }
-      }
-      return newQueue
-    })
-  }
+  // Decide if an item is covered by the group decision (conservative, adapt if needed)
+  const isCoveredByDecision = (d: GroupDecision | null, req: any): boolean => {
+    if (!d) return false;
+    // Basket
+    if ('basket' in req) {
+      return !!d.allow.baskets && !!req.basket && d.allow.baskets.has(req.basket);
+    }
+    // Certificate
+    if ('certificateType' in req || 'type' in req) {
+      const type = (req.certificateType ?? req.type) as string | undefined;
+      const fields = new Set<string>(req.fieldsArray ?? req.fields ?? []);
+      if (!type) return false;
+      const rule = d.allow.certificates?.find(c => c.type === type);
+      if (!rule) return false;
+      if (!rule.fields || rule.fields.size === 0) return true;
+      for (const f of fields) if (!rule.fields.has(f)) return false;
+      return true;
+    }
+    // Protocol
+    if ('protocolID' in req) {
+      if (d.allow.protocols === 'all') return true;
+      return d.allow.protocols instanceof Set && d.allow.protocols.has(req.protocolID);
+    }
+    // Spending
+    if ('authorizationAmount' in req) {
+      return d.allow.spendingUpTo != null && req.authorizationAmount <= (d.allow.spendingUpTo as number);
+    }
+    return false;
+  };
 
-  // Pop the first request from the spending queue, close if empty, relinquish focus if needed
-  const advanceSpendingQueue = () => {
-    setSpendingRequests(prev => {
-      const newQueue = prev.slice(1)
-      if (newQueue.length === 0) {
-        setSpendingAuthorizationModalOpen(false)
-        if (!wasOriginallyFocused) {
-          onFocusRelinquished()
+  // Build decision object from the "granted" payload used by grantGroupedPermission
+  const decisionFromGranted = (granted: any): GroupDecision => {
+    const protocols = (() => {
+      const arr = granted?.protocolPermissions ?? granted?.protocols ?? [];
+      const names = new Set<string>();
+      for (const p of arr) {
+        const id = p?.protocolID;
+        if (Array.isArray(id) && id.length > 1 && typeof id[1] === 'string') names.add(id[1]);
+        else if (typeof id === 'string') names.add(id);
+        else if (typeof p?.name === 'string') names.add(p.name);
+      }
+      return names;
+    })();
+    const baskets = (() => {
+      const arr = granted?.basketAccess ?? granted?.baskets ?? [];
+      const set = new Set<string>();
+      for (const b of arr) {
+        if (typeof b === 'string') set.add(b);
+        else if (typeof b?.basket === 'string') set.add(b.basket);
+      }
+      return set;
+    })();
+    const certificates = (() => {
+      const arr = granted?.certificateAccess ?? granted?.certificates ?? [];
+      const out: Array<{ type: string; fields?: Set<string> }> = [];
+      for (const c of arr) {
+        const type = c?.type ?? c?.certificateType;
+        if (typeof type === 'string') {
+          const fields = new Set<string>((c?.fields ?? []).filter((x: any) => typeof x === 'string'));
+          out.push({ type, fields: fields.size ? fields : undefined });
         }
       }
-      return newQueue
-    })
-  }
+      return out;
+    })();
+    const spendingUpTo = (() => {
+      const s = granted?.spendingAuthorization ?? granted?.spending ?? null;
+      if (!s) return undefined;
+      if (typeof s === 'number') return s;
+      if (typeof s?.satoshis === 'number') return s.satoshis;
+      return undefined;
+    })();
+    return { allow: { protocols, baskets, certificates, spendingUpTo } };
+  };
 
-  // Pop the first request from the group permission queue, close if empty, relinquish focus if needed
-  const advanceGroupQueue = () => {
-    setGroupPermissionRequests(prev => {
-      const newQueue = prev.slice(1)
-      if (newQueue.length === 0) {
-        setGroupPermissionModalOpen(false)
-        if (!wasOriginallyFocused) {
-          onFocusRelinquished()
+  // Release buffered requests after group decision (or on timeout/deny)
+  const releaseDeferredAfterGroup = async (decision: GroupDecision | null) => {
+    if (groupTimerRef.current) { window.clearTimeout(groupTimerRef.current); groupTimerRef.current = null; }
+    groupDecisionRef.current = decision;
+
+    // If your SDK needs a refresh/re-eval, do it here (optional)
+    // await managers.permissionsManager?.refresh?.();
+
+    const requeue = {
+      basket: [] as BasketAccessRequest[],
+      certificate: [] as CertificateAccessRequest[],
+      protocol: [] as ProtocolAccessRequest[],
+      spending: [] as SpendingRequest[],
+    };
+
+    const maybeHandle = async (list: any[], key: keyof typeof requeue) => {
+      for (const r of list) {
+        if (isCoveredByDecision(decision, r)) {
+          // Covered by grouped decision — do not requeue; grouped grant should satisfy it.
+          // If you need explicit per-request approval, call it here against permissionsManager.
+          // Example (adjust to your API):
+          // await managers.permissionsManager?.respondToRequest(r.requestID, { approved: true });
+        } else {
+          (requeue as any)[key].push(r);
         }
       }
-      return newQueue
-    })
-  }
+    };
+
+    await maybeHandle(deferred.basket, 'basket');
+    await maybeHandle(deferred.certificate, 'certificate');
+    await maybeHandle(deferred.protocol, 'protocol');
+    await maybeHandle(deferred.spending, 'spending');
+
+    setDeferred({ basket: [], certificate: [], protocol: [], spending: [] });
+    setGroupPhase('idle');
+
+    // Re-open the uncovered ones via your existing flows
+    if (requeue.basket.length) { setBasketRequests(requeue.basket); setBasketAccessModalOpen(true); }
+    if (requeue.certificate.length) { setCertificateRequests(requeue.certificate); setCertificateAccessModalOpen(true); }
+    if (requeue.protocol.length) { setProtocolRequests(requeue.protocol); setProtocolAccessModalOpen(true); }
+    if (requeue.spending.length) { setSpendingRequests(requeue.spending); setSpendingAuthorizationModalOpen(true); }
+  };
 
   const updateSettings = useCallback(async (newSettings: WalletSettings) => {
     if (!managers.settingsManager) {
@@ -298,6 +374,19 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     reason?: string
     renewal?: boolean
   }) => {
+    // Gate while group is pending
+    if (groupPhase === 'pending') {
+      if (incomingRequest?.requestID) {
+        deferRequest('basket', {
+          requestID: incomingRequest.requestID,
+          basket: incomingRequest.basket,
+          originator: incomingRequest.originator,
+          reason: incomingRequest.reason,
+          renewal: incomingRequest.renewal
+        });
+      }
+      return;
+    }
     // Enqueue the new request
     if (incomingRequest?.requestID) {
       setBasketRequests(prev => {
@@ -326,7 +415,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         ]
       })
     }
-  }, [isFocused, onFocusRequested])
+  }, [groupPhase, isFocused, onFocusRequested])
 
   // Provide a handler for certificate-access requests that enqueues them
   const certificateAccessCallback = useCallback((incomingRequest: PermissionRequest & {
@@ -340,6 +429,21 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     reason?: string
     renewal?: boolean
   }) => {
+    // Gate while group is pending
+    if (groupPhase === 'pending') {
+      const certificate = incomingRequest.certificate as any
+      deferRequest('certificate', {
+        requestID: incomingRequest.requestID,
+        originator: incomingRequest.originator,
+        verifierPublicKey: certificate?.verifier || '',
+        certificateType: certificate?.certType || '',
+        fieldsArray: Object.keys(certificate?.fields || {}),
+        description: incomingRequest.reason,
+        renewal: incomingRequest.renewal
+      } as any)
+      return
+    }
+
     // Enqueue the new request
     if (incomingRequest?.requestID) {
       setCertificateRequests(prev => {
@@ -376,11 +480,11 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
             fieldsArray,
             description: incomingRequest.reason,
             renewal: incomingRequest.renewal
-          }
+          } as any
         ]
       })
     }
-  }, [isFocused, onFocusRequested])
+  }, [groupPhase, isFocused, onFocusRequested])
 
   // Provide a handler for protocol permission requests that enqueues them
   const protocolPermissionCallback = useCallback((args: PermissionRequest & { requestID: string }): Promise<void> => {
@@ -421,6 +525,11 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       type: permissionType
     }
 
+    if (groupPhase === 'pending') {
+      deferRequest('protocol', newItem)
+      return Promise.resolve()
+    }
+
     // Enqueue the new request
     return new Promise<void>(resolve => {
       setProtocolRequests(prev => {
@@ -441,7 +550,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         return [...prev, newItem]
       })
     })
-  }, [isFocused, onFocusRequested])
+  }, [groupPhase, isFocused, onFocusRequested])
 
   // Provide a handler for spending authorization requests that enqueues them
   const spendingAuthorizationCallback = useCallback(async (args: PermissionRequest & { requestID: string }): Promise<void> => {
@@ -484,6 +593,11 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       lineItems
     }
 
+    if (groupPhase === 'pending') {
+      deferRequest('spending', newItem)
+      return
+    }
+
     // Enqueue the new request
     return new Promise<void>(resolve => {
       setSpendingRequests(prev => {
@@ -504,7 +618,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         return [...prev, newItem]
       })
     })
-  }, [isFocused, onFocusRequested])
+  }, [groupPhase, isFocused, onFocusRequested])
 
   // Provide a handler for group permission requests that enqueues them
   const groupPermissionCallback = useCallback(async (args: {
@@ -551,6 +665,29 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       })
     })
   }, [isFocused, onFocusRequested, setGroupPermissionModalOpen])
+
+  // ---- ENTER GROUP PENDING MODE & PAUSE OTHERS when group request enqueued ----
+  useEffect(() => {
+    if (groupPermissionRequests.length > 0 && groupPhase !== 'pending') {
+      setGroupPhase('pending')
+      // Move any currently queued requests into deferred buffers
+      setDeferred(prev => ({
+        basket: [...prev.basket, ...basketRequests],
+        certificate: [...prev.certificate, ...certificateRequests],
+        protocol: [...prev.protocol, ...protocolRequests],
+        spending: [...prev.spending, ...spendingRequests],
+      }))
+      // Clear queues & close their modals to avoid "fighting" dialogs
+      setBasketRequests([]); setCertificateRequests([]); setProtocolRequests([]); setSpendingRequests([])
+      setBasketAccessModalOpen(false); setCertificateAccessModalOpen(false); setProtocolAccessModalOpen(false); setSpendingAuthorizationModalOpen(false)
+      // Start grace timer so the app doesn't stall if user never answers
+      if (groupTimerRef.current) window.clearTimeout(groupTimerRef.current)
+      groupTimerRef.current = window.setTimeout(() => {
+        releaseDeferredAfterGroup(null)
+      }, GROUP_GRACE_MS)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupPermissionRequests.length])
 
   // ---- WAB + network + storage configuration ----
   const [wabUrl, setWabUrl] = useState<string>(DEFAULT_WAB_URL);
@@ -702,6 +839,24 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
       if (groupPermissionCallback) {
         permissionsManager.bindCallback('onGroupedPermissionRequested', groupPermissionCallback);
+      }
+
+      // ---- Proxy grouped-permission grant/deny so we can release the gate automatically ----
+      const originalGrantGrouped = (permissionsManager as any).grantGroupedPermission?.bind(permissionsManager);
+      const originalDenyGrouped = (permissionsManager as any).denyGroupedPermission?.bind(permissionsManager);
+      if (originalGrantGrouped) {
+        (permissionsManager as any).grantGroupedPermission = async (requestID: string, granted: any) => {
+          const res = await originalGrantGrouped(requestID, granted);
+          try { await releaseDeferredAfterGroup(decisionFromGranted(granted)); } catch {}
+          return res;
+        };
+      }
+      if (originalDenyGrouped) {
+        (permissionsManager as any).denyGroupedPermission = async (requestID: string) => {
+          const res = await originalDenyGrouped(requestID);
+          try { await releaseDeferredAfterGroup(null); } catch {}
+          return res;
+        };
       }
 
       // Store in window for debugging
@@ -937,6 +1092,76 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       })()
     }
   }, [adminOriginator, managers?.permissionsManager])
+
+  // Pop the first request from the basket queue, close if empty, relinquish focus if needed
+  const advanceBasketQueue = () => {
+    setBasketRequests(prev => {
+      const newQueue = prev.slice(1)
+      if (newQueue.length === 0) {
+        setBasketAccessModalOpen(false)
+        if (!wasOriginallyFocused) {
+          onFocusRelinquished()
+        }
+      }
+      return newQueue
+    })
+  }
+
+  // Pop the first request from the certificate queue, close if empty, relinquish focus if needed
+  const advanceCertificateQueue = () => {
+    setCertificateRequests(prev => {
+      const newQueue = prev.slice(1)
+      if (newQueue.length === 0) {
+        setCertificateAccessModalOpen(false)
+        if (!wasOriginallyFocused) {
+          onFocusRelinquished()
+        }
+      }
+      return newQueue
+    })
+  }
+
+  // Pop the first request from the protocol queue, close if empty, relinquish focus if needed
+  const advanceProtocolQueue = () => {
+    setProtocolRequests(prev => {
+      const newQueue = prev.slice(1)
+      if (newQueue.length === 0) {
+        setProtocolAccessModalOpen(false)
+        if (!wasOriginallyFocused) {
+          onFocusRelinquished()
+        }
+      }
+      return newQueue
+    })
+  }
+
+  // Pop the first request from the spending queue, close if empty, relinquish focus if needed
+  const advanceSpendingQueue = () => {
+    setSpendingRequests(prev => {
+      const newQueue = prev.slice(1)
+      if (newQueue.length === 0) {
+        setSpendingAuthorizationModalOpen(false)
+        if (!wasOriginallyFocused) {
+          onFocusRelinquished()
+        }
+      }
+      return newQueue
+    })
+  }
+
+  // Pop the first request from the group permission queue, close if empty, relinquish focus if needed
+  const advanceGroupQueue = () => {
+    setGroupPermissionRequests(prev => {
+      const newQueue = prev.slice(1)
+      if (newQueue.length === 0) {
+        setGroupPermissionModalOpen(false)
+        if (!wasOriginallyFocused) {
+          onFocusRelinquished()
+        }
+      }
+      return newQueue
+    })
+  }
 
   const contextValue = useMemo<WalletContextValue>(() => ({
     managers,

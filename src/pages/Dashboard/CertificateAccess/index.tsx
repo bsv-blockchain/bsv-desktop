@@ -27,7 +27,7 @@ interface CertificateDefinition {
   description: string;
   documentationURL?: string;
   fields: Record<string, FieldDefinition>; // Assuming fields is an object
-  // Add other relevant properties from CertMap resolveCertificateByType
+  // Add other relevant properties from  resolveCertificateByType
 }
 
 interface FieldDefinition {

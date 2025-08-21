@@ -103,14 +103,14 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
       if (!managers?.permissionsManager) {
         return
       }
-
+            console.log(
+        'Fetching certificate access grants...',
+        { app, type, counterparty, limit, itemsDisplayed }
+            )
       const permissions: PermissionToken[] = await managers.permissionsManager.listCertificateAccess({
         originator: app,
-        privileged: false, //?
-        certType: type,
-        // verifier: 'anyone' // ?
       })
-
+      console.log('Fetched certificate access grants:', permissions)
       if (itemsDisplayed === 'apps') {
         const results = sortPermissions(permissions)
         setGrants(results)
@@ -256,23 +256,21 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
                       {(grant as AppGrant).permissions.map((permission, idx) => (
                         <div className={classes.gridItem} key={idx}>
                           <h1>{permission.certType}</h1>
-                          {/* <CertificateChip
+                          <CertificateChip
+                            certFields={permission.certFields}
                             certType={permission.certType}
-                            lastAccessed={String(permission.lastAccessed)}
-                            certifier={permission.issuer}
-                            onIssuerClick={permission.onIssuerClick}
-                            serialNumber={permission.verifier}
-                            onVerifierClick={permission.onVerifierClick}
-                            onClick={permission.onClick}
-                            fieldsToDisplay={Object.keys(permission.fields)}
-                            clickable={permission.clickable}
+                            expiry={permission.expiry}
+                            originator={(grant as AppGrant).originator}
+                            outputIndex={permission.outputIndex}
+                            outputScript={permission.outputScript}
+                            privileged={permission.privileged}
+                            satoshis={permission.satoshis}
+                            tx={permission.tx}
+                            txid={permission.txid}
+                            verifier={permission.verifier}
+                            clickable
                             size={1.3}
-                            expires={formatDistance(new Date(permission.expiry * 1000), new Date(), {
-                              addSuffix: true
-                            })}
-                            onCloseClick={() => revokeAccess(permission)}
-                            canRevoke={canRevoke}
-                          /> */}
+                          />
                         </div>
                       ))}
                     </div>
@@ -285,25 +283,21 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
                   {/*
                     When itemsDisplayed is not 'apps', we assume each grant is a Permission.
                   */}
-                  {/* <CertificateChip
-                    certType={(grant as Permission).type}
-                    lastAccessed={String((grant as Permission).lastAccessed)}
-                    certifier={(grant as Permission).issuer}
-                    onIssuerClick={(grant as Permission).onIssuerClick}
-                    serialNumber={(grant as Permission).verifier}
-                    onVerifierClick={(grant as Permission).onVerifierClick}
-                    onClick={(grant as Permission).onClick}
-                    fieldsToDisplay={Object.keys((grant as Permission).fields)}
-                    clickable={(grant as Permission).clickable}
-                    size={1.3}
-                    expires={formatDistance(
-                      new Date((grant as Permission).expiry * 1000),
-                      new Date(),
-                      { addSuffix: true }
-                    )}
-                    onCloseClick={() => revokeAccess(grant as Permission)}
-                    canRevoke={canRevoke}
-                  /> */}
+                  <CertificateChip
+                  certFields={(grant as PermissionToken).certFields}
+                  certType={(grant as PermissionToken).certType}
+                  expiry={(grant as PermissionToken).expiry}
+                  originator={(grant as PermissionToken).originator ?? app}
+                  outputIndex={(grant as PermissionToken).outputIndex}
+                  outputScript={(grant as PermissionToken).outputScript}
+                  privileged={(grant as PermissionToken).privileged}
+                  satoshis={(grant as PermissionToken).satoshis}
+                  tx={(grant as PermissionToken).tx}
+                  txid={(grant as PermissionToken).txid}
+                  verifier={(grant as PermissionToken).verifier}
+                  clickable
+                  size={1.3}
+                  />
                 </ListItem>
               </Paper>
             )}

@@ -65,6 +65,18 @@ const CertificateAccess: React.FC = () => {
           registryOperators,
         })
 
+        if (results.length === 0) {
+          const placeholderDef: CertificateDefinition = {
+            name: "Custom Certificate",
+            iconURL: DEFAULT_APP_ICON,
+            description: 'This certificate type has not yet been registered by anyone in your Certifier Network.',
+            documentationURL: 'https://docs.bsvblockchain.org/',
+            fields: {}
+          };
+          setCertDefinition(placeholderDef);
+          return;
+        }
+
         let mostTrustedIndex = 0
         let maxTrustedPoints = 0
         for(let i = 0; i < results.length; i++){
@@ -192,20 +204,18 @@ const CertificateAccess: React.FC = () => {
           })}
         </Box>
       </Grid>
-      <Grid item>
+      {/* <Grid item>
         <Typography variant='h4'>Issued Certificates</Typography>
-        {/* --- CertificateAccessList Placeholder --- */}
         <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
           <Typography color="textSecondary">CertificateAccessList component needs to be created/refactored.</Typography>
-          {/* <CertificateAccessList
+          <CertificateAccessList
             itemsDisplayed='apps' // Or 'counterparties'?
             canRevoke
             clickable={false}
             type={certType}
-          /> */}
+          />
         </Box>
-        {/* --- End Placeholder --- */}
-      </Grid>
+      </Grid> */}
       {/* Removed ProtocolPermissionList as it seemed out of place here */}
     </Grid>
   );

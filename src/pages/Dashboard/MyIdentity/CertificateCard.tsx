@@ -47,7 +47,7 @@ const CertificateCard: React.FC<CertificateCardProps> = ({
   onRevoke
 }) => {
   const history = useHistory()
-  const [certName, setCertName] = useState<string>('Unknown Cert')
+  const [certName, setCertName] = useState<string>('Custom Certificate')
   const [iconURL, setIconURL] = useState<string>(DEFAULT_APP_ICON)
   const [description, setDescription] = useState<string>('')
   const [fields, setFields] = useState<{ [key: string]: CertificateFieldDescriptor }>({})
@@ -321,9 +321,6 @@ const CertificateDetailsModal: React.FC<CertificateDetailsModalProps> = ({
                 </Box>
               ) : (
                 <div style={{ display: 'flex' }}>
-                  <Typography variant="body1" paddingRight="0.5em">
-                    Value:
-                  </Typography>
                   <Typography variant="h5">{value.value}</Typography>
                 </div>
               )}

@@ -97,7 +97,7 @@ const CertificateAccess: React.FC = () => {
           fields: {
             field1: {
               friendlyName: 'default Field 1',
-              description: 'Description for defau;t field 1.',
+              description: 'Description for default field 1.',
               fieldIcon: ''
             }
           }

@@ -39,7 +39,7 @@ const MyIdentity = () => {
 
   useEffect(() => {
     if (typeof adminOriginator === 'string') {
-      const cacheKey = 'provenCertificates'
+      const cacheKey = `provenCertificates_${activeProfile.id}`
 
       const getProvenCertificates = async () => {
         // Attempt to load the proven certificates from cache

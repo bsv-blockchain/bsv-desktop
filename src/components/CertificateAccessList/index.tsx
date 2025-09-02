@@ -256,18 +256,25 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
                       {(grant as AppGrant).permissions.map((permission, idx) => (
                         <div className={classes.gridItem} key={idx}>
                           <h1>{permission.certType}</h1>
+                          {/*
+                    When itemsDisplayed is not 'apps', we assume each grant is a Permission.
+                    certType,
+                    expiry,
+                    originator,
+                    canrevoke,
+                    onRevokeClick,
+                    clickable = true,
+                    size = 1.0,
+                    backgroundColor = 'transparent',
+                    onClick,
+                    history
+                  */}
                           <CertificateChip
-                            certFields={permission.certFields}
-                            certType={permission.certType}
-                            expiry={permission.expiry}
-                            originator={(grant as AppGrant).originator}
-                            outputIndex={permission.outputIndex}
-                            outputScript={permission.outputScript}
-                            privileged={permission.privileged}
-                            satoshis={permission.satoshis}
-                            tx={permission.tx}
-                            txid={permission.txid}
-                            verifier={permission.verifier}
+                            certType={(grant as PermissionToken).certType}
+                            expiry={(grant as PermissionToken).expiry}
+                            originator={(grant as PermissionToken).originator ?? app}
+                            canrevoke
+                            onRevokeClick={() =>revokeAccess(permission)}
                             clickable
                             size={1.3}
                           />
@@ -282,19 +289,23 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
                 <ListItem className={(classes as any).action_card}>
                   {/*
                     When itemsDisplayed is not 'apps', we assume each grant is a Permission.
+                    certType,
+                    expiry,
+                    originator,
+                    canrevoke,
+                    onRevokeClick,
+                    clickable = true,
+                    size = 1.0,
+                    backgroundColor = 'transparent',
+                    onClick,
+                    history
                   */}
                   <CertificateChip
-                  certFields={(grant as PermissionToken).certFields}
                   certType={(grant as PermissionToken).certType}
                   expiry={(grant as PermissionToken).expiry}
                   originator={(grant as PermissionToken).originator ?? app}
-                  outputIndex={(grant as PermissionToken).outputIndex}
-                  outputScript={(grant as PermissionToken).outputScript}
-                  privileged={(grant as PermissionToken).privileged}
-                  satoshis={(grant as PermissionToken).satoshis}
-                  tx={(grant as PermissionToken).tx}
-                  txid={(grant as PermissionToken).txid}
-                  verifier={(grant as PermissionToken).verifier}
+                  canrevoke
+                  onRevokeClick={() => revokeAccess(grant as PermissionToken)}
                   clickable
                   size={1.3}
                   />

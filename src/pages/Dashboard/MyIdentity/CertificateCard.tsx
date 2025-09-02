@@ -51,7 +51,7 @@ const CertificateCard: React.FC<CertificateCardProps> = ({
   const [iconURL, setIconURL] = useState<string>(DEFAULT_APP_ICON)
   const [description, setDescription] = useState<string>('')
   const [fields, setFields] = useState<{ [key: string]: CertificateFieldDescriptor }>({})
-  const { managers, settings, adminOriginator } = useContext(WalletContext)
+  const { managers, settings, adminOriginator, activeProfile } = useContext(WalletContext)
   const [modalOpen, setModalOpen] = useState<boolean>(false)
   const [isRevoked, setIsRevoked] = useState<boolean>(false)
   const registrant = new RegistryClient(managers.walletManager)
@@ -94,7 +94,7 @@ const CertificateCard: React.FC<CertificateCardProps> = ({
         const registryOperators: string[] = settings.trustSettings.trustedCertifiers.map(
           (x: any) => x.identityKey
         )
-        const cacheKey = `certData_${certificate.type}_${registryOperators.join('_')}`
+        const cacheKey = `certData_${certificate.type}_${registryOperators.join('_')}+${activeProfile.id}`
         const cachedData = window.localStorage.getItem(cacheKey)
 
         if (cachedData) {
@@ -108,6 +108,7 @@ const CertificateCard: React.FC<CertificateCardProps> = ({
           type: certificate.type,
           registryOperators
         })) as CertificateDefinitionData[]
+        console.log('results: ', results)
         if (results && results.length > 0) {
           // Compute the most trusted of the results
           let mostTrustedIndex = 0
@@ -129,7 +130,7 @@ const CertificateCard: React.FC<CertificateCardProps> = ({
           setFields(mostTrustedCert.fields)
 
           // Cache the fetched data
-          window.localStorage.setItem(cacheKey, JSON.stringify(mostTrustedCert))
+          // window.localStorage.setItem(cacheKey, JSON.stringify(mostTrustedCert))
         }
       } catch (error) {
         console.error('Failed to fetch certificate details:', error)

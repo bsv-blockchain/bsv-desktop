@@ -29,7 +29,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
   limit = 5,
   onEmptyList = () => { },
 }) => {
-  const { managers, spendingRequests, settings } = useContext(WalletContext);
+  const { managers, spendingRequests, settings, activeProfile } = useContext(WalletContext);
   const rates = useContext<any>(ExchangeRateContext); // { satoshisPerUSD, eurPerUSD, gbpPerUSD, ... }
 
   // --------------------------------------------------------------------------
@@ -140,7 +140,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
   // --------------------------------------------------------------------------
   //   MISC
   // --------------------------------------------------------------------------
-  const cacheKey = app;
+  const cacheKey = app + activeProfile.id;
   const services = useMemo(() => new Services('main'), []); // keep if other code relies on this instantiation
   const prevRqRef = useRef<number>(spendingRequests.length);
 

@@ -62,7 +62,7 @@ const CertificateAccess: React.FC = () => {
         const registrant = new RegistryClient(managers.walletManager)
         const results = await registrant.resolve('certificate', {
           type: certType,
-          registryOperators,
+          registryOperators: ['0292aabe2fc0deabf82e2f21de3cb6bb777779924c0137cc80aa31ebac83e67da8']
         })
 
         let mostTrustedIndex = 0
@@ -192,21 +192,7 @@ const CertificateAccess: React.FC = () => {
           })}
         </Box>
       </Grid>
-      <Grid item>
-        <Typography variant='h4'>Issued Certificates</Typography>
-        {/* --- CertificateAccessList Placeholder --- */}
-        <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
-          <Typography color="textSecondary">CertificateAccessList component needs to be created/refactored.</Typography>
-          {/* <CertificateAccessList
-            itemsDisplayed='apps' // Or 'counterparties'?
-            canRevoke
-            clickable={false}
-            type={certType}
-          /> */}
-        </Box>
-        {/* --- End Placeholder --- */}
-      </Grid>
-      {/* Removed ProtocolPermissionList as it seemed out of place here */}
+     
     </Grid>
   );
 };

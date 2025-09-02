@@ -11,7 +11,8 @@ import {
   Button,
   IconButton,
   Paper,
-  ListSubheader
+  ListSubheader,
+  CircularProgress
 } from '@mui/material'
 import makeStyles from '@mui/styles/makeStyles'
 import style from './style'
@@ -27,21 +28,6 @@ import AppChip from '../AppChip'
 import sortPermissions from './sortPermissions'
 import { toast } from 'react-toastify'
 import { PermissionToken } from '@bsv/wallet-toolbox-client'
-
-// // Define interfaces for individual permission and app grant items.
-// interface Permission {
-//   type: string
-//   lastAccessed: number
-//   expiry: number
-//   issuer: string
-//   verifier: string
-//   onIssuerClick?: (event: React.MouseEvent) => void
-//   onVerifierClick?: (event: React.MouseEvent) => void
-//   onClick?: (event: React.MouseEvent) => void
-//   fields: { [key: string]: any }
-//   clickable: boolean
-//   permissionGrant?: any
-// }
 
 interface AppGrant {
   originator: string
@@ -93,24 +79,27 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
   const classes = useStyles()
   const { managers, adminOriginator } = useContext(WalletContext)
 
-  const refreshGrants = useCallback(async () => {
-    // Return cached
-    if (CERT_CACHE.has(queryKey)) {
-      setGrants(CERT_CACHE.get(queryKey)!);
-      return;
-    }
+  // NOTE: add `force` parameter so we can bypass cache after revocation
+  const refreshGrants = useCallback(async (force: boolean = false) => {
     try {
-      if (!managers?.permissionsManager) {
-        return
+      if (!managers?.permissionsManager) return
+
+      if (!force && CERT_CACHE.has(queryKey)) {
+        setGrants(CERT_CACHE.get(queryKey)!);
+        return;
       }
-            console.log(
-        'Fetching certificate access grants...',
-        { app, type, counterparty, limit, itemsDisplayed }
-            )
+
+      // invalidate cache for this key when forcing
+      if (force) {
+        CERT_CACHE.delete(queryKey)
+      }
+
+      console.log('Fetching certificate access grants...', { app, type, counterparty, limit, itemsDisplayed })
       const permissions: PermissionToken[] = await managers.permissionsManager.listCertificateAccess({
         originator: app,
       })
       console.log('Fetched certificate access grants:', permissions)
+
       if (itemsDisplayed === 'apps') {
         const results = sortPermissions(permissions)
         setGrants(results)
@@ -126,7 +115,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
     } catch (error) {
       console.error(error)
     }
-  }, [app, counterparty, type, limit, itemsDisplayed, onEmptyList])
+  }, [app, counterparty, type, limit, itemsDisplayed, onEmptyList, managers?.permissionsManager, queryKey])
 
   const revokeAccess = async (grant: PermissionToken) => {
     setCurrentAccessGrant(grant)
@@ -142,6 +131,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
   const handleConfirm = async () => {
     try {
       setDialogLoading(true)
+
       if (currentAccessGrant) {
         await managers.permissionsManager.revokePermission(currentAccessGrant)
       } else {
@@ -157,21 +147,26 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
         }
         setCurrentApp(null)
       }
+
       setCurrentAccessGrant(null)
+      await refreshGrants(true)
+
       setDialogOpen(false)
       setDialogLoading(false)
-      refreshGrants()
     } catch (e: any) {
       toast.error('Certificate access grant may not have been revoked: ' + e.message)
-      refreshGrants()
+      await refreshGrants(true) // still try to refresh
       setCurrentAccessGrant(null)
+      setCurrentApp(null)
       setDialogOpen(false)
       setDialogLoading(false)
     }
   }
 
   const handleDialogClose = () => {
+    if (dialogLoading) return // prevent closing while in-flight
     setCurrentAccessGrant(null)
+    setCurrentApp(null)
     setDialogOpen(false)
   }
 
@@ -179,14 +174,25 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
     refreshGrants()
   }, [refreshGrants])
 
-  // Only render the list if there are items to display.
+  
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<any>).detail || {}
+      if (detail.originator && detail.originator !== app) return
+      refreshGrants(true)
+    }
+
+  window.addEventListener('cert-access-changed', handler as EventListener)
+  return () => window.removeEventListener('cert-access-changed', handler as EventListener)
+}, [app, refreshGrants])
+
   if (grants.length === 0 && !showEmptyList) {
     return <></>
   }
 
   return (
     <>
-      <Dialog open={dialogOpen}>
+      <Dialog open={dialogOpen} onClose={handleDialogClose}>
         <DialogTitle>Revoke Access?</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -197,11 +203,12 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
           <Button color="primary" disabled={dialogLoading} onClick={handleDialogClose}>
             Cancel
           </Button>
-          <Button color="primary" disabled={dialogLoading} onClick={handleConfirm}>
+          <Button color="primary" disabled={dialogLoading} onClick={handleConfirm} startIcon={dialogLoading ? <CircularProgress size={16} /> : null}>
             Revoke
           </Button>
         </DialogActions>
       </Dialog>
+
       <List>
         {listHeaderTitle && <ListSubheader>{listHeaderTitle}</ListSubheader>}
         {grants.map((grant, i) => (
@@ -216,7 +223,6 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
                     alignItems: 'center'
                   }}
                 >
-                  {/* Type assertion: grant is an AppGrant */}
                   <AppChip
                     label={(grant as AppGrant).originator}
                     showDomain
@@ -256,25 +262,12 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
                       {(grant as AppGrant).permissions.map((permission, idx) => (
                         <div className={classes.gridItem} key={idx}>
                           <h1>{permission.certType}</h1>
-                          {/*
-                    When itemsDisplayed is not 'apps', we assume each grant is a Permission.
-                    certType,
-                    expiry,
-                    originator,
-                    canrevoke,
-                    onRevokeClick,
-                    clickable = true,
-                    size = 1.0,
-                    backgroundColor = 'transparent',
-                    onClick,
-                    history
-                  */}
                           <CertificateChip
-                            certType={(grant as PermissionToken).certType}
-                            expiry={(grant as PermissionToken).expiry}
-                            originator={(grant as PermissionToken).originator ?? app}
-                            canrevoke
-                            onRevokeClick={() =>revokeAccess(permission)}
+                            certType={(permission as PermissionToken).certType}
+                            expiry={(permission as PermissionToken).expiry}
+                            canRevoke={canRevoke}
+                            onRevokeClick={() => revokeAccess(permission)}
+                            certVerifier={(permission as PermissionToken).verifier}
                             clickable
                             size={1.3}
                           />
@@ -287,27 +280,14 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
             ) : (
               <Paper elevation={4}>
                 <ListItem className={(classes as any).action_card}>
-                  {/*
-                    When itemsDisplayed is not 'apps', we assume each grant is a Permission.
-                    certType,
-                    expiry,
-                    originator,
-                    canrevoke,
-                    onRevokeClick,
-                    clickable = true,
-                    size = 1.0,
-                    backgroundColor = 'transparent',
-                    onClick,
-                    history
-                  */}
                   <CertificateChip
-                  certType={(grant as PermissionToken).certType}
-                  expiry={(grant as PermissionToken).expiry}
-                  originator={(grant as PermissionToken).originator ?? app}
-                  canrevoke
-                  onRevokeClick={() => revokeAccess(grant as PermissionToken)}
-                  clickable
-                  size={1.3}
+                    certType={(grant as PermissionToken).certType}
+                    expiry={(grant as PermissionToken).expiry}
+                    canRevoke={canRevoke}
+                    onRevokeClick={() => revokeAccess(grant as PermissionToken)}
+                    certVerifier={(grant as PermissionToken).verifier}
+                    clickable
+                    size={1.3}
                   />
                 </ListItem>
               </Paper>

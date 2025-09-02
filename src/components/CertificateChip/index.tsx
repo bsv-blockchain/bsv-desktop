@@ -1,5 +1,5 @@
 // src/components/CertificateChip/index.tsx
-import React, { useEffect, useContext, useState, useMemo } from 'react'
+import React, { useEffect, useContext, useState, useMemo, useCallback } from 'react'
 import {
   Chip,
   Box,
@@ -22,21 +22,17 @@ import AppLogo from '../AppLogo'
 interface CertificateChipProps extends RouteComponentProps {
   certType: Base64String
   expiry?: number // epoch seconds
-  originator: string
-  canrevoke?: boolean
-  onRevokeClick: () => void
+  certVerifier: string
+  canRevoke?: boolean
+  onRevokeClick?: () => void
   clickable?: boolean
   size?: number
   backgroundColor?: string
   onClick?: (event: React.MouseEvent<HTMLDivElement>) => void
+  alldetails?: boolean
 }
 
 /* ---------- helpers ---------- */
-function truncateMiddle(s: string, keep = 12): string {
-  if (!s) return ''
-  if (s.length <= keep * 2 + 3) return s
-  return `${s.slice(0, keep)}…${s.slice(-keep)}`
-}
 function isoFromEpochSeconds(secs?: number): string | undefined {
   if (!secs && secs !== 0) return undefined
   return new Date(secs * 1000).toISOString()
@@ -49,13 +45,6 @@ function relativeFromEpochSeconds(secs?: number): string | undefined {
   const hours = Math.floor((abs % 86_400_000) / 3_600_000)
   const label = `${days}d ${hours}h`
   return diff >= 0 ? `in ${label}` : `${label} ago`
-}
-function originAvatar(origin: string) {
-  const src = deterministicImage?.(origin)
-  const label = origin.replace(/^https?:\/\//, '').replace(/\/.*/, '').split('.').filter(Boolean)
-  const core = label.length >= 2 ? label[label.length - 2] : label[0] || '?'
-  const letter = (core[0] || '?').toUpperCase()
-  return { src, letter }
 }
 function iconSrcFrom(iconURL?: string): string | undefined {
   if (!iconURL) return undefined
@@ -70,8 +59,8 @@ const MONO_SX = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', 
 const CertificateChip: React.FC<CertificateChipProps> = ({
   certType,
   expiry,
-  originator,
-  canrevoke,
+  certVerifier,
+  canRevoke = false,
   onRevokeClick,
   clickable = true,
   size = 1.0,
@@ -88,16 +77,13 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
   const [description, setDescription] = useState<string>('')
   const [iconURL, setIconURL] = useState<string>('')
   const [fields, setFields] = useState<{ [key: string]: CertificateFieldDescriptor }>({})
-  const [verifier, setVerifier] = useState<string>('')
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const rel = relativeFromEpochSeconds(expiry)
   const abs = isoFromEpochSeconds(expiry)
-  // const { src: originSrc, letter } = originAvatar(originator)
 
   // Resolve certificate definition
   useEffect(() => {
     setIsLoading(true)
-    let cancelled = false
     ;(async () => {
       try {
         if (!managers?.walletManager) return
@@ -117,7 +103,6 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
           setDocumentationURL(cachedCert?.documentationURL || '')
           setDescription(cachedCert?.description || '')
           setFields((cachedCert?.fields as any) || {})
-          setVerifier((cachedCert as any)?.registryOperator || '')
           setIsLoading(false)
           return 
         }
@@ -126,7 +111,6 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
           registryOperators
         })) as CertificateDefinitionData[]
         
-        // if (cancelled) {console.log("me returning but why?", results); return}
 
         if (Array.isArray(results) && results.length) {
           // choose most trusted
@@ -145,7 +129,6 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
           setDocumentationURL(c?.documentationURL || '')
           setDescription(c?.description || '')
           setFields((c?.fields as any) || {})
-          setVerifier((c as any)?.registryOperator || '')
           window.localStorage.setItem(cacheKey, JSON.stringify(c))
           console.log('me saving data with key' ,cacheKey)
         } else {
@@ -160,8 +143,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
         setIsLoading(false)
       }
     })()
-    return () => { cancelled = true }
-  }, [managers?.walletManager, settings?.trustSettings?.trustedCertifiers, certType])
+  }, [managers?.walletManager, settings?.trustSettings?.trustedCertifiers, certType, activeProfile])
 
   // certFields derived from fields (keys)
   const certFieldKeys = useMemo(() => Object.keys(fields || {}), [fields])
@@ -175,7 +157,10 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
       return <Chip key={`def-field-${k}`} size="small" label={label} />
     })
   }, [fields, certFieldKeys])
-
+  const onVerifierClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    history.push(`/dashboard/counterparty/${encodeURIComponent(certVerifier)}`) // change route if yours differs
+  }, [history, certVerifier])
   /* ---------- click navigation ---------- */
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!clickable) return
@@ -244,7 +229,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
             </Tooltip>
           )}
 
-          {canrevoke && (
+          {canRevoke && (
             <Button
               variant="text"
               color="primary"
@@ -308,15 +293,36 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
       </Stack>
 
       {/* Verifier derived from registrant */}
-      {verifier && (
-        <>
-          <Divider />
-          <Stack direction="row" spacing={1} sx={{ ...ROW_SX, height: 'auto' }}>
-            <Typography variant="body1" fontWeight="bold" sx={{ mt: 0.5 }}>Verifier</Typography>
-            <Box px={3}><CounterpartyChip counterparty={verifier} label="Verifier" clickable={false} size={0.85 * size} /></Box>
-          </Stack>
-        </>
-      )}
+      {certVerifier && (
+  <>
+    <Divider />
+    <Stack direction="row" spacing={1} sx={{ ...ROW_SX, height: 'auto' }}>
+      <Typography variant="body1" fontWeight="bold" sx={{ mt: 0.5 }}>
+        Verifier
+      </Typography>
+      <Box
+        px={3}
+        role="button"
+        tabIndex={0}
+        onClick={onVerifierClick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onVerifierClick(e)
+          }
+        }}
+        sx={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}
+      >
+        <CounterpartyChip
+          counterparty={certVerifier}
+          label="Verifier"
+          clickable
+          size={0.85 * size}
+        />
+      </Box>
+    </Stack>
+  </>
+)}
     </Stack>
   )
 }

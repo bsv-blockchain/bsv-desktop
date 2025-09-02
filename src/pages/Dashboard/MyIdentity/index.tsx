@@ -10,9 +10,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import EyeCon from '@mui/icons-material/Visibility'
 import { WalletContext } from '../../../WalletContext'
 import { ProtoWallet, VerifiableCertificate } from '@bsv/sdk'
-// import CertificateChip from '../../../components/CertificateChip'
 import CertificateCard from './CertificateCard'
-import CertificateChip from '../../../components/CertificateChip/index.js'
 
 const useStyles = makeStyles((style as any), {
   name: 'MyIdentity'
@@ -39,6 +37,11 @@ const MyIdentity = () => {
 
   useEffect(() => {
     if (typeof adminOriginator === 'string') {
+      if(!activeProfile)
+      {
+        return
+      }
+      console.log("AP", activeProfile.id)
       const cacheKey = `provenCertificates_${activeProfile.id}`
 
       const getProvenCertificates = async () => {
@@ -223,14 +226,7 @@ const MyIdentity = () => {
             <Grid2 key={cert.serialNumber} size={1}>
               <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover', border: 1, borderColor: 'action.main' }}>
                 <CertificateCard certificate={cert} canRevoke={true} onRevoke={handleCertificateRevoke} />
-                {/* <CertificateChip
-                  certType={cert.type}
-                  serialNumber={cert.serialNumber}
-                  certifier={cert.certifier}
-                  fieldsToDisplay={cert.decryptedFields}
-                  canRevoke={true}
-                  onRevoke={handleCertificateRevoke}
-                /> */}
+                
               </Box>
             </Grid2>
           ))}

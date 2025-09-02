@@ -75,7 +75,6 @@ const ProtocolAccess: React.FC = () => {
   };
 
   useEffect(() => {
-    console.log('securityLevel', encodedSecurityLevel)
 
     // Only fetch data if we don't already have it from navigation state
     if (protocolDetails && locationState) {

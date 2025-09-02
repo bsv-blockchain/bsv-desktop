@@ -122,7 +122,6 @@ const CertificateCard: React.FC<CertificateCardProps> = ({
           registryOperators
         })) as CertificateDefinitionData[]
 
-        console.log('results: ', results)
         if (results && results.length > 0) {
           // Compute the most trusted of the results
           let mostTrustedIndex = 0
@@ -262,7 +261,6 @@ const CertificateCard: React.FC<CertificateCardProps> = ({
           certificateType={certificate.type} 
         />
         {modalOpen && (() => {
-          console.log('Certificate passed to modal:', certificate)
           return null
         })()}
       </CardContent>

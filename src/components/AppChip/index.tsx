@@ -83,7 +83,6 @@ const AppChip: React.FC<AppChipProps> = ({
   // Handle data fetching in a separate effect
   useEffect(() => {
     const fetchAndCacheData = async () => {
-      console.log(`AppChip: Fetching data for ${label}`)
       
       // Generate unique keys for this label
       const faviconKey = `favicon_label_${label}`

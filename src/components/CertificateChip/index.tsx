@@ -130,7 +130,6 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
           setDescription(c?.description || '')
           setFields((c?.fields as any) || {})
           window.localStorage.setItem(cacheKey, JSON.stringify(c))
-          console.log('me saving data with key' ,cacheKey)
         } else {
           setResolvedCertType(certType || '')
         }

@@ -43,7 +43,7 @@ interface CertificateAccessListProps extends RouteComponentProps {
   itemsDisplayed: string
   counterparty: string
   type: string
-  limit: number
+  limit?: number
   displayCount?: boolean
   listHeaderTitle?: string
   showEmptyList?: boolean
@@ -54,23 +54,21 @@ interface CertificateAccessListProps extends RouteComponentProps {
 const useStyles = makeStyles(style, {
   name: 'CertificateAccessList'
 })
-
 const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
   app,
   itemsDisplayed = 'certificates',
   counterparty = '',
   type = 'certificate',
   limit,
+  canRevoke = false,
   displayCount = true,
   listHeaderTitle,
   showEmptyList = false,
-  canRevoke = false,
   onEmptyList = () => { },
   history
 }) => {
   // Build stable query key
-  const queryKey = useMemo(() => JSON.stringify({ app, itemsDisplayed, counterparty, type, limit }), [app, itemsDisplayed, counterparty, type, limit]);
-
+  const queryKey = useMemo(() => JSON.stringify({ app, itemsDisplayed, counterparty, type }), [app, itemsDisplayed, counterparty, type]);
   const [grants, setGrants] = useState<GrantItem[]>([])
   const [dialogOpen, setDialogOpen] = useState<boolean>(false)
   const [currentAccessGrant, setCurrentAccessGrant] = useState<PermissionToken | null>(null)
@@ -78,8 +76,11 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
   const [dialogLoading, setDialogLoading] = useState<boolean>(false)
   const classes = useStyles()
   const { managers, adminOriginator } = useContext(WalletContext)
-
-  // NOTE: add `force` parameter so we can bypass cache after revocation
+  const limitedGrants: GrantItem[] = useMemo(() => {
+    if (limit == null) return grants                  // no limit unless defined
+    const n = Math.max(0, Math.floor(limit))          // clamp & floor
+    return grants.slice(0, n)
+  }, [grants, limit])
   const refreshGrants = useCallback(async (force: boolean = false) => {
     try {
       if (!managers?.permissionsManager) return
@@ -93,13 +94,9 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
       if (force) {
         CERT_CACHE.delete(queryKey)
       }
-
-      console.log('Fetching certificate access grants...', { app, type, counterparty, limit, itemsDisplayed })
       const permissions: PermissionToken[] = await managers.permissionsManager.listCertificateAccess({
         originator: app,
       })
-      console.log('Fetched certificate access grants:', permissions)
-
       if (itemsDisplayed === 'apps') {
         const results = sortPermissions(permissions)
         setGrants(results)
@@ -299,7 +296,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
       {displayCount && (
         <center>
           <Typography color="textSecondary">
-            <i>Total Certificate Access Grants: {grants.length}</i>
+            <i>Total Certificate Access Grants: {grants.length} limit: {limit}</i>
           </Typography>
         </center>
       )}

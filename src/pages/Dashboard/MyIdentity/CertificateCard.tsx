@@ -308,71 +308,82 @@ const CertificateDetailsModal: React.FC<CertificateDetailsModalProps> = ({
     })
   }
 
-  const MetaRow: React.FC<{ label: React.ReactNode; value?: React.ReactNode }> = ({ label, value }) => {
+const MetaRow: React.FC<{
+  label: React.ReactNode
+  value?: React.ReactNode
+  dividerBelow?: boolean
+}> = ({ label, value, dividerBelow = false }) => {
   if (!value && value !== 0) return null
   return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: 'auto 1fr auto',
-        alignItems: 'center',
-        columnGap: 1,
-        my: 0.5
-      }}
-    >
-      <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
-        <b>{label}</b>
-      </Typography>
-      <Box />
-
-      <Typography
-        variant="body2"
-        sx={{ textAlign: 'right', whiteSpace: 'nowrap' }}
-        title={typeof value === 'string' ? value : undefined}
+    <>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'auto 1fr auto',
+          alignItems: 'center',
+          columnGap: 1,
+          my: 0.5
+        }}
       >
-        {value}
-      </Typography>
-    </Box>
+        <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+          <b>{label}</b>
+        </Typography>
+        <Box />
+        <Typography
+          variant="body2"
+          sx={{ textAlign: 'right', whiteSpace: 'nowrap' }}
+          title={typeof value === 'string' ? value : undefined}
+        >
+          {value}
+        </Typography>
+      </Box>
+      {dividerBelow && <Divider sx={{ my: 2 }} />}
+    </>
   )
 }
 
-const CopyableMetaRow: React.FC<{ label: React.ReactNode; value?: React.ReactNode }> = ({ label, value }) => {
+const CopyableMetaRow: React.FC<{
+  label: React.ReactNode
+  value?: React.ReactNode
+  dividerBelow?: boolean
+}> = ({ label, value, dividerBelow = false }) => {
   if (!value && value !== 0) return null
   const copy = (e: React.MouseEvent) => {
     e.stopPropagation()
     navigator.clipboard?.writeText(String(value ?? ''))
   }
   return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: 'auto 1fr auto',
-        alignItems: 'center',
-        columnGap: 1,
-        my: 0.5
-      }}
-    >
-      <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
-        <b>{label}</b>
-      </Typography>
-
-      <Box />
-
-      <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, justifyContent: 'flex-end' }}>
-        <Typography
-          variant="body2"
-          sx={{ whiteSpace: 'nowrap' }}
-          title={typeof value === 'string' ? value : undefined}
-        >
-          {value}
+    <>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'auto 1fr auto',
+          alignItems: 'center',
+          columnGap: 1,
+          my: 0.5
+        }}
+      >
+        <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
+          <b>{label}</b>
         </Typography>
-        <Tooltip title="Copy">
-          <IconButton size="small" onClick={copy}>
-            <ContentCopyIcon fontSize="inherit" />
-          </IconButton>
-        </Tooltip>
+        <Box />
+        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, justifyContent: 'flex-end' }}>
+          <Typography
+            variant="body2"
+            sx={{ whiteSpace: 'nowrap' }}
+            title={typeof value === 'string' ? value : undefined}
+          >
+            {value}
+          </Typography>
+          <Tooltip title="Copy">
+            <IconButton size="small" onClick={copy}>
+              <ContentCopyIcon fontSize="inherit" />
+            </IconButton>
+          </Tooltip>
+        </Box>
       </Box>
-    </Box>
+      {dividerBelow && <Divider sx={{ my: 2 }} />}
+    </>
   )
 }
   const CT = certificateType ?? actualData?.certType ?? actualData?.type ?? ''
@@ -414,14 +425,25 @@ const CopyableMetaRow: React.FC<{ label: React.ReactNode; value?: React.ReactNod
         </Box>
 
         <Box sx={{ mt: 1 }}>
-          <CopyableMetaRow  label="Certificate Type:" value={CT} />
+        {(() => {
+          const rows = [
+            { key: 'ct',     comp: 'copy' as const, label: 'Certificate Type:', value: CT },
+            { key: 'serial', comp: 'copy' as const, label: 'Serial Number:',    value: serialNumber },
+            { key: 'desc',   comp: 'plain' as const, label: 'Description:',     value: description },
+          ].filter(r => r.value !== undefined && r.value !== null && r.value !== '')
+
+          return rows.map((r, i) => {
+            const dividerBelow = i < rows.length - 1
+            return r.comp === 'copy' ? (
+              <CopyableMetaRow key={r.key} label={r.label} value={r.value} dividerBelow={dividerBelow} />
+            ) : (
+              <MetaRow key={r.key} label={r.label} value={r.value} dividerBelow={dividerBelow} />
+            )
+          })
+        })()}
+      </Box>
         <Divider sx={{ my: 2 }} />
-          <CopyableMetaRow  label="Serial Number:" value={serialNumber} />
-        <Divider sx={{ my: 2 }} />
-          <MetaRow label="Description:" value={description} />
-        </Box>
         {/* FIELDS */}
-        <Divider sx={{ my: 2 }} />
           <Box
           sx={{
             display: 'grid',

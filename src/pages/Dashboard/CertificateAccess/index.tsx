@@ -88,7 +88,7 @@ const CertificateAccess: React.FC = () => {
       } catch (err: any) {
         console.error('Failed to fetch certificate definition:', err);
         setError(`Failed to load certificate definition: ${err.message}`);
-        toast.error(`Failed to load certificate definition: ${err.message}`);
+        // toast.error(`Failed to load certificate definition: ${err.message}`);
          const placeholderDef: CertificateDefinition = {
           name: `Certificate: ${certType}`,
           iconURL: DEFAULT_APP_ICON,

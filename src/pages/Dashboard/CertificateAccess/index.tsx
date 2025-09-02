@@ -65,6 +65,18 @@ const CertificateAccess: React.FC = () => {
           registryOperators: ['0292aabe2fc0deabf82e2f21de3cb6bb777779924c0137cc80aa31ebac83e67da8']
         })
 
+        if (results.length === 0) {
+          const placeholderDef: CertificateDefinition = {
+            name: "Custom Certificate",
+            iconURL: DEFAULT_APP_ICON,
+            description: 'This certificate type has not yet been registered by anyone in your Certifier Network.',
+            documentationURL: 'https://docs.bsvblockchain.org/',
+            fields: {}
+          };
+          setCertDefinition(placeholderDef);
+          return;
+        }
+
         let mostTrustedIndex = 0
         let maxTrustedPoints = 0
         for(let i = 0; i < results.length; i++){
@@ -192,7 +204,7 @@ const CertificateAccess: React.FC = () => {
           })}
         </Box>
       </Grid>
-     
+
     </Grid>
   );
 };

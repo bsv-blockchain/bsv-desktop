@@ -158,7 +158,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
   }, [fields, certFieldKeys])
   const onVerifierClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    history.push(`/dashboard/counterparty/${encodeURIComponent(certVerifier)}`) // change route if yours differs
+    history.push(`/dashboard/counterparty/${encodeURIComponent(certVerifier)}`)
   }, [history, certVerifier])
   /* ---------- click navigation ---------- */
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {

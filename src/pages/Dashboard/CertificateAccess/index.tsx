@@ -62,7 +62,7 @@ const CertificateAccess: React.FC = () => {
         const registrant = new RegistryClient(managers.walletManager)
         const results = await registrant.resolve('certificate', {
           type: certType,
-          registryOperators: ['0292aabe2fc0deabf82e2f21de3cb6bb777779924c0137cc80aa31ebac83e67da8']
+          registryOperators
         })
 
         if (results.length === 0) {

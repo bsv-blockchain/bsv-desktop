@@ -311,7 +311,6 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     if (groupTimerRef.current) { window.clearTimeout(groupTimerRef.current); groupTimerRef.current = null; }
     groupDecisionRef.current = decision;
 
-    // await managers.permissionsManager?.refresh?.();
 
     const requeue = {
       basket: [] as BasketAccessRequest[],

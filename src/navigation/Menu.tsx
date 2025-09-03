@@ -8,7 +8,7 @@ import {
   Delete as DeleteIcon,
   ExpandLess,
   ExpandMore,
-  Person as PersonIcon
+  Person as PersonIcon,
 } from '@mui/icons-material'
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
 import {
@@ -34,17 +34,22 @@ import {
   TextField,
   Grid,
   alpha,
-  LinearProgress
+  LinearProgress,
+  Select,
+  MenuItem,
+  InputLabel,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material'
 import Profile from '../components/Profile'
-import React, { useState, useContext, useEffect, useCallback } from 'react';
+import { getAccountBalance } from '../utils/getAccountBalance'
+import React, { useState, useContext, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { useHistory } from 'react-router';
 import { WalletContext } from '../WalletContext';
 import { UserContext } from '../UserContext';
 import { useBreakpoint } from '../utils/useBreakpoints.js';
-import { Utils } from '@bsv/sdk';
-
+import { Utils, PushDrop, LockingScript, Transaction, SignableTransaction, SignActionSpend } from '@bsv/sdk';
 
 // Type definition for profile structure from CWIStyleWalletManager
 interface Profile {
@@ -88,9 +93,13 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const [createProfileOpen, setCreateProfileOpen] = useState(false)
   const [newProfileName, setNewProfileName] = useState('')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [profileToDelete, setProfileToDelete] = useState<number[] | null>(null)
+  const [profileToDelete, setProfileToDelete] = useState<number[] | 0>(null)
   const [profilesLoading, setProfilesLoading] = useState(false)
-
+  const [transferTo, setTransferTo] = useState<Profile>(null)
+  const [selectedKey, setSelectedKey] = useState<string>("")
+  const [amount, setAmount] = useState<number>(0)
+  const [fund, setFund] = useState<boolean>(false)
+  const {balance: accountBalance,refresh} = getAccountBalance("default")
   // History.push wrapper
   const navigation = {
     push: (path: string) => {
@@ -113,7 +122,68 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       setMenuOpen(false)
     }
   }, [breakpoints])
+ useEffect(() => {
+  let cancelled = false;
+  const run = async () => {
+    console.log("an attempt at funding the poor");
 
+    if (!managers?.walletManager || !activeProfile?.name) {
+      console.log("returning because I am the poor");
+      return;
+    }
+
+    try {
+      debugger
+      const cacheKey = `funds_${activeProfile.name}`;
+      const cachedFunds = window.localStorage.getItem(cacheKey);
+      if (!cachedFunds) return;
+      // const signableTransaction: SignableTransaction = JSON.parse(cachedFunds)
+      const unlocker = new PushDrop(managers.walletManager).unlock(
+        [0, "fundingprofile"],
+        "1",
+        "anyone"
+      );
+      if (cancelled) return;
+       const { signableTransaction } = await managers.walletManager.createAction({
+        description: 'claiming funds',
+        inputBEEF: JSON.parse(cachedFunds),
+        inputs: [{
+          inputDescription: 'Claim funds',
+          outpoint: JSON.parse(cachedFunds).outpoint,
+          unlockingScriptLength: 73
+        }],
+        options: {
+          acceptDelayedBroadcast: true,
+          randomizeOutputs: false
+        }
+      })
+       if (signableTransaction === undefined) {
+        throw new Error('Failed to create signable transaction')
+      }
+      const partialTx = Transaction.fromBEEF(signableTransaction.tx)
+      const parsed = JSON.parse(cachedFunds); 
+      const tx = Transaction.fromAtomicBEEF(parsed)
+      const unlockingScript = await unlocker.sign(partialTx, 0)
+      await managers.walletManager.signAction({
+        reference: signableTransaction.reference,
+        spends: {0:{unlockingScript: unlockingScript.toHex()}},
+        options: {}
+      })
+      console.log("SUCCESSFULLY attempt at funding the poor", unlockingScript);
+
+    } catch (err) {
+      if (!cancelled) {
+        console.error("failed funding attempt", err);
+      }
+    }
+  };
+
+  void run();
+  return () => {
+    cancelled = true;
+  };
+  // Keep deps tight to avoid unnecessary reruns
+}, [activeProfile?.name, managers?.walletManager]);
   // Second useEffect to handle outside clicks
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -161,8 +231,38 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       // Close dialog first before async operation
       setCreateProfileOpen(false);
       setNewProfileName('');
+      if(fund)
+      {
+        console.log('funding!')
+        const cacheKey = `funds_${newProfileName.trim()}`
 
-      // Show loading state
+        let pd = new PushDrop(managers.walletManager)
+        const fields = [
+          Utils.toArray(`Funding Wallet: ${newProfileName.trim()}`)
+        ]
+        const Script = await pd.lock(
+          fields,
+          [0, 'fundingprofile'],
+          '1',
+          'anyone'
+        )
+
+        let output = await managers.walletManager.createAction({
+          description: 'funding new profile',
+          outputs: [{
+            lockingScript: Script.toHex(),
+            satoshis: 1000,
+            outputDescription: 'New profile funds'
+          }],
+          options: {
+            randomizeOutputs: false,
+            acceptDelayedBroadcast: false
+          }
+        })
+        // Show loading state
+        debugger
+        window.localStorage.setItem(cacheKey,  JSON.stringify(output.tx))
+      }
       setProfilesLoading(true);
 
       // Then perform the async operation
@@ -243,7 +343,31 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   useEffect(() => {
     refreshProfiles();
   }, [refreshProfiles]);
+  
+  const idToKey = (id: number[]) => id.join(".")
 
+  const isDefaultId = (id: number[]) => id.every((x) => x === 0)
+    const defaultProfile = useMemo(
+    () => profiles.find((p) => isDefaultId(p.id)),
+    [profiles])
+    useEffect(() => {
+    if (!selectedKey && defaultProfile) {
+      const key = idToKey(defaultProfile.id);
+      setSelectedKey(key);
+      setTransferTo(defaultProfile);
+    }
+  }, [defaultProfile, selectedKey, setTransferTo]);
+
+    const profileByKey = useMemo(() => {
+    const m = new Map<string, Profile>()
+    profiles.forEach((p) => m.set(idToKey(p.id), p))
+    return m
+  }, [profiles])
+
+  const filteredProfiles = useMemo(
+  () => profiles.filter((p) => p.id !== profileToDelete),
+  [profiles, profileToDelete]
+)
   return (
     <Drawer
       anchor='left'
@@ -544,29 +668,44 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       </Box>
 
       {/* Create Profile Dialog */}
-      <Dialog open={createProfileOpen} onClose={() => setCreateProfileOpen(false)}>
-        <DialogTitle>Create New Profile</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Enter a name for the new profile. Each profile has its own set of keys and can be used for different purposes.
-          </DialogContentText>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Profile Name"
-            type="text"
-            fullWidth
-            value={newProfileName}
-            onChange={(e) => setNewProfileName(e.target.value)}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCreateProfileOpen(false)}>Cancel</Button>
-          <Button onClick={handleCreateProfile} color="primary">
-            Create
-          </Button>
-        </DialogActions>
-      </Dialog>
+       <Dialog open={createProfileOpen} onClose={() => setCreateProfileOpen(false)}>
+      <DialogTitle>Create New Profile</DialogTitle>
+      <DialogContent>
+        <DialogContentText>
+          Enter a name for the new profile. Each profile has its own set of keys and can be used for different purposes.
+        </DialogContentText>
+
+        <TextField
+          autoFocus
+          margin="dense"
+          label="Profile Name"
+          type="text"
+          fullWidth
+          value={newProfileName}
+          onChange={(e) => setNewProfileName(e.target.value)}
+        />
+
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={fund}
+              onChange={(e) => setFund(e.target.checked)}
+            />
+          }
+          label="Automatically fund wallet with 1000 sats?"
+          sx={{ mt: 1 }}
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setCreateProfileOpen(false)}>Cancel</Button>
+        <Button
+          onClick={() => handleCreateProfile()}
+          color="primary"
+        >
+          Create
+        </Button>
+      </DialogActions>
+    </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog
@@ -576,8 +715,35 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
         <DialogTitle>Delete Profile</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Are you sure you want to delete this profile? This action cannot be undone.
+            Are you sure you want to delete this profile ({formatProfileId(profileToDelete || [0])})? This action cannot be undone.
           </DialogContentText>
+          <InputLabel id="id-select-label">Profile</InputLabel>
+          <Select
+            labelId="id-select-label"
+            id="id-select"
+            value={selectedKey}
+            label="Profile"
+            displayEmpty
+            onChange={(e) => {
+              const key = e.target.value as string;
+              setSelectedKey(key);
+              const chosen = profileByKey.get(key);
+              if (chosen) setTransferTo(chosen); // pass the full Profile
+            }}
+          >
+            <MenuItem value="" disabled>— Select a profile to transfer sats to —</MenuItem>
+            {filteredProfiles.map((p) => {
+              const key = idToKey(p.id); // <-- ID is the React key
+              return (
+                <MenuItem key={key} value={key}>
+                  {p.name} — {formatProfileId(p.id)}
+                </MenuItem>
+              );
+            })}
+          </Select>
+        <DialogContentText>
+        This accounts balance: {amount}
+        </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>

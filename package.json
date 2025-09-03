@@ -26,6 +26,7 @@
     }
   },
   "dependencies": {
+    "@bsv/message-box-client": "^1.2.6",
     "@bsv/uhrp-react": "^1.0.3",
     "libphonenumber-js": "^1.12.6",
     "metanet-apps": "^1.0.4"

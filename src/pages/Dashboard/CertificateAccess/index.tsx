@@ -62,7 +62,7 @@ const CertificateAccess: React.FC = () => {
         const registrant = new RegistryClient(managers.walletManager)
         const results = await registrant.resolve('certificate', {
           type: certType,
-          registryOperators,
+          registryOperators
         })
 
         if (results.length === 0) {
@@ -100,7 +100,7 @@ const CertificateAccess: React.FC = () => {
       } catch (err: any) {
         console.error('Failed to fetch certificate definition:', err);
         setError(`Failed to load certificate definition: ${err.message}`);
-        toast.error(`Failed to load certificate definition: ${err.message}`);
+        // toast.error(`Failed to load certificate definition: ${err.message}`);
          const placeholderDef: CertificateDefinition = {
           name: `Certificate: ${certType}`,
           iconURL: DEFAULT_APP_ICON,
@@ -109,7 +109,7 @@ const CertificateAccess: React.FC = () => {
           fields: {
             field1: {
               friendlyName: 'default Field 1',
-              description: 'Description for defau;t field 1.',
+              description: 'Description for default field 1.',
               fieldIcon: ''
             }
           }
@@ -204,19 +204,7 @@ const CertificateAccess: React.FC = () => {
           })}
         </Box>
       </Grid>
-      {/* <Grid item>
-        <Typography variant='h4'>Issued Certificates</Typography>
-        <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
-          <Typography color="textSecondary">CertificateAccessList component needs to be created/refactored.</Typography>
-          <CertificateAccessList
-            itemsDisplayed='apps' // Or 'counterparties'?
-            canRevoke
-            clickable={false}
-            type={certType}
-          />
-        </Box>
-      </Grid> */}
-      {/* Removed ProtocolPermissionList as it seemed out of place here */}
+
     </Grid>
   );
 };

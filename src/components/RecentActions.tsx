@@ -37,26 +37,28 @@ const RecentActions: FC<RecentActionsProps> = ({
       >
         Recent Actions
       </Typography>
-      {appActions ?
-        appActions.map((action, index) => {
+    {appActions?.length ? (
+      [...appActions] // copy so we don't mutate state/props
+        .reverse()
+        .map((action, idx) => {
           const actionToDisplay = {
             txid: action.txid,
             description: action.description,
-            amount: action.amount.toString(),
+            amount: String(action.amount),
             inputs: action.inputs,
             outputs: action.outputs,
-            fees: action.fees?.toString()
-          };
-          return <Action key={index} {...actionToDisplay} />
-        }) : !loading && (
-          <Typography
-            color="textSecondary"
-            align="center"
-            style={{ paddingTop: '6em' }}
-          >
-            You haven't made any actions yet.
-          </Typography>
-        )}
+            fees: action.fees != null ? String(action.fees) : undefined,
+          }
+          const key = action.txid ?? `action-${idx}`
+          return <Action key={key} {...actionToDisplay} />
+        })
+    ) : (
+      !loading && (
+        <Typography color="textSecondary" align="center" style={{ paddingTop: '6em' }}>
+          You haven't made any actions yet.
+        </Typography>
+      )
+    )}
       {loading && <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={100} /></Box>}
       {appActions && appActions.length !== 0 && (
         <center style={{ paddingTop: '1em' }}>

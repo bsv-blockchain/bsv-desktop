@@ -11,7 +11,8 @@ import {
   Button,
   IconButton,
   Paper,
-  ListSubheader
+  ListSubheader,
+  CircularProgress
 } from '@mui/material'
 import makeStyles from '@mui/styles/makeStyles'
 import style from './style'
@@ -28,21 +29,6 @@ import sortPermissions from './sortPermissions'
 import { toast } from 'react-toastify'
 import { PermissionToken } from '@bsv/wallet-toolbox-client'
 
-// // Define interfaces for individual permission and app grant items.
-// interface Permission {
-//   type: string
-//   lastAccessed: number
-//   expiry: number
-//   issuer: string
-//   verifier: string
-//   onIssuerClick?: (event: React.MouseEvent) => void
-//   onVerifierClick?: (event: React.MouseEvent) => void
-//   onClick?: (event: React.MouseEvent) => void
-//   fields: { [key: string]: any }
-//   clickable: boolean
-//   permissionGrant?: any
-// }
-
 interface AppGrant {
   originator: string
   permissions: PermissionToken[]
@@ -57,7 +43,7 @@ interface CertificateAccessListProps extends RouteComponentProps {
   itemsDisplayed: string
   counterparty: string
   type: string
-  limit: number
+  limit?: number
   displayCount?: boolean
   listHeaderTitle?: string
   showEmptyList?: boolean
@@ -68,23 +54,21 @@ interface CertificateAccessListProps extends RouteComponentProps {
 const useStyles = makeStyles(style, {
   name: 'CertificateAccessList'
 })
-
 const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
   app,
   itemsDisplayed = 'certificates',
   counterparty = '',
   type = 'certificate',
   limit,
+  canRevoke = false,
   displayCount = true,
   listHeaderTitle,
   showEmptyList = false,
-  canRevoke = false,
   onEmptyList = () => { },
   history
 }) => {
   // Build stable query key
-  const queryKey = useMemo(() => JSON.stringify({ app, itemsDisplayed, counterparty, type, limit }), [app, itemsDisplayed, counterparty, type, limit]);
-
+  const queryKey = useMemo(() => JSON.stringify({ app, itemsDisplayed, counterparty, type }), [app, itemsDisplayed, counterparty, type]);
   const [grants, setGrants] = useState<GrantItem[]>([])
   const [dialogOpen, setDialogOpen] = useState<boolean>(false)
   const [currentAccessGrant, setCurrentAccessGrant] = useState<PermissionToken | null>(null)
@@ -92,25 +76,27 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
   const [dialogLoading, setDialogLoading] = useState<boolean>(false)
   const classes = useStyles()
   const { managers, adminOriginator } = useContext(WalletContext)
-
-  const refreshGrants = useCallback(async () => {
-    // Return cached
-    if (CERT_CACHE.has(queryKey)) {
-      setGrants(CERT_CACHE.get(queryKey)!);
-      return;
-    }
+  const limitedGrants: GrantItem[] = useMemo(() => {
+    if (limit == null) return grants                  // no limit unless defined
+    const n = Math.max(0, Math.floor(limit))          // clamp & floor
+    return grants.slice(0, n)
+  }, [grants, limit])
+  const refreshGrants = useCallback(async (force: boolean = false) => {
     try {
-      if (!managers?.permissionsManager) {
-        return
+      if (!managers?.permissionsManager) return
+
+      if (!force && CERT_CACHE.has(queryKey)) {
+        setGrants(CERT_CACHE.get(queryKey)!);
+        return;
       }
 
+      // invalidate cache for this key when forcing
+      if (force) {
+        CERT_CACHE.delete(queryKey)
+      }
       const permissions: PermissionToken[] = await managers.permissionsManager.listCertificateAccess({
         originator: app,
-        privileged: false, //?
-        certType: type,
-        // verifier: 'anyone' // ?
       })
-
       if (itemsDisplayed === 'apps') {
         const results = sortPermissions(permissions)
         setGrants(results)
@@ -126,7 +112,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
     } catch (error) {
       console.error(error)
     }
-  }, [app, counterparty, type, limit, itemsDisplayed, onEmptyList])
+  }, [app, counterparty, type, limit, itemsDisplayed, onEmptyList, managers?.permissionsManager, queryKey])
 
   const revokeAccess = async (grant: PermissionToken) => {
     setCurrentAccessGrant(grant)
@@ -142,6 +128,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
   const handleConfirm = async () => {
     try {
       setDialogLoading(true)
+
       if (currentAccessGrant) {
         await managers.permissionsManager.revokePermission(currentAccessGrant)
       } else {
@@ -157,21 +144,26 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
         }
         setCurrentApp(null)
       }
+
       setCurrentAccessGrant(null)
+      await refreshGrants(true)
+
       setDialogOpen(false)
       setDialogLoading(false)
-      refreshGrants()
     } catch (e: any) {
       toast.error('Certificate access grant may not have been revoked: ' + e.message)
-      refreshGrants()
+      await refreshGrants(true) // still try to refresh
       setCurrentAccessGrant(null)
+      setCurrentApp(null)
       setDialogOpen(false)
       setDialogLoading(false)
     }
   }
 
   const handleDialogClose = () => {
+    if (dialogLoading) return // prevent closing while in-flight
     setCurrentAccessGrant(null)
+    setCurrentApp(null)
     setDialogOpen(false)
   }
 
@@ -179,14 +171,25 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
     refreshGrants()
   }, [refreshGrants])
 
-  // Only render the list if there are items to display.
+  
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<any>).detail || {}
+      if (detail.originator && detail.originator !== app) return
+      refreshGrants(true)
+    }
+
+  window.addEventListener('cert-access-changed', handler as EventListener)
+  return () => window.removeEventListener('cert-access-changed', handler as EventListener)
+}, [app, refreshGrants])
+
   if (grants.length === 0 && !showEmptyList) {
     return <></>
   }
 
   return (
     <>
-      <Dialog open={dialogOpen}>
+      <Dialog open={dialogOpen} onClose={handleDialogClose}>
         <DialogTitle>Revoke Access?</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -197,11 +200,12 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
           <Button color="primary" disabled={dialogLoading} onClick={handleDialogClose}>
             Cancel
           </Button>
-          <Button color="primary" disabled={dialogLoading} onClick={handleConfirm}>
+          <Button color="primary" disabled={dialogLoading} onClick={handleConfirm} startIcon={dialogLoading ? <CircularProgress size={16} /> : null}>
             Revoke
           </Button>
         </DialogActions>
       </Dialog>
+
       <List>
         {listHeaderTitle && <ListSubheader>{listHeaderTitle}</ListSubheader>}
         {grants.map((grant, i) => (
@@ -216,7 +220,6 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
                     alignItems: 'center'
                   }}
                 >
-                  {/* Type assertion: grant is an AppGrant */}
                   <AppChip
                     label={(grant as AppGrant).originator}
                     showDomain
@@ -256,23 +259,15 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
                       {(grant as AppGrant).permissions.map((permission, idx) => (
                         <div className={classes.gridItem} key={idx}>
                           <h1>{permission.certType}</h1>
-                          {/* <CertificateChip
-                            certType={permission.certType}
-                            lastAccessed={String(permission.lastAccessed)}
-                            certifier={permission.issuer}
-                            onIssuerClick={permission.onIssuerClick}
-                            serialNumber={permission.verifier}
-                            onVerifierClick={permission.onVerifierClick}
-                            onClick={permission.onClick}
-                            fieldsToDisplay={Object.keys(permission.fields)}
-                            clickable={permission.clickable}
-                            size={1.3}
-                            expires={formatDistance(new Date(permission.expiry * 1000), new Date(), {
-                              addSuffix: true
-                            })}
-                            onCloseClick={() => revokeAccess(permission)}
+                          <CertificateChip
+                            certType={(permission as PermissionToken).certType}
+                            expiry={(permission as PermissionToken).expiry}
                             canRevoke={canRevoke}
-                          /> */}
+                            onRevokeClick={() => revokeAccess(permission)}
+                            certVerifier={(permission as PermissionToken).verifier}
+                            clickable
+                            size={1.3}
+                          />
                         </div>
                       ))}
                     </div>
@@ -282,28 +277,15 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
             ) : (
               <Paper elevation={4}>
                 <ListItem className={(classes as any).action_card}>
-                  {/*
-                    When itemsDisplayed is not 'apps', we assume each grant is a Permission.
-                  */}
-                  {/* <CertificateChip
-                    certType={(grant as Permission).type}
-                    lastAccessed={String((grant as Permission).lastAccessed)}
-                    certifier={(grant as Permission).issuer}
-                    onIssuerClick={(grant as Permission).onIssuerClick}
-                    serialNumber={(grant as Permission).verifier}
-                    onVerifierClick={(grant as Permission).onVerifierClick}
-                    onClick={(grant as Permission).onClick}
-                    fieldsToDisplay={Object.keys((grant as Permission).fields)}
-                    clickable={(grant as Permission).clickable}
-                    size={1.3}
-                    expires={formatDistance(
-                      new Date((grant as Permission).expiry * 1000),
-                      new Date(),
-                      { addSuffix: true }
-                    )}
-                    onCloseClick={() => revokeAccess(grant as Permission)}
+                  <CertificateChip
+                    certType={(grant as PermissionToken).certType}
+                    expiry={(grant as PermissionToken).expiry}
                     canRevoke={canRevoke}
-                  /> */}
+                    onRevokeClick={() => revokeAccess(grant as PermissionToken)}
+                    certVerifier={(grant as PermissionToken).verifier}
+                    clickable
+                    size={1.3}
+                  />
                 </ListItem>
               </Paper>
             )}
@@ -314,7 +296,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
       {displayCount && (
         <center>
           <Typography color="textSecondary">
-            <i>Total Certificate Access Grants: {grants.length}</i>
+            <i>Total Certificate Access Grants: {grants.length} limit: {limit}</i>
           </Typography>
         </center>
       )}

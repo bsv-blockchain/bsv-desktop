@@ -18,7 +18,7 @@ type Props = {
  * AmountDisplay component shows an amount in either satoshis or fiat currency.
  * The component allows the user to toggle between viewing amounts in satoshis or fiat,
  * and cycle through different formatting options.
- *
+ * 
  * @param {object} props - The props that are passed to this component
  * @param {boolean} props.abbreviate - Flag indicating if the displayed amount should be abbreviated
  * @param {boolean} props.showPlus - Flag indicating whether to show a plus sign before the amount
@@ -36,7 +36,7 @@ const AmountDisplay: React.FC<Props> = ({ abbreviate, showPlus, description, chi
 
   // Get current settings directly from context
   const { settings } = useContext(WalletContext)
-  const settingsCurrency = settings?.currency || ''
+  const settingsCurrency: string = (settings?.currency || '').toString().toUpperCase()
 
   // Retrieve necessary values and functions from the ExchangeRateContext
   const ctx = useContext<any>(ExchangeRateContext)
@@ -54,6 +54,28 @@ const AmountDisplay: React.FC<Props> = ({ abbreviate, showPlus, description, chi
   const satsFormat = opts.satsFormats[satsFormatIndex % opts.satsFormats.length]
 
   const [color, setColor] = useState('textPrimary')
+
+  // --- helper: compute numeric fiat value for USD/EUR/GBP
+  const computeFiatNumeric = (sats: number, code: 'USD' | 'EUR' | 'GBP'): number | null => {
+    if (!satoshisPerUSD) return null
+    const usd = sats / satoshisPerUSD // USD = sats / (sats per USD)
+    if (code === 'USD') return usd
+    if (code === 'EUR') return eurPerUSD ? usd * eurPerUSD : null
+    if (code === 'GBP') return gbpPerUSD ? usd * gbpPerUSD : null
+    return null
+  }
+
+  // --- helper: smart-format small fiat numbers with 3 significant digits
+  const formatSmallFiat = (value: number, code: 'USD' | 'EUR' | 'GBP'): string => {
+    // Use currency style but cap to 3 significant digits; no grouping to keep it compact
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: code,
+      minimumSignificantDigits: 3,
+      maximumSignificantDigits: 3,
+      useGrouping: false
+    }).format(value)
+  }
 
   // Update the satoshis and formattedSatoshis whenever the relevant props change
   useEffect(() => {
@@ -82,17 +104,34 @@ const AmountDisplay: React.FC<Props> = ({ abbreviate, showPlus, description, chi
       setSatoshis(NaN)
       setFormattedSatoshis('...')
     }
-  }, [children, showPlus, abbreviate, satsFormat, settingsCurrency, settings]) 
+  }, [children, showPlus, abbreviate, satsFormat, settingsCurrency, settings, theme]) 
 
   // When satoshis or the exchange rate context changes, update the formatted fiat amount
   useEffect(() => {
     if (!isNaN(satoshis) && satoshisPerUSD) {
-      const newFormattedFiat = formatSatoshisAsFiat(satoshis, satoshisPerUSD, fiatFormat, settingsCurrency, eurPerUSD, gbpPerUSD, showFiatAsInteger)
-      setFormattedFiatAmount(newFormattedFiat || '...') 
+      // Keep your existing formatted output first
+      const newFormattedFiat = formatSatoshisAsFiat(
+        satoshis, satoshisPerUSD, fiatFormat, settingsCurrency, eurPerUSD, gbpPerUSD, showFiatAsInteger
+      ) || '...'
+
+      // Determine which currency code is in play for numeric calculation
+      const code: 'USD' | 'EUR' | 'GBP' =
+        (settingsCurrency === 'EUR' ? 'EUR'
+        : settingsCurrency === 'GBP' ? 'GBP'
+        : 'USD') // default USD when settingsCurrency is empty or USD/other
+
+      const fiatNumeric = computeFiatNumeric(satoshis, code)
+
+      if (fiatNumeric !== null && Math.abs(fiatNumeric) > 0 && Math.abs(fiatNumeric) < 1) {
+        // For tiny values, show 3 significant digits after the leading zeros
+        setFormattedFiatAmount(formatSmallFiat(fiatNumeric, code))
+      } else {
+        setFormattedFiatAmount(newFormattedFiat)
+      }
     } else {
       setFormattedFiatAmount('...')
     }
-  }, [satoshis, satoshisPerUSD, fiatFormat, settingsCurrency, settings]) 
+  }, [satoshis, satoshisPerUSD, fiatFormat, settingsCurrency, eurPerUSD, gbpPerUSD, showFiatAsInteger]) 
 
   // Create handlers for clicks with proper accessibility
   const handleFiatClick = () => {

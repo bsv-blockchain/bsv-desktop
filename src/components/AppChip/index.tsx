@@ -57,8 +57,7 @@ const AppChip: React.FC<AppChipProps> = ({
 }) => {
   const theme = useTheme()
   if (typeof label !== 'string') {
-    // throw new Error('Error in AppChip: label prop must be a string!')
-    label= 'default'
+    throw new Error('Error in AppChip: label prop must be a string!')
   }
   if (label.startsWith('babbage_app_')) {
     label = label.substring(12)

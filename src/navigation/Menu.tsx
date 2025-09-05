@@ -122,68 +122,77 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       setMenuOpen(false)
     }
   }, [breakpoints])
- useEffect(() => {
+useEffect(() => {
   let cancelled = false;
-  const run = async () => {
-    console.log("an attempt at funding the poor");
 
-    if (!managers?.walletManager || !activeProfile?.name) {
-      console.log("returning because I am the poor");
-      return;
-    }
+  const run = async () => {
+    if (!managers?.walletManager || !activeProfile?.name) return;
+
+    const cacheKey = `funds_${activeProfile.name}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (!cached) return;
 
     try {
-      debugger
-      const cacheKey = `funds_${activeProfile.name}`;
-      const cachedFunds = window.localStorage.getItem(cacheKey);
-      if (!cachedFunds) return;
-      // const signableTransaction: SignableTransaction = JSON.parse(cachedFunds)
-      const unlocker = new PushDrop(managers.walletManager).unlock(
-        [0, "fundingprofile"],
-        "1",
-        "anyone"
-      );
-      if (cancelled) return;
-       const { signableTransaction } = await managers.walletManager.createAction({
+      const funding: {
+        txid: string;
+        vout: number;
+        satoshis: number;
+        lockingScript: string;
+        beef: string | number[];
+      } = JSON.parse(cached);
+
+      // Build a signable tx that spends the funding output
+      const provisional = await managers.walletManager.createAction({
         description: 'claiming funds',
-        inputBEEF: JSON.parse(cachedFunds),
+        inputBEEF: funding.beef, // same BEEF flavor we saved
         inputs: [{
           inputDescription: 'Claim funds',
-          outpoint: JSON.parse(cachedFunds).outpoint,
-          unlockingScriptLength: 73
+          outpoint: `${funding.txid}.${funding.vout}`, // dot format like the ToDo example
+          // Provide context so fees/sighash are correct:
+          unlockingScript: funding.lockingScript,
+          // Reserve enough bytes for PushDrop 'anyone' unlock (longer than 73)
+          unlockingScriptLength: 180
         }],
         options: {
           acceptDelayedBroadcast: true,
           randomizeOutputs: false
         }
-      })
-       if (signableTransaction === undefined) {
-        throw new Error('Failed to create signable transaction')
-      }
-      const partialTx = Transaction.fromBEEF(signableTransaction.tx)
-      const parsed = JSON.parse(cachedFunds); 
-      const tx = Transaction.fromAtomicBEEF(parsed)
-      const unlockingScript = await unlocker.sign(partialTx, 0)
-      await managers.walletManager.signAction({
-        reference: signableTransaction.reference,
-        spends: {0:{unlockingScript: unlockingScript.toHex()}},
-        options: {}
-      })
-      console.log("SUCCESSFULLY attempt at funding the poor", unlockingScript);
+      });
 
-    } catch (err) {
-      if (!cancelled) {
-        console.error("failed funding attempt", err);
+      if (!provisional?.signableTransaction) {
+        throw new Error('No signable transaction returned');
       }
+
+      const partialTx = Transaction.fromBEEF(provisional.signableTransaction.tx);
+
+      // Build the actual unlocking script for input 0 using PushDrop 'anyone'
+      const unlocker = new PushDrop(managers.walletManager).unlock(
+        [0, 'fundingprofile'],
+        '1',
+        'anyone',
+        // keep the same “shape” as the ToDo example: give scope/flags/value/script
+        'all',
+        false,
+        funding.satoshis,
+        LockingScript.fromHex(funding.lockingScript)
+      );
+
+      const unlockingScript = await unlocker.sign(partialTx, 0);
+      // await managers.walletManager.signAction({
+      //   reference: provisional.signableTransaction.reference,
+      //   spends: { 0: { unlockingScript: unlockingScript.toHex() } }
+      // });
+      localStorage.removeItem(cacheKey);
+      console.log('✅ Claimed profile funding for', activeProfile.name);
+    } catch (err) {
+      if (!cancelled) console.error(' Claim failed', err);
     }
   };
 
   void run();
-  return () => {
-    cancelled = true;
-  };
-  // Keep deps tight to avoid unnecessary reruns
+  return () => { cancelled = true; };
 }, [activeProfile?.name, managers?.walletManager]);
+
   // Second useEffect to handle outside clicks
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -231,38 +240,58 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       // Close dialog first before async operation
       setCreateProfileOpen(false);
       setNewProfileName('');
-      if(fund)
-      {
-        console.log('funding!')
-        const cacheKey = `funds_${newProfileName.trim()}`
+     if (fund) {
+      const cacheKey = `funds_${name}`;
 
-        let pd = new PushDrop(managers.walletManager)
-        const fields = [
-          Utils.toArray(`Funding Wallet: ${newProfileName.trim()}`)
-        ]
-        const Script = await pd.lock(
-          fields,
-          [0, 'fundingprofile'],
-          '1',
-          'anyone'
-        )
+      const pd = new PushDrop(managers.walletManager);
+      const fields = [ Utils.toArray(`Funding Wallet: ${name}`) ];
+      const lockingScript = await pd.lock(
+        fields,
+        [0, 'fundingprofile'],
+        '1',
+        'anyone'
+      );
 
-        let output = await managers.walletManager.createAction({
-          description: 'funding new profile',
-          outputs: [{
-            lockingScript: Script.toHex(),
-            satoshis: 1000,
-            outputDescription: 'New profile funds'
-          }],
-          options: {
-            randomizeOutputs: false,
-            acceptDelayedBroadcast: false
-          }
-        })
-        // Show loading state
-        debugger
-        window.localStorage.setItem(cacheKey,  JSON.stringify(output.tx))
+      const createRes = await managers.walletManager.createAction({
+        description: 'funding new profile',
+        outputs: [{
+          lockingScript: lockingScript.toHex(),
+          satoshis: 1000,
+          outputDescription: 'New profile funds',
+          // (optional) basket: 'profile-funding'
+        }],
+        options: {
+          randomizeOutputs: false,
+          acceptDelayedBroadcast: false
+        }
+      });
+
+      // If the funding action is signable, finish it now so the UTXO exists.
+      if (createRes?.signableTransaction?.reference) {
+        await managers.walletManager.signAction({
+          reference: createRes.signableTransaction.reference,
+          spends: {}
+        });
       }
+
+      // Use ONE BEEF flavor consistently (prefer the same key you’ll use later)
+      const beef = createRes.tx ?? createRes.signableTransaction?.tx;
+      const tx = Transaction.fromBEEF(beef);
+      const vout = tx.outputs.findIndex(o => o.lockingScript.toHex() === lockingScript.toHex());
+      if (vout < 0) throw new Error('Could not locate funding output');
+
+      const txid = tx.id('hex');
+      const satoshis = tx.outputs[vout].satoshis;
+
+      // Persist everything needed to redeem after profile switch
+      localStorage.setItem(cacheKey, JSON.stringify({
+        txid,
+        vout,
+        satoshis,
+        lockingScript: lockingScript.toHex(),
+        beef
+      }));
+    }
       setProfilesLoading(true);
 
       // Then perform the async operation

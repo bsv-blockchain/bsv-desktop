@@ -49,7 +49,6 @@ type WalletProfile = {
 }
 
 function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfile }: PaymentFormProps) {
-	const { adminOriginator } = useContext(WalletContext)
 	const [mode, setMode] = useState<'internal' | 'external'>('internal')
 	const [recipient, setRecipient] = useState(defaultRecipient ?? '')
 	const [amount, setAmount] = useState<number>(0)
@@ -88,7 +87,7 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
 
 		try {
 			await managers.walletManager.switchProfile(targetId)
-			const pub = await managers.walletManager.getPublicKey({ identityKey: true }, adminOriginator)
+			const pub = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
 			newRecipient = String(pub.publicKey || '')
 		} catch (e) {
 			console.error('[PaymentForm] resolve pubkey failed for selected profile', e)
@@ -120,16 +119,13 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
 			setSending(false)
 		}
 	}
-	const formatProfileId = (id: number[]) => {
-		// Check if it's the default profile
-		if (id.every(x => x === 0)) {
-			return 'Default'
-		}
+  const formatProfileId = (id: number[]) => {
+    if (id.every(x => x === 0)) {
+      return 'Default'
+    }
 
-		// Convert to hex and show first 8 characters
-		return id.slice(0, 4).map(byte => byte.toString(16).padStart(2, '0')).join('')
-	}
-	const idToKey = (id: number[]) => id.join(".")
+    return id.slice(0, 4).map(byte => byte.toString(16).padStart(2, '0')).join('')
+  }
 	useEffect(() => {
 		setRecipient('')
 	}, [mode])
@@ -180,9 +176,9 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
 								}
 							>
 								{profiles.map((p) => {
-									const key = idToKey(p.id)
+									const enc = JSON.stringify(p.id)
 									return (
-										<MenuItem key={key} value={key}>
+										<MenuItem key={p.name + enc} value={enc}>
 											{p.name} — {formatProfileId(p.id)}
 										</MenuItem>
 									)

@@ -136,7 +136,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
  * Switch to profile, refresh balance, read it (via callbacks), then switch back.
  * No hooks inside.
  */
-async function getBalanceForProfileThenBack(
+async function getBalanceForProfile(
   profileId: number[],
   readBalance: () => number,
   refreshBalance?: () => Promise<any> | void,
@@ -184,37 +184,6 @@ async function getBalanceForProfileThenBack(
     Promise.resolve(refreshBalance?.()).catch(() => {})
   }
 }
-
-const idsEqual = (a: number[] = [], b: number[] = []) =>
-  a.length === b.length && a.every((v, i) => v === b[i]);
-
-// Helper: get identity public key (MRPK) for a given profile ID
-const getPKey = async (profileId: number[]) => {
-  const profiles = await managers.walletManager.listProfiles();
-  const current = profiles.find(p => p.active);
-
-  if (!current?.id) throw new Error("No active profile.");
-
-  if (!idsEqual(current.id, profileId)) {
-    await managers.walletManager.switchProfile(profileId);
-  }
-
-  try {
-    const pkey = await managers.walletManager.getPublicKey(
-      { identityKey: true },
-      "Metanet-Desktop"
-    );
-    return pkey.publicKey as string;
-  } finally {
-    if (!idsEqual(current.id, profileId)) {
-      await managers.walletManager.switchProfile(current.id);
-    }
-  }
-};
-
-
-
-
   //get Most Recent Profile Key
   const getMRPK = async () =>{
     const listprofiles = await managers.walletManager.listProfiles()
@@ -442,130 +411,133 @@ const getPKey = async (profileId: number[]) => {
   setAmount(null)
   setDeleteConfirmOpen(true)
 
-  getBalanceForProfileThenBack(profileId, readBalanceNow, refreshBalanceNow)
+  getBalanceForProfile(profileId, readBalanceNow, refreshBalanceNow)
     .then(setAmount)
     .catch(err => {
       console.error("Failed to get balance:", err)
     })
 }
 
+const idsEqual = (a: number[] = [], b: number[] = []) =>
+  a.length === b.length && a.every((v, i) => v === b[i])
+
+const getPublicKeyfor = async (profileId: number[]) => {
+  const profiles = await managers.walletManager.listProfiles()
+  const current = profiles.find(p => p.active)
+  if (!current?.id) throw new Error("No active profile.")
+
+  if (!idsEqual(current.id, profileId)) {
+    await managers.walletManager.switchProfile(profileId)
+  }
+  try {
+    const pkey = await managers.walletManager.getPublicKey(
+      { identityKey: true },
+      "Metanet-Desktop"
+    )
+    return pkey.publicKey as string
+  } finally {
+    if (!idsEqual(current.id, profileId)) {
+      await managers.walletManager.switchProfile(current.id)
+    }
+  }
+}
+
+
+/**
+ * Transfer funds from `profileToDelete` → `targetProfileId`, cache the PushDrop
+ * in localStorage for the target (auto-claim will handle it on switch), then delete.
+ *
+ * Call: handleDeleteProfile(targetProfileId)
+ */
 const handleDeleteProfile = async () => {
-  if (!profileToDelete || !managers?.walletManager) return;
+  if (!profileToDelete || !managers?.walletManager) return
 
   try {
-    // Close the dialog immediately
-    setDeleteConfirmOpen(false);
+    setDeleteConfirmOpen(false)
+    setProfilesLoading(true)
 
-    // Snapshot IDs and names for nicer labels + cache key
-    const profiles = await managers.walletManager.listProfiles();
-    const current = profiles.find(p => p.active);
-    const toDelete = profiles.find(p => idsEqual(p.id, profileToDelete));
-    const target = profiles.find(p => idsEqual(p.id, transferTo.id));
-debugger
-    if (!current?.id) throw new Error("No active profile.");
-    if (!toDelete) throw new Error("Profile to delete not found.");
-    if (!target) throw new Error("Target profile not found.");
+    // Snapshot profiles & names for labels and cache key
+    const profiles = await managers.walletManager.listProfiles()
+    const current = profiles.find(p => p.active)
+    const toDelete = profiles.find(p => idsEqual(p.id, profileToDelete))
+    const target = profiles.find(p => idsEqual(p.id, transferTo.id))
 
-    setProfilesLoading(true);
-
-    // Compute transfer sats:
-    // - use the already-computed balance in state (amount)
-    // - leave 20 sats to cover fees to avoid "exact spend" failures
-    const balanceSats = Math.max(0, Number(amount ?? 0));
-    const keepForFees = 20; // tweak if you want
-    const transferSats = Math.max(0, balanceSats - keepForFees);
-
+    if (!current?.id) throw new Error("No active profile.")
+    if (!toDelete) throw new Error("Profile to delete not found.")
+    if (!target) throw new Error("Target profile not found.")
+    // Figure out how much to transfer (leave 20 sats for fee wiggle room)
+    let balanceSats =
+    typeof amount === "number" ? amount : await   getBalanceForProfile(profileToDelete, readBalanceNow, refreshBalanceNow)
+    debugger
+    balanceSats = Math.max(0, balanceSats)
+    const keepForFees = 20
+    const transferSats = Math.max(0, balanceSats - keepForFees)
     if (transferSats > 0) {
-      // Counterparty = MRPK of the target profile
-      const counterparty = await getPKey(transferTo.id);
+      {
+      const cacheKey = `funds_${transferTo.name.trim()}`
+        try{
+      const pd = new PushDrop(managers.walletManager)
+      const fields = [ Utils.toArray(`Funding Wallet: ${transferTo.name.trim()}`) ]
+            const counterparty = await getPublicKeyfor(transferTo.id)
 
-      // Switch to the profile being deleted so we can spend its coins
-      if (!idsEqual(current.id, profileToDelete)) {
-        await managers.walletManager.switchProfile(profileToDelete);
-      }
+      const sender = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
+      console.log('the counterparty for this token is:', counterparty
+        ,'the current wallet is', sender.publicKey
+      )
+      const lockingScript = await pd.lock(
+        fields,
+        [0, 'fundingprofile'],
+        '1',
+        counterparty
+      )
 
-      try {
-        const pd = new PushDrop(managers.walletManager);
-        debugger
-        // Cosmetic field so you can see what this is later
-        const fields = [
-          Utils.toArray(
-            `Transfer on delete: ${toDelete.name} → ${target.name}`
-          ),
-        ];
-
-        // Sender pubkey is from the deleting profile (nice to have in cache)
-        const sender = await managers.walletManager.getPublicKey(
-          { identityKey: true },
-          "Metanet-Desktop"
-        );
-
-        // Lock to the target's MRPK
-        const lockingScript = await pd.lock(
-          fields,
-          [0, "fundingprofile"],
-          "1",
-          counterparty
-        );
-
-        // Create the on-chain action (wallet will add inputs + fee/change)
-        const createRes = await managers.walletManager.createAction(
-          {
-            description: `transfer on delete → ${target.name}`,
-            outputs: [
-              {
-                lockingScript: lockingScript.toHex(),
-                satoshis: transferSats,
-                outputDescription: "Transfer from deleted profile",
-              },
-            ],
-            options: {
-              randomizeOutputs: false,
-              acceptDelayedBroadcast: false,
-            },
-          },
-          "Metanet-Desktop"
-        );
-
-        // Cache like your create-profile flow so the target can auto-claim later
-        const beef = createRes.tx!;
-        const tx = Transaction.fromAtomicBEEF(beef);
-        const outpoint = `${createRes.txid}.0`;
-        const txid = tx.id("hex");
-        const satoshis = tx.outputs[0].satoshis;
-
-        const cacheKey = `funds_${target.name || transferTo.id.join("_")}`;
-        localStorage.setItem(
-          cacheKey,
-          JSON.stringify({
-            txid,
-            tx,
-            outpoint,
-            satoshis,
-            lockingScript: lockingScript.toHex(),
-            beef,
-            sender: sender.publicKey,
-          })
-        );
-      } finally {
-        // Return to whoever was active originally
-        if (!idsEqual(current.id, profileToDelete)) {
-          await managers.walletManager.switchProfile(current.id);
+      const createRes = await managers.walletManager.createAction({
+        description: 'funding new profile',
+        outputs: [{
+          lockingScript: lockingScript.toHex(),
+          satoshis: transferSats,
+          outputDescription: 'New profile funds',
+        }],
+        options: {
+          randomizeOutputs: false,
+          acceptDelayedBroadcast: false
         }
+      }, 'Metanet-Desktop')
+
+
+      const beef = createRes.tx!
+      const tx = Transaction.fromAtomicBEEF(createRes.tx!)
+      const outpoint = `${createRes.txid}.0`
+      const txid = tx.id('hex')
+      const satoshis = tx.outputs[0].satoshis
+
+      localStorage.setItem(cacheKey, JSON.stringify({
+        txid,
+        tx,
+        outpoint,
+        satoshis,
+        lockingScript: lockingScript.toHex(),
+        beef,
+        sender: sender.publicKey
+      }))
+    
+      } finally {
+       await managers.walletManager.switchProfile(activeProfile.id)
       }
     }
-
-    // Finally, delete the profile
-    await managers.walletManager.deleteProfile(profileToDelete);
-
-    // Clear selection + refresh UI
-    setProfileToDelete(null);
-    await refreshProfiles();
-  } catch (error: any) {
-    toast.error(`Error deleting profile: ${error.message || error}`);
-    setProfilesLoading(false);
   }
-};
+    // Now safe to delete (funds are already moved)
+    await managers.walletManager.deleteProfile(profileToDelete)
+
+    // Cleanup & refresh
+    setProfileToDelete(null)
+    await refreshProfiles()
+  } catch (error: any) {
+    toast.error(`Error deleting profile: ${error.message || error}`)
+    setProfilesLoading(false)
+  }
+}
+
 
   // Render formatted profile ID (first 8 chars)
   const formatProfileId = (id: number[]) => {

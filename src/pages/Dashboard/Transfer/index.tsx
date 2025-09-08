@@ -55,11 +55,9 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
   const [sending, setSending] = useState(false)
 	const prevModeRef = useRef<'internal' | 'external'>(mode);
 
-  // static, deep-cloned snapshot of profiles (so 'active' flips elsewhere won't mutate our list)
   const [profiles, setProfiles] = useState<WalletProfile[]>([])
-  const [destProfileId, setDestProfileId] = useState<string>('') // JSON.stringify(number[])
+  const [destProfileId, setDestProfileId] = useState<string>('') 
 
-  // load profiles once (no switching, no live updates)
   useEffect(() => {
     let alive = true
     ;(async () => {
@@ -67,7 +65,6 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
         if (!managers?.walletManager) return
         const list: WalletProfile[] = await managers.walletManager.listProfiles()
         if (!alive) return
-        // deep clone to decouple from any internal mutation
         const cloned = list.map(p => ({
           id: [...p.id],
           name: String(p.name),
@@ -75,7 +72,6 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
           active: !!p.active
         }))
         setProfiles(cloned)
-        // don't preselect or auto-resolve to avoid any switching before user acts
       } catch (e) {
         console.error('[PaymentForm] listProfiles error:', e)
       }
@@ -83,7 +79,6 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
     return () => { alive = false }
   }, [managers])
 
-  // when user picks a profile, do the whole dance first, THEN set state
   const handlePickProfile = async (value: string) => {
     if (!managers?.walletManager) return
     const originalId: number[] | undefined = activeProfile?.id
@@ -100,7 +95,6 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
       if (originalId) {
         try { await managers.walletManager.switchProfile(originalId) } catch {}
       }
-      // 👉 one, final state commit after everything is done
       setRecipient(newRecipient)
       setDestProfileId(value)
     }
@@ -118,7 +112,6 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
       })
       onSent?.()
       setAmount(0)
-      // keep recipient as-is; internal will update when user picks another profile
     } catch (e) {
       console.error('[PaymentForm] sendLivePayment error:', e)
       alert((e as Error)?.message ?? 'Failed to send payment')
@@ -131,14 +124,11 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
 		setRecipient('')
 	},[mode])
 	useEffect(() => {
-  // only act on transitions from external -> internal
   const prev = prevModeRef.current;
   if (prev !== mode && mode === 'internal') {
-    // pick the default profile (first non-active, else first)
     const first = profiles.find(p => !p.active) ?? profiles[0];
     if (first) {
       const enc = JSON.stringify(first.id);
-      // run the full async flow (switch -> getKey -> switchBack) BEFORE setting state
       void handlePickProfile(enc);
     }
   }
@@ -173,7 +163,7 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
                 labelId="dest-profile-label"
                 label="Destination Profile"
                 value={destProfileId}
-                onChange={(e) => handlePickProfile(String(e.target.value))} // async handler; sets state after full operation
+                onChange={(e) => handlePickProfile(String(e.target.value))}
                 renderValue={(val) =>
                   val && val !== '' ? profiles.find(p => JSON.stringify(p.id) === val)?.name ?? 'Select a profile'
                                     : 'Select a profile'

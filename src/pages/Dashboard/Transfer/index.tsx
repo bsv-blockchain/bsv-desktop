@@ -19,11 +19,13 @@ import {
 	Select,
 	MenuItem,
 	InputLabel,
-	FormControl
+	FormControl,
+	CircularProgress
 } from '@mui/material'
 import { PeerPayClient, IncomingPayment } from '@bsv/message-box-client'
 import { WalletClient } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
+import { toast } from 'react-toastify'
 
 const MESSAGEBOX_HOST = 'https://messagebox.babbage.systems'
 
@@ -73,7 +75,7 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
 					}))
 					setProfiles(cloned)
 				} catch (e) {
-					console.error('[PaymentForm] listProfiles error:', e)
+					toast.error('[PaymentForm] listProfiles error:', e as any)
 				}
 			})()
 		return () => { alive = false }
@@ -90,7 +92,7 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
 			const pub = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
 			newRecipient = String(pub.publicKey || '')
 		} catch (e) {
-			console.error('[PaymentForm] resolve pubkey failed for selected profile', e)
+			toast.error('[PaymentForm] resolve pubkey failed for selected profile', e as any)
 		} finally {
 			if (originalId) {
 				try { await managers.walletManager.switchProfile(originalId) } catch { }
@@ -113,19 +115,19 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
 			onSent?.()
 			setAmount(0)
 		} catch (e) {
-			console.error('[PaymentForm] sendLivePayment error:', e)
+			toast.error('[PaymentForm] sendLivePayment error:', e as any)
 			alert((e as Error)?.message ?? 'Failed to send payment')
 		} finally {
 			setSending(false)
 		}
 	}
-  const formatProfileId = (id: number[]) => {
-    if (id.every(x => x === 0)) {
-      return 'Default'
-    }
+	const formatProfileId = (id: number[]) => {
+		if (id.every(x => x === 0)) {
+			return 'Default'
+		}
 
-    return id.slice(0, 4).map(byte => byte.toString(16).padStart(2, '0')).join('')
-  }
+		return id.slice(0, 4).map(byte => byte.toString(16).padStart(2, '0')).join('')
+	}
 	useEffect(() => {
 		setRecipient('')
 	}, [mode])
@@ -233,22 +235,41 @@ type PaymentListProps = {
 }
 
 function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
+	// Track loading per messageId so buttons aren't linked
+	const [loadingById, setLoadingById] = useState<Record<string, boolean>>({})
+
+	const setLoadingFor = (id: string, on: boolean) => {
+		setLoadingById(prev => {
+			if (on) return { ...prev, [id]: true }
+			const next = { ...prev }
+			delete next[id]
+			return next
+		})
+	}
+
 	const acceptWithRetry = async (p: IncomingPayment) => {
+		const id = String(p.messageId)
+		setLoadingFor(id, true)
 		try {
 			await peerPay.acceptPayment(p)
 			return true
 		} catch (e1) {
-			console.error('[PaymentList] acceptPayment raw failed → refetching by id', e1)
+			toast.error('[PaymentList] acceptPayment raw failed → refetching by id', e1 as any)
 			try {
 				const list = await peerPay.listIncomingPayments(MESSAGEBOX_HOST)
-				const fresh = list.find(x => String(x.messageId) === String(p.messageId))
+				const fresh = list.find(x => String(x.messageId) === id)
 				if (!fresh) throw new Error('Payment not found on refresh')
 				await peerPay.acceptPayment(fresh)
 				return true
 			} catch (e2) {
-				console.error('[PaymentList] acceptPayment refresh retry failed', e2)
+				toast.error('[PaymentList] acceptPayment refresh retry failed', e2 as any)
 				return false
+			} finally {
+				setLoadingFor(id, false)
 			}
+		} finally {
+			// Ensure we clear loading even on the success path
+			setLoadingFor(id, false)
 		}
 	}
 
@@ -257,7 +278,7 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
 			const ok = await acceptWithRetry(p)
 			if (!ok) throw new Error('Accept failed')
 		} catch (e) {
-			console.error('[PaymentList] acceptPayment error (final):', e)
+			toast.error('[PaymentList] acceptPayment error (final):', e as any)
 			alert((e as Error)?.message ?? 'Failed to accept payment')
 		} finally {
 			onRefresh()
@@ -275,36 +296,48 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
 				<Typography color="text.secondary">No pending payments.</Typography>
 			) : (
 				<List sx={{ width: '100%' }}>
-					{payments.map((p, idx) => (
-						<React.Fragment key={`${p.messageId}-${idx}`}>
-							<ListItem
-								secondaryAction={
-									<Stack direction="row" spacing={1}>
-										<Button size="small" variant="contained" onClick={() => accept(p)}>
-											Accept
-										</Button>
-									</Stack>
-								}
-							>
-								<ListItemText
-									primary={
-										<Stack direction="row" spacing={1} alignItems="center">
-											<Chip size="small" label={`${p.token.amount} sats`} />
-											<Typography fontFamily="monospace" fontSize="0.9rem">
-												{String(p.messageId).slice(0, 10)}…
-											</Typography>
+					{payments.map((p) => {
+						const id = String(p.messageId)
+						const isLoading = !!loadingById[id]
+						return (
+							<React.Fragment key={id}>
+								<ListItem
+									secondaryAction={
+										<Stack direction="row" spacing={1}>
+											<Button
+												size="small"
+												variant="contained"
+												startIcon={
+													isLoading ? <CircularProgress size={16} sx={{ color: 'black' }} /> : null
+												}
+												disabled={isLoading}
+												onClick={() => accept(p)}
+											>
+												{isLoading ? 'Accepting…' : 'Accept'}
+											</Button>
 										</Stack>
 									}
-									secondary={
-										<Typography variant="body2" color="text.secondary">
-											From: {p.sender?.slice?.(0, 14) ?? 'unknown'}…
-										</Typography>
-									}
-								/>
-							</ListItem>
-							<Divider component="li" />
-						</React.Fragment>
-					))}
+								>
+									<ListItemText
+										primary={
+											<Stack direction="row" spacing={1} alignItems="center">
+												<Chip size="small" label={`${p.token.amount} sats`} />
+												<Typography fontFamily="monospace" fontSize="0.9rem">
+													{id.slice(0, 10)}…
+												</Typography>
+											</Stack>
+										}
+										secondary={
+											<Typography variant="body2" color="text.secondary">
+												From: {p.sender?.slice?.(0, 14) ?? 'unknown'}…
+											</Typography>
+										}
+									/>
+								</ListItem>
+								<Divider component="li" />
+							</React.Fragment>
+						)
+					})}
 				</List>
 			)}
 		</Paper>
@@ -338,7 +371,6 @@ export default function PeerPayRoute({ walletClient, defaultRecipient }: PeerPay
 			const list = await peerPay.listIncomingPayments(MESSAGEBOX_HOST)
 			setPayments(list)
 		} catch (e) {
-			console.error('[PeerPayRoute] listIncomingPayments error:', e)
 			setSnack({ open: true, msg: (e as Error)?.message ?? 'Failed to load payments', severity: 'error' })
 		} finally {
 			setLoading(false)
@@ -363,7 +395,7 @@ export default function PeerPayRoute({ walletClient, defaultRecipient }: PeerPay
 						},
 					})
 				} catch (e) {
-					console.error('[PeerPayRoute] live listen error:', e)
+					// silently handle errors
 				}
 			})()
 		return () => { mounted = false }

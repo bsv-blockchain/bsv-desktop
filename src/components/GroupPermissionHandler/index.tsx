@@ -406,8 +406,7 @@ const GroupPermissionHandler = () => {
                 <div>
                   <CertificateChip
                     certType={x.type}
-                    verifier={x.verifierPublicKey}
-                    fieldsToDisplay={x.fields || []}
+                    certVerifier={x.verifierPublicKey}
                   />
                 </div>
                 <div className={classes.certificate_inset}>

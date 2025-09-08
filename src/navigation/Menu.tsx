@@ -43,20 +43,20 @@ import {
 } from '@mui/material'
 import Profile from '../components/Profile'
 import { getAccountBalance } from '../utils/getAccountBalance'
-import React, { useState, useContext, useEffect, useCallback, useMemo } from 'react';
-import { toast } from 'react-toastify';
-import { useHistory } from 'react-router';
-import { WalletContext } from '../WalletContext';
-import { UserContext } from '../UserContext';
-import { useBreakpoint } from '../utils/useBreakpoints.js';
-import { Utils, PushDrop, LockingScript, Transaction, SignableTransaction, SignActionSpend } from '@bsv/sdk';
+import React, { useState, useContext, useEffect, useCallback, useMemo } from 'react'
+import { toast } from 'react-toastify'
+import { useHistory } from 'react-router'
+import { WalletContext } from '../WalletContext'
+import { UserContext } from '../UserContext'
+import { useBreakpoint } from '../utils/useBreakpoints.js'
+import { Utils, PushDrop, LockingScript, Transaction, SignableTransaction, SignActionSpend } from '@bsv/sdk'
 
 // Type definition for profile structure from CWIStyleWalletManager
 interface Profile {
-  id: number[];
-  name: string;
-  createdAt: number | null;
-  active: boolean;
+  id: number[]
+  name: string
+  createdAt: number | null
+  active: boolean
 }
 
 // Custom styling for menu items
@@ -73,12 +73,12 @@ const menuItemStyle = (isSelected) => ({
       backgroundColor: 'rgba(25, 118, 210, 0.2)',
     },
   }),
-});
+})
 
 interface MenuProps {
-  menuOpen: boolean;
-  setMenuOpen: (open: boolean) => void;
-  menuRef: React.RefObject<HTMLDivElement>;
+  menuOpen: boolean
+  setMenuOpen: (open: boolean) => void
+  menuRef: React.RefObject<HTMLDivElement>
 }
 
 export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
@@ -104,7 +104,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const navigation = {
     push: (path: string) => {
       // Explicitly cast breakpoints to avoid TypeScript error
-      const { sm } = breakpoints as { sm: boolean };
+      const { sm } = breakpoints as { sm: boolean }
       if (sm) {
         setMenuOpen(false)
       }
@@ -115,83 +115,101 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   // First useEffect to handle breakpoint changes
   useEffect(() => {
     // Explicitly cast breakpoints to avoid TypeScript error
-    const { sm } = breakpoints as { sm: boolean };
+    const { sm } = breakpoints as { sm: boolean }
     if (!sm) {
       setMenuOpen(true)
     } else {
       setMenuOpen(false)
     }
   }, [breakpoints])
-useEffect(() => {
-  let cancelled = false;
+  
+  //get Most Recent Profile Key
+  const getMRPK = async () =>{
+    const listprofiles = await managers.walletManager.listProfiles()
+    const mostRecent = listprofiles.reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
+    const lastProfileId: number[] = mostRecent.id
+    await managers.walletManager.switchProfile(lastProfileId)
+    const pkey = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
+    await managers.walletManager.switchProfile(activeProfile.id)
+    return pkey.publicKey
+  }
 
-  const run = async () => {
-    if (!managers?.walletManager || !activeProfile?.name) return;
+  useEffect(() => {
+    let cancelled = false
 
-    const cacheKey = `funds_${activeProfile.name}`;
-    const cached = localStorage.getItem(cacheKey);
-    if (!cached) return;
+    const run = async () => {
+      if (!managers?.walletManager || !activeProfile?.name) return
+      console.log('I am trying to fund')
+      const cacheKey = `funds_${activeProfile.name}`
+      const cached = localStorage.getItem(cacheKey)
+      if (!cached) return
 
-    try {
-      const funding: {
-        txid: string;
-        vout: number;
-        satoshis: number;
-        lockingScript: string;
-        beef: string | number[];
-      } = JSON.parse(cached);
+      try {
+        
+        const funding: {
+          txid: string
+          outpoint: string
+          satoshis: number
+          lockingScript: string
+          tx: Transaction,
+          beef: number[],
+          sender: string
+        } = JSON.parse(cached)
 
-      // Build a signable tx that spends the funding output
-      const provisional = await managers.walletManager.createAction({
-        description: 'claiming funds',
-        inputBEEF: funding.beef, // same BEEF flavor we saved
-        inputs: [{
-          inputDescription: 'Claim funds',
-          outpoint: `${funding.txid}.${funding.vout}`, // dot format like the ToDo example
-          // Provide context so fees/sighash are correct:
-          unlockingScript: funding.lockingScript,
-          // Reserve enough bytes for PushDrop 'anyone' unlock (longer than 73)
-          unlockingScriptLength: 180
-        }],
-        options: {
-          acceptDelayedBroadcast: true,
-          randomizeOutputs: false
+        const {signableTransaction} = await managers.walletManager.createAction({
+          description: 'claiming funds',
+          inputBEEF: funding.beef,
+          inputs: [{
+            inputDescription: 'Claim funds',
+            outpoint: funding.outpoint,
+            unlockingScriptLength: 74
+          }],
+          options: {
+            acceptDelayedBroadcast: false,
+            randomizeOutputs: false
+          }
+        })
+
+        if (!signableTransaction) {
+          throw new Error('No signable transaction returned')
         }
-      });
 
-      if (!provisional?.signableTransaction) {
-        throw new Error('No signable transaction returned');
+        const tx = Transaction.fromBEEF(signableTransaction.tx!)
+        const counterparty = (await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')).publicKey
+        console.log('REDEEM the counterparty for this token is:', counterparty
+        ,'the current wallet is', funding.sender
+      )
+        
+        const unlocker = new PushDrop(managers.walletManager).unlock(
+          [0, 'fundingprofile'],
+          '1',
+          funding.sender,
+          'all',
+          false,
+          1000,
+          LockingScript.fromHex(funding.lockingScript)
+        )
+        
+        let unlockingScript = await unlocker.sign(tx, 0)
+        let reference = signableTransaction.reference
+        const signRes = await managers.walletManager.signAction({
+        reference,
+        spends: { 
+          0: { 
+            unlockingScript: unlockingScript.toHex()
+          } 
+        }
+      })
+        localStorage.removeItem(cacheKey)
+        console.log('✅ Claimed profile funding for', activeProfile.name)
+      } catch (err) {
+        if (!cancelled) console.error(' Claim failed', err)
       }
-
-      const partialTx = Transaction.fromBEEF(provisional.signableTransaction.tx);
-
-      // Build the actual unlocking script for input 0 using PushDrop 'anyone'
-      const unlocker = new PushDrop(managers.walletManager).unlock(
-        [0, 'fundingprofile'],
-        '1',
-        'anyone',
-        // keep the same “shape” as the ToDo example: give scope/flags/value/script
-        'all',
-        false,
-        funding.satoshis,
-        LockingScript.fromHex(funding.lockingScript)
-      );
-
-      const unlockingScript = await unlocker.sign(partialTx, 0);
-      // await managers.walletManager.signAction({
-      //   reference: provisional.signableTransaction.reference,
-      //   spends: { 0: { unlockingScript: unlockingScript.toHex() } }
-      // });
-      localStorage.removeItem(cacheKey);
-      console.log('✅ Claimed profile funding for', activeProfile.name);
-    } catch (err) {
-      if (!cancelled) console.error(' Claim failed', err);
     }
-  };
 
-  void run();
-  return () => { cancelled = true; };
-}, [activeProfile?.name, managers?.walletManager]);
+    void run()
+    return () => { cancelled = true }
+  }, [activeProfile?.name, managers?.walletManager])
 
   // Second useEffect to handle outside clicks
   useEffect(() => {
@@ -215,42 +233,54 @@ useEffect(() => {
 
   // Helper function to refresh profiles
   const refreshProfiles = useCallback(async () => {
-    if (!managers?.walletManager || !managers.walletManager?.listProfiles) return;
+    if (!managers?.walletManager || !managers.walletManager?.listProfiles) return
 
     try {
-      setProfilesLoading(true);
+      setProfilesLoading(true)
       // Handle both synchronous and asynchronous listProfiles implementation
       if (managers.walletManager.saveSnapshot) {
         localStorage.snap = Utils.toBase64(managers.walletManager.saveSnapshot())
       }
-      const profileList = await Promise.resolve(managers.walletManager?.listProfiles());
-      setProfiles(profileList);
+      const profileList = await Promise.resolve(managers.walletManager?.listProfiles())
+      setProfiles(profileList)
     } catch (error) {
-      toast.error(`Error loading profiles: ${error.message || error}`);
+      toast.error(`Error loading profiles: ${error.message || error}`)
     } finally {
-      setProfilesLoading(false);
+      setProfilesLoading(false)
     }
-  }, [managers?.walletManager]);
+  }, [managers?.walletManager])
 
   // Handle profile creation
   const handleCreateProfile = async () => {
-    if (!newProfileName.trim() || !managers?.walletManager) return;
+    if (!newProfileName.trim() || !managers?.walletManager) return
 
     try {
       // Close dialog first before async operation
-      setCreateProfileOpen(false);
-      setNewProfileName('');
-     if (fund) {
-      const cacheKey = `funds_${name}`;
+      setCreateProfileOpen(false)
+      setNewProfileName('')
+   
+      setProfilesLoading(true)
+      
+      // Then perform the async operation
+      await managers.walletManager.addProfile(newProfileName.trim())
+      
+      // Then fund the new profile
+      if (fund) {
+      const cacheKey = `funds_${newProfileName.trim()}`
 
-      const pd = new PushDrop(managers.walletManager);
-      const fields = [ Utils.toArray(`Funding Wallet: ${name}`) ];
+      const pd = new PushDrop(managers.walletManager)
+      const fields = [ Utils.toArray(`Funding Wallet: ${newProfileName.trim()}`) ]
+      const counterparty = await getMRPK()
+      const sender = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
+      console.log('the counterparty for this token is:', counterparty
+        ,'the current wallet is', sender.publicKey
+      )
       const lockingScript = await pd.lock(
         fields,
         [0, 'fundingprofile'],
         '1',
-        'anyone'
-      );
+        counterparty
+      )
 
       const createRes = await managers.walletManager.createAction({
         description: 'funding new profile',
@@ -258,120 +288,108 @@ useEffect(() => {
           lockingScript: lockingScript.toHex(),
           satoshis: 1000,
           outputDescription: 'New profile funds',
-          // (optional) basket: 'profile-funding'
         }],
         options: {
           randomizeOutputs: false,
           acceptDelayedBroadcast: false
         }
-      });
+      }, 'Metanet-Desktop')
 
-      // If the funding action is signable, finish it now so the UTXO exists.
-      if (createRes?.signableTransaction?.reference) {
-        await managers.walletManager.signAction({
-          reference: createRes.signableTransaction.reference,
-          spends: {}
-        });
-      }
 
-      // Use ONE BEEF flavor consistently (prefer the same key you’ll use later)
-      const beef = createRes.tx ?? createRes.signableTransaction?.tx;
-      const tx = Transaction.fromBEEF(beef);
-      const vout = tx.outputs.findIndex(o => o.lockingScript.toHex() === lockingScript.toHex());
-      if (vout < 0) throw new Error('Could not locate funding output');
+      const beef = createRes.tx!
+      const tx = Transaction.fromAtomicBEEF(createRes.tx!)
+      const outpoint = `${createRes.txid}.0`
+      const txid = tx.id('hex')
+      const satoshis = tx.outputs[0].satoshis
 
-      const txid = tx.id('hex');
-      const satoshis = tx.outputs[vout].satoshis;
-
-      // Persist everything needed to redeem after profile switch
       localStorage.setItem(cacheKey, JSON.stringify({
         txid,
-        vout,
+        tx,
+        outpoint,
         satoshis,
         lockingScript: lockingScript.toHex(),
-        beef
-      }));
+        beef,
+        sender: sender.publicKey
+      }))
     }
-      setProfilesLoading(true);
-
-      // Then perform the async operation
-      await managers.walletManager.addProfile(newProfileName.trim());
 
       // Refresh the profile list
-      await refreshProfiles();
+      await refreshProfiles()     
     } catch (error) {
-      toast.error(`Error creating profile: ${error.message || error}`);
-      setProfilesLoading(false);
+      toast.error(`Error creating profile: ${error.message || error}`)
+      setProfilesLoading(false)
     }
-  };
+  }
 
   // Handle profile switching
   const handleSwitchProfile = async (profileId: number[]) => {
-    if (!managers?.walletManager) return;
+    if (!managers?.walletManager) return
 
     try {
       // Show loading state
-      setProfilesLoading(true);
+      setProfilesLoading(true)
 
       // Perform the async operation
-      await managers.walletManager.switchProfile(profileId);
+      await managers.walletManager.switchProfile(profileId)
       setActiveProfile(profiles.find(profile => profile.id == profileId))
 
       // Refresh the profile list to update active status
       if( history.location.pathname.startsWith('/dashboard/app/')){
         history.push('/dashboard/apps')
       }
-      await refreshProfiles();
+      await refreshProfiles()
     } catch (error) {
-      toast.error(`Error switching profile: ${error.message || error}`);
-      setProfilesLoading(false);
+      toast.error(`Error switching profile: ${error.message || error}`)
+      setProfilesLoading(false)
     }
-  };
+  }
 
   // Handle profile deletion
   const confirmDeleteProfile = (profileId: number[]) => {
-    setProfileToDelete(profileId);
-    setDeleteConfirmOpen(true);
-  };
+    setProfileToDelete(profileId)
+    setDeleteConfirmOpen(true)
+  }
 
   const handleDeleteProfile = async () => {
-    if (!profileToDelete || !managers?.walletManager) return;
+    if (!profileToDelete || !managers?.walletManager) return
 
     try {
       // Close dialog first before async operation
-      setDeleteConfirmOpen(false);
-      const profileIdToDelete = [...profileToDelete]; // Create a copy
-      setProfileToDelete(null);
+      setDeleteConfirmOpen(false)
+      // Transfer funds
+      
+      const profileIdToDelete = [...profileToDelete] // Create a copy
+      setProfileToDelete(null)
 
       // Show loading state
-      setProfilesLoading(true);
+      setProfilesLoading(true)
 
       // Then perform the async operation
-      await managers.walletManager.deleteProfile(profileIdToDelete);
+      await managers.walletManager.deleteProfile(profileIdToDelete)
 
       // Refresh the profile list
-      await refreshProfiles();
+      await refreshProfiles()
     } catch (error) {
-      toast.error(`Error deleting profile: ${error.message || error}`);
-      setProfilesLoading(false);
+      toast.error(`Error deleting profile: ${error.message || error}`)
+      setProfilesLoading(false)
     }
-  };
+  }
 
   // Render formatted profile ID (first 8 chars)
   const formatProfileId = (id: number[]) => {
     // Check if it's the default profile
     if (id.every(x => x === 0)) {
-      return 'Default';
+      return 'Default'
     }
 
     // Convert to hex and show first 8 characters
-    return id.slice(0, 4).map(byte => byte.toString(16).padStart(2, '0')).join('');
-  };
+    return id.slice(0, 4).map(byte => byte.toString(16).padStart(2, '0')).join('')
+  }
 
   // Load profiles when wallet is initialized
   useEffect(() => {
-    refreshProfiles();
-  }, [refreshProfiles]);
+    refreshProfiles()
+  }, [refreshProfiles])
   
   const idToKey = (id: number[]) => id.join(".")
 
@@ -381,11 +399,11 @@ useEffect(() => {
     [profiles])
     useEffect(() => {
     if (!selectedKey && defaultProfile) {
-      const key = idToKey(defaultProfile.id);
-      setSelectedKey(key);
-      setTransferTo(defaultProfile);
+      const key = idToKey(defaultProfile.id)
+      setSelectedKey(key)
+      setTransferTo(defaultProfile)
     }
-  }, [defaultProfile, selectedKey, setTransferTo]);
+  }, [defaultProfile, selectedKey, setTransferTo])
 
     const profileByKey = useMemo(() => {
     const m = new Map<string, Profile>()
@@ -516,8 +534,8 @@ useEffect(() => {
                             <IconButton
                               size="small"
                               onClick={(e) => {
-                                e.stopPropagation(); // Prevent card click from triggering
-                                confirmDeleteProfile(profile.id);
+                                e.stopPropagation() // Prevent card click from triggering
+                                confirmDeleteProfile(profile.id)
                               }}
                               sx={{
                                 color: 'white',
@@ -660,8 +678,8 @@ useEffect(() => {
         <Box sx={{ mt: 'auto', mb: 2 }}>
           <ListItemButton
             onClick={() => {
-              logout();
-              history.push('/');
+              logout()
+              history.push('/')
             }}
             sx={menuItemStyle(false)}
           >
@@ -719,6 +737,7 @@ useEffect(() => {
             <Checkbox
               checked={fund}
               onChange={(e) => setFund(e.target.checked)}
+              value='on'
             />
           }
           label="Automatically fund wallet with 1000 sats?"
@@ -754,20 +773,20 @@ useEffect(() => {
             label="Profile"
             displayEmpty
             onChange={(e) => {
-              const key = e.target.value as string;
-              setSelectedKey(key);
-              const chosen = profileByKey.get(key);
-              if (chosen) setTransferTo(chosen); // pass the full Profile
+              const key = e.target.value as string
+              setSelectedKey(key)
+              const chosen = profileByKey.get(key)
+              if (chosen) setTransferTo(chosen) 
             }}
           >
             <MenuItem value="" disabled>— Select a profile to transfer sats to —</MenuItem>
             {filteredProfiles.map((p) => {
-              const key = idToKey(p.id); // <-- ID is the React key
+              const key = idToKey(p.id) 
               return (
                 <MenuItem key={key} value={key}>
                   {p.name} — {formatProfileId(p.id)}
                 </MenuItem>
-              );
+              )
             })}
           </Select>
         <DialogContentText>

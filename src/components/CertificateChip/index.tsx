@@ -28,7 +28,7 @@ interface CertificateChipProps extends RouteComponentProps {
   clickable?: boolean
   size?: number
   backgroundColor?: string
-  onClick?: (event: React.MouseEvent<HTMLDivElement>) => void
+  onClick?: (event?: React.MouseEvent<HTMLDivElement>) => void
   alldetails?: boolean
 }
 
@@ -156,8 +156,8 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
       return <Chip key={`def-field-${k}`} size="small" label={label} />
     })
   }, [fields, certFieldKeys])
-  const onVerifierClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
+  const onVerifierClick = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation()
     history.push(`/dashboard/counterparty/${encodeURIComponent(certVerifier)}`)
   }, [history, certVerifier])
   /* ---------- click navigation ---------- */
@@ -307,7 +307,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
-            onVerifierClick(e)
+            onVerifierClick()
           }
         }}
         sx={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}

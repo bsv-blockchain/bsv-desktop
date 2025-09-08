@@ -10,6 +10,7 @@ import {
   ExpandMore,
   Person as PersonIcon,
 } from '@mui/icons-material'
+import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
 import {
   List,
@@ -95,9 +96,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [profileToDelete, setProfileToDelete] = useState<number[] | 0>(null)
   const [profilesLoading, setProfilesLoading] = useState(false)
-  const [transferTo, setTransferTo] = useState<Profile>(null)
   const [selectedKey, setSelectedKey] = useState<string>("")
-  const [amount, setAmount] = useState<number>(0)
   const [fund, setFund] = useState<boolean>(false)
   const balanceAPI = getAccountBalance("default") 
   const balanceRef = useRef<number>(balanceAPI.balance ?? 0)
@@ -106,8 +105,6 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
     balanceRef.current = balanceAPI.balance ?? 0
   }, [balanceAPI.balance])
 
-  const readBalanceNow = useCallback(() => balanceRef.current, [])
-  const refreshBalanceNow = balanceAPI.refresh // usually a function
   // History.push wrapper
   const navigation = {
     push: (path: string) => {
@@ -130,60 +127,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       setMenuOpen(false)
     }
   }, [breakpoints])
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
-/**
- * Switch to profile, refresh balance, read it (via callbacks), then switch back.
- * No hooks inside.
- */
-async function getBalanceForProfile(
-  profileId: number[],
-  readBalance: () => number,
-  refreshBalance?: () => Promise<any> | void,
-  timeoutMs = 2000,
-  pollEveryMs = 100
-): Promise<number> {
-  const profiles = await managers.walletManager.listProfiles()
-  const current = profiles.find(p => p.active)
-  if (!current?.id) throw new Error("No active profile to switch back to.")
-
-  const alreadyOnTarget =
-    Array.isArray(current.id) &&
-    Array.isArray(profileId) &&
-    current.id.length === profileId.length &&
-    current.id.every((v: number, i: number) => v === profileId[i])
-
-  if (alreadyOnTarget) {
-    await Promise.resolve(refreshBalance?.())
-    const start = Date.now()
-    let last = readBalance()
-    while (Date.now() - start < timeoutMs) {
-      const v = readBalance()
-      if (v !== last) return v
-      await sleep(pollEveryMs)
-    }
-    return readBalance()
-  }
-
-  await managers.walletManager.switchProfile(profileId)
-  try {
-    await Promise.resolve(refreshBalance?.())
-
-    const start = Date.now()
-    let last = readBalance()
-
-    while (Date.now() - start < timeoutMs) {
-      const v = readBalance()
-      if (v !== last) return v
-      last = v
-      await sleep(pollEveryMs)
-    }
-    return readBalance()
-  } finally {
-    await managers.walletManager.switchProfile(current.id)
-    Promise.resolve(refreshBalance?.()).catch(() => {})
-  }
-}
   //get Most Recent Profile Key
   const getMRPK = async () =>{
     const listprofiles = await managers.walletManager.listProfiles()
@@ -204,9 +148,7 @@ async function getBalanceForProfile(
       const cacheKey = `funds_${activeProfile.name}`
       const cached = localStorage.getItem(cacheKey)
       if (!cached) return
-
       try {
-        
         const funding: {
           txid: string
           outpoint: string
@@ -408,47 +350,10 @@ async function getBalanceForProfile(
   // Handle profile deletion
   const confirmDeleteProfile = (profileId: number[]) => {
   setProfileToDelete(profileId)
-  setAmount(null)
   setDeleteConfirmOpen(true)
-
-  getBalanceForProfile(profileId, readBalanceNow, refreshBalanceNow)
-    .then(setAmount)
-    .catch(err => {
-      console.error("Failed to get balance:", err)
-    })
-}
-
-const idsEqual = (a: number[] = [], b: number[] = []) =>
-  a.length === b.length && a.every((v, i) => v === b[i])
-
-const getPublicKeyfor = async (profileId: number[]) => {
-  const profiles = await managers.walletManager.listProfiles()
-  const current = profiles.find(p => p.active)
-  if (!current?.id) throw new Error("No active profile.")
-
-  if (!idsEqual(current.id, profileId)) {
-    await managers.walletManager.switchProfile(profileId)
-  }
-  try {
-    const pkey = await managers.walletManager.getPublicKey(
-      { identityKey: true },
-      "Metanet-Desktop"
-    )
-    return pkey.publicKey as string
-  } finally {
-    if (!idsEqual(current.id, profileId)) {
-      await managers.walletManager.switchProfile(current.id)
-    }
-  }
 }
 
 
-/**
- * Transfer funds from `profileToDelete` → `targetProfileId`, cache the PushDrop
- * in localStorage for the target (auto-claim will handle it on switch), then delete.
- *
- * Call: handleDeleteProfile(targetProfileId)
- */
 const handleDeleteProfile = async () => {
   if (!profileToDelete || !managers?.walletManager) return
 
@@ -456,77 +361,6 @@ const handleDeleteProfile = async () => {
     setDeleteConfirmOpen(false)
     setProfilesLoading(true)
 
-    // Snapshot profiles & names for labels and cache key
-    const profiles = await managers.walletManager.listProfiles()
-    const current = profiles.find(p => p.active)
-    const toDelete = profiles.find(p => idsEqual(p.id, profileToDelete))
-    const target = profiles.find(p => idsEqual(p.id, transferTo.id))
-
-    if (!current?.id) throw new Error("No active profile.")
-    if (!toDelete) throw new Error("Profile to delete not found.")
-    if (!target) throw new Error("Target profile not found.")
-    // Figure out how much to transfer (leave 20 sats for fee wiggle room)
-    let balanceSats =
-    typeof amount === "number" ? amount : await   getBalanceForProfile(profileToDelete, readBalanceNow, refreshBalanceNow)
-    debugger
-    balanceSats = Math.max(0, balanceSats)
-    const keepForFees = 20
-    const transferSats = Math.max(0, balanceSats - keepForFees)
-    if (transferSats > 0) {
-      {
-      const cacheKey = `funds_${transferTo.name.trim()}`
-        try{
-      const pd = new PushDrop(managers.walletManager)
-      const fields = [ Utils.toArray(`Funding Wallet: ${transferTo.name.trim()}`) ]
-            const counterparty = await getPublicKeyfor(transferTo.id)
-
-      const sender = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
-      console.log('the counterparty for this token is:', counterparty
-        ,'the current wallet is', sender.publicKey
-      )
-      const lockingScript = await pd.lock(
-        fields,
-        [0, 'fundingprofile'],
-        '1',
-        counterparty
-      )
-
-      const createRes = await managers.walletManager.createAction({
-        description: 'funding new profile',
-        outputs: [{
-          lockingScript: lockingScript.toHex(),
-          satoshis: transferSats,
-          outputDescription: 'New profile funds',
-        }],
-        options: {
-          randomizeOutputs: false,
-          acceptDelayedBroadcast: false
-        }
-      }, 'Metanet-Desktop')
-
-
-      const beef = createRes.tx!
-      const tx = Transaction.fromAtomicBEEF(createRes.tx!)
-      const outpoint = `${createRes.txid}.0`
-      const txid = tx.id('hex')
-      const satoshis = tx.outputs[0].satoshis
-
-      localStorage.setItem(cacheKey, JSON.stringify({
-        txid,
-        tx,
-        outpoint,
-        satoshis,
-        lockingScript: lockingScript.toHex(),
-        beef,
-        sender: sender.publicKey
-      }))
-    
-      } finally {
-       await managers.walletManager.switchProfile(activeProfile.id)
-      }
-    }
-  }
-    // Now safe to delete (funds are already moved)
     await managers.walletManager.deleteProfile(profileToDelete)
 
     // Cleanup & refresh
@@ -537,7 +371,6 @@ const handleDeleteProfile = async () => {
     setProfilesLoading(false)
   }
 }
-
 
   // Render formatted profile ID (first 8 chars)
   const formatProfileId = (id: number[]) => {
@@ -555,30 +388,6 @@ const handleDeleteProfile = async () => {
     refreshProfiles()
   }, [refreshProfiles])
   
-  const idToKey = (id: number[]) => id.join(".")
-
-  const isDefaultId = (id: number[]) => id.every((x) => x === 0)
-    const defaultProfile = useMemo(
-    () => profiles.find((p) => isDefaultId(p.id)),
-    [profiles])
-    useEffect(() => {
-    if (!selectedKey && defaultProfile) {
-      const key = idToKey(defaultProfile.id)
-      setSelectedKey(key)
-      setTransferTo(defaultProfile)
-    }
-  }, [defaultProfile, selectedKey, setTransferTo])
-
-    const profileByKey = useMemo(() => {
-    const m = new Map<string, Profile>()
-    profiles.forEach((p) => m.set(idToKey(p.id), p))
-    return m
-  }, [profiles])
-
-  const filteredProfiles = useMemo(
-  () => profiles.filter((p) => p.id !== profileToDelete),
-  [profiles, profileToDelete]
-)
   return (
     <Drawer
       anchor='left'
@@ -837,7 +646,28 @@ const handleDeleteProfile = async () => {
               }
             />
           </ListItemButton>
+        
+         <ListItemButton
+          onClick={() => navigation.push('/dashboard/transfer')}
+          selected={history.location.pathname === '/dashboard/transfer'}
+          sx={menuItemStyle(history.location.pathname === '/dashbaord/transfer')}
+          >
+            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/transfer' ? 'primary.main' : 'inherit' }}>
+            <SyncAltIcon/>
+              </ListItemIcon>
+                <ListItemText
+              primary={
+                <Typography
+                  variant="body1"
+                  fontWeight={history.location.pathname === '/dashboard/transfer' ? 600 : 400}
+                >
+                  Transfer
+                </Typography>
+              }
+            />
+          </ListItemButton>
         </List>
+
 
         <Box sx={{ mt: 'auto', mb: 2 }}>
           <ListItemButton
@@ -878,6 +708,7 @@ const handleDeleteProfile = async () => {
         </Box>
       </Box>
 
+      
       {/* Create Profile Dialog */}
        <Dialog open={createProfileOpen} onClose={() => setCreateProfileOpen(false)}>
       <DialogTitle>Create New Profile</DialogTitle>
@@ -926,36 +757,21 @@ const handleDeleteProfile = async () => {
       >
         <DialogTitle>Delete Profile</DialogTitle>
         <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete this profile ({formatProfileId(profileToDelete || [0])})? This action cannot be undone.
-          </DialogContentText>
-          <InputLabel id="id-select-label">Profile</InputLabel>
-          <Select
-            labelId="id-select-label"
-            id="id-select"
-            value={selectedKey}
-            label="Profile"
-            displayEmpty
-            onChange={(e) => {
-              const key = e.target.value as string
-              setSelectedKey(key)
-              const chosen = profileByKey.get(key)
-              if (chosen) setTransferTo(chosen) 
+          <DialogContentText
+            sx={{
+              textAlign: 'center',
+              '& strong': { color: 'error.main' },
+              wordBreak: 'break-word',
             }}
           >
-            <MenuItem value="" disabled>— Select a profile to transfer sats to —</MenuItem>
-            {filteredProfiles.map((p) => {
-              const key = idToKey(p.id) 
-              return (
-                <MenuItem key={key} value={key}>
-                  {p.name} — {formatProfileId(p.id)}
-                </MenuItem>
-              )
-            })}
-          </Select>
-        <DialogContentText>
-        This accounts balance: {amount}
-        </DialogContentText>
+            <strong>⚠️⚠️⚠️⚠️⚠️ Permanent deletion⚠️⚠️⚠️⚠️⚠️</strong><br />
+            This will erase <strong>all data</strong> and <strong>all satoshis</strong> for this profile.<br />
+            Please <strong>transfer all sats</strong> <em>before</em> continuing.
+            <br /><br />
+            Are you sure you want to delete profile <code>{formatProfileId(profileToDelete || [0])}</code>?<br />
+            This action cannot be undone.
+            <br /><strong>⚠️⚠️⚠️⚠️⚠️ Permanent deletion⚠️⚠️⚠️⚠️⚠️</strong><br />
+          </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>

@@ -16,12 +16,17 @@ import {
   Stack,
   TextField,
   Typography,
+  Select,
+  MenuItem,
+  InputLabel,
+  FormControl
 } from '@mui/material'
 import { PeerPayClient, IncomingPayment } from '@bsv/message-box-client'
 import { WalletClient } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
-import { getAccountBalance } from '../../../utils/getAccountBalance'
+
 const MESSAGEBOX_HOST = 'https://messagebox.babbage.systems'
+
 export type PeerPayRouteProps = {
   walletClient?: WalletClient
   defaultRecipient?: string
@@ -32,14 +37,74 @@ type PaymentFormProps = {
   peerPay: PeerPayClient
   onSent?: () => void
   defaultRecipient?: string
+  managers?: any
+  activeProfile?: { id?: number[]; name?: string } | null
 }
 
-function PaymentForm({ peerPay, onSent, defaultRecipient }: PaymentFormProps) {
-  const balanceAPI = getAccountBalance("default") 
-	const refreshBalanceNow = balanceAPI.refresh
+type WalletProfile = {
+  id: number[]
+  name: string
+  createdAt: number | null
+  active: boolean
+}
+
+function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfile }: PaymentFormProps) {
+  const [mode, setMode] = useState<'internal' | 'external'>('internal')
   const [recipient, setRecipient] = useState(defaultRecipient ?? '')
   const [amount, setAmount] = useState<number>(0)
   const [sending, setSending] = useState(false)
+	const prevModeRef = useRef<'internal' | 'external'>(mode);
+
+  // static, deep-cloned snapshot of profiles (so 'active' flips elsewhere won't mutate our list)
+  const [profiles, setProfiles] = useState<WalletProfile[]>([])
+  const [destProfileId, setDestProfileId] = useState<string>('') // JSON.stringify(number[])
+
+  // load profiles once (no switching, no live updates)
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        if (!managers?.walletManager) return
+        const list: WalletProfile[] = await managers.walletManager.listProfiles()
+        if (!alive) return
+        // deep clone to decouple from any internal mutation
+        const cloned = list.map(p => ({
+          id: [...p.id],
+          name: String(p.name),
+          createdAt: p.createdAt ?? null,
+          active: !!p.active
+        }))
+        setProfiles(cloned)
+        // don't preselect or auto-resolve to avoid any switching before user acts
+      } catch (e) {
+        console.error('[PaymentForm] listProfiles error:', e)
+      }
+    })()
+    return () => { alive = false }
+  }, [managers])
+
+  // when user picks a profile, do the whole dance first, THEN set state
+  const handlePickProfile = async (value: string) => {
+    if (!managers?.walletManager) return
+    const originalId: number[] | undefined = activeProfile?.id
+    const targetId: number[] = JSON.parse(value)
+    let newRecipient = ''
+
+    try {
+      await managers.walletManager.switchProfile(targetId)
+      const pub = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
+      newRecipient = String(pub.publicKey || '')
+    } catch (e) {
+      console.error('[PaymentForm] resolve pubkey failed for selected profile', e)
+    } finally {
+      if (originalId) {
+        try { await managers.walletManager.switchProfile(originalId) } catch {}
+      }
+      // 👉 one, final state commit after everything is done
+      setRecipient(newRecipient)
+      setDestProfileId(value)
+    }
+  }
 
   const canSend = recipient.trim().length > 0 && amount > 0 && !sending
 
@@ -48,12 +113,12 @@ function PaymentForm({ peerPay, onSent, defaultRecipient }: PaymentFormProps) {
     try {
       setSending(true)
       await peerPay.sendLivePayment({
-        recipient: recipient.trim(), // identity pubkey hex or handle you resolved upstream
-        amount, // satoshis
+        recipient: recipient.trim(),
+        amount
       })
       onSent?.()
       setAmount(0)
-			refreshBalanceNow()
+      // keep recipient as-is; internal will update when user picks another profile
     } catch (e) {
       console.error('[PaymentForm] sendLivePayment error:', e)
       alert((e as Error)?.message ?? 'Failed to send payment')
@@ -62,19 +127,88 @@ function PaymentForm({ peerPay, onSent, defaultRecipient }: PaymentFormProps) {
     }
   }
 
+  useEffect(() => {
+		setRecipient('')
+	},[mode])
+	useEffect(() => {
+  // only act on transitions from external -> internal
+  const prev = prevModeRef.current;
+  if (prev !== mode && mode === 'internal') {
+    // pick the default profile (first non-active, else first)
+    const first = profiles.find(p => !p.active) ?? profiles[0];
+    if (first) {
+      const enc = JSON.stringify(first.id);
+      // run the full async flow (switch -> getKey -> switchBack) BEFORE setting state
+      void handlePickProfile(enc);
+    }
+  }
+  prevModeRef.current = mode;
+}, [mode, profiles]);
   return (
     <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
       <Typography variant="h6" sx={{ mb: 1 }}>
         Send Payment
       </Typography>
       <Stack spacing={2}>
-        <TextField
-          label="Recipient (identity pubkey hex or handle)"
-          fullWidth
-          value={recipient}
-          onChange={(e) => setRecipient(e.target.value)}
-          placeholder="02ab… (recipient identity pubkey)"
-        />
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+          <Button
+            variant={mode === 'internal' ? 'contained' : 'outlined'}
+            onClick={() => setMode('internal')}
+          >
+            Internal (My Profiles)
+          </Button>
+          <Button
+            variant={mode === 'external' ? 'contained' : 'outlined'}
+            onClick={() => setMode('external')}
+          >
+            External (Any Pubkey)
+          </Button>
+        </Stack>
+
+        {mode === 'internal' ? (
+          <Stack spacing={2}>
+            <FormControl fullWidth>
+              <InputLabel id="dest-profile-label">Destination Profile</InputLabel>
+              <Select
+                labelId="dest-profile-label"
+                label="Destination Profile"
+                value={destProfileId}
+                onChange={(e) => handlePickProfile(String(e.target.value))} // async handler; sets state after full operation
+                renderValue={(val) =>
+                  val && val !== '' ? profiles.find(p => JSON.stringify(p.id) === val)?.name ?? 'Select a profile'
+                                    : 'Select a profile'
+                }
+              >
+                {profiles.map((p) => {
+                  const enc = JSON.stringify(p.id)
+                  const idShort = `[${p.id.slice(0, 3).join(',')}${p.id.length > 3 ? '…' : ''}]`
+                  return (
+                    <MenuItem key={p.name + enc} value={enc}>
+                      {p.name} — {idShort}
+                    </MenuItem>
+                  )
+                })}
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Resolved Recipient Pubkey"
+              fullWidth
+              value={recipient}
+              InputProps={{ readOnly: true }}
+              helperText={'Identity pubkey of the selected profile'}
+            />
+          </Stack>
+        ) : (
+          <TextField
+            label="Recipient (identity pubkey hex or handle)"
+            fullWidth
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            placeholder="02ab… (recipient identity pubkey)"
+          />
+        )}
+
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField
             type="number"
@@ -85,6 +219,7 @@ function PaymentForm({ peerPay, onSent, defaultRecipient }: PaymentFormProps) {
             inputProps={{ min: 1, step: 1 }}
           />
         </Stack>
+
         <Box>
           <Button variant="contained" disabled={!canSend} onClick={send}>
             {sending ? 'Sending…' : 'Send'}
@@ -103,8 +238,6 @@ type PaymentListProps = {
 }
 
 function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
-	const balanceAPI = getAccountBalance("default") 
-	const refreshBalanceNow = balanceAPI.refresh
   const acceptWithRetry = async (p: IncomingPayment) => {
     try {
       await peerPay.acceptPayment(p)
@@ -121,15 +254,11 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
         console.error('[PaymentList] acceptPayment refresh retry failed', e2)
         return false
       }
-			finally{
-				refreshBalanceNow()
-			}
     }
   }
 
   const accept = async (p: IncomingPayment) => {
     try {
-			
       const ok = await acceptWithRetry(p)
       if (!ok) throw new Error('Accept failed')
     } catch (e) {
@@ -137,8 +266,6 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
       alert((e as Error)?.message ?? 'Failed to accept payment')
     } finally {
       onRefresh()
-			refreshBalanceNow()
-
     }
   }
 
@@ -191,6 +318,8 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
 
 /* ------------------------------- Route View -------------------------------- */
 export default function PeerPayRoute({ walletClient, defaultRecipient }: PeerPayRouteProps) {
+  const { activeProfile, managers } = useContext(WalletContext)
+
   const peerPay = useMemo(() => {
     const wc = walletClient ?? new WalletClient()
     return new PeerPayClient({
@@ -242,9 +371,7 @@ export default function PeerPayRoute({ walletClient, defaultRecipient }: PeerPay
         console.error('[PeerPayRoute] live listen error:', e)
       }
     })()
-    return () => {
-      mounted = false
-    }
+    return () => { mounted = false }
   }, [peerPay])
 
   return (
@@ -255,7 +382,13 @@ export default function PeerPayRoute({ walletClient, defaultRecipient }: PeerPay
         </Typography>
 
         <Stack spacing={2}>
-          <PaymentForm peerPay={peerPay} onSent={fetchPayments} defaultRecipient={defaultRecipient} />
+          <PaymentForm
+            peerPay={peerPay}
+            onSent={fetchPayments}
+            defaultRecipient={defaultRecipient}
+            managers={managers}
+            activeProfile={activeProfile}
+          />
 
           {loading && <LinearProgress />}
 

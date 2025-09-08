@@ -85,7 +85,7 @@ interface MenuProps {
 export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const history = useHistory()
   const breakpoints = useBreakpoint()
-  const { logout, managers, activeProfile, setActiveProfile } = useContext(WalletContext)
+  const { logout, managers, activeProfile, setActiveProfile, adminOriginator } = useContext(WalletContext)
   const { appName, appVersion } = useContext(UserContext)
 
   // Profile management state
@@ -134,7 +134,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
     const mostRecent = listprofiles.reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
     const lastProfileId: number[] = mostRecent.id
     await managers.walletManager.switchProfile(lastProfileId)
-    const pkey = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
+    const pkey = await managers.walletManager.getPublicKey({ identityKey: true }, adminOriginator)
     await managers.walletManager.switchProfile(activeProfile.id)
     return pkey.publicKey
   }
@@ -178,7 +178,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
         }
 
         const tx = Transaction.fromBEEF(signableTransaction.tx!)
-        const counterparty = (await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')).publicKey
+        const counterparty = (await managers.walletManager.getPublicKey({ identityKey: true }, adminOriginator)).publicKey
         console.log('REDEEM the counterparty for this token is:', counterparty
         ,'the current wallet is', funding.sender
       )
@@ -274,7 +274,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       const pd = new PushDrop(managers.walletManager)
       const fields = [ Utils.toArray(`Funding Wallet: ${newProfileName.trim()}`) ]
       const counterparty = await getMRPK()
-      const sender = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
+      const sender = await managers.walletManager.getPublicKey({ identityKey: true }, adminOriginator)
       console.log('the counterparty for this token is:', counterparty
         ,'the current wallet is', sender.publicKey
       )
@@ -296,7 +296,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
           randomizeOutputs: false,
           acceptDelayedBroadcast: false
         }
-      }, 'Metanet-Desktop')
+      }, adminOriginator)
 
 
       const beef = createRes.tx!

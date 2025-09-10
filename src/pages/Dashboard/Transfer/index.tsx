@@ -60,7 +60,7 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
   const [destProfileId, setDestProfileId] = useState<string>('')
   const [currencySymbol, setCurrencySymbol] = useState('$')
   const currencyConverter = new CurrencyConverter()
-
+  const [input, setInput] = useState('')
   useAsyncEffect(async () => {
     // Note: Handle errors at a higher layer!
     await currencyConverter.initialize()
@@ -70,7 +70,9 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
   const handleAmountChange = useCallback(async (event) => {
     const input = event.target.value.replace(/[^0-9.]/g, '')
     if (input !== amount) {
-      setAmount(input)
+        setInput(input)
+      const satoshis = await currencyConverter.convertToSatoshis(input)
+      setAmount(satoshis)
     }
   }, [])
 
@@ -146,7 +148,7 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
   return (
     <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
       <Typography variant="h6" sx={{ mb: 1 }}>
-        Send Payment
+        Transfer
       </Typography>
       <Stack spacing={2}>
         <Stack spacing={2}>
@@ -177,7 +179,7 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
           <TextField
             label="Enter Amount"
             variant="outlined"
-            value={amount}
+            value={input}
             onChange={handleAmountChange}
             InputProps={{
               startAdornment: <InputAdornment position="start">{currencySymbol}</InputAdornment>
@@ -258,12 +260,12 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
   return (
     <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-        <Typography variant="h6">Pending Payments</Typography>
+        <Typography variant="h6">Pending Transfer</Typography>
         <Button onClick={onRefresh}>Refresh</Button>
       </Box>
 
       {payments.length === 0 ? (
-        <Typography color="text.secondary">No pending payments.</Typography>
+        <Typography color="text.secondary">No pending transfers.</Typography>
       ) : (
         <List sx={{ width: '100%' }}>
           {payments.map((p) => {
@@ -339,7 +341,6 @@ export default function PeerPayRoute({ walletClient, defaultRecipient }: PeerPay
   const fetchPayments = useCallback(async () => {
     try {
       setLoading(true)
-      debugger
       const list = await peerPay.listIncomingPayments(MESSAGEBOX_HOST)
       setPayments(list)
     } catch (e) {
@@ -377,7 +378,7 @@ export default function PeerPayRoute({ walletClient, defaultRecipient }: PeerPay
     <Container maxWidth="sm">
       <Box sx={{ minHeight: '100vh', py: 5 }}>
         <Typography variant="h5" sx={{ mb: 2 }}>
-          Wallet Peer-to-Peer Payments
+          Wallet Transfer
         </Typography>
 
         <Stack spacing={2}>

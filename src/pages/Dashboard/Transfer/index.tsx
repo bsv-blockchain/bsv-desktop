@@ -155,14 +155,6 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
                 })}
               </Select>
             </FormControl>
-
-            <TextField
-              label="Resolved Recipient Pubkey"
-              fullWidth
-              value={recipient}
-              InputProps={{ readOnly: true }}
-              helperText={'Identity pubkey of the selected profile'}
-            />
           </Stack>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField

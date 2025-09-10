@@ -193,7 +193,6 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
         }
       })
         localStorage.removeItem(cacheKey)
-        console.log('✅ Claimed profile funding for', activeProfile.name)
       } catch (err) {
         if (!cancelled) console.error(' Claim failed', err)
       }

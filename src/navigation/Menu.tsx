@@ -137,7 +137,6 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
 
     const run = async () => {
       if (!managers?.walletManager || !activeProfile?.name) return
-      console.log('I am trying to fund')
       const cacheKey = `funds_${activeProfile.name}`
       const cached = localStorage.getItem(cacheKey)
       if (!cached) return
@@ -171,10 +170,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
         }
 
         const tx = Transaction.fromBEEF(signableTransaction.tx!)
-        const counterparty = (await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')).publicKey
-        console.log('REDEEM the counterparty for this token is:', counterparty
-        ,'the current wallet is', funding.sender
-      )
+
         
         const unlocker = new PushDrop(managers.walletManager).unlock(
           [0, 'fundingprofile'],
@@ -268,9 +264,6 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       const fields = [ Utils.toArray(`Funding Wallet: ${newProfileName.trim()}`) ]
       const counterparty = await getMRPK()
       const sender = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
-      console.log('the counterparty for this token is:', counterparty
-        ,'the current wallet is', sender.publicKey
-      )
       const lockingScript = await pd.lock(
         fields,
         [0, 'fundingprofile'],

@@ -161,9 +161,7 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
             type="number"
             label="Amount (sats)"
             fullWidth
-            value={Number.isFinite(amount) ? amount : ''}
             onChange={(e) => setAmount(Math.max(0, Number(e.target.value || 0)))}
-            inputProps={{ min: 1, step: 1 }}
           />
         </Stack>
 

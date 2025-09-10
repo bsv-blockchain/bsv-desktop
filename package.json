@@ -32,7 +32,7 @@
     "metanet-apps": "^1.0.4"
   },
   "peerDependencies": {
-    "@bsv/sdk": "^1.6.25",
+    "@bsv/sdk": "^1.7.6",
     "@bsv/wallet-toolbox-client": "^1.6.19",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",

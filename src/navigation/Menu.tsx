@@ -43,14 +43,13 @@ import {
   FormControlLabel
 } from '@mui/material'
 import Profile from '../components/Profile'
-import { getAccountBalance } from '../utils/getAccountBalance'
-import React, { useState, useContext, useEffect, useCallback, useMemo, useRef } from 'react'
+import React, { useState, useContext, useEffect, useCallback} from 'react'
 import { toast } from 'react-toastify'
 import { useHistory } from 'react-router'
 import { WalletContext } from '../WalletContext'
 import { UserContext } from '../UserContext'
 import { useBreakpoint } from '../utils/useBreakpoints.js'
-import { Utils, PushDrop, LockingScript, Transaction, SignableTransaction, SignActionSpend } from '@bsv/sdk'
+import { Utils, PushDrop, LockingScript, Transaction} from '@bsv/sdk'
 
 // Type definition for profile structure from CWIStyleWalletManager
 interface Profile {
@@ -85,7 +84,7 @@ interface MenuProps {
 export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const history = useHistory()
   const breakpoints = useBreakpoint()
-  const { logout, managers, activeProfile, setActiveProfile, adminOriginator } = useContext(WalletContext)
+  const { logout, managers, activeProfile, setActiveProfile } = useContext(WalletContext)
   const { appName, appVersion } = useContext(UserContext)
 
   // Profile management state
@@ -96,14 +95,8 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [profileToDelete, setProfileToDelete] = useState<number[] | 0>(null)
   const [profilesLoading, setProfilesLoading] = useState(false)
-  const [selectedKey, setSelectedKey] = useState<string>("")
   const [fund, setFund] = useState<boolean>(false)
-  const balanceAPI = getAccountBalance("default") 
-  const balanceRef = useRef<number>(balanceAPI.balance ?? 0)
 
-  useEffect(() => {
-    balanceRef.current = balanceAPI.balance ?? 0
-  }, [balanceAPI.balance])
 
   // History.push wrapper
   const navigation = {
@@ -134,7 +127,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
     const mostRecent = listprofiles.reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
     const lastProfileId: number[] = mostRecent.id
     await managers.walletManager.switchProfile(lastProfileId)
-    const pkey = await managers.walletManager.getPublicKey({ identityKey: true }, adminOriginator)
+    const pkey = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
     await managers.walletManager.switchProfile(activeProfile.id)
     return pkey.publicKey
   }
@@ -178,7 +171,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
         }
 
         const tx = Transaction.fromBEEF(signableTransaction.tx!)
-        const counterparty = (await managers.walletManager.getPublicKey({ identityKey: true }, adminOriginator)).publicKey
+        const counterparty = (await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')).publicKey
         console.log('REDEEM the counterparty for this token is:', counterparty
         ,'the current wallet is', funding.sender
       )
@@ -189,7 +182,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
           funding.sender,
           'all',
           false,
-          1000,
+          5000,
           LockingScript.fromHex(funding.lockingScript)
         )
         
@@ -274,7 +267,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       const pd = new PushDrop(managers.walletManager)
       const fields = [ Utils.toArray(`Funding Wallet: ${newProfileName.trim()}`) ]
       const counterparty = await getMRPK()
-      const sender = await managers.walletManager.getPublicKey({ identityKey: true }, adminOriginator)
+      const sender = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
       console.log('the counterparty for this token is:', counterparty
         ,'the current wallet is', sender.publicKey
       )
@@ -289,15 +282,14 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
         description: 'funding new profile',
         outputs: [{
           lockingScript: lockingScript.toHex(),
-          satoshis: 1000,
+          satoshis: 5000,
           outputDescription: 'New profile funds',
         }],
         options: {
           randomizeOutputs: false,
           acceptDelayedBroadcast: false
         }
-      }, adminOriginator)
-
+      }, 'Metanet-Desktop')
 
       const beef = createRes.tx!
       const tx = Transaction.fromAtomicBEEF(createRes.tx!)
@@ -735,7 +727,7 @@ const handleDeleteProfile = async () => {
               value='on'
             />
           }
-          label="Automatically fund wallet with 1000 sats?"
+          label="Automatically fund wallet with 5000 sats?"
           sx={{ mt: 1 }}
         />
       </DialogContent>

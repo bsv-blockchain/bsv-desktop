@@ -26,8 +26,8 @@ import { PeerPayClient, IncomingPayment } from '@bsv/message-box-client'
 import { WalletClient } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
 import { toast } from 'react-toastify'
-
-const MESSAGEBOX_HOST = 'https://messagebox.babbage.systems'
+import { WalletPermissionsManager } from '@bsv/wallet-toolbox-client'
+import {MESSAGEBOX_HOST} from '../../../config'
 
 export type PeerPayRouteProps = {
   walletClient?: WalletClient
@@ -51,12 +51,9 @@ type WalletProfile = {
 }
 
 function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfile }: PaymentFormProps) {
-  const [mode, setMode] = useState<'internal' | 'external'>('internal')
   const [recipient, setRecipient] = useState(defaultRecipient ?? '')
   const [amount, setAmount] = useState<number>(0)
   const [sending, setSending] = useState(false)
-  const prevModeRef = useRef<'internal' | 'external'>(mode);
-
   const [profiles, setProfiles] = useState<WalletProfile[]>([])
   const [destProfileId, setDestProfileId] = useState<string>('')
 
@@ -128,42 +125,13 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
 
     return id.slice(0, 4).map(byte => byte.toString(16).padStart(2, '0')).join('')
   }
-  useEffect(() => {
-    setRecipient('')
-  }, [mode])
-  useEffect(() => {
-    const prev = prevModeRef.current;
-    if (prev !== mode && mode === 'internal') {
-      const first = profiles.find(p => !p.active) ?? profiles[0];
-      if (first) {
-        const enc = JSON.stringify(first.id);
-        void handlePickProfile(enc);
-      }
-    }
-    prevModeRef.current = mode;
-  }, [mode, profiles]);
+
   return (
     <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
       <Typography variant="h6" sx={{ mb: 1 }}>
         Send Payment
       </Typography>
       <Stack spacing={2}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-          <Button
-            variant={mode === 'internal' ? 'contained' : 'outlined'}
-            onClick={() => setMode('internal')}
-          >
-            Internal (My Profiles)
-          </Button>
-          <Button
-            variant={mode === 'external' ? 'contained' : 'outlined'}
-            onClick={() => setMode('external')}
-          >
-            External (Any Pubkey)
-          </Button>
-        </Stack>
-
-        {mode === 'internal' ? (
           <Stack spacing={2}>
             <FormControl fullWidth>
               <InputLabel id="dest-profile-label">Destination Profile</InputLabel>
@@ -196,16 +164,6 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
               helperText={'Identity pubkey of the selected profile'}
             />
           </Stack>
-        ) : (
-          <TextField
-            label="Recipient (identity pubkey hex or handle)"
-            fullWidth
-            value={recipient}
-            onChange={(e) => setRecipient(e.target.value)}
-            placeholder="02ab… (recipient identity pubkey)"
-          />
-        )}
-
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField
             type="number"
@@ -313,7 +271,7 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
                         disabled={isLoading}
                         onClick={() => accept(p)}
                       >
-                        {isLoading ? 'Accepting…' : 'Accept'}
+                        {isLoading ? 'Receiving' : 'receive'}
                       </Button>
                     </Stack>
                   }
@@ -346,14 +304,15 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
 
 /* ------------------------------- Route View -------------------------------- */
 export default function PeerPayRoute({ walletClient, defaultRecipient }: PeerPayRouteProps) {
-  const { activeProfile, managers } = useContext(WalletContext)
+  const { activeProfile, managers, adminOriginator } = useContext(WalletContext)
 
   const peerPay = useMemo(() => {
-    const wc = walletClient ?? new WalletClient()
+    const wc = managers.permissionsManager
     return new PeerPayClient({
       walletClient: wc,
       messageBoxHost: MESSAGEBOX_HOST,
       enableLogging: true,
+      originator: adminOriginator
     })
   }, [walletClient])
 
@@ -368,6 +327,7 @@ export default function PeerPayRoute({ walletClient, defaultRecipient }: PeerPay
   const fetchPayments = useCallback(async () => {
     try {
       setLoading(true)
+      debugger
       const list = await peerPay.listIncomingPayments(MESSAGEBOX_HOST)
       setPayments(list)
     } catch (e) {

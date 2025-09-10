@@ -22,13 +22,15 @@ import {
   FormControl,
   CircularProgress
 } from '@mui/material'
+import InputAdornment from '@mui/material/InputAdornment'
 import { PeerPayClient, IncomingPayment } from '@bsv/message-box-client'
 import { WalletClient } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
 import { toast } from 'react-toastify'
 import { WalletPermissionsManager } from '@bsv/wallet-toolbox-client'
 import { MESSAGEBOX_HOST } from '../../../config'
-
+import { CurrencyConverter } from 'amountinator'
+import useAsyncEffect from 'use-async-effect'
 export type PeerPayRouteProps = {
   walletClient?: WalletClient
   defaultRecipient?: string
@@ -56,6 +58,21 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
   const [sending, setSending] = useState(false)
   const [profiles, setProfiles] = useState<WalletProfile[]>([])
   const [destProfileId, setDestProfileId] = useState<string>('')
+  const [currencySymbol, setCurrencySymbol] = useState('$')
+  const currencyConverter = new CurrencyConverter()
+
+  useAsyncEffect(async () => {
+    // Note: Handle errors at a higher layer!
+    await currencyConverter.initialize()
+    setCurrencySymbol(currencyConverter.getCurrencySymbol())
+  }, [])
+
+  const handleAmountChange = useCallback(async (event) => {
+    const input = event.target.value.replace(/[^0-9.]/g, '')
+    if (input !== amount) {
+      setAmount(input)
+    }
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -158,23 +175,14 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
         </Stack>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField
-            label="Amount (sats)"
+            label="Enter Amount"
+            variant="outlined"
+            value={amount}
+            onChange={handleAmountChange}
+            InputProps={{
+              startAdornment: <InputAdornment position="start">{currencySymbol}</InputAdornment>
+            }}
             fullWidth
-            type="text" // avoid HTML number quirks (like "e")
-            slotProps={{
-              // cast so we can pass native input attributes like inputMode
-              input: { inputMode: 'numeric' } as React.InputHTMLAttributes<HTMLInputElement>,
-            }}
-            onKeyDown={(e) => {
-              const allowed = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Tab'];
-              if (allowed.includes(e.key)) return;
-              if ((e.ctrlKey || e.metaKey) && ['a', 'c', 'v', 'x'].includes(e.key.toLowerCase())) return;
-              if (!/^[0-9]$/.test(e.key)) e.preventDefault();
-            }}
-            onChange={(e) => {
-              const digits = e.target.value.replace(/\D/g, '');
-              setAmount(digits ? Number(digits) : 0);
-            }}
           />
 
         </Stack>

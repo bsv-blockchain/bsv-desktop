@@ -24,7 +24,7 @@ import {
 } from '@mui/material'
 import InputAdornment from '@mui/material/InputAdornment'
 import { PeerPayClient, IncomingPayment } from '@bsv/message-box-client'
-import { WalletClient } from '@bsv/sdk'
+import { PubKeyHex, WalletClient } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
 import { toast } from 'react-toastify'
 import { WalletPermissionsManager } from '@bsv/wallet-toolbox-client'
@@ -49,7 +49,8 @@ type WalletProfile = {
   id: number[]
   name: string
   createdAt: number | null
-  active: boolean
+  active: boolean,
+  identityKey: PubKeyHex
 }
 
 function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfile }: PaymentFormProps) {
@@ -70,7 +71,7 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
   const handleAmountChange = useCallback(async (event) => {
     const input = event.target.value.replace(/[^0-9.]/g, '')
     if (input !== amount) {
-        setInput(input)
+      setInput(input)
       const satoshis = await currencyConverter.convertToSatoshis(input)
       setAmount(satoshis)
     }
@@ -87,7 +88,8 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
             id: [...p.id],
             name: String(p.name),
             createdAt: p.createdAt ?? null,
-            active: !!p.active
+            active: !!p.active,
+            identityKey: p.identityKey
           }))
           setProfiles(cloned)
         } catch (e) {
@@ -165,10 +167,11 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
               }
             >
               {profiles.map((p) => {
+                console.log('idk', p.identityKey)
                 const enc = JSON.stringify(p.id)
                 return (
                   <MenuItem key={p.name + enc} value={enc}>
-                    {p.name} — {formatProfileId(p.id)}
+                    {p.name} — {(p.identityKey.slice(0, 10))}
                   </MenuItem>
                 )
               })}

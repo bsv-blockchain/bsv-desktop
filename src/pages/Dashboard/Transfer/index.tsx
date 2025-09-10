@@ -27,7 +27,7 @@ import { WalletClient } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
 import { toast } from 'react-toastify'
 import { WalletPermissionsManager } from '@bsv/wallet-toolbox-client'
-import {MESSAGEBOX_HOST} from '../../../config'
+import { MESSAGEBOX_HOST } from '../../../config'
 
 export type PeerPayRouteProps = {
   walletClient?: WalletClient
@@ -132,37 +132,51 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
         Send Payment
       </Typography>
       <Stack spacing={2}>
-          <Stack spacing={2}>
-            <FormControl fullWidth>
-              <InputLabel id="dest-profile-label">Destination Profile</InputLabel>
-              <Select
-                labelId="dest-profile-label"
-                label="Destination Profile"
-                value={destProfileId}
-                onChange={(e) => handlePickProfile(String(e.target.value))}
-                renderValue={(val) =>
-                  val && val !== '' ? profiles.find(p => JSON.stringify(p.id) === val)?.name ?? 'Select a profile'
-                    : 'Select a profile'
-                }
-              >
-                {profiles.map((p) => {
-                  const enc = JSON.stringify(p.id)
-                  return (
-                    <MenuItem key={p.name + enc} value={enc}>
-                      {p.name} — {formatProfileId(p.id)}
-                    </MenuItem>
-                  )
-                })}
-              </Select>
-            </FormControl>
-          </Stack>
+        <Stack spacing={2}>
+          <FormControl fullWidth>
+            <InputLabel id="dest-profile-label">Destination Profile</InputLabel>
+            <Select
+              labelId="dest-profile-label"
+              label="Destination Profile"
+              value={destProfileId}
+              onChange={(e) => handlePickProfile(String(e.target.value))}
+              renderValue={(val) =>
+                val && val !== '' ? profiles.find(p => JSON.stringify(p.id) === val)?.name ?? 'Select a profile'
+                  : 'Select a profile'
+              }
+            >
+              {profiles.map((p) => {
+                const enc = JSON.stringify(p.id)
+                return (
+                  <MenuItem key={p.name + enc} value={enc}>
+                    {p.name} — {formatProfileId(p.id)}
+                  </MenuItem>
+                )
+              })}
+            </Select>
+          </FormControl>
+        </Stack>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField
-            type="number"
             label="Amount (sats)"
             fullWidth
-            onChange={(e) => setAmount(Math.max(0, Number(e.target.value || 0)))}
+            type="text" // avoid HTML number quirks (like "e")
+            slotProps={{
+              // cast so we can pass native input attributes like inputMode
+              input: { inputMode: 'numeric' } as React.InputHTMLAttributes<HTMLInputElement>,
+            }}
+            onKeyDown={(e) => {
+              const allowed = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Tab'];
+              if (allowed.includes(e.key)) return;
+              if ((e.ctrlKey || e.metaKey) && ['a', 'c', 'v', 'x'].includes(e.key.toLowerCase())) return;
+              if (!/^[0-9]$/.test(e.key)) e.preventDefault();
+            }}
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, '');
+              setAmount(digits ? Number(digits) : 0);
+            }}
           />
+
         </Stack>
 
         <Box>

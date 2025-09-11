@@ -31,6 +31,9 @@ import { WalletPermissionsManager } from '@bsv/wallet-toolbox-client'
 import { MESSAGEBOX_HOST } from '../../../config'
 import { CurrencyConverter } from 'amountinator'
 import useAsyncEffect from 'use-async-effect'
+import { WalletProfile } from '../../../types/WalletProfile'
+import { OutlinedInput } from '@mui/material';
+
 export type PeerPayRouteProps = {
   walletClient?: WalletClient
   defaultRecipient?: string
@@ -41,19 +44,9 @@ type PaymentFormProps = {
   peerPay: PeerPayClient
   onSent?: () => void
   defaultRecipient?: string
-  managers?: any
-  activeProfile?: { id?: number[]; name?: string } | null
 }
-
-type WalletProfile = {
-  id: number[]
-  name: string
-  createdAt: number | null
-  active: boolean,
-  identityKey: PubKeyHex
-}
-
-function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfile }: PaymentFormProps) {
+function PaymentForm({ peerPay, onSent, defaultRecipient }: PaymentFormProps) {
+  const {managers, activeProfile} = useContext(WalletContext)
   const [recipient, setRecipient] = useState(defaultRecipient ?? '')
   const [amount, setAmount] = useState<number>(0)
   const [sending, setSending] = useState(false)
@@ -62,11 +55,17 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
   const [currencySymbol, setCurrencySymbol] = useState('$')
   const currencyConverter = new CurrencyConverter()
   const [input, setInput] = useState('')
+
   useAsyncEffect(async () => {
     // Note: Handle errors at a higher layer!
     await currencyConverter.initialize()
     setCurrencySymbol(currencyConverter.getCurrencySymbol())
   }, [])
+
+  const otherProfiles = useMemo(
+  () => profiles.filter(p => p.identityKey !== activeProfile?.identityKey),
+  [profiles, activeProfile?.identityKey]
+  )
 
   const handleAmountChange = useCallback(async (event) => {
     const input = event.target.value.replace(/[^0-9.]/g, '')
@@ -127,9 +126,7 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
       <Stack spacing={2}>
         <Stack spacing={2}>
           <FormControl fullWidth>
-            <InputLabel id="dest-profile-label">Destination Profile</InputLabel>
             <Select
-              labelId="dest-profile-label"
               label="Destination Profile"
               value={recipient || ''}                 // recipient is the identityKey string
               displayEmpty
@@ -139,8 +136,9 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
                 const p = profiles.find(p => p.identityKey === val)  // <- fix
                 return p ? `${p.name} — ${p.identityKey.slice(0, 10)}` : ''
               }}
+              input={<OutlinedInput notched={false} />}
             >
-              {profiles.map((p) => (
+              {otherProfiles.map((p) => (
                 <MenuItem key={p.identityKey} value={p.identityKey}>
                   {p.name} — {p.identityKey.slice(0, 10)}
                 </MenuItem>
@@ -359,8 +357,6 @@ export default function PeerPayRoute({ walletClient, defaultRecipient }: PeerPay
             peerPay={peerPay}
             onSent={fetchPayments}
             defaultRecipient={defaultRecipient}
-            managers={managers}
-            activeProfile={activeProfile}
           />
 
           {loading && <LinearProgress />}

@@ -20,7 +20,7 @@ import {
   Utils,
   LookupResolver,
   WalletInterface,
-  CachedKeyDeriver
+  CachedKeyDeriver,
 } from '@bsv/sdk'
 import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 import { toast } from 'react-toastify'
@@ -30,17 +30,11 @@ import { UserContext } from './UserContext'
 import { GroupPermissionRequest, GroupedPermissions } from './types/GroupedPermissions'
 import { updateRecentApp } from './pages/Dashboard/Apps/getApps'
 import { RequestInterceptorWallet } from './RequestInterceptorWallet'
-
+import { WalletProfile } from './types/WalletProfile'
 // -----
 // Context Types
 // -----
 
-export interface ActiveProfile {
-  id: number[];
-  name: string;
-  createdAt: number | null;
-  active: boolean;
-}
 
 interface ManagerState {
   walletManager?: WalletAuthenticationManager;
@@ -59,8 +53,8 @@ export interface WalletContextValue {
   updateSettings: (newSettings: WalletSettings) => Promise<void>;
   network: 'mainnet' | 'testnet';
   // Active Profile
-  activeProfile: ActiveProfile | null;
-  setActiveProfile: (profile: ActiveProfile | null) => void;
+  activeProfile: WalletProfile | null;
+  setActiveProfile: (profile: WalletProfile | null) => void;
   // Logout
   logout: () => void;
   adminOriginator: string;
@@ -198,7 +192,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [adminOriginator, setAdminOriginator] = useState(ADMIN_ORIGINATOR);
   const [recentApps, setRecentApps] = useState([])
-  const [activeProfile, setActiveProfile] = useState<ActiveProfile | null>(null)
+  const [activeProfile, setActiveProfile] = useState<WalletProfile | null>(null)
 
   const { isFocused, onFocusRequested, onFocusRelinquished, setBasketAccessModalOpen, setCertificateAccessModalOpen, setProtocolAccessModalOpen, setSpendingAuthorizationModalOpen, setGroupPermissionModalOpen } = useContext(UserContext);
 

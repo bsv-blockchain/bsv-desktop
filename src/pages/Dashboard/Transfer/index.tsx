@@ -109,7 +109,8 @@ function PaymentForm({ peerPay, onSent, defaultRecipient }: PaymentFormProps) {
         amount
       })
       onSent?.()
-      setAmount(0)
+      toast.success('Payment Success!')
+      setInput('0')
     } catch (e) {
       toast.error('[PaymentForm] sendLivePayment error:', e as any)
       alert((e as Error)?.message ?? 'Failed to send payment')

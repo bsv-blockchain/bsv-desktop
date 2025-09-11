@@ -8,8 +8,9 @@ import {
   Delete as DeleteIcon,
   ExpandLess,
   ExpandMore,
-  Person as PersonIcon
+  Person as PersonIcon,
 } from '@mui/icons-material'
+import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
 import {
   List,
@@ -34,26 +35,19 @@ import {
   TextField,
   Grid,
   alpha,
-  LinearProgress
+  LinearProgress,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material'
 import Profile from '../components/Profile'
-import React, { useState, useContext, useEffect, useCallback } from 'react';
-import { toast } from 'react-toastify';
-import { useHistory } from 'react-router';
-import { WalletContext } from '../WalletContext';
-import { UserContext } from '../UserContext';
-import { useBreakpoint } from '../utils/useBreakpoints.js';
-import { Utils } from '@bsv/sdk';
-
-
-// Type definition for profile structure from CWIStyleWalletManager
-interface Profile {
-  id: number[];
-  name: string;
-  createdAt: number | null;
-  active: boolean;
-}
-
+import React, { useState, useContext, useEffect, useCallback } from 'react'
+import { toast } from 'react-toastify'
+import { useHistory } from 'react-router'
+import { WalletContext } from '../WalletContext'
+import { UserContext } from '../UserContext'
+import { useBreakpoint } from '../utils/useBreakpoints.js'
+import { Utils, PushDrop, LockingScript, Transaction } from '@bsv/sdk'
+import { WalletProfile } from '../types/WalletProfile';
 // Custom styling for menu items
 const menuItemStyle = (isSelected) => ({
   borderRadius: '8px',
@@ -68,13 +62,14 @@ const menuItemStyle = (isSelected) => ({
       backgroundColor: 'rgba(25, 118, 210, 0.2)',
     },
   }),
-});
+})
 
 interface MenuProps {
-  menuOpen: boolean;
-  setMenuOpen: (open: boolean) => void;
-  menuRef: React.RefObject<HTMLDivElement>;
+  menuOpen: boolean
+  setMenuOpen: (open: boolean) => void
+  menuRef: React.RefObject<HTMLDivElement>
 }
+
 
 export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const history = useHistory()
@@ -84,18 +79,20 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
 
   // Profile management state
   const [profilesOpen, setProfilesOpen] = useState(false)
-  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [profiles, setProfiles] = useState<WalletProfile[]>([])
   const [createProfileOpen, setCreateProfileOpen] = useState(false)
   const [newProfileName, setNewProfileName] = useState('')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [profileToDelete, setProfileToDelete] = useState<number[] | null>(null)
+  const [profileToDelete, setProfileToDelete] = useState<WalletProfile>(null)
   const [profilesLoading, setProfilesLoading] = useState(false)
+  const [fund, setFund] = useState<boolean>(false)
+
 
   // History.push wrapper
   const navigation = {
     push: (path: string) => {
       // Explicitly cast breakpoints to avoid TypeScript error
-      const { sm } = breakpoints as { sm: boolean };
+      const { sm } = breakpoints as { sm: boolean }
       if (sm) {
         setMenuOpen(false)
       }
@@ -106,13 +103,90 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   // First useEffect to handle breakpoint changes
   useEffect(() => {
     // Explicitly cast breakpoints to avoid TypeScript error
-    const { sm } = breakpoints as { sm: boolean };
+    const { sm } = breakpoints as { sm: boolean }
     if (!sm) {
       setMenuOpen(true)
     } else {
       setMenuOpen(false)
     }
   }, [breakpoints])
+
+  //get Most Recent Profile Key
+  const getMRPK = async () => {
+    const listprofiles = await managers.walletManager.listProfiles()
+    const mostRecent = listprofiles.reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
+    return mostRecent.identityKey
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    debugger
+    const run = async () => {
+      if (!managers?.walletManager || !activeProfile?.name) return
+      const cacheKey = `funds_${activeProfile.name}`
+      const cached = localStorage.getItem(cacheKey)
+      if (!cached) return
+      try {
+        const funding: {
+          txid: string
+          outpoint: string
+          satoshis: number
+          lockingScript: string
+          tx: Transaction,
+          beef: number[],
+          sender: string
+        } = JSON.parse(cached)
+
+        const { signableTransaction } = await managers.walletManager.createAction({
+          description: 'claiming funds',
+          inputBEEF: funding.beef,
+          inputs: [{
+            inputDescription: 'Claim funds',
+            outpoint: funding.outpoint,
+            unlockingScriptLength: 74
+          }],
+          options: {
+            acceptDelayedBroadcast: false,
+            randomizeOutputs: false
+          }
+        })
+
+        if (!signableTransaction) {
+          throw new Error('No signable transaction returned')
+        }
+
+        const tx = Transaction.fromBEEF(signableTransaction.tx!)
+
+
+        const unlocker = new PushDrop(managers.walletManager).unlock(
+          [0, 'fundingprofile'],
+          '1',
+          funding.sender,
+          'all',
+          false,
+          5000,
+          LockingScript.fromHex(funding.lockingScript)
+        )
+
+        let unlockingScript = await unlocker.sign(tx, 0)
+        let reference = signableTransaction.reference
+        const signRes = await managers.walletManager.signAction({
+          reference,
+          spends: {
+            0: {
+              unlockingScript: unlockingScript.toHex()
+            }
+          }
+        })
+        localStorage.removeItem(cacheKey)
+      } catch (err) {
+        if (!cancelled) console.error(' Claim failed', err)
+      }
+    }
+
+    void run()
+    return () => { cancelled = true }
+  }, [activeProfile?.name, managers?.walletManager])
 
   // Second useEffect to handle outside clicks
   useEffect(() => {
@@ -134,115 +208,166 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
     }
   }, [menuOpen])
 
+  const createTokenFor = async(profile: string, amount:number) =>
+  {
+    if(amount < 0)
+    {
+      return
+    }
+    const cacheKey = `funds_${newProfileName.trim()}`
+    const pd = new PushDrop(managers.walletManager)
+    const fields = [Utils.toArray(`Funding Wallet: ${newProfileName.trim()}`)]
+    const counterparty = profile
+    const sender = activeProfile.identityKey
+    const lockingScript = await pd.lock(
+      fields,
+      [0, 'fundingprofile'],
+      '1',
+      counterparty
+    )
+
+    const createRes = await managers.walletManager.createAction({
+      description: 'funding new profile',
+      outputs: [{
+        lockingScript: lockingScript.toHex(),
+        satoshis: amount,
+        outputDescription: 'New profile funds',
+      }],
+      options: {
+        randomizeOutputs: false,
+        acceptDelayedBroadcast: false
+      }
+    }, 'Metanet-Desktop')
+
+    const beef = createRes.tx!
+    const tx = Transaction.fromAtomicBEEF(createRes.tx!)
+    const outpoint = `${createRes.txid}.0`
+    const txid = tx.id('hex')
+    const satoshis = tx.outputs[0].satoshis
+
+    localStorage.setItem(cacheKey, JSON.stringify({
+      txid,
+      tx,
+      outpoint,
+      satoshis,
+      lockingScript: lockingScript.toHex(),
+      beef,
+      sender: sender
+    }))
+  }
+
   // Helper function to refresh profiles
   const refreshProfiles = useCallback(async () => {
-    if (!managers?.walletManager || !managers.walletManager?.listProfiles) return;
+    if (!managers?.walletManager || !managers.walletManager?.listProfiles) return
 
     try {
-      setProfilesLoading(true);
+      setProfilesLoading(true)
       // Handle both synchronous and asynchronous listProfiles implementation
       if (managers.walletManager.saveSnapshot) {
         localStorage.snap = Utils.toBase64(managers.walletManager.saveSnapshot())
       }
-      const profileList = await Promise.resolve(managers.walletManager?.listProfiles());
-      setProfiles(profileList);
+      const profileList = await Promise.resolve(managers.walletManager?.listProfiles())
+      setProfiles(profileList)
     } catch (error) {
-      toast.error(`Error loading profiles: ${error.message || error}`);
+      toast.error(`Error loading profiles: ${error.message || error}`)
     } finally {
-      setProfilesLoading(false);
+      setProfilesLoading(false)
     }
-  }, [managers?.walletManager]);
+  }, [managers?.walletManager])
 
   // Handle profile creation
   const handleCreateProfile = async () => {
-    if (!newProfileName.trim() || !managers?.walletManager) return;
+    if (!newProfileName.trim() || !managers?.walletManager) return
 
     try {
       // Close dialog first before async operation
-      setCreateProfileOpen(false);
-      setNewProfileName('');
+      setCreateProfileOpen(false)
+      setNewProfileName('')
 
-      // Show loading state
-      setProfilesLoading(true);
+      setProfilesLoading(true)
 
       // Then perform the async operation
-      await managers.walletManager.addProfile(newProfileName.trim());
+      await managers.walletManager.addProfile(newProfileName.trim())
+
+      // Then fund the new profile
+      if (fund) {
+          createTokenFor(await getMRPK(), 5000)
+      }
 
       // Refresh the profile list
-      await refreshProfiles();
+      await refreshProfiles()
     } catch (error) {
-      toast.error(`Error creating profile: ${error.message || error}`);
-      setProfilesLoading(false);
+      toast.error(`Error creating profile: ${error.message || error}`)
+      setProfilesLoading(false)
     }
-  };
+    finally{
+      setFund(false)
+    }
+  }
 
   // Handle profile switching
   const handleSwitchProfile = async (profileId: number[]) => {
-    if (!managers?.walletManager) return;
+    if (!managers?.walletManager) return
 
     try {
       // Show loading state
-      setProfilesLoading(true);
+      setProfilesLoading(true)
 
       // Perform the async operation
-      await managers.walletManager.switchProfile(profileId);
+      await managers.walletManager.switchProfile(profileId)
       setActiveProfile(profiles.find(profile => profile.id == profileId))
 
       // Refresh the profile list to update active status
-      if( history.location.pathname.startsWith('/dashboard/app/')){
+      if (history.location.pathname.startsWith('/dashboard/app/')) {
         history.push('/dashboard/apps')
       }
-      await refreshProfiles();
+      await refreshProfiles()
     } catch (error) {
-      toast.error(`Error switching profile: ${error.message || error}`);
-      setProfilesLoading(false);
+      toast.error(`Error switching profile: ${error.message || error}`)
+      setProfilesLoading(false)
     }
-  };
+  }
 
   // Handle profile deletion
-  const confirmDeleteProfile = (profileId: number[]) => {
-    setProfileToDelete(profileId);
-    setDeleteConfirmOpen(true);
-  };
+  const confirmDeleteProfile = (profile: WalletProfile) => {
+    setProfileToDelete(profile)
+    setDeleteConfirmOpen(true)
+  }
+
 
   const handleDeleteProfile = async () => {
-    if (!profileToDelete || !managers?.walletManager) return;
+    if (!profileToDelete || !managers?.walletManager) return
 
     try {
-      // Close dialog first before async operation
-      setDeleteConfirmOpen(false);
-      const profileIdToDelete = [...profileToDelete]; // Create a copy
-      setProfileToDelete(null);
+      setDeleteConfirmOpen(false)
+      setProfilesLoading(true)
 
-      // Show loading state
-      setProfilesLoading(true);
+      await managers.walletManager.deleteProfile(profileToDelete.id)
 
-      // Then perform the async operation
-      await managers.walletManager.deleteProfile(profileIdToDelete);
-
-      // Refresh the profile list
-      await refreshProfiles();
-    } catch (error) {
-      toast.error(`Error deleting profile: ${error.message || error}`);
-      setProfilesLoading(false);
+      // Cleanup & refresh
+      setProfileToDelete(null)
+      await refreshProfiles()
+    } catch (error: any) {
+      toast.error(`Error deleting profile: ${error.message || error}`)
+      setProfilesLoading(false)
     }
-  };
+  }
 
   // Render formatted profile ID (first 8 chars)
   const formatProfileId = (id: number[]) => {
     // Check if it's the default profile
     if (id.every(x => x === 0)) {
-      return 'Default';
+      return 'Default'
     }
 
     // Convert to hex and show first 8 characters
-    return id.slice(0, 4).map(byte => byte.toString(16).padStart(2, '0')).join('');
-  };
+    return id.slice(0, 4).map(byte => byte.toString(16).padStart(2, '0')).join('')
+  }
 
   // Load profiles when wallet is initialized
   useEffect(() => {
-    refreshProfiles();
-  }, [refreshProfiles]);
+    refreshProfiles()
+  }, [refreshProfiles])
 
   return (
     <Drawer
@@ -357,14 +482,14 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                         </Box>
                         <Box display="flex" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" color="textSecondary">
-                            ID: {formatProfileId(profile.id)}
+                            Identity Key: {(profile?.identityKey?.slice(0, 10))}
                           </Typography>
                           {!profile.active && !profile.id.every(x => x === 0) && (
                             <IconButton
                               size="small"
                               onClick={(e) => {
-                                e.stopPropagation(); // Prevent card click from triggering
-                                confirmDeleteProfile(profile.id);
+                                e.stopPropagation() // Prevent card click from triggering
+                                confirmDeleteProfile(profile)
                               }}
                               sx={{
                                 color: 'white',
@@ -502,13 +627,34 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
               }
             />
           </ListItemButton>
+
+          <ListItemButton
+            onClick={() => navigation.push('/dashboard/transfer')}
+            selected={history.location.pathname === '/dashboard/transfer'}
+            sx={menuItemStyle(history.location.pathname === '/dashbaord/transfer')}
+          >
+            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/transfer' ? 'primary.main' : 'inherit' }}>
+              <SyncAltIcon />
+            </ListItemIcon>
+            <ListItemText
+              primary={
+                <Typography
+                  variant="body1"
+                  fontWeight={history.location.pathname === '/dashboard/transfer' ? 600 : 400}
+                >
+                  Transfer
+                </Typography>
+              }
+            />
+          </ListItemButton>
         </List>
+
 
         <Box sx={{ mt: 'auto', mb: 2 }}>
           <ListItemButton
             onClick={() => {
-              logout();
-              history.push('/');
+              logout()
+              history.push('/')
             }}
             sx={menuItemStyle(false)}
           >
@@ -543,6 +689,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
         </Box>
       </Box>
 
+
       {/* Create Profile Dialog */}
       <Dialog open={createProfileOpen} onClose={() => setCreateProfileOpen(false)}>
         <DialogTitle>Create New Profile</DialogTitle>
@@ -550,6 +697,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
           <DialogContentText>
             Enter a name for the new profile. Each profile has its own set of keys and can be used for different purposes.
           </DialogContentText>
+
           <TextField
             autoFocus
             margin="dense"
@@ -559,33 +707,86 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
             value={newProfileName}
             onChange={(e) => setNewProfileName(e.target.value)}
           />
+
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={fund}
+                onChange={(e) => setFund(e.target.checked)}
+                value='on'
+              />
+            }
+            label="Automatically fund wallet with 5000 sats?"
+            sx={{ mt: 1 }}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateProfileOpen(false)}>Cancel</Button>
-          <Button onClick={handleCreateProfile} color="primary">
+          <Button
+            onClick={() => handleCreateProfile()}
+            color="primary"
+          >
             Create
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog
-        open={deleteConfirmOpen}
-        onClose={() => setDeleteConfirmOpen(false)}
-      >
-        <DialogTitle>Delete Profile</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete this profile? This action cannot be undone.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
-          <Button onClick={handleDeleteProfile} color="error">
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
+    <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
+      <DialogTitle>Delete Profile</DialogTitle>
+
+      <DialogContent>
+        <DialogContentText
+          sx={{
+            textAlign: 'center',
+            '& strong': { color: 'error.main' },
+            wordBreak: 'break-word',
+          }}
+        >
+          <strong>Permanent deletion</strong><br />
+          This will erase <strong>all data</strong> and <strong>all satoshis</strong> for this profile.<br />
+          Are you sure you want to delete profile (<code>{profileToDelete?.name?.slice(0, 10)}</code> - <code>{profileToDelete?.identityKey?.slice(0, 10)}</code>)?<br />
+          This action cannot be undone.
+        </DialogContentText>
+
+        {/* Center the checkbox + label */}
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+          <FormControlLabel
+            control={
+            <ListItemButton
+            onClick={() => {navigation.push('/dashboard/transfer')
+              setDeleteConfirmOpen(false)
+            }}
+            selected={history.location.pathname === '/dashboard/transfer'}
+            sx={menuItemStyle(history.location.pathname === '/dashbaord/transfer')}
+          >
+            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/transfer' ? 'primary.main' : 'inherit' }}>
+              <SyncAltIcon />
+            </ListItemIcon>
+            <ListItemText
+              primary={
+                <Typography
+                  variant="body1"
+                  fontWeight={history.location.pathname === '/dashboard/transfer' ? 600 : 400}
+                >
+                  Transfer
+                </Typography>
+              }
+            />
+          </ListItemButton>
+            }
+            label="Would you like to transfer all funds to a profile?"
+            sx={{ '& .MuiFormControlLabel-label': { textAlign: 'center' } }}
+          />
+        </Box>
+        
+      </DialogContent>
+
+      <DialogActions>
+        <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
+        <Button onClick={handleDeleteProfile} color="error">Delete</Button>
+      </DialogActions>
+    </Dialog>
     </Drawer>
   )
 }

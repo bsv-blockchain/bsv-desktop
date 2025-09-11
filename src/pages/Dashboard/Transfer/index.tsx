@@ -99,27 +99,6 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
     return () => { alive = false }
   }, [managers])
 
-  const handlePickProfile = async (value: string) => {
-    if (!managers?.walletManager) return
-    const originalId: number[] | undefined = activeProfile?.id
-    const targetId: number[] = JSON.parse(value)
-    let newRecipient = ''
-
-    try {
-      await managers.walletManager.switchProfile(targetId)
-      const pub = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
-      newRecipient = String(pub.publicKey || '')
-    } catch (e) {
-      toast.error('[PaymentForm] resolve pubkey failed for selected profile', e as any)
-    } finally {
-      if (originalId) {
-        try { await managers.walletManager.switchProfile(originalId) } catch { }
-      }
-      setRecipient(newRecipient)
-      setDestProfileId(value)
-    }
-  }
-
   const canSend = recipient.trim().length > 0 && amount > 0 && !sending
 
   const send = async () => {
@@ -139,13 +118,6 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
       setSending(false)
     }
   }
-  const formatProfileId = (id: number[]) => {
-    if (id.every(x => x === 0)) {
-      return 'Default'
-    }
-
-    return id.slice(0, 4).map(byte => byte.toString(16).padStart(2, '0')).join('')
-  }
 
   return (
     <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
@@ -159,22 +131,20 @@ function PaymentForm({ peerPay, onSent, defaultRecipient, managers, activeProfil
             <Select
               labelId="dest-profile-label"
               label="Destination Profile"
-              value={destProfileId}
-              onChange={(e) => handlePickProfile(String(e.target.value))}
-              renderValue={(val) =>
-                val && val !== '' ? profiles.find(p => JSON.stringify(p.id) === val)?.name ?? 'Select a profile'
-                  : 'Select a profile'
-              }
+              value={recipient || ''}                 // recipient is the identityKey string
+              displayEmpty
+              onChange={(e) => setRecipient(e.target.value as string)}
+              renderValue={(val) => {
+                if (!val) return ''
+                const p = profiles.find(p => p.identityKey === val)  // <- fix
+                return p ? `${p.name} — ${p.identityKey.slice(0, 10)}` : ''
+              }}
             >
-              {profiles.map((p) => {
-                console.log('idk', p.identityKey)
-                const enc = JSON.stringify(p.id)
-                return (
-                  <MenuItem key={p.name + enc} value={enc}>
-                    {p.name} — {(p.identityKey.slice(0, 10))}
-                  </MenuItem>
-                )
-              })}
+              {profiles.map((p) => (
+                <MenuItem key={p.identityKey} value={p.identityKey}>
+                  {p.name} — {p.identityKey.slice(0, 10)}
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
         </Stack>

@@ -133,11 +133,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const getMRPK = async () => {
     const listprofiles = await managers.walletManager.listProfiles()
     const mostRecent = listprofiles.reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
-    const lastProfileId: number[] = mostRecent.id
-    await managers.walletManager.switchProfile(lastProfileId)
-    const pkey = await managers.walletManager.getPublicKey({ identityKey: true }, 'Metanet-Desktop')
-    await managers.walletManager.switchProfile(activeProfile.id)
-    return pkey.publicKey
+    return mostRecent.identityKey
   }
 
   useEffect(() => {
@@ -493,7 +489,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                         </Box>
                         <Box display="flex" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" color="textSecondary">
-                            Identity Key: {(profile.identityKey.slice(0, 10))}
+                            Identity Key: {(profile?.identityKey?.slice(0, 10))}
                           </Typography>
                           {!profile.active && !profile.id.every(x => x === 0) && (
                             <IconButton

@@ -16,7 +16,7 @@ import AmountDisplay from '../AmountDisplay/index.js'
 import CustomDialog from '../CustomDialog/index.js'
 import { WalletContext } from '../../WalletContext'
 import AppChip from '../AppChip/index.js'
-import { Services } from '@bsv/wallet-toolbox-client'
+import { Services } from '@bsv/wallet-toolbox'
 import { UserContext } from '../../UserContext.js'
 
 const services = new Services('main')

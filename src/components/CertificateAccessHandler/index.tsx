@@ -7,7 +7,7 @@ import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
 import deterministicColor from '../../utils/deterministicColor'
 import { WalletContext } from '../../WalletContext'
 import { UserContext } from '../../UserContext'
-import { PermissionRequest } from '@bsv/wallet-toolbox-client'
+import { PermissionRequest } from '@bsv/wallet-toolbox'
 
 type CertificateAccessRequest = {
   requestID: string

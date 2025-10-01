@@ -3,7 +3,7 @@ import { Typography, Button, Grid, LinearProgress, Box } from '@mui/material';
 import { useHistory } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { WalletContext } from '../../WalletContext';
-import { WalletSettings } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager';
+import { WalletSettings } from '@bsv/wallet-toolbox/out/src/WalletSettingsManager';
 // import DarkModeImage from '../../images/darkMode'; // Need to check if these images exist/are needed
 // import LightModeImage from '../../images/lightMode'; // Need to check if these images exist/are needed
 import { styled } from '@mui/material/styles';

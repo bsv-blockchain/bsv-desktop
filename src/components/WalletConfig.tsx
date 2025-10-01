@@ -34,6 +34,8 @@ const WalletConfig: React.FC = () => {
   const [network, setNetwork] = useState<'main' | 'test'>(DEFAULT_CHAIN)
   const [storageUrl, setStorageUrl] = useState<string>('')
   const [useWab, setUseWab] = useState<boolean>(DEFAULT_USE_WAB)
+  const [useRemoteStorage, setUseRemoteStorage] = useState<boolean>(false)
+  const [useMessageBox, setUseMessageBox] = useState<boolean>(false)
   const [isLoadingConfig, setIsLoadingConfig] = useState(false)
   const [backupConfig, setBackupConfig] = useState<WABConfig>()
 
@@ -85,9 +87,11 @@ const WalletConfig: React.FC = () => {
       storageUrl,
       messageBoxUrl,
       useWab,
+      useRemoteStorage,
+      useMessageBox,
     })
     if (valid) setShowWalletConfig(false)
-  }, [wabUrl, wabInfo, method, network, storageUrl, messageBoxUrl, useWab, finalizeConfig, setShowWalletConfig])
+  }, [wabUrl, wabInfo, method, network, storageUrl, messageBoxUrl, useWab, useRemoteStorage, useMessageBox, finalizeConfig, setShowWalletConfig])
 
   // Force the manager to use the "presentation-key-and-password" flow:
   useEffect(() => {
@@ -104,7 +108,9 @@ const WalletConfig: React.FC = () => {
       network,
       storageUrl,
       messageBoxUrl,
-      useWab
+      useWab,
+      useRemoteStorage,
+      useMessageBox
     })
     if (managers?.walletManager) {
       delete managers.walletManager
@@ -118,7 +124,18 @@ const WalletConfig: React.FC = () => {
   }
 
   const resetCurrentConfig = useCallback(() => {
-    finalizeConfig(backupConfig)
+    if (backupConfig) {
+      setWabUrl(backupConfig.wabUrl)
+      setWabInfo(backupConfig.wabInfo)
+      setMethod(backupConfig.method)
+      setNetwork(backupConfig.network)
+      setStorageUrl(backupConfig.storageUrl)
+      setMessageBoxUrl(backupConfig.messageBoxUrl)
+      setUseWab(backupConfig.useWab !== false)
+      setUseRemoteStorage(backupConfig.useRemoteStorage || false)
+      setUseMessageBox(backupConfig.useMessageBox || false)
+      finalizeConfig(backupConfig)
+    }
   }, [backupConfig, finalizeConfig])
 
   const toggle = () => {
@@ -159,55 +176,12 @@ const WalletConfig: React.FC = () => {
                 Configuration
               </Typography>
               <Box sx={{ py: 2 }}>
-                <Typography variant="body2" gutterBottom>
-                  Wallet Authentication Backend (WAB) provides 2 of 3 backup and recovery functionality for your root key.
-                </Typography>
-                <TextField
-                  label="WAB URL"
-                  fullWidth
-                  variant="outlined"
-                  value={wabUrl}
-                  onChange={(e) => setWabUrl(e.target.value)}
-                  margin="normal"
-                  size="small"
-                />
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={fetchWalletConfig}
-                    disabled={isLoadingConfig}
-                  >
-                    Refresh Info
-                  </Button>
-                </Box>
-                <Divider />
-                {wabInfo && wabInfo.supportedAuthMethods && wabInfo.supportedAuthMethods.length > 0 && (
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="body2" gutterBottom>
-                      Service which will be used to verify your phone number:
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {wabInfo.supportedAuthMethods.map((methodOption) => (
-                        <Button
-                          key={methodOption}
-                          variant={method === methodOption ? "contained" : "outlined"}
-                          size="small"
-                          onClick={() => setMethod(methodOption)}
-                          sx={{ textTransform: 'none' }}
-                        >
-                          {methodOption}
-                        </Button>
-                      ))}
-                    </Box>
-                  </Box>
-                )}
-
-                <Box sx={{ mt: 2 }}>
+                {/* BSV Network Selection */}
+                <Box sx={{ mb: 3 }}>
                   <Typography variant="body2" gutterBottom>
                     BSV Network:
                   </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
                     <Button
                       variant={network === 'main' ? "contained" : "outlined"}
                       size="small"
@@ -227,63 +201,196 @@ const WalletConfig: React.FC = () => {
                   </Box>
                 </Box>
 
-                <Typography variant="body2" gutterBottom>
-                  Wallet Storage Provider to use for your transactions and metadata:
-                </Typography>
-                <TextField
-                  label="Storage URL"
-                  fullWidth
-                  variant="outlined"
-                  value={storageUrl}
-                  onChange={(e) => setStorageUrl(e.target.value)}
-                  margin="normal"
-                  size="small"
-                />
+                <Divider sx={{ my: 3 }} />
 
-                <Typography variant="body2" gutterBottom>
-                  Message Box Provider to use for receiving messages and payments while offline.
-                </Typography>
-                <TextField
-                  label="Message Box URL"
-                  fullWidth
-                  variant="outlined"
-                  value={messageBoxUrl}
-                  onChange={(e) => setMessageBoxUrl(e.target.value)}
-                  margin="normal"
-                  size="small"
-                />
-
-                <Box sx={{ mt: 3 }}>
+                {/* WAB Configuration Section */}
+                <Box sx={{ mb: 3 }}>
                   <FormControl component="fieldset">
                     <FormLabel component="legend">
-                      <Typography variant="body2" gutterBottom>
-                        WAB Configuration:
+                      <Typography variant="body2" gutterBottom sx={{ fontWeight: 'bold' }}>
+                        Presentation Key
                       </Typography>
                     </FormLabel>
+                    <Typography variant="body2" gutterBottom sx={{ mt: 1, mb: 2 }}>
+                      This wallet uses a 2 of 3 backup and recovery scheme for your root key. One factor is called the presentation key, and can either be provided by you, or stored in a Wallet Authentication Backend (WAB) for convenience.
+                    </Typography>
                     <RadioGroup
                       value={useWab.toString()}
                       onChange={(e) => setUseWab(e.target.value === 'true')}
                     >
                       <FormControlLabel
-                        value="true"
+                        value="false"
                         control={<Radio size="small" />}
                         label={
                           <Typography variant="body2">
-                            Use WAB (Recommended) - Easy access with phone number without compromising security.
+                            I will provide my own presentation key.
                           </Typography>
                         }
                       />
                       <FormControlLabel
+                        value="true"
+                        control={<Radio size="small" />}
+                        label={
+                          <Typography variant="body2">
+                            I want to use WAB.
+                          </Typography>
+                        }
+                      />
+                      
+                    </RadioGroup>
+                  </FormControl>
+
+                  {useWab && (
+                    <Box sx={{ mt: 2, ml: 3, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                      <TextField
+                        label="WAB URL"
+                        fullWidth
+                        variant="outlined"
+                        value={wabUrl}
+                        onChange={(e) => setWabUrl(e.target.value)}
+                        margin="normal"
+                        size="small"
+                      />
+                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1, mb: 2 }}>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={fetchWalletConfig}
+                          disabled={isLoadingConfig}
+                        >
+                          Refresh Info
+                        </Button>
+                      </Box>
+                      {wabInfo && wabInfo.supportedAuthMethods && wabInfo.supportedAuthMethods.length > 0 && (
+                        <Box sx={{ mt: 2 }}>
+                          <Typography variant="body2" gutterBottom>
+                            Service which will be used to verify your phone number:
+                          </Typography>
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                            {wabInfo.supportedAuthMethods.map((methodOption) => (
+                              <Button
+                                key={methodOption}
+                                variant={method === methodOption ? "contained" : "outlined"}
+                                size="small"
+                                onClick={() => setMethod(methodOption)}
+                                sx={{ textTransform: 'none' }}
+                              >
+                                {methodOption}
+                              </Button>
+                            ))}
+                          </Box>
+                        </Box>
+                      )}
+                    </Box>
+                  )}
+                </Box>
+
+                <Divider sx={{ my: 3 }} />
+
+                {/* Remote Storage Configuration Section */}
+                <Box sx={{ mb: 3 }}>
+                  <FormControl component="fieldset">
+                    <FormLabel component="legend">
+                      <Typography variant="body2" gutterBottom sx={{ fontWeight: 'bold' }}>
+                        Remote Storage:
+                      </Typography>
+                    </FormLabel>
+                    <Typography variant="body2" gutterBottom sx={{ mt: 1, mb: 2 }}>
+                      Use a remote storage provider for your transactions and metadata.
+                    </Typography>
+                    <RadioGroup
+                      value={useRemoteStorage.toString()}
+                      onChange={(e) => setUseRemoteStorage(e.target.value === 'true')}
+                    >
+                      <FormControlLabel
                         value="false"
                         control={<Radio size="small" />}
                         label={
-                          <Typography variant="body2" sx={{ color: 'error.main' }}>
-                            <strong>At your own risk!</strong> Advanced: Don't use WAB - Manage all three keys yourself.
+                          <Typography variant="body2">
+                            Off - Store locally only
+                          </Typography>
+                        }
+                      />
+                      <FormControlLabel
+                        value="true"
+                        control={<Radio size="small" />}
+                        label={
+                          <Typography variant="body2">
+                            On - Use remote storage provider
                           </Typography>
                         }
                       />
                     </RadioGroup>
                   </FormControl>
+
+                  {useRemoteStorage && (
+                    <Box sx={{ mt: 2, ml: 3, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                      <TextField
+                        label="Storage URL"
+                        fullWidth
+                        variant="outlined"
+                        value={storageUrl}
+                        onChange={(e) => setStorageUrl(e.target.value)}
+                        margin="normal"
+                        size="small"
+                        required
+                      />
+                    </Box>
+                  )}
+                </Box>
+
+                <Divider sx={{ my: 3 }} />
+
+                {/* Message Box Configuration Section */}
+                <Box sx={{ mb: 3 }}>
+                  <FormControl component="fieldset">
+                    <FormLabel component="legend">
+                      <Typography variant="body2" gutterBottom sx={{ fontWeight: 'bold' }}>
+                        Message Box:
+                      </Typography>
+                    </FormLabel>
+                    <Typography variant="body2" gutterBottom sx={{ mt: 1, mb: 2 }}>
+                      Use a message box provider for receiving messages while offline.
+                    </Typography>
+                    <RadioGroup
+                      value={useMessageBox.toString()}
+                      onChange={(e) => setUseMessageBox(e.target.value === 'true')}
+                    >
+                      <FormControlLabel
+                        value="false"
+                        control={<Radio size="small" />}
+                        label={
+                          <Typography variant="body2">
+                            Off - No message box
+                          </Typography>
+                        }
+                      />
+                      <FormControlLabel
+                        value="true"
+                        control={<Radio size="small" />}
+                        label={
+                          <Typography variant="body2">
+                            On - Use message box provider
+                          </Typography>
+                        }
+                      />
+                    </RadioGroup>
+                  </FormControl>
+
+                  {useMessageBox && (
+                    <Box sx={{ mt: 2, ml: 3, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                      <TextField
+                        label="Message Box URL"
+                        fullWidth
+                        variant="outlined"
+                        value={messageBoxUrl}
+                        onChange={(e) => setMessageBoxUrl(e.target.value)}
+                        margin="normal"
+                        size="small"
+                        required
+                      />
+                    </Box>
+                  )}
                 </Box>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
@@ -292,7 +399,11 @@ const WalletConfig: React.FC = () => {
                   size="small"
                   color="primary"
                   onClick={applyWalletConfig}
-                  disabled={!wabInfo || !method}
+                  disabled={
+                    (useWab && (!wabInfo || !method || !wabUrl)) ||
+                    (useRemoteStorage && !storageUrl) ||
+                    (useMessageBox && !messageBoxUrl)
+                  }
                 >
                   Apply Configuration
                 </Button>

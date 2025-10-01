@@ -185,6 +185,8 @@ export interface WABConfig {
   storageUrl: string;
   messageBoxUrl: string;
   useWab?: boolean;
+  useRemoteStorage?: boolean;
+  useMessageBox?: boolean;
 }
 
 interface WalletContextProps {
@@ -753,7 +755,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
   // For new users: mark configuration complete when WalletConfig is submitted.
   const finalizeConfig = (wabConfig: WABConfig) => {
-    const { wabUrl, wabInfo, method, network, storageUrl, useWab: useWabSetting, messageBoxUrl } = wabConfig
+    const { wabUrl, wabInfo, method, network, storageUrl, useWab: useWabSetting, messageBoxUrl, useRemoteStorage, useMessageBox } = wabConfig
     try {
       if (useWabSetting !== false) {
         if (!wabUrl) {
@@ -772,13 +774,13 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         return;
       }
 
-      if (!storageUrl) {
-        toast.error("Storage URL is required");
+      if (useRemoteStorage && !storageUrl) {
+        toast.error("Storage URL is required when Remote Storage is enabled");
         return;
       }
 
-      if (!messageBoxUrl) {
-        toast.error("Message Box URL is required");
+      if (useMessageBox && !messageBoxUrl) {
+        toast.error("Message Box URL is required when Message Box is enabled");
         return;
       }
 

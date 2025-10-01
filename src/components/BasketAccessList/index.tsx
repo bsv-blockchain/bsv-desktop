@@ -22,7 +22,7 @@ import { WalletContext } from '../../WalletContext'
 import AppLogo from '../AppLogo';
 // Simple in-memory cache for basket permissions
 const BASKET_CACHE = new Map<string, PermissionToken[]>();
-import { PermissionToken } from '@bsv/wallet-toolbox-client';
+import { PermissionToken } from '@bsv/wallet-toolbox';
 
 const useStyles = makeStyles(style, {
   name: 'BasketAccessList'

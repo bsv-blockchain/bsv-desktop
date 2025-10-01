@@ -11,7 +11,7 @@ import ProtoChip from '../ProtoChip'
 import CertificateChip from '../CertificateChip'
 import BasketChip from '../BasketChip'
 import AmountDisplay from '../AmountDisplay'
-import { GroupedPermissions } from '@bsv/wallet-toolbox-client'
+import { GroupedPermissions } from '@bsv/wallet-toolbox'
 
 const useStyles = makeStyles({
   protocol_grid: {

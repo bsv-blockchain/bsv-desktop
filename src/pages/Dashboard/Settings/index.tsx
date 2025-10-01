@@ -271,7 +271,7 @@ const Settings = () => {
                 p: 1,
                 borderRadius: 1
               }}>
-                {wabUrl}
+                {wabUrl || ' '}
               </Typography>
             </Box>
           )}

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Services } from '@bsv/wallet-toolbox-client';
+import { Services } from '@bsv/wallet-toolbox';
 
 export const useBsvExchangeRate = (defaultRate = 70) => {
   const [rate, setRate] = useState(defaultRate);

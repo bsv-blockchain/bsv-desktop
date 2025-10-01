@@ -26,7 +26,7 @@ import CounterpartyChip from '../CounterpartyChip';
 
 // Wallet context (replace with the actual path)
 import { WalletContext } from '../../WalletContext';
-import { PermissionToken } from '@bsv/wallet-toolbox-client';
+import { PermissionToken } from '@bsv/wallet-toolbox';
 import AppLogo from '../AppLogo';
 /* -------------------------------------------------------------------------- */
 /*                              Types & Helpers                               */

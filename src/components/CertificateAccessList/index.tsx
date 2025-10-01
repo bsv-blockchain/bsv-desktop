@@ -27,7 +27,7 @@ import CertificateChip from '../CertificateChip'
 import AppChip from '../AppChip'
 import sortPermissions from './sortPermissions'
 import { toast } from 'react-toastify'
-import { PermissionToken } from '@bsv/wallet-toolbox-client'
+import { PermissionToken } from '@bsv/wallet-toolbox'
 
 interface AppGrant {
   originator: string

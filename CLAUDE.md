@@ -69,6 +69,13 @@ The library implements a queue-based permission system with the following types:
 - Renders permission handlers as global components
 - Provides routes for Greeter, Dashboard, and Recovery pages
 
+### Navigation and Routing
+
+**AuthRedirector** (`src/navigation/AuthRedirector.tsx`) handles automatic navigation:
+- Monitors wallet authentication state and snapshot loading
+- Redirects authenticated users to `/dashboard/apps` on successful login
+- Sets `pageLoaded` flag to indicate UI initialization is complete
+
 ### Request Interception
 
 **RequestInterceptorWallet** (`src/RequestInterceptorWallet.ts`) wraps the underlying wallet to track app usage:
@@ -99,11 +106,14 @@ Components are organized by type:
 
 ### Key Dependencies
 
-- `@bsv/wallet-toolbox-client`: Wallet management, authentication, permissions
-- `@bsv/sdk`: BSV blockchain operations, cryptography, broadcasting
+- `@bsv/wallet-toolbox`: Wallet management, authentication, permissions (WalletAuthenticationManager, WalletPermissionsManager, etc.)
+- `@bsv/sdk`: BSV blockchain operations, cryptography, broadcasting (PrivateKey, SHIPBroadcaster, LookupResolver, etc.)
 - `@mui/material`: UI components and theming
 - `react-router-dom` v5: Client-side routing
 - `react-toastify`: Toast notifications
+- `@bsv/uhrp-react`: UHRP (Universal Hash Resolution Protocol) support
+- `amountinator-react`: BSV amount formatting and display
+- `metanet-apps`: Metanet application management
 
 ## TypeScript Configuration
 
@@ -124,3 +134,19 @@ The library exports components, contexts, utilities, and types via `src/index.ts
 - Chips and display components
 - Utility functions (`parseAppManifest`, `isImageUrl`)
 - TypeScript types for permissions and wallet profiles
+
+## State Persistence
+
+The wallet uses `localStorage.snap` to persist wallet state:
+- Snapshots are automatically created during wallet operations
+- On application load, if `localStorage.snap` exists, `WalletAuthenticationManager.loadSnapshot()` is called
+- After successful snapshot loading and authentication, `AuthRedirector` navigates to the dashboard
+- On logout, `localStorage.snap` is cleared to prevent auto-login
+
+## Important Implementation Notes
+
+1. **Error Handling in RequestInterceptorWallet**: App tracking errors are intentionally swallowed to prevent blocking wallet operations
+2. **Group Permission Grace Period**: 20-second timeout (`GROUP_GRACE_MS`) releases deferred requests if user doesn't respond to grouped permission request
+3. **Recent Apps Debouncing**: 5-second debounce (`DEBOUNCE_TIME_MS`) prevents duplicate updates for the same origin
+4. **TypeScript Strict Mode**: Disabled (`strict: false`) - be aware when working with types
+5. **Peer Dependencies**: This is a library package; ensure peer dependencies match the consuming application's versions

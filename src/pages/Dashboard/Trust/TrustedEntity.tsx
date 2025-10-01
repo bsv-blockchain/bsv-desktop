@@ -24,7 +24,7 @@ import VerifiedIcon from '@mui/icons-material/Verified'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import CustomDialog from '../../../components/CustomDialog'
-import { Certifier } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
+import { Certifier } from '@bsv/wallet-toolbox/out/src/WalletSettingsManager'
 
 const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { history: any, classes: any, setTrustedEntities: Function, entity: Certifier, trustedEntities: Certifier[] }) => {
   const [trust, setTrust] = useState(entity.trust)

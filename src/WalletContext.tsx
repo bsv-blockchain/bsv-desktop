@@ -11,6 +11,7 @@ import {
   Services,
   StorageClient,
   TwilioPhoneInteractor,
+  DevConsoleInteractor,
   WABClient,
   PermissionRequest,
 } from '@bsv/wallet-toolbox-client'
@@ -25,7 +26,7 @@ import {
 import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 import { toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
-import { DEFAULT_WAB_URL, DEFAULT_STORAGE_URL, DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB } from './config'
+import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB } from './config'
 import { UserContext } from './UserContext'
 import { GroupPermissionRequest, GroupedPermissions } from './types/GroupedPermissions'
 import { updateRecentApp } from './pages/Dashboard/Apps/getApps'
@@ -78,6 +79,9 @@ export interface WalletContextValue {
   finalizeConfig: (wabConfig: WABConfig) => boolean
   setConfigStatus: (status: ConfigStatus) => void
   configStatus: ConfigStatus
+  wabUrl: string
+  storageUrl: string
+  messageBoxUrl: string
 }
 
 export const WalletContext = createContext<WalletContextValue>({
@@ -109,7 +113,10 @@ export const WalletContext = createContext<WalletContextValue>({
   recentApps: [],
   finalizeConfig: () => false,
   setConfigStatus: () => { },
-  configStatus: 'initial'
+  configStatus: 'initial',
+  wabUrl: '',
+  storageUrl: '',
+  messageBoxUrl: ''
 })
 
 // ---- Group-gating types ----
@@ -176,6 +183,7 @@ export interface WABConfig {
   method: string;
   network: 'main' | 'test';
   storageUrl: string;
+  messageBoxUrl: string;
   useWab?: boolean;
 }
 
@@ -193,6 +201,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [adminOriginator, setAdminOriginator] = useState(ADMIN_ORIGINATOR);
   const [recentApps, setRecentApps] = useState([])
   const [activeProfile, setActiveProfile] = useState<WalletProfile | null>(null)
+  const [messageBoxUrl, setMessageBoxUrl] = useState('')
 
   const { isFocused, onFocusRequested, onFocusRelinquished, setBasketAccessModalOpen, setCertificateAccessModalOpen, setProtocolAccessModalOpen, setSpendingAuthorizationModalOpen, setGroupPermissionModalOpen } = useContext(UserContext);
 
@@ -682,7 +691,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   }, [groupPermissionRequests.length])
 
   // ---- WAB + network + storage configuration ----
-  const [wabUrl, setWabUrl] = useState<string>(DEFAULT_WAB_URL);
+  const [wabUrl, setWabUrl] = useState<string>('');
   const [wabInfo, setWabInfo] = useState<{
     supportedAuthMethods: string[];
     faucetEnabled: boolean;
@@ -691,7 +700,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
   const [selectedAuthMethod, setSelectedAuthMethod] = useState<string>("");
   const [selectedNetwork, setSelectedNetwork] = useState<'main' | 'test'>(DEFAULT_CHAIN); // "test" or "main"
-  const [selectedStorageUrl, setSelectedStorageUrl] = useState<string>(DEFAULT_STORAGE_URL);
+  const [selectedStorageUrl, setSelectedStorageUrl] = useState<string>('');
 
   // Flag that indicates configuration is complete. For returning users,
   // if a snapshot exists we auto-mark configComplete.
@@ -744,7 +753,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
   // For new users: mark configuration complete when WalletConfig is submitted.
   const finalizeConfig = (wabConfig: WABConfig) => {
-    const { wabUrl, wabInfo, method, network, storageUrl, useWab: useWabSetting } = wabConfig
+    const { wabUrl, wabInfo, method, network, storageUrl, useWab: useWabSetting, messageBoxUrl } = wabConfig
     try {
       if (useWabSetting !== false) {
         if (!wabUrl) {
@@ -768,12 +777,18 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         return;
       }
 
+      if (!messageBoxUrl) {
+        toast.error("Message Box URL is required");
+        return;
+      }
+
       setUseWab(useWabSetting !== false)
       setWabUrl(wabUrl)
       setWabInfo(wabInfo)
       setSelectedAuthMethod(method)
       setSelectedNetwork(network)
       setSelectedStorageUrl(storageUrl)
+      setMessageBoxUrl(messageBoxUrl)
 
       // Save the configuration
       toast.success("Configuration applied successfully!");
@@ -935,7 +950,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         let walletManager: any;
         if (useWab) {
           const wabClient = new WABClient(wabUrl);
-          const phoneInteractor = new TwilioPhoneInteractor();
+          let phoneInteractor
+          if (selectedAuthMethod === 'DevConsole') {
+            phoneInteractor = new DevConsoleInteractor();
+          } else {
+            phoneInteractor = new TwilioPhoneInteractor();
+          }
           walletManager = new WalletAuthenticationManager(
             adminOriginator,
             buildWallet,
@@ -1197,7 +1217,10 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     recentApps,
     finalizeConfig,
     setConfigStatus,
-    configStatus
+    configStatus,
+    wabUrl,
+    storageUrl: selectedStorageUrl,
+    messageBoxUrl
   }), [
     managers,
     settings,
@@ -1225,6 +1248,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     finalizeConfig,
     setConfigStatus,
     configStatus,
+    wabUrl,
+    selectedStorageUrl,
+    messageBoxUrl
   ]);
 
   return (

@@ -15,7 +15,7 @@ import {
 } from '@mui/material';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { toast } from 'react-toastify';
-import { DEFAULT_WAB_URL, DEFAULT_CHAIN, DEFAULT_STORAGE_URL, DEFAULT_USE_WAB } from '../config';
+import { DEFAULT_CHAIN, DEFAULT_USE_WAB } from '../config';
 import { WalletContext, WABConfig } from '../WalletContext';
 
 const WalletConfig: React.FC = () => {
@@ -23,7 +23,8 @@ const WalletConfig: React.FC = () => {
 
   // Wallet configuration state
   const [showWalletConfig, setShowWalletConfig] = useState(false)
-  const [wabUrl, setWabUrl] = useState<string>(DEFAULT_WAB_URL)
+  const [wabUrl, setWabUrl] = useState<string>('')
+  const [messageBoxUrl, setMessageBoxUrl] = useState<string>('')
   const [wabInfo, setWabInfo] = useState<{
     supportedAuthMethods: string[];
     faucetEnabled: boolean;
@@ -31,7 +32,7 @@ const WalletConfig: React.FC = () => {
   } | null>(null)
   const [method, setMethod] = useState<string>("")
   const [network, setNetwork] = useState<'main' | 'test'>(DEFAULT_CHAIN)
-  const [storageUrl, setStorageUrl] = useState<string>(DEFAULT_STORAGE_URL)
+  const [storageUrl, setStorageUrl] = useState<string>('')
   const [useWab, setUseWab] = useState<boolean>(DEFAULT_USE_WAB)
   const [isLoadingConfig, setIsLoadingConfig] = useState(false)
   const [backupConfig, setBackupConfig] = useState<WABConfig>()
@@ -82,10 +83,11 @@ const WalletConfig: React.FC = () => {
       method,
       network,
       storageUrl,
-      useWab
+      messageBoxUrl,
+      useWab,
     })
     if (valid) setShowWalletConfig(false)
-  }, [wabUrl, wabInfo, method, network, storageUrl, useWab, finalizeConfig, setShowWalletConfig])
+  }, [wabUrl, wabInfo, method, network, storageUrl, messageBoxUrl, useWab, finalizeConfig, setShowWalletConfig])
 
   // Force the manager to use the "presentation-key-and-password" flow:
   useEffect(() => {
@@ -101,6 +103,7 @@ const WalletConfig: React.FC = () => {
       method,
       network,
       storageUrl,
+      messageBoxUrl,
       useWab
     })
     if (managers?.walletManager) {
@@ -151,8 +154,6 @@ const WalletConfig: React.FC = () => {
           <CircularProgress size={24} />
         </Box>
       ) : (
-        <>
-          {wabInfo ? (
             <Collapse in={showWalletConfig}>
               <Typography variant="h4" color="primary">
                 Configuration
@@ -181,7 +182,7 @@ const WalletConfig: React.FC = () => {
                   </Button>
                 </Box>
                 <Divider />
-                {wabInfo.supportedAuthMethods && wabInfo.supportedAuthMethods.length > 0 && (
+                {wabInfo && wabInfo.supportedAuthMethods && wabInfo.supportedAuthMethods.length > 0 && (
                   <Box sx={{ mt: 2 }}>
                     <Typography variant="body2" gutterBottom>
                       Service which will be used to verify your phone number:
@@ -239,6 +240,19 @@ const WalletConfig: React.FC = () => {
                   size="small"
                 />
 
+                <Typography variant="body2" gutterBottom>
+                  Message Box Provider to use for receiving messages and payments while offline.
+                </Typography>
+                <TextField
+                  label="Message Box URL"
+                  fullWidth
+                  variant="outlined"
+                  value={messageBoxUrl}
+                  onChange={(e) => setMessageBoxUrl(e.target.value)}
+                  margin="normal"
+                  size="small"
+                />
+
                 <Box sx={{ mt: 3 }}>
                   <FormControl component="fieldset">
                     <FormLabel component="legend">
@@ -284,12 +298,6 @@ const WalletConfig: React.FC = () => {
                 </Button>
               </Box>
             </Collapse>
-          ) : (
-            <Typography variant="body2" color="error">
-              Failed to load wallet configuration
-            </Typography>
-          )}
-        </>
       )}
     </Box>
   </Box>

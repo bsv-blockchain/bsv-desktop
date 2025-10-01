@@ -5,7 +5,8 @@ import {
   Box,
   Paper,
   Button,
-  useTheme
+  useTheme,
+  Chip
 } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { makeStyles } from '@mui/styles'
@@ -17,7 +18,6 @@ import LightModeImage from "../../../images/lightMode"
 import ComputerIcon from '@mui/icons-material/Computer'
 import { UserContext } from '../../../UserContext'
 import PageLoading from '../../../components/PageLoading.js'
-
 const useStyles = makeStyles((theme: Theme) => ({
   root: {
     padding: theme.spacing(3),
@@ -62,7 +62,7 @@ const useStyles = makeStyles((theme: Theme) => ({
 
 const Settings = () => {
   const classes = useStyles()
-  const { settings, updateSettings } = useContext(WalletContext)
+  const { settings, updateSettings, wabUrl, storageUrl, useWab, messageBoxUrl } = useContext(WalletContext)
   const { pageLoaded } = useContext(UserContext)
   const [settingsLoading, setSettingsLoading] = useState(false)
   const theme = useTheme()
@@ -237,6 +237,75 @@ const Settings = () => {
             </Grid>
           ))}
         </Grid>
+      </Paper>
+
+      <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
+        <Typography variant="h4" sx={{ mb: 2 }}>
+          Wallet Configuration
+        </Typography>
+        <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
+          Current wallet service configuration.
+        </Typography>
+
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+              Mode
+            </Typography>
+            <Chip
+              label={useWab ? 'WAB Mode' : 'Wabless Mode'}
+              color="primary"
+              variant="outlined"
+            />
+          </Box>
+
+          {useWab && wabUrl && (
+            <Box>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                WAB Server URL
+              </Typography>
+              <Typography variant="body1" sx={{
+                fontFamily: 'monospace',
+                wordBreak: 'break-all',
+                bgcolor: 'action.hover',
+                p: 1,
+                borderRadius: 1
+              }}>
+                {wabUrl}
+              </Typography>
+            </Box>
+          )}
+
+            <Box>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                Wallet Storage URL
+              </Typography>
+              <Typography variant="body1" sx={{
+                fontFamily: 'monospace',
+                wordBreak: 'break-all',
+                bgcolor: 'action.hover',
+                p: 1,
+                borderRadius: 1
+              }}>
+                {storageUrl || ' '}
+              </Typography>
+            </Box>
+
+          <Box>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+              Message Box Server URL
+            </Typography>
+            <Typography variant="body1" sx={{
+              fontFamily: 'monospace',
+              wordBreak: 'break-all',
+              bgcolor: 'action.hover',
+              p: 1,
+              borderRadius: 1
+            }}>
+              {messageBoxUrl || ' '}
+            </Typography>
+          </Box>
+        </Box>
       </Paper>
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>

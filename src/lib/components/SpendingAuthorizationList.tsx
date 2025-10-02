@@ -5,12 +5,10 @@ import {
   TextField, InputAdornment
 } from '@mui/material';
 import { FC, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import AmountDisplay from './AmountDisplay';
 import { WalletContext } from '../WalletContext';
-import { PermissionToken, Services } from '@bsv/wallet-toolbox-client-client-client-client';
-import { determineUpgradeAmount } from '../utils/determineUpgradeAmount';
+import { PermissionToken, Services } from '@bsv/wallet-toolbox-client';
 // NOTE: rely on the same exchange-rate provider used by AmountDisplay
 import { ExchangeRateContext } from './AmountDisplay/ExchangeRateContextProvider';
 import AppLogo from './AppLogo';

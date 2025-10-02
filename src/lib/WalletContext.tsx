@@ -15,7 +15,7 @@ import {
   WABClient,
   PermissionRequest,
   StorageIdb
-} from '@bsv/wallet-toolbox-client-client-client-client'
+} from '@bsv/wallet-toolbox-client'
 import { StorageElectronIPC } from './StorageElectronIPC'
 import {
   PrivateKey,

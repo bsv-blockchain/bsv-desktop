@@ -9,10 +9,10 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
-    "dev:electron": "tsc -p tsconfig.electron.json && electron .",
+    "dev:electron": "tsc -p tsconfig.electron.json && cp electron/storage-loader.cjs dist-electron/ && electron .",
     "build": "npm run build:renderer && npm run build:electron",
     "build:renderer": "tsc && vite build",
-    "build:electron": "tsc -p tsconfig.electron.json",
+    "build:electron": "tsc -p tsconfig.electron.json && cp electron/storage-loader.cjs dist-electron/",
     "icons": "bash scripts/generate-icons.sh",
     "package": "npm run icons && electron-builder",
     "package:mac": "npm run icons && electron-builder --mac",

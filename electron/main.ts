@@ -2,9 +2,17 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-import os from 'os';
 import { startHttpServer } from './httpServer.js';
-import { storageManager } from './storage.js';
+
+// Lazy load storage to avoid loading knex/better-sqlite3 at startup
+let storageManager: any = null;
+async function getStorageManager() {
+  if (!storageManager) {
+    const module = await import('./storage.js');
+    storageManager = module.storageManager;
+  }
+  return storageManager;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -262,7 +270,8 @@ ipcMain.on('http-response', (_event, response) => {
 // Check if storage can be made available
 ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain: 'main' | 'test') => {
   try {
-    return await storageManager.isAvailable(identityKey, chain);
+    const manager = await getStorageManager();
+    return await manager.isAvailable(identityKey, chain);
   } catch (error) {
     console.error('[IPC] storage:is-available error:', error);
     throw error;
@@ -272,7 +281,8 @@ ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain
 // Make storage available (initialize database)
 ipcMain.handle('storage:make-available', async (_event, identityKey: string, chain: 'main' | 'test') => {
   try {
-    await storageManager.makeAvailable(identityKey, chain);
+    const manager = await getStorageManager();
+    await manager.makeAvailable(identityKey, chain);
     return { success: true };
   } catch (error: any) {
     console.error('[IPC] storage:make-available error:', error);
@@ -283,7 +293,8 @@ ipcMain.handle('storage:make-available', async (_event, identityKey: string, cha
 // Call a storage method
 ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => {
   try {
-    const result = await storageManager.callStorageMethod(identityKey, chain, method, args);
+    const manager = await getStorageManager();
+    const result = await manager.callStorageMethod(identityKey, chain, method, args);
     return { success: true, result };
   } catch (error: any) {
     console.error('[IPC] storage:call-method error:', error);
@@ -310,7 +321,9 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', async () => {
   // Cleanup storage connections
-  await storageManager.cleanup();
+  if (storageManager) {
+    await storageManager.cleanup();
+  }
 
   if (httpServerCleanup) {
     await httpServerCleanup();
@@ -323,7 +336,9 @@ app.on('window-all-closed', async () => {
 
 app.on('before-quit', async () => {
   // Cleanup storage connections
-  await storageManager.cleanup();
+  if (storageManager) {
+    await storageManager.cleanup();
+  }
 
   if (httpServerCleanup) {
     await httpServerCleanup();

@@ -14,7 +14,6 @@ import {
   DevConsoleInteractor,
   WABClient,
   PermissionRequest,
-  StorageIdb
 } from '@bsv/wallet-toolbox-client'
 import { StorageElectronIPC } from './StorageElectronIPC'
 import {

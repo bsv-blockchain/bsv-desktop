@@ -14,8 +14,19 @@
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import knex, { Knex } from 'knex';
-import { StorageKnex } from '@bsv/wallet-toolbox';
+import { createRequire } from 'module';
+import { StorageKnex, KnexMigrations } from '@bsv/wallet-toolbox';
+
+const require = createRequire(import.meta.url);
+
+// Lazy-load knex to avoid loading better-sqlite3 until actually needed
+let createKnex: any = null;
+function getCreateKnex() {
+  if (!createKnex) {
+    createKnex = require('./storage-loader.cjs').createKnex;
+  }
+  return createKnex;
+}
 
 /**
  * Storage instance manager
@@ -23,7 +34,7 @@ import { StorageKnex } from '@bsv/wallet-toolbox';
  */
 class StorageManager {
   private storages: Map<string, StorageKnex> = new Map();
-  private databases: Map<string, Knex> = new Map();
+  private databases: Map<string, any> = new Map();
 
   /**
    * Get or create a storage instance for the given identity key
@@ -50,14 +61,28 @@ class StorageManager {
 
     console.log(`[Storage] Creating storage at: ${dbPath}`);
 
-    // Create knex instance
-    const db = knex({
+    // Create knex instance via CommonJS wrapper
+    const knexFactory = getCreateKnex();
+    const db = knexFactory({
       client: 'better-sqlite3',
       connection: {
         filename: dbPath
       },
       useNullAsDefault: true
     });
+
+    // Run database migrations to create tables
+    console.log(`[Storage] Running database migrations for ${key}...`);
+    const migrations = new KnexMigrations(
+      chain,
+      'BSV Desktop Wallet',
+      identityKey,
+      10000 // maxOutputScriptLength
+    );
+    await db.migrate.latest({
+      migrationSource: migrations
+    });
+    console.log(`[Storage] Migrations complete`);
 
     // Create StorageKnex instance
     const storage = new StorageKnex({
@@ -80,8 +105,9 @@ class StorageManager {
    * Check if storage is available for the given identity key
    */
   async isAvailable(identityKey: string, chain: 'main' | 'test'): Promise<boolean> {
-    const storage = await this.getOrCreateStorage(identityKey, chain);
-    return storage.canMakeAvailable();
+    // Storage is always available once created
+    await this.getOrCreateStorage(identityKey, chain);
+    return true;
   }
 
   /**
@@ -89,10 +115,8 @@ class StorageManager {
    */
   async makeAvailable(identityKey: string, chain: 'main' | 'test'): Promise<void> {
     const storage = await this.getOrCreateStorage(identityKey, chain);
-    if (storage.canMakeAvailable()) {
-      await storage.makeAvailable();
-      console.log(`[Storage] Storage made available for ${identityKey}-${chain}`);
-    }
+    await storage.makeAvailable();
+    console.log(`[Storage] Storage made available for ${identityKey}-${chain}`);
   }
 
   /**

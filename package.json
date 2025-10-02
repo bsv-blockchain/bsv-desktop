@@ -1,74 +1,105 @@
 {
-  "name": "@bsv/brc100-ui-react-components",
-  "version": "0.2.3",
-  "private": false,
-  "publishConfig": {
-    "access": "public"
-  },
-  "description": "A library of reusable React components for building wallet UIs.",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/bsv-blockchain/brc100-ui-react-components.git"
-  },
-  "author": "BSV Blockchain Association",
-  "license": "Open BSV License",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "dist/types/index.d.ts",
-  "files": [
-    "dist/**/*"
-  ],
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.js",
-      "types": "./dist/types/index.d.ts"
-    }
+  "name": "bsv-desktop-electron",
+  "version": "0.6.5",
+  "description": "BSV Desktop Wallet - Electron Edition",
+  "main": "dist-electron/main.js",
+  "type": "module",
+  "author": "BSV Association",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "tsc -p tsconfig.electron.json && electron .",
+    "build": "npm run build:renderer && npm run build:electron",
+    "build:renderer": "tsc && vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "icons": "bash scripts/generate-icons.sh",
+    "package": "npm run icons && electron-builder",
+    "package:mac": "npm run icons && electron-builder --mac",
+    "package:win": "npm run icons && electron-builder --win",
+    "package:linux": "npm run icons && electron-builder --linux"
   },
   "dependencies": {
+    "@bsv/message-box-client": "^1.3.0",
+    "@bsv/sdk": "^1.8.0",
     "@bsv/uhrp-react": "^1.0.4",
     "@bsv/wallet-toolbox": "^1.6.23",
-    "amountinator-react": "^0.1.38",
-    "libphonenumber-js": "^1.12.6",
-    "metanet-apps": "^1.0.6"
-  },
-  "peerDependencies": {
-    "@bsv/sdk": "^1.7.6",
+    "@bsv/wallet-toolbox-client": "^1.6.23",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
-    "@mui/icons-material": "^6.4.3",
-    "@mui/material": "^6.4.3",
-    "@mui/styles": "^6.4.3",
-    "@tauri-apps/plugin-opener": "^2.4.0",
+    "@mui/icons-material": "^6.4.8",
+    "@mui/material": "^6.4.8",
+    "@mui/styles": "^6.4.8",
+    "amountinator": "^0.2.11",
+    "better-sqlite3": "^12.4.1",
+    "cors": "^2.8.5",
     "date-fns": "^4.1.0",
+    "express": "^4.21.2",
     "fuse.js": "^7.1.0",
     "iso-3166-ts": "^2.2.0",
     "jdenticon": "^3.3.0",
+    "knex": "^3.1.0",
+    "libphonenumber-js": "^1.12.23",
+    "metanet-apps": "^1.0.6",
+    "node-fetch": "^3.3.2",
+    "node-forge": "^1.3.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^5.2.0",
-    "react-toastify": "^11.0.3"
-  },
-  "scripts": {
-    "build": "tsc",
-    "lint:ci": "echo 'No linting'",
-    "test": "echo 'No tests'"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
+    "react-toastify": "^11.0.5",
+    "use-async-effect": "^2.2.7"
   },
   "devDependencies": {
-    "@types/jest": "^29.5.11",
-    "@types/node": "^20.11.0",
-    "@types/react": "^18.2.47",
-    "@types/react-dom": "^18.2.18",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.13.1",
+    "@types/node-fetch": "^2.6.13",
+    "@types/node-forge": "^1.3.14",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
     "@types/react-router-dom": "^5.3.3",
-    "@typescript-eslint/eslint-plugin": "^6.20.0",
-    "@typescript-eslint/parser": "^6.20.0",
-    "standard": "^17.0.0",
-    "typescript": "^5.3.3"
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.2.1",
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12",
+    "typescript": "~5.6.2",
+    "vite": "^6.3.6",
+    "vite-plugin-electron": "^0.29.0"
+  },
+  "build": {
+    "appId": "com.bsvblockchain.bsvdesktop",
+    "productName": "BSV Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.icns"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Finance",
+      "icon": "build/icon.png"
+    }
   }
 }

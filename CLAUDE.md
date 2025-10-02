@@ -4,149 +4,175 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is `@bsv/brc100-ui-react-components`, a React component library for building BSV blockchain wallet UIs. It provides reusable components for wallet authentication, permission management, certificate handling, and blockchain interactions.
+**bsv-desktop** is a React-based library that provides reusable UI components and wallet functionality for building BSV blockchain applications. It wraps wallet functionality implementing the BRC-100 standard interface and provides a complete user interface for wallet interactions.
 
-## Build Commands
+## Key Commands
 
+### Build
 ```bash
-# Build the library (TypeScript compilation)
 npm run build
+```
+Compiles TypeScript files to `dist/` directory with type declarations in `dist/types/`.
 
-# Linting (currently no-op)
-npm run lint:ci
-
-# Tests (currently no tests configured)
-npm test
+### Linting & Testing
+```bash
+npm run lint:ci  # Currently no-op
+npm run test     # Currently no tests
 ```
 
-## Core Architecture
+## Architecture Overview
 
-### Context System
+### Core Context System
 
-The application uses two primary React contexts that manage global state:
+The application uses two primary React contexts that work together:
 
-1. **UserContext** (`src/UserContext.tsx`)
-   - Manages UI state and platform-specific handlers
-   - Provides native handlers for focus management and file downloads
-   - Controls modal states for permission dialogs
-   - Stores app version and name
+1. **WalletContext** ([WalletContext.tsx](src/WalletContext.tsx))
+   - Manages all wallet-related state and operations
+   - Handles three wallet manager types:
+     - `WalletAuthenticationManager` (WAB-based, with phone/DevConsole auth)
+     - `CWIStyleWalletManager` (local, self-custody)
+     - Both build a `WalletPermissionsManager` that handles user permission requests
+   - Manages permission request queues (basket, certificate, protocol, spending, grouped)
+   - Implements group permission gating to batch related permission requests
+   - Stores network configuration (mainnet/testnet), WAB settings, storage settings
+   - Handles snapshot loading/saving for returning users
 
-2. **WalletContext** (`src/WalletContext.tsx`)
-   - Manages wallet authentication and configuration
-   - Handles permission request queues (basket, certificate, protocol, spending, grouped)
-   - Implements a sophisticated "group permission gating" system that defers individual permission requests when a grouped permission request is pending
-   - Manages wallet managers (authentication, permissions, settings)
-   - Controls WAB (Wallet Authentication Backend) configuration and network selection
-   - Tracks active user profile and recent apps
+2. **UserContext** ([UserContext.tsx](src/UserContext.tsx))
+   - Provides platform-agnostic native handlers (focus, download, etc.)
+   - Manages modal visibility state for permission request handlers
+   - Stores app metadata (version, name)
 
-### Permission Management System
+### Wallet Configuration & Initialization
 
-The library implements a queue-based permission system with the following types:
+The wallet supports two authentication modes, configured via `config.ts`:
 
-- **Basket Access**: Requests to access specific data baskets
-- **Certificate Access**: Requests to access user certificates (identity verification)
-- **Protocol Permissions**: Requests for protocol-level operations (signing, encryption, etc.)
-- **Spending Authorization**: Requests to spend satoshis
-- **Grouped Permissions**: Batch permission requests that can cover multiple individual requests
+- **WAB Mode** (`useWab: true`): Uses `WalletAuthenticationManager` with phone verification (Twilio or DevConsole)
+- **Self-Custody Mode** (`useWab: false`): Uses `CWIStyleWalletManager` for local key management
 
-**Group Permission Gating**: When a grouped permission request arrives, the system enters a "pending" phase where all new individual requests are deferred into temporary buffers. After the user responds to the grouped request, deferred requests are either auto-approved (if covered by the group decision) or re-queued for individual approval.
+Configuration flow:
+1. New users see `WalletConfig` component to set network, auth method, storage
+2. Returning users auto-load from localStorage snapshot
+3. Config stored in `WalletContext` state: `wabUrl`, `selectedNetwork`, `selectedStorageUrl`, `useWab`, `useRemoteStorage`, `useMessageBox`
+
+Storage options (configured in `buildWallet`):
+- Remote: `StorageClient` with user-provided URL
+- Local: `StorageKnex` with better-sqlite3 at `~/.bsv-desktop/wallet.db`
 
 ### Permission Request Flow
 
-1. Request arrives via callback (e.g., `basketAccessCallback`, `certificateAccessCallback`)
-2. If group permission is pending, request is deferred
-3. Otherwise, request is added to the appropriate queue
-4. Modal opens to show the first request in the queue
-5. User approves/denies request
-6. Queue advances via `advanceBasketQueue()`, `advanceCertificateQueue()`, etc.
-7. When queue empties, modal closes and focus is relinquished (if applicable)
+Permission requests follow a queue-based system:
 
-### Main UI Component
+1. **Request Reception**: Apps request permissions via `WalletPermissionsManager` callbacks
+2. **Queueing**: Requests are added to type-specific queues in `WalletContext`
+3. **Group Gating**: When a grouped permission request arrives, all individual requests are deferred until group decision is made
+4. **Modal Display**: Handlers (e.g., `BasketAccessHandler`) show modals for the first queued request
+5. **User Decision**: User approves/denies via permission manager methods
+6. **Queue Advancement**: Modal closes and next request is shown via `advance*Queue()` methods
 
-**UserInterface** (`src/UserInterface.tsx`) is the top-level component that:
-- Wraps the entire application in context providers
-- Sets up routing with react-router-dom (HashRouter)
-- Renders permission handlers as global components
-- Provides routes for Greeter, Dashboard, and Recovery pages
+Group permission flow:
+- `groupPhase` state tracks 'idle' | 'pending'
+- When grouped request arrives, individual requests are buffered in `deferred` state
+- After grouped decision, buffered requests are evaluated against the decision
+- Uncovered requests are re-queued for individual approval
 
-### Navigation and Routing
+### Request Interceptor
 
-**AuthRedirector** (`src/navigation/AuthRedirector.tsx`) handles automatic navigation:
-- Monitors wallet authentication state and snapshot loading
-- Redirects authenticated users to `/dashboard/apps` on successful login
-- Sets `pageLoaded` flag to indicate UI initialization is complete
-
-### Request Interception
-
-**RequestInterceptorWallet** (`src/RequestInterceptorWallet.ts`) wraps the underlying wallet to track app usage:
+`RequestInterceptorWallet` wraps the wallet interface to track app usage:
 - Intercepts all wallet method calls
-- Records the originator (app making the request)
-- Updates recent apps list
-- Errors are swallowed so tracking never blocks wallet operations
-
-### Configuration
-
-The wallet supports two authentication modes controlled by `useWab` flag:
-- **Wabless Mode** (default): Classic wallet interface with custom funder function
-- **WAB Mode**: Uses Wallet Authentication Backend with phone/SMS verification
-
-Configuration values in `src/config.ts`:
-- `DEFAULT_USE_WAB`: false (wabless mode is default)
-- `DEFAULT_CHAIN`: 'main' (or 'test')
-- `ADMIN_ORIGINATOR`: 'admin.com'
-- `MESSAGEBOX_HOST`: https://messagebox.babbage.systems
+- Records originator domain via `updateRecentApp()`
+- Swallows tracking errors to prevent blocking wallet operations
+- Recent apps stored in localStorage as `brc100_recent_apps_{profileId}`
 
 ### Component Structure
 
-Components are organized by type:
-- **Handlers**: Global components that render permission dialogs (e.g., `BasketAccessHandler`, `ProtocolPermissionHandler`)
-- **Lists**: Components that display collections of permissions (e.g., `ProtocolPermissionList`, `BasketAccessList`)
-- **Chips**: Small UI elements representing entities (e.g., `AppChip`, `CertificateChip`, `ProtoChip`)
-- **Pages**: Full page components under `src/pages/` (Dashboard, Greeter, Recovery, etc.)
+Key components exported in [index.ts](src/index.ts):
 
-### Key Dependencies
+**Permission Handlers** (modal-based UI for permission requests):
+- `BasketAccessHandler`, `CertificateAccessHandler`, `ProtocolPermissionHandler`
+- `GroupPermissionHandler`, `SpendingAuthorizationHandler`
+- `PasswordHandler`, `RecoveryKeyHandler`
 
-- `@bsv/wallet-toolbox`: Wallet management, authentication, permissions (WalletAuthenticationManager, WalletPermissionsManager, etc.)
-- `@bsv/sdk`: BSV blockchain operations, cryptography, broadcasting (PrivateKey, SHIPBroadcaster, LookupResolver, etc.)
-- `@mui/material`: UI components and theming
+**Display Components**:
+- `AmountDisplay` with `ExchangeRateContextProvider` for currency conversion
+- Chips: `AppChip`, `BasketChip`, `CertificateChip`, `CounterpartyChip`, `ProtoChip`
+- `Profile`, `RecentActions`, `AccessAtAGlance`
+
+**UI Infrastructure**:
+- `UserInterface`: Main router component with permission handlers
+- `AppThemeProvider`: Material-UI theming
+- `PageHeader`, `PageLoading`, `CustomDialog`
+
+### Page Structure
+
+Dashboard pages in [src/pages/Dashboard/](src/pages/Dashboard/):
+- `/dashboard`: Main dashboard with apps, recent actions, balance
+- `/dashboard/apps`: App catalog and recently used apps
+- `/dashboard/my-identity`: Identity certificates management
+- `/dashboard/trust`: Trusted entities configuration
+- `/dashboard/settings`: Password, recovery key management
+- Access pages: `/app-access`, `/basket-access`, `/certificate-access`, `/protocol-access`, `/counterparty-access`
+
+### Important Implementation Details
+
+**Snapshot Management**:
+- Wallet state persisted to `localStorage.snap` as base64
+- Loaded on mount if present, triggering `snapshotLoaded` flag
+- Determines returning vs. new user flow
+
+**Network Configuration**:
+- `selectedNetwork`: 'main' | 'test' stored in WalletContext
+- Affects `LookupResolver` and `SHIPBroadcaster` initialization
+- Network changes require rebuilding wallet managers
+
+**Focus Management**:
+- Permission requests can request app focus via `onFocusRequested()`
+- Focus relinquished via `onFocusRelinquished()` when queues empty
+- Prevents app from stealing focus when user is elsewhere
+
+**Recent Apps Tracking**:
+- Automatic metadata fetching (favicon, manifest) for new domains
+- Cached in localStorage to avoid repeated fetches
+- Debounced updates (5s) to prevent duplicate tracking
+- Supports pinning apps via `isPinned` flag
+
+## Key Dependencies
+
+- `@bsv/wallet-toolbox`: Wallet managers, permissions, storage, authentication
+- `@bsv/sdk`: Core BSV blockchain SDK (transactions, keys, signing)
+- `@bsv/message-box-client`: Message box functionality
+- `@bsv/uhrp-react`: UHRP protocol support
+- Material-UI (`@mui/material`, `@emotion`): UI components
 - `react-router-dom` v5: Client-side routing
+- `knex` + `better-sqlite3`: Local database storage
 - `react-toastify`: Toast notifications
-- `@bsv/uhrp-react`: UHRP (Universal Hash Resolution Protocol) support
-- `amountinator-react`: BSV amount formatting and display
-- `metanet-apps`: Metanet application management
 
-## TypeScript Configuration
+## Development Notes
 
-The project uses TypeScript with:
-- Target: ESNext
-- Module: ESNext with Node resolution
-- JSX: react-jsx
-- Strict mode: disabled (`strict: false`)
-- Output: `dist/` directory
-- Type declarations: `dist/types/`
+**Working with Permissions**:
+- Permission request callbacks are bound in `buildWallet()` function
+- Each permission type has dedicated callback, queue, and modal state
+- Always call `advance*Queue()` after handling a permission to show next request
+- Group permissions use separate flow with `groupDecisionRef` and deferred buffers
 
-## Exports
+**Adding New Permission Types**:
+1. Add queue state to `WalletContext` (similar to `basketRequests`)
+2. Create callback in `WalletContext` (similar to `basketAccessCallback`)
+3. Bind callback in `buildWallet()` via `permissionsManager.bindCallback()`
+4. Add advance function (similar to `advanceBasketQueue()`)
+5. Create handler component (similar to `BasketAccessHandler`)
+6. Add handler to `UserInterface.tsx`
 
-The library exports components, contexts, utilities, and types via `src/index.ts`. Main exports include:
-- `UserInterface`: Main UI component
-- Context providers and values (`UserContext`, `WalletContext`)
-- Permission handlers and lists
-- Chips and display components
-- Utility functions (`parseAppManifest`, `isImageUrl`)
-- TypeScript types for permissions and wallet profiles
+**Storage Backend**:
+- For local mode, ensure `~/.bsv-desktop/` directory is writable
+- Remote storage requires valid StorageClient URL
+- Storage provider is added via `storageManager.addWalletStorageProvider()`
 
-## State Persistence
+**Configuration Changes**:
+- Default config in [config.ts](src/config.ts): `DEFAULT_CHAIN`, `ADMIN_ORIGINATOR`, `DEFAULT_USE_WAB`
+- Config finalized via `finalizeConfig()` which validates and stores settings
+- `configStatus` tracks: 'initial' | 'editing' | 'configured'
 
-The wallet uses `localStorage.snap` to persist wallet state:
-- Snapshots are automatically created during wallet operations
-- On application load, if `localStorage.snap` exists, `WalletAuthenticationManager.loadSnapshot()` is called
-- After successful snapshot loading and authentication, `AuthRedirector` navigates to the dashboard
-- On logout, `localStorage.snap` is cleared to prevent auto-login
-
-## Important Implementation Notes
-
-1. **Error Handling in RequestInterceptorWallet**: App tracking errors are intentionally swallowed to prevent blocking wallet operations
-2. **Group Permission Grace Period**: 20-second timeout (`GROUP_GRACE_MS`) releases deferred requests if user doesn't respond to grouped permission request
-3. **Recent Apps Debouncing**: 5-second debounce (`DEBOUNCE_TIME_MS`) prevents duplicate updates for the same origin
-4. **TypeScript Strict Mode**: Disabled (`strict: false`) - be aware when working with types
-5. **Peer Dependencies**: This is a library package; ensure peer dependencies match the consuming application's versions
+**TypeScript**:
+- `strict: false` in tsconfig - existing code not fully type-safe
+- Declaration files generated to `dist/types/`
+- Target: ESNext, Module: ESNext with Node resolution

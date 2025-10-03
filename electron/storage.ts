@@ -64,7 +64,7 @@ class StorageManager {
     // Create knex instance via CommonJS wrapper
     const knexFactory = getCreateKnex();
     const db = knexFactory({
-      client: 'better-sqlite3',
+      client: 'sqlite3',
       connection: {
         filename: dbPath
       },

@@ -15,7 +15,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { createRequire } from 'module';
-import { StorageKnex, KnexMigrations, Services } from '@bsv/wallet-toolbox';
+import { StorageKnex, KnexMigrations, Services, MonitorDaemon } from '@bsv/wallet-toolbox';
 
 const require = createRequire(import.meta.url);
 
@@ -35,6 +35,7 @@ function getCreateKnex() {
 class StorageManager {
   private storages: Map<string, StorageKnex> = new Map();
   private databases: Map<string, any> = new Map();
+  private monitors: Map<string, MonitorDaemon> = new Map();
 
   /**
    * Get or create a storage instance for the given identity key
@@ -146,6 +147,74 @@ class StorageManager {
     } else {
       console.warn(`[Storage] setServices method not available on StorageKnex for ${key}`);
     }
+
+    // Start MonitorDaemon for this storage instance
+    await this.startMonitorDaemon(identityKey, chain, storage, services);
+  }
+
+  /**
+   * Start MonitorDaemon for a storage instance
+   * The daemon runs background tasks to monitor and update wallet state
+   */
+  async startMonitorDaemon(
+    identityKey: string,
+    chain: 'main' | 'test',
+    storage: StorageKnex,
+    services: Services
+  ): Promise<void> {
+    const key = `${identityKey}-${chain}`;
+
+    // Don't start if already running
+    if (this.monitors.has(key)) {
+      console.log(`[MonitorDaemon] Already running for ${key}`);
+      return;
+    }
+
+    console.log(`[MonitorDaemon] Starting for ${key}`);
+
+    try {
+      // Create MonitorDaemon with the storage and services instances
+      const monitor = new MonitorDaemon({
+        chain,
+        storageProvider: storage,
+        services
+      });
+
+      // Setup and start the daemon
+      await monitor.createSetup();
+      await monitor.start();
+
+      // Store reference
+      this.monitors.set(key, monitor);
+
+      console.log(`[MonitorDaemon] Started successfully for ${key}`);
+    } catch (error: any) {
+      console.error(`[MonitorDaemon] Failed to start for ${key}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Stop MonitorDaemon for a storage instance
+   */
+  async stopMonitorDaemon(identityKey: string, chain: 'main' | 'test'): Promise<void> {
+    const key = `${identityKey}-${chain}`;
+    const monitor = this.monitors.get(key);
+
+    if (!monitor) {
+      return;
+    }
+
+    console.log(`[MonitorDaemon] Stopping for ${key}`);
+
+    try {
+      await monitor.stop();
+      await monitor.destroy();
+      this.monitors.delete(key);
+      console.log(`[MonitorDaemon] Stopped successfully for ${key}`);
+    } catch (error) {
+      console.error(`[MonitorDaemon] Error stopping for ${key}:`, error);
+    }
   }
 
   /**
@@ -182,6 +251,19 @@ class StorageManager {
    */
   async cleanup(): Promise<void> {
     console.log('[Storage] Cleaning up storage instances...');
+
+    // Stop all MonitorDaemons first
+    for (const [key, monitor] of this.monitors.entries()) {
+      try {
+        console.log(`[MonitorDaemon] Stopping ${key}...`);
+        await monitor.stop();
+        await monitor.destroy();
+        console.log(`[MonitorDaemon] Stopped ${key}`);
+      } catch (error) {
+        console.error(`[MonitorDaemon] Error stopping ${key}:`, error);
+      }
+    }
+    this.monitors.clear();
 
     // Destroy all database connections
     for (const [key, db] of this.databases.entries()) {

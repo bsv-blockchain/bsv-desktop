@@ -10,6 +10,11 @@ export interface ElectronAPI {
   onHttpRequest: (callback: (event: any) => void) => void;
   sendHttpResponse: (response: any) => void;
   removeHttpRequestListener: () => void;
+  storage: {
+    isAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<boolean>;
+    makeAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; settings?: any; error?: string }>;
+    callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+  };
 }
 
 declare global {

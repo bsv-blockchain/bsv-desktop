@@ -21,7 +21,7 @@
  * - IPC is more efficient and simpler for Electron's architecture
  */
 
-import { WalletStorageProvider, WalletServices } from '@bsv/wallet-toolbox';
+import type { WalletStorageProvider, WalletServices } from '@bsv/wallet-toolbox/out/src/sdk';
 
 export class StorageElectronIPC implements WalletStorageProvider {
   private identityKey: string;
@@ -390,10 +390,6 @@ export class StorageElectronIPC implements WalletStorageProvider {
     return this.callMethod('findOutputsAuth', ...args);
   }
 
-  async findProvenTxReqs(...args: any[]): Promise<any> {
-    return this.callMethod('findProvenTxReqs', ...args);
-  }
-
   async listActions(...args: any[]): Promise<any> {
     return this.callMethod('listActions', ...args);
   }
@@ -418,9 +414,5 @@ export class StorageElectronIPC implements WalletStorageProvider {
 
   async getSyncChunk(...args: any[]): Promise<any> {
     return this.callMethod('getSyncChunk', ...args);
-  }
-
-  async processSyncChunk(...args: any[]): Promise<any> {
-    return this.callMethod('processSyncChunk', ...args);
   }
 }

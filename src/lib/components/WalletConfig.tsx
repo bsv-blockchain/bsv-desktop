@@ -56,6 +56,11 @@ const WalletConfig: React.FC = () => {
 
   // Fetch wallet configuration info
   const fetchWalletConfig = async () => {
+    // Don't fetch if wabUrl is empty or useWab is false
+    if (!wabUrl || !useWab) {
+      return
+    }
+
     setIsLoadingConfig(true)
     try {
       const res = await fetch(`${wabUrl}/info`)

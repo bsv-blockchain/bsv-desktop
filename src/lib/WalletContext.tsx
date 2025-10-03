@@ -721,7 +721,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
   // Fetch WAB info for first-time configuration
   const fetchWabInfo = useCallback(async () => {
-    if (!useWab) return null
+    if (!useWab || !wabUrl) return null
     try {
       const response = await fetch(`${wabUrl}/info`);
       if (!response.ok) {

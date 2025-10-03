@@ -302,6 +302,18 @@ ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain:
   }
 });
 
+// Initialize services on storage
+ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test') => {
+  try {
+    const manager = await getStorageManager();
+    await manager.initializeServices(identityKey, chain);
+    return { success: true };
+  } catch (error: any) {
+    console.error('[IPC] storage:initialize-services error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // ===== App Lifecycle =====
 
 app.whenReady().then(async () => {

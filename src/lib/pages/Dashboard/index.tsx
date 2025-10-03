@@ -9,6 +9,7 @@ import {
   Toolbar
 } from '@mui/material';
 import PageLoading from '../../components/PageLoading';
+import ErrorBoundary from '../../components/ErrorBoundary';
 import Menu from '../../navigation/Menu';
 import { Menu as MenuIcon } from '@mui/icons-material';
 import MyIdentity from './MyIdentity'; // Assuming index.tsx or similar
@@ -87,7 +88,8 @@ export default function Dashboard() {
       </div>
       <Menu menuOpen={menuOpen} setMenuOpen={setMenuOpen} menuRef={menuRef} />
       <div className={classes.page_container}>
-        <Switch>
+        <ErrorBoundary>
+          <Switch>
           {/* Existing Redirects */}
           <Redirect from='/dashboard/counterparty/self' to={`/dashboard/counterparty/${myIdentityKey}`} />
           <Redirect from='/dashboard/counterparty/anyone' to='/dashboard/counterparty/0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798' />
@@ -159,6 +161,7 @@ export default function Dashboard() {
             }}
           />
         </Switch>
+        </ErrorBoundary>
       </div>
     </div>
   );

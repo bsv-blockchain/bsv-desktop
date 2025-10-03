@@ -833,6 +833,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       } else {
         // Use local Electron IPC storage (StorageKnex running in main process)
         const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain);
+        electronStorage.setServices(services);
+        await electronStorage.initializeBackendServices();
         await electronStorage.makeAvailable();
         await storageManager.addWalletStorageProvider(electronStorage);
       }

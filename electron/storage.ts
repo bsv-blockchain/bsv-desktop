@@ -15,7 +15,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { createRequire } from 'module';
-import { StorageKnex, KnexMigrations } from '@bsv/wallet-toolbox';
+import { StorageKnex, KnexMigrations, Services } from '@bsv/wallet-toolbox';
 
 const require = createRequire(import.meta.url);
 
@@ -119,6 +119,33 @@ class StorageManager {
     const settings = await storage.makeAvailable();
     console.log(`[Storage] Storage made available for ${identityKey}-${chain}`);
     return settings;
+  }
+
+  /**
+   * Initialize services on the storage instance
+   * Creates a new Services instance in the backend process
+   */
+  async initializeServices(
+    identityKey: string,
+    chain: 'main' | 'test'
+  ): Promise<void> {
+    const storage = await this.getOrCreateStorage(identityKey, chain);
+    const key = `${identityKey}-${chain}`;
+
+    console.log(`[Storage] Initializing services for ${key}`);
+
+    // Create Services instance in the backend
+    const services = new Services(chain);
+
+    // Type assertion to access setServices method
+    const storageAny = storage as any;
+
+    if (typeof storageAny.setServices === 'function') {
+      storageAny.setServices(services);
+      console.log(`[Storage] Services initialized and set for ${key}`);
+    } else {
+      console.warn(`[Storage] setServices method not available on StorageKnex for ${key}`);
+    }
   }
 
   /**

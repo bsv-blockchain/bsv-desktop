@@ -8,13 +8,13 @@ import {
   useTheme,
   Chip
 } from '@mui/material'
-import Grid from '@mui/material/Grid'
+import { Grid } from '@mui/material'
 import { makeStyles } from '@mui/styles'
 import { toast } from 'react-toastify'
 import { WalletContext } from '../../../WalletContext.js'
 import { Theme } from '@mui/material/styles'
-import DarkModeImage from "../../../images/darkMode.js"
-import LightModeImage from "../../../images/lightMode.js"
+import DarkModeImage from "../../../images/darkMode.jsx"
+import LightModeImage from "../../../images/lightMode.jsx"
 import ComputerIcon from '@mui/icons-material/Computer'
 import { UserContext } from '../../../UserContext.js'
 import PageLoading from '../../../components/PageLoading.js'
@@ -264,7 +264,7 @@ const Settings = () => {
               <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
                 WAB Server URL
               </Typography>
-              <Typography variant="body1" sx={{
+              <Box component="div" sx={{
                 fontFamily: 'monospace',
                 wordBreak: 'break-all',
                 bgcolor: 'action.hover',
@@ -272,7 +272,7 @@ const Settings = () => {
                 borderRadius: 1
               }}>
                 {wabUrl || ' '}
-              </Typography>
+              </Box>
             </Box>
           )}
 
@@ -280,7 +280,7 @@ const Settings = () => {
               <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
                 Wallet Storage URL
               </Typography>
-              <Typography variant="body1" sx={{
+              <Box component="div" sx={{
                 fontFamily: 'monospace',
                 wordBreak: 'break-all',
                 bgcolor: 'action.hover',
@@ -288,14 +288,14 @@ const Settings = () => {
                 borderRadius: 1
               }}>
                 {storageUrl || ' '}
-              </Typography>
+              </Box>
             </Box>
 
           <Box>
             <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
               Message Box Server URL
             </Typography>
-            <Typography variant="body1" sx={{
+            <Box component="div" sx={{
               fontFamily: 'monospace',
               wordBreak: 'break-all',
               bgcolor: 'action.hover',
@@ -303,7 +303,7 @@ const Settings = () => {
               borderRadius: 1
             }}>
               {messageBoxUrl || ' '}
-            </Typography>
+            </Box>
           </Box>
         </Box>
       </Paper>

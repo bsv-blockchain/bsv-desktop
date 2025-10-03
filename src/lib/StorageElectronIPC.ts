@@ -44,6 +44,21 @@ export class StorageElectronIPC implements WalletStorageProvider {
   }
 
   /**
+   * Initialize services on backend storage
+   * Services must be created on backend since they contain non-serializable objects
+   */
+  async initializeBackendServices(): Promise<void> {
+    const result = await window.electronAPI.storage.initializeServices(
+      this.identityKey,
+      this.chain
+    );
+    if (!result.success) {
+      throw new Error(`Failed to initialize services on backend: ${result.error}`);
+    }
+    console.log('[StorageElectronIPC] Services initialized on backend successfully');
+  }
+
+  /**
    * Returns false as this is not a full StorageProvider (only WalletStorageProvider)
    */
   isStorageProvider(): boolean {

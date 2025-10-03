@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('storage:is-available', identityKey, chain),
     makeAvailable: (identityKey: string, chain: 'main' | 'test') =>
       ipcRenderer.invoke('storage:make-available', identityKey, chain),
+    initializeServices: (identityKey: string, chain: 'main' | 'test') =>
+      ipcRenderer.invoke('storage:initialize-services', identityKey, chain),
     callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) =>
       ipcRenderer.invoke('storage:call-method', identityKey, chain, method, args)
   }
@@ -54,6 +56,7 @@ export interface ElectronAPI {
   storage: {
     isAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<boolean>;
     makeAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; settings?: any; error?: string }>;
+    initializeServices: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; error?: string }>;
     callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
   };
 }

@@ -282,8 +282,8 @@ ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain
 ipcMain.handle('storage:make-available', async (_event, identityKey: string, chain: 'main' | 'test') => {
   try {
     const manager = await getStorageManager();
-    await manager.makeAvailable(identityKey, chain);
-    return { success: true };
+    const settings = await manager.makeAvailable(identityKey, chain);
+    return { success: true, settings };
   } catch (error: any) {
     console.error('[IPC] storage:make-available error:', error);
     return { success: false, error: error.message };

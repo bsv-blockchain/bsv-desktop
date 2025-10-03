@@ -1072,7 +1072,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const DEBOUNCE_TIME_MS = 5000; // 5 seconds debounce
 
   useEffect(() => {
-    if (managers?.walletManager?.authenticated) {
+    if (managers?.walletManager?.authenticated && activeProfile) {
       const wallet = managers.walletManager;
       let unlistenFn: (() => void) | undefined;
 
@@ -1125,7 +1125,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         }
       }
     }
-  }, [managers])
+  }, [managers, activeProfile])
 
   useEffect(() => {
     if (typeof managers.walletManager === 'object') {

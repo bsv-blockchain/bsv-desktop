@@ -112,11 +112,13 @@ class StorageManager {
 
   /**
    * Make storage available (initialize database tables)
+   * Returns TableSettings from the storage
    */
-  async makeAvailable(identityKey: string, chain: 'main' | 'test'): Promise<void> {
+  async makeAvailable(identityKey: string, chain: 'main' | 'test'): Promise<any> {
     const storage = await this.getOrCreateStorage(identityKey, chain);
-    await storage.makeAvailable();
+    const settings = await storage.makeAvailable();
     console.log(`[Storage] Storage made available for ${identityKey}-${chain}`);
+    return settings;
   }
 
   /**

@@ -21,17 +21,60 @@
  * - IPC is more efficient and simpler for Electron's architecture
  */
 
-import { WalletStorageProvider } from '@bsv/wallet-toolbox';
+import { WalletStorageProvider, WalletServices } from '@bsv/wallet-toolbox';
 
 export class StorageElectronIPC implements WalletStorageProvider {
   private identityKey: string;
   private chain: 'main' | 'test';
+  private services?: WalletServices;
+  private settings?: any;
 
   constructor(identityKey: string, chain: 'main' | 'test') {
     this.identityKey = identityKey;
     this.chain = chain;
 
     console.log('[StorageElectronIPC] Created for identity:', identityKey, 'chain:', chain);
+  }
+
+  /**
+   * Set wallet services (required by WalletStorageProvider interface)
+   */
+  setServices(v: WalletServices): void {
+    this.services = v;
+  }
+
+  /**
+   * Returns false as this is not a full StorageProvider (only WalletStorageProvider)
+   */
+  isStorageProvider(): boolean {
+    return false;
+  }
+
+  /**
+   * Check if storage is currently available
+   */
+  isAvailable(): boolean {
+    return this.settings !== undefined;
+  }
+
+  /**
+   * Get wallet services
+   */
+  getServices(): WalletServices {
+    if (!this.services) {
+      throw new Error('Services not set on StorageElectronIPC');
+    }
+    return this.services;
+  }
+
+  /**
+   * Get storage settings
+   */
+  getSettings(): any {
+    if (!this.settings) {
+      throw new Error('Settings not available - call makeAvailable() first');
+    }
+    return this.settings;
   }
 
   /**
@@ -44,8 +87,9 @@ export class StorageElectronIPC implements WalletStorageProvider {
 
   /**
    * Initialize storage (create database tables)
+   * Returns TableSettings object
    */
-  async makeAvailable(): Promise<void> {
+  async makeAvailable(): Promise<any> {
     console.log('[StorageElectronIPC] Making storage available...');
 
     const result = await window.electronAPI.storage.makeAvailable(
@@ -57,7 +101,12 @@ export class StorageElectronIPC implements WalletStorageProvider {
       throw new Error(`Failed to make storage available: ${result.error}`);
     }
 
-    console.log('[StorageElectronIPC] Storage is now available');
+    // Store settings from backend
+    this.settings = result.settings;
+
+    console.log('[StorageElectronIPC] Storage is now available, settings:', this.settings);
+
+    return this.settings;
   }
 
   /**
@@ -285,6 +334,93 @@ export class StorageElectronIPC implements WalletStorageProvider {
     return this.callMethod('deleteSetting', ...args);
   }
 
-  // Add any other methods required by WalletStorageProvider interface
-  // as they are discovered during testing
+  // ===== WalletStorageWriter Methods =====
+
+  async destroy(): Promise<void> {
+    return this.callMethod('destroy');
+  }
+
+  async migrate(...args: any[]): Promise<any> {
+    return this.callMethod('migrate', ...args);
+  }
+
+  async findOrInsertUser(...args: any[]): Promise<any> {
+    return this.callMethod('findOrInsertUser', ...args);
+  }
+
+  async abortAction(...args: any[]): Promise<any> {
+    return this.callMethod('abortAction', ...args);
+  }
+
+  async createAction(...args: any[]): Promise<any> {
+    return this.callMethod('createAction', ...args);
+  }
+
+  async processAction(...args: any[]): Promise<any> {
+    return this.callMethod('processAction', ...args);
+  }
+
+  async internalizeAction(...args: any[]): Promise<any> {
+    return this.callMethod('internalizeAction', ...args);
+  }
+
+  async insertCertificateAuth(...args: any[]): Promise<any> {
+    return this.callMethod('insertCertificateAuth', ...args);
+  }
+
+  async relinquishCertificate(...args: any[]): Promise<any> {
+    return this.callMethod('relinquishCertificate', ...args);
+  }
+
+  async relinquishOutput(...args: any[]): Promise<any> {
+    return this.callMethod('relinquishOutput', ...args);
+  }
+
+  // ===== WalletStorageReader Methods =====
+
+  async findCertificatesAuth(...args: any[]): Promise<any> {
+    return this.callMethod('findCertificatesAuth', ...args);
+  }
+
+  async findOutputBasketsAuth(...args: any[]): Promise<any> {
+    return this.callMethod('findOutputBasketsAuth', ...args);
+  }
+
+  async findOutputsAuth(...args: any[]): Promise<any> {
+    return this.callMethod('findOutputsAuth', ...args);
+  }
+
+  async findProvenTxReqs(...args: any[]): Promise<any> {
+    return this.callMethod('findProvenTxReqs', ...args);
+  }
+
+  async listActions(...args: any[]): Promise<any> {
+    return this.callMethod('listActions', ...args);
+  }
+
+  async listCertificates(...args: any[]): Promise<any> {
+    return this.callMethod('listCertificates', ...args);
+  }
+
+  async listOutputs(...args: any[]): Promise<any> {
+    return this.callMethod('listOutputs', ...args);
+  }
+
+  // ===== WalletStorageSync Methods =====
+
+  async findOrInsertSyncStateAuth(...args: any[]): Promise<any> {
+    return this.callMethod('findOrInsertSyncStateAuth', ...args);
+  }
+
+  async setActive(...args: any[]): Promise<any> {
+    return this.callMethod('setActive', ...args);
+  }
+
+  async getSyncChunk(...args: any[]): Promise<any> {
+    return this.callMethod('getSyncChunk', ...args);
+  }
+
+  async processSyncChunk(...args: any[]): Promise<any> {
+    return this.callMethod('processSyncChunk', ...args);
+  }
 }

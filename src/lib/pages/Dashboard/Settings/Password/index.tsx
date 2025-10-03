@@ -15,7 +15,7 @@ import AppLogo
 const useStyles = makeStyles(style, { name: 'PasswordSettings' })
 
 const PasswordSettings = ({ history }) => {
-  const { managers } = useContext(WalletContext)
+  const { managers, saveEnhancedSnapshot } = useContext(WalletContext)
   const classes = useStyles()
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -29,7 +29,7 @@ const PasswordSettings = ({ history }) => {
         throw new Error('Passwords do not match.')
       }
       await managers.walletManager.changePassword(password)
-      localStorage.snap = Utils.toBase64(managers.walletManager.saveSnapshot())
+      localStorage.snap = saveEnhancedSnapshot()
       toast.dark('Password changed!')
       setPassword('')
       setConfirmPassword('')

@@ -85,6 +85,7 @@ export interface WalletContextValue {
   messageBoxUrl: string
   useRemoteStorage: boolean
   useMessageBox: boolean
+  saveEnhancedSnapshot: () => string
 }
 
 export const WalletContext = createContext<WalletContextValue>({
@@ -121,7 +122,8 @@ export const WalletContext = createContext<WalletContextValue>({
   storageUrl: '',
   messageBoxUrl: '',
   useRemoteStorage: false,
-  useMessageBox: false
+  useMessageBox: false,
+  saveEnhancedSnapshot: () => { throw new Error('Not initialized') }
 })
 
 // ---- Group-gating types ----
@@ -921,13 +923,141 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     useRemoteStorage
   ]);
 
+  // ---- Enhanced Snapshot V3 with Config ----
+
+  /**
+   * Saves an enhanced Version 3 snapshot that wraps the wallet-toolbox snapshot
+   * with WalletConfig settings.
+   * Format: [version=3][varint:config_length][config_json][wallet_snapshot]
+   */
+  const saveEnhancedSnapshot = useCallback((): string => {
+    if (!managers.walletManager) {
+      throw new Error('Wallet manager not available for snapshot');
+    }
+
+    // Get the wallet-toolbox snapshot (Version 2)
+    const walletSnapshot = managers.walletManager.saveSnapshot();
+
+    // Build config object
+    const config = {
+      wabUrl,
+      network: selectedNetwork,
+      storageUrl: selectedStorageUrl,
+      messageBoxUrl,
+      authMethod: selectedAuthMethod,
+      useWab,
+      useRemoteStorage,
+      useMessageBox
+    };
+
+    // Serialize config to JSON bytes
+    const configJson = JSON.stringify(config);
+    const configBytes = Array.from(new TextEncoder().encode(configJson));
+
+    // Build Version 3 snapshot
+    const version = 3;
+    const configLength = configBytes.length;
+
+    // Encode varint for config length (simple implementation for lengths < 128)
+    const varintBytes: number[] = [];
+    let len = configLength;
+    while (len >= 0x80) {
+      varintBytes.push((len & 0x7f) | 0x80);
+      len >>>= 7;
+    }
+    varintBytes.push(len & 0x7f);
+
+    // Combine: [version][varint][config][wallet_snapshot]
+    const enhancedSnapshot = [
+      version,
+      ...varintBytes,
+      ...configBytes,
+      ...walletSnapshot
+    ];
+
+    return Utils.toBase64(enhancedSnapshot);
+  }, [
+    managers.walletManager,
+    wabUrl,
+    selectedNetwork,
+    selectedStorageUrl,
+    messageBoxUrl,
+    selectedAuthMethod,
+    useWab,
+    useRemoteStorage,
+    useMessageBox
+  ]);
+
+  /**
+   * Loads an enhanced snapshot, handling both Version 2 (legacy) and Version 3 (with config).
+   * Restores config state and returns the wallet snapshot portion for the walletManager.
+   */
+  const loadEnhancedSnapshot = useCallback((snapArr: number[]): { walletSnapshot: number[], config?: any } => {
+    if (!snapArr || snapArr.length === 0) {
+      throw new Error('Empty snapshot');
+    }
+
+    const version = snapArr[0];
+
+    // Version 1 or 2: legacy wallet-toolbox formats, no config included
+    if (version === 1 || version === 2) {
+      console.log(`Loading Version ${version} snapshot (legacy)`);
+      return { walletSnapshot: snapArr };
+    }
+
+    // Version 3: enhanced format with config
+    if (version === 3) {
+      console.log('Loading Version 3 snapshot with config');
+
+      // Decode varint for config length
+      let offset = 1;
+      let configLength = 0;
+      let shift = 0;
+      while (offset < snapArr.length) {
+        const byte = snapArr[offset++];
+        configLength |= (byte & 0x7f) << shift;
+        if ((byte & 0x80) === 0) break;
+        shift += 7;
+      }
+
+      // Extract config JSON bytes
+      const configBytes = snapArr.slice(offset, offset + configLength);
+      const configJson = new TextDecoder().decode(new Uint8Array(configBytes));
+      const config = JSON.parse(configJson);
+
+      // Extract wallet snapshot (remaining bytes)
+      const walletSnapshot = snapArr.slice(offset + configLength);
+
+      return { walletSnapshot, config };
+    }
+
+    // Unknown version
+    throw new Error(`Unsupported snapshot version: ${version}`);
+  }, []);
 
   // Load snapshot function
   const loadWalletSnapshot = useCallback(async (walletManager: WalletAuthenticationManager) => {
     if (localStorage.snap) {
       try {
         const snapArr = Utils.toArray(localStorage.snap, 'base64');
-        await walletManager.loadSnapshot(snapArr);
+        const { walletSnapshot, config } = loadEnhancedSnapshot(snapArr);
+
+        // If Version 3 with config, restore config state
+        if (config) {
+          console.log('Restoring config from snapshot:', config);
+          setWabUrl(config.wabUrl || '');
+          setSelectedNetwork(config.network || DEFAULT_CHAIN);
+          setSelectedStorageUrl(config.storageUrl || '');
+          setMessageBoxUrl(config.messageBoxUrl || '');
+          setSelectedAuthMethod(config.authMethod || '');
+          setUseWab(config.useWab !== undefined ? config.useWab : DEFAULT_USE_WAB);
+          setUseRemoteStorage(config.useRemoteStorage || false);
+          setUseMessageBox(config.useMessageBox || false);
+          setConfigStatus('configured');
+        }
+
+        // Load wallet snapshot into walletManager
+        await walletManager.loadSnapshot(walletSnapshot);
         // We'll handle setting snapshotLoaded in a separate effect watching authenticated state
       } catch (err: any) {
         console.error("Error loading snapshot", err);
@@ -935,7 +1065,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         toast.error("Couldn't load saved data: " + err.message);
       }
     }
-  }, []);
+  }, [loadEnhancedSnapshot]);
 
   // Watch for wallet authentication after snapshot is loaded
   useEffect(() => {
@@ -1241,7 +1371,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     storageUrl: selectedStorageUrl,
     messageBoxUrl,
     useRemoteStorage,
-    useMessageBox
+    useMessageBox,
+    saveEnhancedSnapshot
   }), [
     managers,
     settings,
@@ -1273,7 +1404,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     selectedStorageUrl,
     messageBoxUrl,
     useRemoteStorage,
-    useMessageBox
+    useMessageBox,
+    saveEnhancedSnapshot
   ]);
 
   return (

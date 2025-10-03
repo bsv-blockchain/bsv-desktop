@@ -244,7 +244,7 @@ const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPasswo
 
 // Main Greeter component with reduced complexity
 const Greeter: React.FC<any> = ({ history }) => {
-  const { managers, configStatus, useWab } = useContext(WalletContext)
+  const { managers, configStatus, useWab, saveEnhancedSnapshot } = useContext(WalletContext)
   const { appVersion, appName, pageLoaded } = useContext(UserContext)
   const theme = useTheme()
 
@@ -418,7 +418,7 @@ const Greeter: React.FC<any> = ({ history }) => {
 
       if (walletManager.authenticated) {
         // Save snapshot to local storage
-        localStorage.snap = Utils.toBase64(walletManager.saveSnapshot())
+        localStorage.snap = saveEnhancedSnapshot()
         toast.success("Authenticated successfully!")
         history.push('/dashboard/apps')
       } else {

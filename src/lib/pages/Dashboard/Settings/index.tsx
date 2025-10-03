@@ -253,7 +253,7 @@ const Settings = () => {
               Mode
             </Typography>
             <Chip
-              label={useWab ? 'WAB Mode' : 'Wabless Mode'}
+              label={useWab ? 'Self Custodial WAB Recovery' : 'Self Custodial Local Only'}
               color="primary"
               variant="outlined"
             />

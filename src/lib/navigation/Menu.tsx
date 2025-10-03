@@ -74,7 +74,7 @@ interface MenuProps {
 export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const history = useHistory()
   const breakpoints = useBreakpoint()
-  const { logout, managers, activeProfile, setActiveProfile } = useContext(WalletContext)
+  const { logout, managers, activeProfile, setActiveProfile, saveEnhancedSnapshot } = useContext(WalletContext)
   const { appName, appVersion } = useContext(UserContext)
 
   // Profile management state
@@ -264,7 +264,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       setProfilesLoading(true)
       // Handle both synchronous and asynchronous listProfiles implementation
       if (managers.walletManager.saveSnapshot) {
-        localStorage.snap = Utils.toBase64(managers.walletManager.saveSnapshot())
+        localStorage.snap = saveEnhancedSnapshot()
       }
       const profileList = await Promise.resolve(managers.walletManager?.listProfiles())
       setProfiles(profileList)

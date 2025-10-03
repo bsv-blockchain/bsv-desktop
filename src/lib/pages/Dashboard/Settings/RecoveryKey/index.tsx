@@ -21,7 +21,7 @@ interface RecoveryKeySettingsProps {
 }
 
 const RecoveryKeySettings: React.FC<RecoveryKeySettingsProps> = ({ history, onViewKey }) => {
-  const { managers } = useContext(WalletContext)
+  const { managers, saveEnhancedSnapshot } = useContext(WalletContext)
   const [recoveryKey, setRecoveryKey] = useState('')
   const [showLoading, setShowLoading] = useState(false)
   const [changeLoading, setChangeLoading] = useState(false)
@@ -52,7 +52,7 @@ const RecoveryKeySettings: React.FC<RecoveryKeySettingsProps> = ({ history, onVi
       setChangeLoading(true)
       await managers.walletManager.changeRecoveryKey()
       setRecoveryKey('')
-      localStorage.snap = Utils.toBase64(managers.walletManager.saveSnapshot())
+      localStorage.snap = saveEnhancedSnapshot()
       toast.dark('Recovery key changed!')
     } catch (e) {
       toast.error(e.message)

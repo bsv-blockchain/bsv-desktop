@@ -26,7 +26,7 @@ import { Utils } from '@bsv/sdk'
 const useStyles = makeStyles(style as any, { name: 'RecoveryLostPhoneNumber' })
 
 const RecoveryLostPhone: React.FC<any> = ({ history }) => {
-  const { managers } = useContext(WalletContext)
+  const { managers, saveEnhancedSnapshot } = useContext(WalletContext)
   const classes = useStyles()
   const [accordianView, setAccordianView] = useState('recovery-key')
   const [recoveryKey, setRecoveryKey] = useState('')
@@ -64,7 +64,7 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
       setLoading(true)
       await managers.walletManager!.providePassword(password)
       setAccordianView('new-phone')
-      localStorage.snap = Utils.toBase64(managers.walletManager!.saveSnapshot())
+      localStorage.snap = saveEnhancedSnapshot()
     } catch (e) {
       console.error(e)
       toast.error(e.message)

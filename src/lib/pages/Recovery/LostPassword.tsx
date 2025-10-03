@@ -27,7 +27,7 @@ import { Utils } from '@bsv/sdk'
 const useStyles = makeStyles(style as any, { name: 'LostPassword' })
 
 const RecoveryLostPassword: React.FC<any> = ({ history }) => {
-  const { managers } = useContext(WalletContext)
+  const { managers, saveEnhancedSnapshot } = useContext(WalletContext)
   const classes = useStyles()
   const [accordianView, setAccordianView] = useState('phone')
   const [phone, setPhone] = useState('')
@@ -97,7 +97,7 @@ const RecoveryLostPassword: React.FC<any> = ({ history }) => {
       await managers.walletManager!.provideRecoveryKey(Utils.toArray(recoveryKey, 'base64'))
       if (managers.walletManager!.authenticated) {
         setAccordianView('new-password')
-        localStorage.snap = Utils.toBase64(managers.walletManager!.saveSnapshot())
+        localStorage.snap = saveEnhancedSnapshot()
       } else {
         throw new Error('Not authenticated, was it incorrect?')
       }

@@ -120,7 +120,6 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
 
   useEffect(() => {
     let cancelled = false
-    debugger
     const run = async () => {
       if (!managers?.walletManager || !activeProfile?.name) return
       const cacheKey = `funds_${activeProfile.name}`

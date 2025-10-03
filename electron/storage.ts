@@ -15,7 +15,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { createRequire } from 'module';
-import { StorageKnex, KnexMigrations, Services, Monitor } from '@bsv/wallet-toolbox';
+import { StorageKnex, KnexMigrations, Services, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
 
 const require = createRequire(import.meta.url);
 
@@ -35,6 +35,8 @@ function getCreateKnex() {
 class StorageManager {
   private storages: Map<string, StorageKnex> = new Map();
   private databases: Map<string, any> = new Map();
+  // Separate storage managers for backend monitoring (independent from renderer)
+  private monitorStorageManagers: Map<string, WalletStorageManager> = new Map();
   private monitors: Map<string, Monitor> = new Map();
 
   /**
@@ -148,8 +150,16 @@ class StorageManager {
       console.warn(`[Storage] setServices method not available on StorageKnex for ${key}`);
     }
 
-    // Start Monitor for this storage instance
-    await this.startMonitor(identityKey, chain, storage, services);
+    // Create a separate WalletStorageManager for backend monitoring
+    // This is independent from the renderer's WalletStorageManager
+    const monitorStorageManager = new WalletStorageManager(identityKey);
+    await monitorStorageManager.addWalletStorageProvider(storage);
+    this.monitorStorageManagers.set(key, monitorStorageManager);
+
+    console.log(`[Storage] Backend WalletStorageManager created for monitoring: ${key}`);
+
+    // Start Monitor in the backend process (separate from renderer)
+    await this.startMonitor(identityKey, chain, monitorStorageManager, services);
   }
 
   /**
@@ -159,7 +169,7 @@ class StorageManager {
   async startMonitor(
     identityKey: string,
     chain: 'main' | 'test',
-    storage: StorageKnex,
+    storageManager: WalletStorageManager,
     services: Services
   ): Promise<void> {
     const key = `${identityKey}-${chain}`;
@@ -173,10 +183,6 @@ class StorageManager {
     console.log(`[Monitor] Starting for ${key}`);
 
     try {
-      // Create WalletStorageManager from StorageKnex
-      // StorageKnex implements the StorageProvider interface needed by Monitor
-      const storageManager = storage as any; // StorageKnex is compatible
-
       // Create Monitor with default options
       const monitorOptions = Monitor.createDefaultWalletMonitorOptions(
         chain,

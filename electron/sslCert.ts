@@ -82,23 +82,16 @@ export async function generateSelfSignedCert(): Promise<CertificateKeyPair> {
   cert.setExtensions([
     {
       name: 'basicConstraints',
-      cA: true
+      cA: false
     },
     {
       name: 'keyUsage',
-      keyCertSign: true,
       digitalSignature: true,
-      nonRepudiation: true,
-      keyEncipherment: true,
-      dataEncipherment: true
+      keyEncipherment: true
     },
     {
       name: 'extKeyUsage',
-      serverAuth: true,
-      clientAuth: true,
-      codeSigning: true,
-      emailProtection: true,
-      timeStamping: true
+      serverAuth: true
     },
     {
       name: 'subjectAltName',

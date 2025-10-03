@@ -141,8 +141,8 @@ export async function generateSelfSignedCert(): Promise<CertificateKeyPair> {
 async function isCertTrusted(certPath: string): Promise<boolean> {
   try {
     if (process.platform === 'darwin') {
-      // macOS: Check if cert is in keychain
-      await execAsync(`security find-certificate -c "BSV Desktop" -p /Library/Keychains/System.keychain`);
+      // macOS: Check if cert is in user keychain
+      await execAsync(`security find-certificate -c "BSV Desktop" -p ~/Library/Keychains/login.keychain-db`);
       return true;
     } else if (process.platform === 'win32') {
       // Windows: Check if cert is in trusted root store
@@ -208,13 +208,13 @@ Certificate location: ${certPath}`;
 
   try {
     if (platform === 'darwin') {
-      // macOS: Add to system keychain with trust settings
-      await execAsync(`sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${certPath}"`);
+      // macOS: Add to user keychain first (no password needed)
+      await execAsync(`security add-trusted-cert -d -r trustRoot -k ~/Library/Keychains/login.keychain-db "${certPath}"`);
 
       await dialog.showMessageBox({
         type: 'info',
         title: 'Certificate Installed',
-        message: 'The SSL certificate has been successfully installed and trusted.',
+        message: 'The SSL certificate has been successfully installed and trusted in your user keychain.',
         buttons: ['OK']
       });
 

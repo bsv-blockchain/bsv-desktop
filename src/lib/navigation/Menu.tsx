@@ -415,23 +415,9 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                 </Typography>
               }
               secondary={
-                !profilesOpen && profiles.length > 0 ? (
-                  <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5, overflow: 'hidden' }}>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{
-                        display: 'inline',
-                        maxWidth: '100%',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      Active: {profiles.find(p => p.active)?.name || 'Default'}
-                    </Typography>
-                  </Box>
-                ) : null
+                !profilesOpen && profiles.length > 0
+                  ? `Active: ${profiles.find(p => p.active)?.name || 'Default'}`
+                  : undefined
               }
             />
             {profilesOpen ? <ExpandLess /> : <ExpandMore />}

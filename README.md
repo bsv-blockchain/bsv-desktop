@@ -1,49 +1,64 @@
-# BSV Desktop - Electron Edition
+# BSV Desktop
 
-This is the Electron port of the BSV Desktop wallet application, replacing the Tauri (Rust) backend with a Node.js backend while maintaining all the same functionality.
+A cross-platform desktop wallet application for the BSV blockchain, built with Electron and React. BSV Desktop provides a complete wallet interface with support for both self-custody (local) and remote storage options.
+
+> **Note**: This project was migrated from Tauri to Electron to enable local database storage. See [PORTED.md](PORTED.md) for the full migration story.
+
+## What is BSV Desktop?
+
+BSV Desktop is a feature-rich Bitcoin SV wallet that runs on macOS, Windows, and Linux. It provides:
+
+- **🔐 Self-Custody Mode** - Full control with local key management and SQLite storage
+- **☁️ Remote Storage Mode** - WAB (Wallet Authentication Bundle) integration with remote storage
+- **🌐 BRC-100 Interface** - HTTP server on port 3321 for external app integration
+- **📱 Identity Certificates** - BRC-64/65 certificate management
+- **💸 Payment Protocol** - BRC-29 payment support
+- **🎯 Overlay Services** - App permissions, baskets, protocols, counterparties
+- **🔄 Background Monitoring** - Automatic transaction and proof updates
+- **💾 Flexible Storage** - Choose between local SQLite or remote storage providers
 
 ## Architecture
 
-The application consists of three main layers:
+BSV Desktop consists of three main components:
 
-### 1. **Electron Main Process** (`electron/main.ts`)
-- Window management and lifecycle
-- Cross-platform focus handling (macOS/Windows/Linux)
-- IPC handlers for native functionality
-- HTTP server coordinator
+### 1. **React UI Library** (`src/lib/`)
+Reusable React components and wallet logic:
+- `WalletContext.tsx` - Wallet state management and initialization
+- `UserInterface.tsx` - Main router and permission handlers
+- Permission handlers for baskets, certificates, protocols, spending
+- Dashboard pages for apps, identity, trust, settings
 
-### 2. **HTTP Server** (`electron/httpServer.ts`)
-- Express server on `http://127.0.0.1:3321`
-- Proxies BRC-100 wallet interface calls from external apps
-- Full CORS support for local development
-- Request/response bridging between HTTP and renderer process
+### 2. **Electron Main Process** (`electron/`)
+Native functionality and backend services:
+- `main.ts` - Window management, IPC handlers
+- `httpServer.ts` - BRC-100 HTTP server on port 3321
+- `storage.ts` - SQLite storage manager with IPC proxy
+- `monitor-worker.ts` - Background monitoring process
 
-### 3. **Renderer Process** (React Frontend)
-- `@bsv/brc100-ui-react-components` UserInterface
-- Wallet functionality via `@bsv/wallet-toolbox`
-- SQLite-based local storage via Knex
-- HTTP request handler via `onWalletReady`
+### 3. **Renderer Process** (`src/`)
+Application entry point that uses the UI library:
+- `main.tsx` - React app entry, wallet initialization
+- `onWalletReady.ts` - HTTP request handler for BRC-100 interface
+- `electronFunctions.ts` - Native handlers (focus, downloads, dialogs)
 
-## Key Features Ported from Tauri/Rust
+## Getting Started
 
-✅ **HTTP Server (Port 3321)** - External apps can connect to the wallet
-✅ **Window Focus Management** - Platform-specific focus grab/release
-✅ **File Downloads** - Save files to Downloads folder with duplicate handling
-✅ **File Save Dialog** - User-prompted file saving
-✅ **Manifest Fetch Proxy** - Secure CORS-free manifest.json fetching
-✅ **IPC Communication** - Event-based communication between processes
-✅ **SQLite Storage** - Local Knex-based storage at `~/.bsv-desktop/wallet.db`
+### Prerequisites
 
-## Installation
+- Node.js 18+ and npm
+- Git
+
+### Installation
 
 ```bash
-cd electron-app
+git clone https://github.com/your-org/bsv-desktop.git
+cd bsv-desktop
 npm install
 ```
 
-## Development
+### Development Mode
 
-Run the development server (hot reload enabled):
+Run the app in development mode with hot reload:
 
 ```bash
 npm run dev
@@ -51,10 +66,17 @@ npm run dev
 
 This will:
 1. Start Vite dev server on port 5173
-2. Compile TypeScript for Electron
-3. Launch Electron with dev tools
+2. Compile TypeScript for Electron backend
+3. Launch Electron with DevTools open
+4. Enable hot module replacement for React code
 
-## Building
+**Dev Mode Features**:
+- Automatic recompilation on file changes
+- React DevTools enabled
+- Console logs from both main and renderer processes
+- HTTP server running on `http://127.0.0.1:3321`
+
+### Building
 
 Build the application for production:
 
@@ -62,153 +84,254 @@ Build the application for production:
 npm run build
 ```
 
-This compiles both the renderer (Vite) and main process (TypeScript).
+This runs:
+- `npm run build:renderer` - Vite build → `dist/`
+- `npm run build:electron` - TypeScript build → `dist-electron/`
 
-## Packaging
+### Packaging
 
 Package the app for distribution:
 
 ```bash
-# For current platform
+# Build for current platform
 npm run package
 
-# Platform-specific
-npm run package:mac   # macOS (DMG + ZIP)
-npm run package:win   # Windows (NSIS + Portable)
-npm run package:linux # Linux (AppImage + DEB)
+# Platform-specific builds
+npm run package:mac    # macOS (DMG + ZIP)
+npm run package:win    # Windows (NSIS + Portable)
+npm run package:linux  # Linux (AppImage + DEB)
 ```
 
-Built packages will be in the `release/` directory.
+Built packages will be in the `release/` directory with versioned filenames.
 
 ## Project Structure
 
 ```
-electron-app/
-├── electron/                 # Electron main process
-│   ├── main.ts              # Main entry point, window management
-│   ├── httpServer.ts        # HTTP server on port 3321
-│   └── preload.ts           # IPC bridge (context isolation)
-├── src/                     # React renderer process
-│   ├── main.tsx             # React app entry point
-│   ├── onWalletReady.ts     # Wallet HTTP request handler
-│   ├── electronFunctions.ts # Native handlers for UserInterface
-│   └── fetchProxy.ts        # Manifest.json fetch proxy
-├── dist/                    # Built renderer (Vite output)
-├── dist-electron/           # Built main process (tsc output)
-├── release/                 # Packaged applications
-├── package.json             # Dependencies and scripts
-├── tsconfig.json            # TypeScript config (renderer)
-├── tsconfig.electron.json   # TypeScript config (main process)
-└── vite.config.ts           # Vite build config
+bsv-desktop/
+├── src/lib/                      # React UI library (reusable)
+│   ├── WalletContext.tsx         # Wallet state and initialization
+│   ├── UserContext.tsx           # App metadata and native handlers
+│   ├── components/               # Reusable components
+│   │   ├── WalletConfig.tsx      # WAB/storage configuration
+│   │   ├── AmountDisplay.tsx     # Currency display with rates
+│   │   └── *Handler.tsx          # Permission request modals
+│   ├── pages/                    # Dashboard pages
+│   │   ├── Dashboard/            # Main dashboard and settings
+│   │   ├── Greeter/              # Login/authentication flow
+│   │   └── Recovery/             # Password/phone recovery
+│   └── navigation/               # Menu and routing
+│
+├── src/                          # Electron app entry
+│   ├── main.tsx                  # React app initialization
+│   ├── onWalletReady.ts          # BRC-100 HTTP handler
+│   ├── electronFunctions.ts      # Native handlers
+│   └── StorageElectronIPC.ts     # IPC storage proxy
+│
+├── electron/                     # Electron backend
+│   ├── main.ts                   # Main process, window lifecycle
+│   ├── httpServer.ts             # Express server (port 3321)
+│   ├── storage.ts                # Storage manager + IPC handlers
+│   ├── monitor-worker.ts         # Background monitoring process
+│   ├── preload.ts                # IPC bridge (context isolation)
+│   └── storage-loader.cjs        # Lazy-load better-sqlite3
+│
+├── dist/                         # Vite build output
+├── dist-electron/                # TypeScript build output
+├── release/                      # Packaged apps
+│
+├── package.json                  # Dependencies and scripts
+├── tsconfig.json                 # TypeScript config (renderer)
+├── tsconfig.electron.json        # TypeScript config (main)
+├── vite.config.ts                # Vite build config
+└── electron-builder.json5        # Packaging config
 ```
-
-## How It Works
-
-### HTTP Server Flow
-
-1. External app makes HTTP request to `http://127.0.0.1:3321/createAction`
-2. Express server receives request in main process
-3. Main process sends IPC message `http-request` to renderer
-4. Renderer's `onWalletReady` handler processes via `WalletInterface`
-5. Renderer sends IPC message `http-response` back to main
-6. Main process returns HTTP response to external app
-
-### Storage
-
-The wallet uses SQLite for local storage:
-- **Location**: `~/.bsv-desktop/wallet.db`
-- **Provider**: `StorageKnex` from `@bsv/wallet-toolbox`
-- **Database**: better-sqlite3 via Knex
-
-This is configured in `WalletContext.tsx` in the parent `bsv-desktop` library when `useRemoteStorage: false`.
-
-## Differences from Tauri Version
-
-| Feature | Tauri (Rust) | Electron (Node.js) |
-|---------|--------------|-------------------|
-| HTTP Server | Hyper | Express |
-| IPC | Tauri Events | Electron IPC |
-| Native Handlers | Tauri Commands | Electron IPC Handlers |
-| Build Output | Single binary | ASAR + native modules |
-| File Size | Smaller (~10-15MB) | Larger (~80-100MB) |
-| Startup Time | Faster | Slightly slower |
-| Development | Rust + TypeScript | TypeScript only |
 
 ## Configuration
 
-The wallet configuration is managed in the parent `bsv-desktop` library:
-
-- **`src/config.ts`**: Default settings (network, WAB, storage)
-- **`src/WalletContext.tsx`**: Wallet initialization and config flow
-
-### Default Settings
+Wallet configuration is managed in `src/lib/config.ts`:
 
 ```typescript
-DEFAULT_CHAIN = 'main'          // mainnet or testnet
-DEFAULT_USE_WAB = false         // self-custody mode
-ADMIN_ORIGINATOR = 'admin.com'  // admin domain
+export const DEFAULT_CHAIN = 'main'         // 'main' or 'test'
+export const DEFAULT_USE_WAB = false        // true = WAB, false = self-custody
+export const ADMIN_ORIGINATOR = 'admin.com' // Admin domain for permissions
 ```
 
-## Native Functions
+Users can configure at runtime via the WalletConfig component:
+- **Authentication**: WAB or self-custody
+- **Network**: Mainnet or testnet
+- **Storage**: Remote (StorageClient) or local (SQLite)
+- **Message Box**: Enable/disable message box integration
 
-The following native functions are exposed to the renderer via `electronFunctions.ts`:
+Configuration is persisted in **Version 3 snapshots** (localStorage + encrypted).
 
-- **`isFocused()`** - Check if window is focused
-- **`onFocusRequested()`** - Request focus (platform-specific)
-- **`onFocusRelinquished()`** - Release focus (minimize/hide)
-- **`onDownloadFile(blob, filename)`** - Download file to Downloads folder
+## Storage Modes
 
-These are passed to `UserInterface` as `nativeHandlers`.
+### Local Storage (Self-Custody)
+- **Database**: SQLite via better-sqlite3 + Knex
+- **Location**: `~/.bsv-desktop/wallet.db` (mainnet) or `wallet-test.db` (testnet)
+- **Features**: Full offline mode, no external dependencies
+- **Architecture**: IPC proxy from renderer → main → StorageKnex
 
-## Debugging
+### Remote Storage (WAB)
+- **Provider**: StorageClient (HTTP-based)
+- **Server**: User-configured URL (e.g., `https://storage.babbage.systems`)
+- **Features**: Cloud backup, multi-device sync
+- **Authentication**: WAB with phone/DevConsole verification
 
-### Main Process
-- Logs appear in terminal where `npm run dev` was run
-- Use `console.log()` in `electron/` files
+## Background Monitoring
 
-### Renderer Process
-- Open DevTools automatically in dev mode
-- Press `Cmd+Option+I` (macOS) or `Ctrl+Shift+I` (Windows/Linux)
+BSV Desktop runs a separate Monitor worker process that:
+- Monitors for new transactions
+- Updates merkle proofs
+- Tracks UTXO state changes
+- Syncs certificates and outputs
 
-### HTTP Server
-- Test endpoints: `curl http://127.0.0.1:3321/isAuthenticated`
-- Check CORS: All requests include `Access-Control-Allow-Origin: *`
+**Implementation**:
+- `electron/monitor-worker.ts` - Separate Node.js process
+- SQLite WAL mode enables concurrent access
+- Automatic start on wallet initialization
+- Graceful shutdown on app exit
 
-## Troubleshooting
+## HTTP Server (BRC-100 Interface)
 
-### Port 3321 Already in Use
-- Kill existing process: `lsof -ti:3321 | xargs kill -9`
-- Or change port in `electron/httpServer.ts`
+External apps can connect to the wallet via HTTP on port 3321:
 
-### SQLite Database Issues
-- Database location: `~/.bsv-desktop/wallet.db`
-- Delete database: `rm -rf ~/.bsv-desktop/`
-- Rebuild schema on next launch
+**Endpoints**:
+- `POST /createAction` - Create and broadcast transactions
+- `POST /createHmac` - Generate HMAC signatures
+- `POST /createCertificate` - Create identity certificates
+- `GET /isAuthenticated` - Check wallet authentication status
+- And all other BRC-100 interface methods
 
-### Window Focus Not Working
-- macOS: Requires accessibility permissions
-- Windows: May need to run as administrator
-- Linux: Depends on window manager
+**CORS**: Enabled for all origins in dev mode
+
+**Testing**:
+```bash
+curl http://127.0.0.1:3321/isAuthenticated
+```
+
+## Contributing
+
+We welcome contributions! Here's how to get started:
+
+### Development Workflow
+
+1. **Fork and clone** the repository
+2. **Create a feature branch**: `git checkout -b feature/my-feature`
+3. **Make changes** and test with `npm run dev`
+4. **Build**: `npm run build` to ensure compilation succeeds
+5. **Test packaging**: `npm run package` to verify build output
+6. **Commit**: Use clear commit messages
+7. **Push and create PR**: Describe changes and test coverage
+
+### Code Structure
+
+- **UI components** go in `src/lib/components/`
+- **Pages** go in `src/lib/pages/`
+- **Electron backend** changes go in `electron/`
+- **Shared types** go in `src/lib/types/` or `src/global.d.ts`
+
+### Testing
+
+Currently no automated tests. Manual testing checklist:
+- [ ] App launches and shows login screen
+- [ ] WAB authentication works (with real WAB server)
+- [ ] Self-custody mode works (local database)
+- [ ] Balance displays correctly
+- [ ] Sending transactions works
+- [ ] HTTPS server responds on port 2121
+- [ ] App packages without errors
+
+### Debugging
+
+**Main Process** (Electron backend):
+```bash
+# Logs appear in terminal where `npm run dev` runs
+console.log('[Main]', 'Debug message')
+```
+
+**Renderer Process** (React UI):
+```bash
+# Open DevTools (auto-opens in dev mode)
+# Cmd+Option+I (macOS) or Ctrl+Shift+I (Windows/Linux)
+console.log('[Renderer]', 'Debug message')
+```
+
+**HTTP Server**:
+```bash
+# Test endpoints
+curl -X POST http://127.0.0.1:3321/isAuthenticated
+```
+
+## Releasing a New Version
+
+### 1. Update Version
+
+Edit `package.json`:
+```json
+{
+  "version": "0.7.0"
+}
+```
+
+### 2. Commit and Tag
+
+```bash
+git add package.json
+git commit -m "Bump version to 0.7.0"
+git tag v0.7.0
+git push origin master --tags
+```
+
+### 3. Build Packages
+
+```bash
+# Build for all platforms (requires platform-specific machines)
+npm run package:mac
+npm run package:win
+npm run package:linux
+
+# Or build for current platform only
+npm run package
+```
+
+### 4. Publish Release
+
+1. Go to GitHub Releases
+2. Click "Draft a new release"
+3. Select tag `v0.7.0`
+4. Upload files from `release/` directory:
+   - `BSV-Desktop-0.7.0.dmg` (macOS)
+   - `BSV-Desktop-0.7.0-mac.zip` (macOS)
+   - `BSV-Desktop-Setup-0.7.0.exe` (Windows)
+   - `BSV-Desktop-0.7.0.AppImage` (Linux)
+   - `bsv-desktop_0.7.0_amd64.deb` (Linux)
+5. Write release notes highlighting changes
+6. Click "Publish release"
+
+### 5. Update Documentation
+
+Update README.md, PORTED.md, or CHANGELOG.md as needed.
 
 ## Dependencies
 
-### Core
-- `electron` - Cross-platform desktop framework
-- `@bsv/wallet-toolbox` - Wallet functionality
-- `@bsv/sdk` - BSV blockchain SDK
-- `@bsv/brc100-ui-react-components` - UI library
+### Core Wallet
+- `@bsv/wallet-toolbox` - Wallet managers, storage, permissions
+- `@bsv/sdk` - BSV blockchain primitives
+- `@bsv/message-box-client` - Message box integration
+- `@bsv/uhrp-react` - UHRP protocol support
 
-### Backend (Main Process)
+### Electron Backend
+- `electron` - Desktop framework
 - `express` - HTTP server
-- `cors` - CORS middleware
 - `better-sqlite3` - SQLite database
 - `knex` - SQL query builder
 
-### Frontend (Renderer)
+### React Frontend
 - `react` + `react-dom` - UI framework
-- `@mui/material` - Material-UI components
-- `react-router-dom` - Routing
-- `react-toastify` - Notifications
+- `@mui/material` + `@emotion` - Material-UI components
+- `react-router-dom` - Routing (v5)
+- `react-toastify` - Toast notifications
 
 ## License
 
@@ -216,7 +339,12 @@ Open BSV License
 
 ## Support
 
-For issues specific to the Electron port, please check:
-1. Main process logs (terminal)
-2. Renderer logs (DevTools console)
-3. HTTP server connectivity (`curl http://127.0.0.1:3321/isAuthenticated`)
+- **Issues**: [GitHub Issues](https://github.com/your-org/bsv-desktop/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/your-org/bsv-desktop/discussions)
+- **Documentation**: See [PORTED.md](PORTED.md) for architecture details
+
+## Related Projects
+
+- [wallet-toolbox](https://github.com/bsv-blockchain/wallet-toolbox) - Core wallet functionality
+- [ts-sdk](https://github.com/bitcoin-sv/ts-sdk) - BSV TypeScript SDK
+- [overlay-services](https://github.com/bsv-blockchain/overlay-services) - Overlay network infrastructure

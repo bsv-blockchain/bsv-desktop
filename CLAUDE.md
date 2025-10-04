@@ -4,175 +4,369 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**bsv-desktop** is a React-based library that provides reusable UI components and wallet functionality for building BSV blockchain applications. It wraps wallet functionality implementing the BRC-100 standard interface and provides a complete user interface for wallet interactions.
+**bsv-desktop** is an Electron-based desktop wallet for BSV blockchain built with React. It provides a complete wallet interface with support for both self-custody (local SQLite) and remote storage (WAB) modes. The project implements the BRC-100 wallet interface and exposes an HTTP server on port 3321 for external app integration.
+
+**Architecture**: Electron (Node.js backend) + React (TypeScript frontend) + SQLite (local storage)
 
 ## Key Commands
 
+### Development
+```bash
+npm run dev                  # Start dev server with hot reload
+npm run dev:vite            # Start Vite only (port 5173)
+npm run dev:electron        # Build Electron and launch
+```
+
 ### Build
 ```bash
-npm run build
+npm run build               # Build both renderer and Electron
+npm run build:renderer      # Vite build → dist/
+npm run build:electron      # TypeScript build → dist-electron/
 ```
-Compiles TypeScript files to `dist/` directory with type declarations in `dist/types/`.
 
-### Linting & Testing
+### Packaging
 ```bash
-npm run lint:ci  # Currently no-op
-npm run test     # Currently no tests
+npm run package             # Package for current platform
+npm run package:mac         # macOS (DMG + ZIP)
+npm run package:win         # Windows (NSIS + Portable)
+npm run package:linux       # Linux (AppImage + DEB)
+```
+
+Output: `release/` directory
+
+### Testing & Linting
+```bash
+npm run lint:ci             # Currently no-op
+npm run test                # Currently no tests
 ```
 
 ## Architecture Overview
 
+### Three-Process Architecture
+
+**1. Electron Main Process** (`electron/`)
+- Window lifecycle and IPC handlers (`main.ts`)
+- HTTP server on port 3321 for BRC-100 interface (`httpServer.ts`)
+- Storage manager with SQLite backend (`storage.ts`)
+- Monitor worker process spawner (`storage.ts` → `monitor-worker.ts`)
+- IPC security bridge (`preload.ts`)
+
+**2. Renderer Process** (`src/`)
+- React application entry (`main.tsx`)
+- Wallet HTTP request handler (`onWalletReady.ts`)
+- Native function wrappers (`electronFunctions.ts`)
+- Storage IPC proxy (`StorageElectronIPC.ts`)
+
+**3. Monitor Worker Process** (`electron/monitor-worker.ts`)
+- Separate Node.js process for background tasks
+- Runs `Monitor` from `@bsv/wallet-toolbox`
+- Monitors transactions, proofs, UTXO state
+- SQLite WAL mode for concurrent access
+
 ### Core Context System
 
-The application uses two primary React contexts that work together:
+The React app uses two primary contexts:
 
-1. **WalletContext** ([WalletContext.tsx](src/WalletContext.tsx))
-   - Manages all wallet-related state and operations
-   - Handles three wallet manager types:
-     - `WalletAuthenticationManager` (WAB-based, with phone/DevConsole auth)
-     - `CWIStyleWalletManager` (local, self-custody)
-     - Both build a `WalletPermissionsManager` that handles user permission requests
-   - Manages permission request queues (basket, certificate, protocol, spending, grouped)
-   - Implements group permission gating to batch related permission requests
-   - Stores network configuration (mainnet/testnet), WAB settings, storage settings
-   - Handles snapshot loading/saving for returning users
+**1. WalletContext** ([src/lib/WalletContext.tsx](src/lib/WalletContext.tsx))
+- **Wallet Managers**:
+  - `WalletAuthenticationManager` (WAB mode with phone/DevConsole auth)
+  - `CWIStyleWalletManager` (self-custody mode)
+  - Both create `WalletPermissionsManager` for permission handling
+- **Permission Queues**: basket, certificate, protocol, spending, grouped
+- **Group Permission Gating**: Batches related permission requests
+- **Configuration**: Network (main/test), WAB URL, storage URL, auth method
+- **Snapshot Management**: Version 3 format with config persistence
 
-2. **UserContext** ([UserContext.tsx](src/UserContext.tsx))
-   - Provides platform-agnostic native handlers (focus, download, etc.)
-   - Manages modal visibility state for permission request handlers
-   - Stores app metadata (version, name)
+**2. UserContext** ([src/lib/UserContext.tsx](src/lib/UserContext.tsx))
+- Platform-agnostic native handlers (focus, download, dialogs)
+- Modal visibility state for permission handlers
+- App metadata (version, name)
 
-### Wallet Configuration & Initialization
+### Wallet Initialization Flow
 
-The wallet supports two authentication modes, configured via `config.ts`:
+**New Users**:
+1. `WalletConfig` component shows → user selects network, auth, storage
+2. `finalizeConfig()` validates and stores config in WalletContext state
+3. Wallet manager created based on `useWab` flag
+4. User provides password → `providePassword()` → authenticated
+5. Snapshot saved to `localStorage.snap` (Version 3 format)
 
-- **WAB Mode** (`useWab: true`): Uses `WalletAuthenticationManager` with phone verification (Twilio or DevConsole)
-- **Self-Custody Mode** (`useWab: false`): Uses `CWIStyleWalletManager` for local key management
+**Returning Users**:
+1. Snapshot detected in localStorage
+2. Config restored **before** wallet manager creation (critical for preventing duplicates)
+3. Wallet manager created with restored config
+4. Snapshot loaded into wallet manager
+5. User authenticated automatically
 
-Configuration flow:
-1. New users see `WalletConfig` component to set network, auth method, storage
-2. Returning users auto-load from localStorage snapshot
-3. Config stored in `WalletContext` state: `wabUrl`, `selectedNetwork`, `selectedStorageUrl`, `useWab`, `useRemoteStorage`, `useMessageBox`
+### Snapshot Format (Version 3)
 
-Storage options (configured in `buildWallet`):
-- Remote: `StorageClient` with user-provided URL
-- Local: `StorageKnex` with better-sqlite3 at `~/.bsv-desktop/wallet.db`
+```
+[version byte: 3]
+[varint: config_length]
+[config JSON bytes]
+[wallet snapshot bytes from WalletManager]
+```
+
+**Config includes**: `wabUrl`, `network`, `storageUrl`, `messageBoxUrl`, `authMethod`, `useWab`, `useRemoteStorage`, `useMessageBox`
+
+**Critical Implementation**:
+- Config restoration happens in **early useEffect** (before wallet manager creation)
+- Prevents cascading state updates and duplicate wallet managers
+- Backward compatible with Version 1/2 snapshots
+- Saved on: authentication, password change, profile switch, logout
+
+### Storage Architecture
+
+**Local Storage** (`useRemoteStorage: false`):
+```
+Renderer (WalletContext)
+  ↓ buildWallet()
+StorageElectronIPC (IPC wrapper)
+  ↓ electron.storage.callMethod()
+Main Process (storage.ts)
+  ↓ StorageManager.callMethod()
+StorageKnex
+  ↓ Knex queries
+SQLite (~/.bsv-desktop/wallet.db)
+```
+
+**Remote Storage** (`useRemoteStorage: true`):
+```
+Renderer (WalletContext)
+  ↓ buildWallet()
+StorageClient (HTTP)
+  ↓ Fetch requests
+Remote Storage Server
+```
+
+**Storage Manager** (`electron/storage.ts`):
+- Maintains Map of storage instances by `identityKey-chain`
+- IPC handlers: `isAvailable`, `makeAvailable`, `callMethod`, `initializeServices`
+- Spawns Monitor worker per identity/chain
+- SQLite WAL mode enabled for concurrent access
 
 ### Permission Request Flow
 
-Permission requests follow a queue-based system:
+1. **Request Reception**: External app calls BRC-100 method → permission needed
+2. **Callback Invoked**: `WalletPermissionsManager` calls bound callback (e.g., `basketAccessCallback`)
+3. **Queueing**: Request added to type-specific queue in WalletContext
+4. **Modal Display**: Handler component (e.g., `BasketAccessHandler`) shows modal for first queued item
+5. **User Decision**: User approves/denies → calls permission manager method
+6. **Queue Advancement**: `advance*Queue()` removes handled request, shows next
 
-1. **Request Reception**: Apps request permissions via `WalletPermissionsManager` callbacks
-2. **Queueing**: Requests are added to type-specific queues in `WalletContext`
-3. **Group Gating**: When a grouped permission request arrives, all individual requests are deferred until group decision is made
-4. **Modal Display**: Handlers (e.g., `BasketAccessHandler`) show modals for the first queued request
-5. **User Decision**: User approves/denies via permission manager methods
-6. **Queue Advancement**: Modal closes and next request is shown via `advance*Queue()` methods
+**Group Permissions**:
+- `groupPhase` state: 'idle' | 'pending'
+- Individual requests buffered when grouped request arrives
+- After grouped decision, buffered requests evaluated against decision
+- Uncovered requests re-queued for individual approval
 
-Group permission flow:
-- `groupPhase` state tracks 'idle' | 'pending'
-- When grouped request arrives, individual requests are buffered in `deferred` state
-- After grouped decision, buffered requests are evaluated against the decision
-- Uncovered requests are re-queued for individual approval
+### HTTP Server (BRC-100 Interface)
 
-### Request Interceptor
+**Flow** (`electron/httpServer.ts`):
+1. External app → `POST http://127.0.0.1:3321/createAction`
+2. Express server receives request
+3. Main process → IPC `http-request` → Renderer
+4. Renderer's `onWalletReady` handler → `WalletInterface` method
+5. Renderer → IPC `http-response` → Main process
+6. Main process returns HTTP response to external app
 
-`RequestInterceptorWallet` wraps the wallet interface to track app usage:
-- Intercepts all wallet method calls
-- Records originator domain via `updateRecentApp()`
-- Swallows tracking errors to prevent blocking wallet operations
-- Recent apps stored in localStorage as `brc100_recent_apps_{profileId}`
+**CORS**: Enabled for all origins
 
-### Component Structure
+### Monitor Worker Process
 
-Key components exported in [index.ts](src/index.ts):
+**Lifecycle**:
+```
+Main Process (storage.ts)
+  ↓ fork('monitor-worker.js')
+Worker Process (monitor-worker.ts)
+  ↓ sends 'ready' message
+Main Process
+  ↓ sends 'start' with {identityKey, chain}
+Worker Process
+  ↓ creates DB connection (WAL mode)
+  ↓ creates Monitor
+  ↓ startTasks()
+  ↓ sends 'monitor-started'
+[Background monitoring runs]
+Main Process (on shutdown)
+  ↓ sends 'stop'
+Worker Process
+  ↓ stopTasks()
+  ↓ exit
+```
 
-**Permission Handlers** (modal-based UI for permission requests):
+**Why Separate Process**:
+- Prevents blocking main thread during `Monitor.startTasks()`
+- Isolates errors (worker crash doesn't affect app)
+- Concurrent SQLite access via WAL mode
+
+## Important Implementation Patterns
+
+### Preventing Duplicate Wallet Managers
+
+**Problem**: Config restoration during snapshot load triggers re-renders → duplicate wallet managers
+
+**Solution**:
+1. Early useEffect restores config **before** wallet manager creation useEffect
+2. Only depends on `loadEnhancedSnapshot`, runs once on mount
+3. Sets `configStatus: 'configured'` to prevent second useEffect from re-running
+4. Wallet manager useEffect checks `configStatus !== 'editing'`
+
+### Ensuring useRemoteStorage is Saved
+
+**Problem**: `useRemoteStorage` wasn't being saved to snapshots or set during config finalization
+
+**Solution**:
+1. `finalizeConfig()` calls `setUseRemoteStorage()` and `setUseMessageBox()`
+2. `saveEnhancedSnapshot()` includes these flags in config JSON
+3. `loadEnhancedSnapshot()` infers `useRemoteStorage` from `storageUrl` if not explicitly set (backward compatibility)
+
+### SQLite Concurrent Access
+
+**Problem**: Renderer and Monitor both accessing database caused locks
+
+**Solution**:
+1. Enable SQLite WAL (Write-Ahead Logging) mode
+2. Monitor runs in separate process with own connection
+3. Both can read/write without blocking
+
+### Focus Management
+
+- Permission requests call `onFocusRequested()` to bring app to foreground
+- `onFocusRelinquished()` called when queues empty
+- Platform-specific implementations in `electron/main.ts`
+
+### Recent Apps Tracking
+
+- `RequestInterceptorWallet` wraps wallet interface
+- Intercepts method calls to record originator domain
+- `updateRecentApp()` fetches favicon/manifest
+- Debounced (5s) to prevent duplicate tracking
+- Stored in localStorage as `brc100_recent_apps_{profileId}`
+
+## Component Structure
+
+**Permission Handlers** (in `src/lib/components/`):
 - `BasketAccessHandler`, `CertificateAccessHandler`, `ProtocolPermissionHandler`
 - `GroupPermissionHandler`, `SpendingAuthorizationHandler`
-- `PasswordHandler`, `RecoveryKeyHandler`
+- Modal-based UI with approve/deny actions
 
-**Display Components**:
-- `AmountDisplay` with `ExchangeRateContextProvider` for currency conversion
-- Chips: `AppChip`, `BasketChip`, `CertificateChip`, `CounterpartyChip`, `ProtoChip`
-- `Profile`, `RecentActions`, `AccessAtAGlance`
+**Dashboard Pages** (in `src/lib/pages/Dashboard/`):
+- `/dashboard` - Apps, recent actions, balance
+- `/dashboard/apps` - App catalog
+- `/dashboard/my-identity` - Identity certificates
+- `/dashboard/trust` - Trusted entities
+- `/dashboard/settings` - Password, recovery key
 
-**UI Infrastructure**:
-- `UserInterface`: Main router component with permission handlers
-- `AppThemeProvider`: Material-UI theming
-- `PageHeader`, `PageLoading`, `CustomDialog`
+**UI Components**:
+- `UserInterface` - Main router with permission handlers
+- `WalletConfig` - WAB/storage/network configuration
+- `AmountDisplay` - Currency display with exchange rates
+- Chips: `AppChip`, `BasketChip`, `CertificateChip`, etc.
 
-### Page Structure
+## Working with Code
 
-Dashboard pages in [src/pages/Dashboard/](src/pages/Dashboard/):
-- `/dashboard`: Main dashboard with apps, recent actions, balance
-- `/dashboard/apps`: App catalog and recently used apps
-- `/dashboard/my-identity`: Identity certificates management
-- `/dashboard/trust`: Trusted entities configuration
-- `/dashboard/settings`: Password, recovery key management
-- Access pages: `/app-access`, `/basket-access`, `/certificate-access`, `/protocol-access`, `/counterparty-access`
+### Adding New Permission Types
 
-### Important Implementation Details
+1. Add queue state to `WalletContext`: `const [newRequests, setNewRequests] = useState<NewRequest[]>([])`
+2. Create callback: `const newCallback = useCallback((request) => { setNewRequests(q => [...q, request]) }, [])`
+3. Bind in `buildWallet()`: `permissionsManager.bindCallback('newPermission', newCallback)`
+4. Create advance function: `const advanceNewQueue = () => { setNewRequests(q => q.slice(1)) }`
+5. Create handler component: `NewPermissionHandler.tsx`
+6. Add to `UserInterface.tsx` with modal visibility state
 
-**Snapshot Management**:
-- Wallet state persisted to `localStorage.snap` as base64
-- Loaded on mount if present, triggering `snapshotLoaded` flag
-- Determines returning vs. new user flow
+### Storage Backend Changes
 
-**Network Configuration**:
-- `selectedNetwork`: 'main' | 'test' stored in WalletContext
-- Affects `LookupResolver` and `SHIPBroadcaster` initialization
-- Network changes require rebuilding wallet managers
+**Local (Electron)**:
+- Modify `electron/storage.ts` for IPC handlers
+- Update `src/StorageElectronIPC.ts` for proxy methods
+- Database at `~/.bsv-desktop/wallet.db` or `wallet-test.db`
 
-**Focus Management**:
-- Permission requests can request app focus via `onFocusRequested()`
-- Focus relinquished via `onFocusRelinquished()` when queues empty
-- Prevents app from stealing focus when user is elsewhere
+**Remote (WAB)**:
+- Uses `StorageClient` from `@bsv/wallet-toolbox`
+- Configure via `WalletConfig` component
 
-**Recent Apps Tracking**:
-- Automatic metadata fetching (favicon, manifest) for new domains
-- Cached in localStorage to avoid repeated fetches
-- Debounced updates (5s) to prevent duplicate tracking
-- Supports pinning apps via `isPinned` flag
+### Configuration Changes
+
+- Defaults in `src/lib/config.ts`
+- User config via `WalletConfig` component
+- Finalized by `finalizeConfig()` in WalletContext
+- Stored in snapshot (Version 3)
+
+### TypeScript
+
+- `strict: false` - existing code not fully type-safe
+- Renderer: `tsconfig.json` → `dist/` + `dist/types/`
+- Electron: `tsconfig.electron.json` → `dist-electron/`
+- Shared types in `src/global.d.ts`
 
 ## Key Dependencies
 
-- `@bsv/wallet-toolbox`: Wallet managers, permissions, storage, authentication
-- `@bsv/sdk`: Core BSV blockchain SDK (transactions, keys, signing)
-- `@bsv/message-box-client`: Message box functionality
-- `@bsv/uhrp-react`: UHRP protocol support
-- Material-UI (`@mui/material`, `@emotion`): UI components
-- `react-router-dom` v5: Client-side routing
-- `knex` + `better-sqlite3`: Local database storage
-- `react-toastify`: Toast notifications
+- `@bsv/wallet-toolbox` - Wallet managers, storage, permissions, Monitor
+- `@bsv/sdk` - Transactions, keys, signing
+- `electron` - Desktop framework
+- `express` - HTTP server (port 3321)
+- `better-sqlite3` + `knex` - Local SQLite storage
+- `react` + `react-router-dom` v5 - UI framework
+- `@mui/material` - Material-UI components
 
 ## Development Notes
 
-**Working with Permissions**:
-- Permission request callbacks are bound in `buildWallet()` function
-- Each permission type has dedicated callback, queue, and modal state
-- Always call `advance*Queue()` after handling a permission to show next request
-- Group permissions use separate flow with `groupDecisionRef` and deferred buffers
+### File Locations
 
-**Adding New Permission Types**:
-1. Add queue state to `WalletContext` (similar to `basketRequests`)
-2. Create callback in `WalletContext` (similar to `basketAccessCallback`)
-3. Bind callback in `buildWallet()` via `permissionsManager.bindCallback()`
-4. Add advance function (similar to `advanceBasketQueue()`)
-5. Create handler component (similar to `BasketAccessHandler`)
-6. Add handler to `UserInterface.tsx`
+- **React UI library**: `src/lib/` (reusable components, contexts, pages)
+- **Electron app entry**: `src/` (main.tsx, onWalletReady.ts, electronFunctions.ts)
+- **Electron backend**: `electron/` (main.ts, httpServer.ts, storage.ts, monitor-worker.ts)
+- **Build output**: `dist/` (renderer), `dist-electron/` (main), `release/` (packaged apps)
 
-**Storage Backend**:
-- For local mode, ensure `~/.bsv-desktop/` directory is writable
-- Remote storage requires valid StorageClient URL
-- Storage provider is added via `storageManager.addWalletStorageProvider()`
+### Testing HTTP Server
 
-**Configuration Changes**:
-- Default config in [config.ts](src/config.ts): `DEFAULT_CHAIN`, `ADMIN_ORIGINATOR`, `DEFAULT_USE_WAB`
-- Config finalized via `finalizeConfig()` which validates and stores settings
-- `configStatus` tracks: 'initial' | 'editing' | 'configured'
+```bash
+# Check if authenticated
+curl http://127.0.0.1:3321/isAuthenticated
 
-**TypeScript**:
-- `strict: false` in tsconfig - existing code not fully type-safe
-- Declaration files generated to `dist/types/`
-- Target: ESNext, Module: ESNext with Node resolution
+# Test wallet method
+curl -X POST http://127.0.0.1:3321/listOutputs \
+  -H "Content-Type: application/json" \
+  -d '{"args": [{"basket": "default"}]}'
+```
+
+### Debugging
+
+- **Main process**: Logs in terminal where `npm run dev` runs
+- **Renderer**: DevTools auto-open in dev mode (Cmd+Opt+I / Ctrl+Shift+I)
+- **Monitor worker**: stdout/stderr piped to main process console
+
+### Database
+
+- Location: `~/.bsv-desktop/wallet.db` (mainnet) or `wallet-test.db` (testnet)
+- WAL mode files: `wallet.db-wal`, `wallet.db-shm`
+- Delete database: `rm -rf ~/.bsv-desktop/` (forces re-initialization)
+
+## Common Patterns
+
+### useEffect Dependencies in WalletContext
+
+- Config restoration: Only `loadEnhancedSnapshot`
+- Wallet manager creation: All config state + `passwordRetriever` + `recoveryKeySaver`
+- Snapshot loading: Happens inside wallet manager creation (async/await)
+
+### IPC Communication
+
+**Renderer → Main**:
+```typescript
+const result = await window.electron.storage.callMethod(identityKey, chain, 'listOutputs', [args])
+```
+
+**Main → Renderer** (HTTP requests):
+```typescript
+mainWindow.webContents.send('http-request', { id, method, args })
+ipcMain.once(`http-response-${id}`, (event, response) => { /* ... */ })
+```
+
+### Error Handling
+
+- Toast errors via `react-toastify`
+- Console errors for debugging
+- Try/catch in async wallet operations
+- Permission callbacks should not throw (breaks wallet flow)

@@ -204,24 +204,24 @@ Certificate location: ${certPath}`;
       // macOS: Add to user keychain first (no password needed)
       await execAsync(`security add-trusted-cert -d -r trustRoot -k ~/Library/Keychains/login.keychain-db "${certPath}"`);
 
-      await dialog.showMessageBox({
-        type: 'info',
-        title: 'Certificate Installed',
-        message: 'The SSL certificate has been successfully installed and trusted in your user keychain.',
-        buttons: ['OK']
-      });
+      // await dialog.showMessageBox({
+      //   type: 'info',
+      //   title: 'Certificate Installed',
+      //   message: 'The SSL certificate has been successfully installed and trusted in your user keychain.',
+      //   buttons: ['OK']
+      // });
 
       return true;
     } else if (platform === 'win32') {
       // Windows: Import to Trusted Root store
       await execAsync(`certutil -addstore -user Root "${certPath}"`);
 
-      await dialog.showMessageBox({
-        type: 'info',
-        title: 'Certificate Installed',
-        message: 'The SSL certificate has been successfully installed and trusted.',
-        buttons: ['OK']
-      });
+      // await dialog.showMessageBox({
+      //   type: 'info',
+      //   title: 'Certificate Installed',
+      //   message: 'The SSL certificate has been successfully installed and trusted.',
+      //   buttons: ['OK']
+      // });
 
       return true;
     }

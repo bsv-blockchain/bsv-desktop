@@ -62,7 +62,7 @@ const useStyles = makeStyles((theme: Theme) => ({
 
 const Settings = () => {
   const classes = useStyles()
-  const { settings, updateSettings, wabUrl, storageUrl, useWab, messageBoxUrl } = useContext(WalletContext)
+  const { settings, updateSettings, wabUrl, useRemoteStorage, useMessageBox, storageUrl, useWab, messageBoxUrl } = useContext(WalletContext)
   const { pageLoaded } = useContext(UserContext)
   const [settingsLoading, setSettingsLoading] = useState(false)
   const theme = useTheme()
@@ -244,7 +244,7 @@ const Settings = () => {
           Wallet Configuration
         </Typography>
         <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-          Current wallet service configuration.
+          Current wallet service configuration. Logout to change.
         </Typography>
 
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -252,11 +252,23 @@ const Settings = () => {
             <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
               Mode
             </Typography>
-            <Chip
-              label={useWab ? 'Self Custodial WAB Recovery' : 'Self Custodial Local Only'}
-              color="primary"
-              variant="outlined"
-            />
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Chip
+                label={useWab ? 'WAB Recovery' : 'Solo Recovery'}
+                color="primary"
+                variant="outlined"
+              />
+              <Chip
+                label={useRemoteStorage ? 'Remote Storage' : 'Local Storage'}
+                color="primary"
+                variant="outlined"
+              />
+              <Chip
+                label={useMessageBox ? 'Message Box Active' : 'No Message Box'}
+                color="primary"
+                variant="outlined"
+              />
+            </Box>
           </Box>
 
           {useWab && wabUrl && (
@@ -276,7 +288,8 @@ const Settings = () => {
             </Box>
           )}
 
-            <Box>
+          {useRemoteStorage && storageUrl && (
+              <Box>
               <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
                 Wallet Storage URL
               </Typography>
@@ -290,13 +303,15 @@ const Settings = () => {
                 {storageUrl || ' '}
               </Box>
             </Box>
+          )}
 
-          <Box>
-            <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-              Message Box Server URL
-            </Typography>
-            <Box component="div" sx={{
-              fontFamily: 'monospace',
+          {useMessageBox && messageBoxUrl && (
+            <Box>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                Message Box Server URL
+              </Typography>
+              <Box component="div" sx={{
+                fontFamily: 'monospace',
               wordBreak: 'break-all',
               bgcolor: 'action.hover',
               p: 1,
@@ -305,6 +320,7 @@ const Settings = () => {
               {messageBoxUrl || ' '}
             </Box>
           </Box>
+          )}
         </Box>
       </Paper>
 

@@ -42,6 +42,8 @@ interface ManagerState {
   walletManager?: WalletAuthenticationManager;
   permissionsManager?: WalletPermissionsManager;
   settingsManager?: WalletSettingsManager;
+  wallet?: any;
+  storageManager?: any;
 }
 
 type ConfigStatus = 'editing' | 'configured' | 'initial'
@@ -86,8 +88,10 @@ export interface WalletContextValue {
   useRemoteStorage: boolean
   useMessageBox: boolean
   saveEnhancedSnapshot: () => string
-  backupStorageUrl: string
-  setBackupStorageUrl: (url: string) => Promise<void>
+  backupStorageUrls: string[]
+  addBackupStorageUrl: (url: string) => Promise<void>
+  removeBackupStorageUrl: (url: string) => Promise<void>
+  syncBackupStorage: (progressCallback?: (message: string) => void) => Promise<void>
 }
 
 export const WalletContext = createContext<WalletContextValue>({
@@ -126,8 +130,10 @@ export const WalletContext = createContext<WalletContextValue>({
   useRemoteStorage: false,
   useMessageBox: false,
   saveEnhancedSnapshot: () => { throw new Error('Not initialized') },
-  backupStorageUrl: '',
-  setBackupStorageUrl: async () => { }
+  backupStorageUrls: [],
+  addBackupStorageUrl: async () => { },
+  removeBackupStorageUrl: async () => { },
+  syncBackupStorage: async () => { }
 })
 
 // ---- Group-gating types ----
@@ -215,7 +221,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [recentApps, setRecentApps] = useState([])
   const [activeProfile, setActiveProfile] = useState<WalletProfile | null>(null)
   const [messageBoxUrl, setMessageBoxUrl] = useState('')
-  const [backupStorageUrl, setBackupStorageUrlState] = useState('')
+  const [backupStorageUrls, setBackupStorageUrls] = useState<string[]>([])
 
   const { isFocused, onFocusRequested, onFocusRelinquished, setBasketAccessModalOpen, setCertificateAccessModalOpen, setProtocolAccessModalOpen, setSpendingAuthorizationModalOpen, setGroupPermissionModalOpen } = useContext(UserContext);
 
@@ -836,46 +842,73 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey));
       console.log('[buildWallet] Created KeyDeriver with identityKey:', keyDeriver.identityKey);
 
-      const storageManager = new WalletStorageManager(keyDeriver.identityKey);
-      console.log('[buildWallet] Created WalletStorageManager');
-      const signer = new WalletSigner(chain, keyDeriver as any, storageManager);
+      // First, create and initialize the primary/active storage provider
+      let activeStorage: any;
       const services = new Services(chain);
-      const wallet = new Wallet(signer, services, undefined, privilegedKeyManager);
-      newManagers.settingsManager = wallet.settingsManager;
-      console.log('[buildWallet] Created Wallet, Signer, Services');
 
-      // Use user-selected storage provider
       if (useRemoteStorage) {
-        console.log('[buildWallet] Using REMOTE storage:', selectedStorageUrl);
-        const client = new StorageClient(wallet, selectedStorageUrl);
-        await client.makeAvailable();
-        await storageManager.addWalletStorageProvider(client);
-        console.log('[buildWallet] Remote storage added to WalletStorageManager');
+        console.log('[buildWallet] Preparing REMOTE storage as active:', selectedStorageUrl);
+        // We'll create this after the wallet
+        activeStorage = null; // Will be created below
       } else {
-        console.log('[buildWallet] Using LOCAL Electron storage');
-        // Use local Electron IPC storage (StorageKnex running in main process)
+        console.log('[buildWallet] Preparing LOCAL Electron storage as active');
+        // Create and initialize local storage first
         const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain);
         electronStorage.setServices(services);
         console.log('[buildWallet] Initializing backend services...');
         await electronStorage.initializeBackendServices();
-        console.log('[buildWallet] Making storage available...');
+        console.log('[buildWallet] Making local storage available...');
         await electronStorage.makeAvailable();
-        console.log('[buildWallet] Adding storage provider to WalletStorageManager...');
-        await storageManager.addWalletStorageProvider(electronStorage);
-        console.log('[buildWallet] Local storage fully configured');
+        activeStorage = electronStorage;
       }
 
-      // Add backup storage if configured
-      if (backupStorageUrl) {
-        console.log('[buildWallet] Adding BACKUP storage:', backupStorageUrl);
-        try {
-          const backupClient = new StorageClient(wallet, backupStorageUrl);
-          await backupClient.makeAvailable();
-          await storageManager.addWalletStorageProvider(backupClient);
-          console.log('[buildWallet] Backup storage added to WalletStorageManager');
-        } catch (error: any) {
-          console.error('[buildWallet] Failed to add backup storage:', error);
-          toast.error('Failed to connect to backup storage: ' + error.message);
+      // Create backup storage providers array
+      const backupProviders: any[] = [];
+
+      // Create WalletStorageManager with active storage
+      // Constructor signature: WalletStorageManager(identityKey, active?, backups?)
+      const storageManager = new WalletStorageManager(keyDeriver.identityKey, activeStorage, backupProviders);
+      console.log('[buildWallet] Created WalletStorageManager with active storage');
+
+      const signer = new WalletSigner(chain, keyDeriver as any, storageManager);
+      const wallet = new Wallet(signer, services, undefined, privilegedKeyManager);
+      newManagers.settingsManager = wallet.settingsManager;
+      newManagers.wallet = wallet;
+      newManagers.storageManager = storageManager;
+      console.log('[buildWallet] Created Wallet, Signer, Services');
+
+      // If using remote storage, create it now and add it as active
+      if (useRemoteStorage) {
+        console.log('[buildWallet] Creating REMOTE storage client:', selectedStorageUrl);
+        const client = new StorageClient(wallet, selectedStorageUrl);
+        await client.makeAvailable();
+        await storageManager.addWalletStorageProvider(client);
+        console.log('[buildWallet] Remote storage added to WalletStorageManager');
+      }
+
+      // Get all stores and set the first one (primary) as active
+      const stores = storageManager.getStores();
+      if (stores && stores.length > 0) {
+        const activeStoreKey = stores[0].storageIdentityKey;
+        console.log('[buildWallet] Setting active storage:', activeStoreKey);
+        await storageManager.setActive(activeStoreKey);
+        console.log('[buildWallet] Active storage configured');
+      }
+
+      // Add backup storage providers if configured
+      if (backupStorageUrls && backupStorageUrls.length > 0) {
+        console.log('[buildWallet] Adding BACKUP storage providers:', backupStorageUrls.length);
+        for (const backupUrl of backupStorageUrls) {
+          try {
+            console.log('[buildWallet] Adding backup storage:', backupUrl);
+            const backupClient = new StorageClient(wallet, backupUrl);
+            await backupClient.makeAvailable();
+            await storageManager.addWalletStorageProvider(backupClient);
+            console.log('[buildWallet] Backup storage added:', backupUrl);
+          } catch (error: any) {
+            console.error('[buildWallet] Failed to add backup storage:', backupUrl, error);
+            toast.error(`Failed to connect to backup storage ${backupUrl}: ${error.message}`);
+          }
         }
       }
 
@@ -965,7 +998,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     certificateAccessCallback,
     groupPermissionCallback,
     useRemoteStorage,
-    backupStorageUrl
+    backupStorageUrls
   ]);
 
   // ---- Enhanced Snapshot V3 with Config ----
@@ -993,7 +1026,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       useWab,
       useRemoteStorage,
       useMessageBox,
-      backupStorageUrl
+      backupStorageUrls
     };
 
     // Serialize config to JSON bytes
@@ -1032,7 +1065,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     useWab,
     useRemoteStorage,
     useMessageBox,
-    backupStorageUrl
+    backupStorageUrls
   ]);
 
   /**
@@ -1135,7 +1168,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
             : !!config.storageUrl;
           setUseRemoteStorage(inferredUseRemoteStorage);
           setUseMessageBox(config.useMessageBox || false);
-          setBackupStorageUrlState(config.backupStorageUrl || '');
+          setBackupStorageUrls(config.backupStorageUrls || []);
           setConfigStatus('configured');
           console.log('[Config Restore] Config restored, wallet manager will be created next');
         }
@@ -1267,62 +1300,124 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     loadSettings();
   }, [managers]);
 
-  const setBackupStorageUrl = useCallback(async (url: string) => {
+  const addBackupStorageUrl = useCallback(async (url: string) => {
     if (!managers.walletManager) {
       throw new Error('Wallet manager not available');
     }
 
     // Validate URL format
-    if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
       throw new Error('Backup storage URL must start with http:// or https://');
     }
 
-    try {
-      // Get the current wallet and storage manager from buildWallet context
-      const permissionsManager = managers.permissionsManager;
-      if (!permissionsManager) {
-        throw new Error('Permissions manager not available');
-      }
+    // Check for duplicates
+    if (backupStorageUrls.includes(url)) {
+      throw new Error('This backup storage URL is already added');
+    }
 
-      // Access the wallet through permissionsManager
-      const wallet = (permissionsManager as any).wallet;
+    try {
+      // Get the wallet and storage manager from managers
+      const wallet = managers.wallet;
+      const storageManager = managers.storageManager;
+
       if (!wallet) {
         throw new Error('Wallet not available');
       }
 
-      // Access the storage manager
-      const signer = (wallet as any).signer;
-      if (!signer || !signer.storageManager) {
+      if (!storageManager) {
         throw new Error('Storage manager not available');
       }
-      const storageManager = signer.storageManager;
 
-      // If there's a new URL, add the backup storage provider
-      if (url) {
-        console.log('[setBackupStorageUrl] Adding new backup storage:', url);
-        const backupClient = new StorageClient(wallet, url);
-        await backupClient.makeAvailable();
-        await storageManager.addWalletStorageProvider(backupClient);
-        console.log('[setBackupStorageUrl] Backup storage added successfully');
-        toast.success('Backup storage added successfully!');
+      console.log('[addBackupStorageUrl] Adding new backup storage:', url);
+      const backupClient = new StorageClient(wallet, url);
+      await backupClient.makeAvailable();
+      await storageManager.addWalletStorageProvider(backupClient);
+      console.log('[addBackupStorageUrl] Backup storage provider added');
+
+      // Re-verify and set active storage to ensure proper configuration
+      const stores = storageManager.getStores();
+      if (stores && stores.length > 0) {
+        const activeStoreKey = stores[0].storageIdentityKey;
+        console.log('[addBackupStorageUrl] Re-setting active storage:', activeStoreKey);
+        await storageManager.setActive(activeStoreKey);
+        console.log('[addBackupStorageUrl] Active storage re-configured');
       }
 
       // Update state
-      setBackupStorageUrlState(url);
+      setBackupStorageUrls(prev => [...prev, url]);
 
       // Save snapshot with new config
       try {
         const snapshot = saveEnhancedSnapshot();
         localStorage.snap = snapshot;
       } catch (err) {
-        console.error('[setBackupStorageUrl] Failed to save snapshot:', err);
+        console.error('[addBackupStorageUrl] Failed to save snapshot:', err);
       }
+
+      toast.success('Backup storage added successfully!');
     } catch (error: any) {
-      console.error('[setBackupStorageUrl] Error:', error);
+      console.error('[addBackupStorageUrl] Error:', error);
       toast.error('Failed to add backup storage: ' + error.message);
       throw error;
     }
-  }, [managers, saveEnhancedSnapshot]);
+  }, [managers, saveEnhancedSnapshot, backupStorageUrls]);
+
+  const removeBackupStorageUrl = useCallback(async (url: string) => {
+    try {
+      // Update state - remove the URL from the list
+      setBackupStorageUrls(prev => prev.filter(u => u !== url));
+
+      // Save snapshot with new config
+      try {
+        const snapshot = saveEnhancedSnapshot();
+        localStorage.snap = snapshot;
+      } catch (err) {
+        console.error('[removeBackupStorageUrl] Failed to save snapshot:', err);
+      }
+
+      toast.success('Backup storage removed. It will be disconnected on next restart.');
+    } catch (error: any) {
+      console.error('[removeBackupStorageUrl] Error:', error);
+      toast.error('Failed to remove backup storage: ' + error.message);
+      throw error;
+    }
+  }, [saveEnhancedSnapshot]);
+
+  const syncBackupStorage = useCallback(async (progressCallback?: (message: string) => void) => {
+    if (!managers.storageManager) {
+      throw new Error('Storage manager not available');
+    }
+
+    try {
+      console.log('[syncBackupStorage] Starting manual sync...');
+
+      const storageManager = managers.storageManager;
+
+      // WalletStorageManager has updateBackups method to sync data to backup providers
+      // It accepts an optional progress callback: updateBackups(table?: string, progCB?: (s: string) => string)
+      if (typeof storageManager.updateBackups === 'function') {
+        // Create a progress logger that both logs to console and calls the callback
+        const progLog = (s: string): string => {
+          console.log('[syncBackupStorage]', s);
+          if (progressCallback) {
+            progressCallback(s);
+          }
+          return s;
+        };
+
+        await storageManager.updateBackups(undefined, progLog);
+        console.log('[syncBackupStorage] Sync completed via updateBackups');
+      } else {
+        console.warn('[syncBackupStorage] Storage manager does not have updateBackups method');
+        if (progressCallback) {
+          progressCallback('Backup providers sync automatically on each wallet action');
+        }
+      }
+    } catch (error: any) {
+      console.error('[syncBackupStorage] Error:', error);
+      throw error;
+    }
+  }, [managers.storageManager]);
 
   const logout = useCallback(() => {
     // Clear localStorage to prevent auto-login
@@ -1527,8 +1622,10 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     useRemoteStorage,
     useMessageBox,
     saveEnhancedSnapshot,
-    backupStorageUrl,
-    setBackupStorageUrl
+    backupStorageUrls,
+    addBackupStorageUrl,
+    removeBackupStorageUrl,
+    syncBackupStorage
   }), [
     managers,
     settings,
@@ -1562,8 +1659,10 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     useRemoteStorage,
     useMessageBox,
     saveEnhancedSnapshot,
-    backupStorageUrl,
-    setBackupStorageUrl
+    backupStorageUrls,
+    addBackupStorageUrl,
+    removeBackupStorageUrl,
+    syncBackupStorage
   ]);
 
   return (

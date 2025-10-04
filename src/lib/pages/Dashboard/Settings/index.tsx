@@ -11,7 +11,8 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Alert
 } from '@mui/material'
 import { Grid } from '@mui/material'
 import { makeStyles } from '@mui/styles'
@@ -67,7 +68,7 @@ const useStyles = makeStyles((theme: Theme) => ({
 
 const Settings = () => {
   const classes = useStyles()
-  const { settings, updateSettings, wabUrl, useRemoteStorage, useMessageBox, storageUrl, useWab, messageBoxUrl, backupStorageUrl, setBackupStorageUrl } = useContext(WalletContext)
+  const { settings, updateSettings, wabUrl, useRemoteStorage, useMessageBox, storageUrl, useWab, messageBoxUrl, backupStorageUrls, addBackupStorageUrl, removeBackupStorageUrl, syncBackupStorage } = useContext(WalletContext)
   const { pageLoaded } = useContext(UserContext)
   const [settingsLoading, setSettingsLoading] = useState(false)
   const theme = useTheme()
@@ -77,6 +78,13 @@ const Settings = () => {
   const [showBackupDialog, setShowBackupDialog] = useState(false)
   const [newBackupUrl, setNewBackupUrl] = useState('')
   const [backupLoading, setBackupLoading] = useState(false)
+  const [syncLoading, setSyncLoading] = useState(false)
+
+  // Sync progress state
+  const [showSyncProgress, setShowSyncProgress] = useState(false)
+  const [syncProgressLogs, setSyncProgressLogs] = useState<string[]>([])
+  const [syncComplete, setSyncComplete] = useState(false)
+  const [syncError, setSyncError] = useState('')
 
   const currencies = {
     BSV: '0.033',
@@ -152,25 +160,55 @@ const Settings = () => {
 
     try {
       setBackupLoading(true);
-      await setBackupStorageUrl(newBackupUrl);
+      await addBackupStorageUrl(newBackupUrl);
       setShowBackupDialog(false);
       setNewBackupUrl('');
     } catch (e) {
-      // Error already shown by setBackupStorageUrl
+      // Error already shown by addBackupStorageUrl
     } finally {
       setBackupLoading(false);
     }
   }
 
-  const handleRemoveBackupStorage = async () => {
+  const handleRemoveBackupStorage = async (url: string) => {
     try {
       setBackupLoading(true);
-      await setBackupStorageUrl('');
-      toast.success('Backup storage removed');
+      await removeBackupStorageUrl(url);
     } catch (e) {
-      toast.error(e.message);
+      // Error already shown by removeBackupStorageUrl
     } finally {
       setBackupLoading(false);
+    }
+  }
+
+  const handleSyncBackupStorage = async () => {
+    // Reset state
+    setSyncError('');
+    setSyncProgressLogs([]);
+    setSyncComplete(false);
+    setShowSyncProgress(true);
+    setSyncLoading(true);
+
+    // Progress callback to capture log messages
+    const progressCallback = (message: string) => {
+      const lines = message.split('\n');
+      for (const line of lines) {
+        if (line.trim()) {
+          setSyncProgressLogs((prev) => [...prev, line]);
+        }
+      }
+    };
+
+    try {
+      await syncBackupStorage(progressCallback);
+      toast.success('Backup storage synced successfully!');
+    } catch (e: any) {
+      console.error('Sync error:', e);
+      setSyncError(e?.message || String(e));
+      toast.error('Failed to sync backup storage: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setSyncComplete(true);
+      setSyncLoading(false);
     }
   }
 
@@ -369,51 +407,94 @@ const Settings = () => {
           Backup Storage
         </Typography>
         <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-          Add a remote backup storage provider to keep your wallet data synced across multiple locations.
-          The WalletStorageManager will automatically sync new actions to your backup storage.
+          Add remote backup storage providers to keep your wallet data synced across multiple locations.
+          The WalletStorageManager will automatically sync new actions to all backup storage providers.
         </Typography>
 
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {backupStorageUrl ? (
-            <>
-              <Box>
-                <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                  Backup Storage URL
-                </Typography>
-                <Box component="div" sx={{
-                  fontFamily: 'monospace',
-                  wordBreak: 'break-all',
-                  bgcolor: 'action.hover',
-                  p: 1,
-                  borderRadius: 1
-                }}>
-                  {backupStorageUrl}
-                </Box>
-              </Box>
-              <Box>
-                <Button
-                  variant="outlined"
-                  color="error"
-                  onClick={handleRemoveBackupStorage}
-                  disabled={backupLoading}
-                >
-                  Remove Backup Storage
-                </Button>
-              </Box>
-            </>
-          ) : (
-            <Box>
-              <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                No backup storage configured
-              </Typography>
-              <Button
-                variant="contained"
-                onClick={() => setShowBackupDialog(true)}
-                disabled={backupLoading}
-              >
-                Add Backup Storage
-              </Button>
+          {/* Active Storage (not removable) */}
+          <Box>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 1, fontWeight: 'bold' }}>
+              Active Storage (Primary)
+            </Typography>
+            <Box component="div" sx={{
+              fontFamily: 'monospace',
+              wordBreak: 'break-all',
+              bgcolor: 'action.hover',
+              p: 1.5,
+              borderRadius: 1,
+              border: '2px solid',
+              borderColor: 'primary.main'
+            }}>
+              {useRemoteStorage ? storageUrl : 'Local Electron Storage'}
             </Box>
+          </Box>
+
+          {/* Backup Storage List */}
+          {backupStorageUrls.length > 0 && (
+            <Box>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 1, fontWeight: 'bold' }}>
+                Backup Storage Providers ({backupStorageUrls.length})
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                {backupStorageUrls.map((url, index) => (
+                  <Box
+                    key={url}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 2,
+                      bgcolor: 'action.hover',
+                      p: 1.5,
+                      borderRadius: 1
+                    }}
+                  >
+                    <Box component="div" sx={{
+                      fontFamily: 'monospace',
+                      wordBreak: 'break-all',
+                      flex: 1
+                    }}>
+                      {url}
+                    </Box>
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      size="small"
+                      onClick={() => handleRemoveBackupStorage(url)}
+                      disabled={backupLoading}
+                    >
+                      Remove
+                    </Button>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )}
+
+          {/* Action Buttons */}
+          <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
+            <Button
+              variant="contained"
+              onClick={() => setShowBackupDialog(true)}
+              disabled={backupLoading}
+            >
+              Add Backup Storage
+            </Button>
+            {backupStorageUrls.length > 0 && (
+              <Button
+                variant="outlined"
+                onClick={handleSyncBackupStorage}
+                disabled={syncLoading || backupLoading}
+              >
+                {syncLoading ? 'Syncing...' : 'Sync All Backups'}
+              </Button>
+            )}
+          </Box>
+
+          {backupStorageUrls.length === 0 && (
+            <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
+              No backup storage providers configured. Add one to enable automatic backup syncing.
+            </Typography>
           )}
         </Box>
       </Paper>
@@ -445,6 +526,60 @@ const Settings = () => {
             disabled={backupLoading || !newBackupUrl}
           >
             {backupLoading ? 'Adding...' : 'Add Backup'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={showSyncProgress} onClose={() => !syncLoading && setShowSyncProgress(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Backup Sync Progress</DialogTitle>
+        <DialogContent>
+          {syncError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {syncError}
+            </Alert>
+          )}
+          <Box
+            sx={{
+              minWidth: 600,
+              maxHeight: 400,
+              overflowY: 'auto',
+              whiteSpace: 'pre-wrap',
+              fontFamily: 'monospace',
+              fontSize: '0.875rem',
+              bgcolor: 'action.hover',
+              p: 2,
+              borderRadius: 1
+            }}
+          >
+            {syncProgressLogs.length === 0 && !syncComplete && (
+              <Typography variant="body2" color="textSecondary">
+                Initializing sync...
+              </Typography>
+            )}
+            {syncProgressLogs.map((log, index) => (
+              <Box key={index} sx={{ mb: 0.5 }}>
+                {log}
+              </Box>
+            ))}
+            {syncComplete && syncProgressLogs.length === 0 && !syncError && (
+              <Typography variant="body2" color="success.main">
+                Sync completed successfully!
+              </Typography>
+            )}
+          </Box>
+          {syncLoading && (
+            <Box sx={{ mt: 2 }}>
+              <LinearProgress />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setShowSyncProgress(false)}
+            disabled={syncLoading}
+            variant="contained"
+          >
+            {syncComplete ? 'Close' : 'Cancel'}
           </Button>
         </DialogActions>
       </Dialog>

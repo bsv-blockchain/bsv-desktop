@@ -15,9 +15,13 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { createRequire } from 'module';
+import { fork, ChildProcess } from 'child_process';
+import { fileURLToPath } from 'url';
 import { StorageKnex, KnexMigrations, Services, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
 
 const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Lazy-load knex to avoid loading better-sqlite3 until actually needed
 let createKnex: any = null;
@@ -38,6 +42,8 @@ class StorageManager {
   // Separate storage managers for backend monitoring (independent from renderer)
   private monitorStorageManagers: Map<string, WalletStorageManager> = new Map();
   private monitors: Map<string, Monitor> = new Map();
+  // Monitor worker processes
+  private monitorWorkers: Map<string, ChildProcess> = new Map();
 
   /**
    * Get or create a storage instance for the given identity key
@@ -142,7 +148,7 @@ class StorageManager {
     const key = `${identityKey}-${chain}`;
 
     // Check if already initialized to prevent duplicates
-    if (this.monitorStorageManagers.has(key)) {
+    if (this.monitorWorkers.has(key)) {
       console.log(`[Storage] Services already initialized for ${key}, skipping`);
       return;
     }
@@ -162,90 +168,142 @@ class StorageManager {
       console.warn(`[Storage] setServices method not available on StorageKnex for ${key}`);
     }
 
-    // TODO: Monitor disabled - causes hanging during initialization
-    // Need to investigate why Monitor.startTasks() or WalletStorageManager setup hangs
-    //
-    // Create a separate WalletStorageManager for backend monitoring
-    // This is independent from the renderer's WalletStorageManager
-    // WAL mode is enabled on the database for concurrent access
-    // const monitorStorageManager = new WalletStorageManager(identityKey);
-    // await monitorStorageManager.addWalletStorageProvider(storage);
-    // this.monitorStorageManagers.set(key, monitorStorageManager);
+    console.log(`[Storage] Backend services initialized`);
 
-    console.log(`[Storage] Backend services initialized (Monitor disabled)`);
-
-    // Start Monitor in the backend process (separate from renderer)
-    // WAL mode allows concurrent reads/writes without blocking
-    // await this.startMonitor(identityKey, chain, monitorStorageManager, services);
+    // Start Monitor worker process (separate process to avoid blocking)
+    await this.startMonitorWorker(identityKey, chain);
   }
 
   /**
-   * Start Monitor for a storage instance
-   * The monitor runs background tasks to monitor and update wallet state
+   * Start Monitor worker process
+   * Runs Monitor in a separate process to avoid blocking the main process
    */
-  async startMonitor(
+  async startMonitorWorker(
     identityKey: string,
-    chain: 'main' | 'test',
-    storageManager: WalletStorageManager,
-    services: Services
+    chain: 'main' | 'test'
   ): Promise<void> {
     const key = `${identityKey}-${chain}`;
 
     // Don't start if already running
-    if (this.monitors.has(key)) {
-      console.log(`[Monitor] Already running for ${key}`);
+    if (this.monitorWorkers.has(key)) {
+      console.log(`[Monitor Worker] Already running for ${key}`);
       return;
     }
 
-    console.log(`[Monitor] Starting for ${key}`);
+    console.log(`[Monitor Worker] Starting worker process for ${key}`);
 
     try {
-      // Create Monitor with default options
-      const monitorOptions = Monitor.createDefaultWalletMonitorOptions(
-        chain,
-        storageManager
-      );
+      // Path to the monitor worker script
+      const workerPath = path.join(__dirname, 'monitor-worker.js');
 
-      // Override services with our backend instance
-      monitorOptions.services = services;
-
-      const monitor = new Monitor(monitorOptions);
-
-      // Add default wallet monitoring tasks
-      monitor.addDefaultTasks();
-
-      // Start the monitoring tasks (runs continuous loop)
-      await monitor.startTasks();
+      // Fork the worker process
+      const worker = fork(workerPath, [], {
+        stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+        env: { ...process.env }
+      });
 
       // Store reference
-      this.monitors.set(key, monitor);
+      this.monitorWorkers.set(key, worker);
 
-      console.log(`[Monitor] Started successfully for ${key}`);
+      // Set up event handlers
+      worker.on('message', (message: any) => {
+        console.log(`[Monitor Worker] Message from ${key}:`, message.type);
+
+        if (message.type === 'monitor-error') {
+          console.error(`[Monitor Worker] Error in ${key}:`, message.error);
+        }
+      });
+
+      worker.on('error', (error) => {
+        console.error(`[Monitor Worker] Process error for ${key}:`, error);
+        this.monitorWorkers.delete(key);
+      });
+
+      worker.on('exit', (code, signal) => {
+        console.log(`[Monitor Worker] Process exited for ${key}, code: ${code}, signal: ${signal}`);
+        this.monitorWorkers.delete(key);
+      });
+
+      // Pipe worker stdout/stderr to main process for logging
+      worker.stdout?.on('data', (data) => {
+        console.log(`[Monitor Worker ${key}]`, data.toString().trim());
+      });
+
+      worker.stderr?.on('data', (data) => {
+        console.error(`[Monitor Worker ${key}]`, data.toString().trim());
+      });
+
+      // Wait for worker ready signal
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Monitor worker timeout waiting for ready signal'));
+        }, 10000);
+
+        const messageHandler = (message: any) => {
+          if (message.type === 'ready') {
+            clearTimeout(timeout);
+            worker.off('message', messageHandler);
+            resolve();
+          }
+        };
+
+        worker.on('message', messageHandler);
+      });
+
+      console.log(`[Monitor Worker] Worker ready for ${key}`);
+
+      // Send start command to worker
+      worker.send({
+        type: 'start',
+        config: {
+          identityKey,
+          chain
+        }
+      });
+
+      console.log(`[Monitor Worker] Start command sent to ${key}`);
     } catch (error: any) {
-      console.error(`[Monitor] Failed to start for ${key}:`, error);
+      console.error(`[Monitor Worker] Failed to start for ${key}:`, error);
+      this.monitorWorkers.delete(key);
       throw error;
     }
   }
 
   /**
-   * Stop Monitor for a storage instance
+   * Stop Monitor worker process
    */
-  async stopMonitor(identityKey: string, chain: 'main' | 'test'): Promise<void> {
+  async stopMonitorWorker(identityKey: string, chain: 'main' | 'test'): Promise<void> {
     const key = `${identityKey}-${chain}`;
-    const monitor = this.monitors.get(key);
+    const worker = this.monitorWorkers.get(key);
 
-    if (!monitor) {
+    if (!worker) {
       return;
     }
 
-    console.log(`[Monitor] Stopping for ${key}`);
+    console.log(`[Monitor Worker] Stopping worker for ${key}`);
 
     try {
-      await monitor.stopTasks();
-      this.monitors.delete(key);
-      console.log(`[Monitor] Stopped successfully for ${key}`);
+      // Send stop command
+      worker.send({ type: 'stop' });
+
+      // Wait for graceful shutdown
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          console.warn(`[Monitor Worker] Timeout waiting for ${key} to stop, forcing kill`);
+          worker.kill('SIGKILL');
+          resolve();
+        }, 5000);
+
+        worker.once('exit', () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+      });
+
+      this.monitorWorkers.delete(key);
+      console.log(`[Monitor Worker] Stopped successfully for ${key}`);
     } catch (error) {
-      console.error(`[Monitor] Error stopping for ${key}:`, error);
+      console.error(`[Monitor Worker] Error stopping for ${key}:`, error);
     }
   }
 
@@ -284,7 +342,18 @@ class StorageManager {
   async cleanup(): Promise<void> {
     console.log('[Storage] Cleaning up storage instances...');
 
-    // Stop all Monitors first
+    // Stop all Monitor workers first
+    const workerStopPromises: Promise<void>[] = [];
+    for (const [key] of this.monitorWorkers.entries()) {
+      const [identityKey, chain] = key.split('-');
+      workerStopPromises.push(
+        this.stopMonitorWorker(identityKey, chain as 'main' | 'test')
+      );
+    }
+    await Promise.all(workerStopPromises);
+    this.monitorWorkers.clear();
+
+    // Stop all Monitors (legacy, should be empty now)
     for (const [key, monitor] of this.monitors.entries()) {
       try {
         console.log(`[Monitor] Stopping ${key}...`);

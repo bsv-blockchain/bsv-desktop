@@ -414,19 +414,11 @@ const Settings = () => {
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {/* Active Storage (not removable) */}
           <Box>
-            <Typography variant="body2" color="textSecondary" sx={{ mb: 1, fontWeight: 'bold' }}>
+            <Typography variant="body2" color="textSecondary">
               Active Storage (Primary)
             </Typography>
-            <Box component="div" sx={{
-              fontFamily: 'monospace',
-              wordBreak: 'break-all',
-              bgcolor: 'action.hover',
-              p: 1.5,
-              borderRadius: 1,
-              border: '2px solid',
-              borderColor: 'primary.main'
-            }}>
-              {useRemoteStorage ? storageUrl : 'Local Electron Storage'}
+            <Box component="div">
+              {useRemoteStorage ? storageUrl : 'Local File ~/.bsv-desktop/wallet.db'}
             </Box>
           </Box>
 

@@ -14,6 +14,7 @@ export interface ElectronAPI {
     isAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<boolean>;
     makeAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; settings?: any; error?: string }>;
     callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+    initializeServices: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; error?: string }>;
   };
 }
 

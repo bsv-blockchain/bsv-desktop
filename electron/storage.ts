@@ -71,7 +71,13 @@ class StorageManager {
       connection: {
         filename: dbPath
       },
-      useNullAsDefault: true
+      useNullAsDefault: true,
+      pool: {
+        afterCreate: (conn: any, cb: any) => {
+          // Enable WAL mode for better concurrent access
+          conn.run('PRAGMA journal_mode = WAL;', cb);
+        }
+      }
     });
 
     // Run database migrations to create tables
@@ -135,6 +141,12 @@ class StorageManager {
     const storage = await this.getOrCreateStorage(identityKey, chain);
     const key = `${identityKey}-${chain}`;
 
+    // Check if already initialized to prevent duplicates
+    if (this.monitorStorageManagers.has(key)) {
+      console.log(`[Storage] Services already initialized for ${key}, skipping`);
+      return;
+    }
+
     console.log(`[Storage] Initializing services for ${key}`);
 
     // Create Services instance in the backend
@@ -150,16 +162,21 @@ class StorageManager {
       console.warn(`[Storage] setServices method not available on StorageKnex for ${key}`);
     }
 
+    // TODO: Monitor disabled - causes hanging during initialization
+    // Need to investigate why Monitor.startTasks() or WalletStorageManager setup hangs
+    //
     // Create a separate WalletStorageManager for backend monitoring
     // This is independent from the renderer's WalletStorageManager
-    const monitorStorageManager = new WalletStorageManager(identityKey);
-    await monitorStorageManager.addWalletStorageProvider(storage);
-    this.monitorStorageManagers.set(key, monitorStorageManager);
+    // WAL mode is enabled on the database for concurrent access
+    // const monitorStorageManager = new WalletStorageManager(identityKey);
+    // await monitorStorageManager.addWalletStorageProvider(storage);
+    // this.monitorStorageManagers.set(key, monitorStorageManager);
 
-    console.log(`[Storage] Backend WalletStorageManager created for monitoring: ${key}`);
+    console.log(`[Storage] Backend services initialized (Monitor disabled)`);
 
     // Start Monitor in the backend process (separate from renderer)
-    await this.startMonitor(identityKey, chain, monitorStorageManager, services);
+    // WAL mode allows concurrent reads/writes without blocking
+    // await this.startMonitor(identityKey, chain, monitorStorageManager, services);
   }
 
   /**

@@ -817,30 +817,48 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     primaryKey: number[],
     privilegedKeyManager: PrivilegedKeyManager
   ): Promise<any> => {
+    console.log('[buildWallet] ========== STARTING WALLET BUILD ==========');
+    console.log('[buildWallet] Network:', selectedNetwork);
+    console.log('[buildWallet] Use Remote Storage:', useRemoteStorage);
+    console.log('[buildWallet] Storage URL:', selectedStorageUrl);
+    console.log('[buildWallet] Admin Originator:', adminOriginator);
+
     try {
       const newManagers = {} as any;
       const chain = selectedNetwork;
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey));
+      console.log('[buildWallet] Created KeyDeriver with identityKey:', keyDeriver.identityKey);
+
       const storageManager = new WalletStorageManager(keyDeriver.identityKey);
+      console.log('[buildWallet] Created WalletStorageManager');
       const signer = new WalletSigner(chain, keyDeriver as any, storageManager);
       const services = new Services(chain);
       const wallet = new Wallet(signer, services, undefined, privilegedKeyManager);
       newManagers.settingsManager = wallet.settingsManager;
+      console.log('[buildWallet] Created Wallet, Signer, Services');
 
       // Use user-selected storage provider
       if (useRemoteStorage) {
+        console.log('[buildWallet] Using REMOTE storage:', selectedStorageUrl);
         const client = new StorageClient(wallet, selectedStorageUrl);
         await client.makeAvailable();
         await storageManager.addWalletStorageProvider(client);
+        console.log('[buildWallet] Remote storage added to WalletStorageManager');
       } else {
+        console.log('[buildWallet] Using LOCAL Electron storage');
         // Use local Electron IPC storage (StorageKnex running in main process)
         const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain);
         electronStorage.setServices(services);
+        console.log('[buildWallet] Initializing backend services...');
         await electronStorage.initializeBackendServices();
+        console.log('[buildWallet] Making storage available...');
         await electronStorage.makeAvailable();
+        console.log('[buildWallet] Adding storage provider to WalletStorageManager...');
         await storageManager.addWalletStorageProvider(electronStorage);
+        console.log('[buildWallet] Local storage fully configured');
       }
 
+      console.log('[buildWallet] Setting up permissions manager...');
       // Setup permissions with provided callbacks.
       const permissionsManager = new WalletPermissionsManager(wallet, adminOriginator, {
         differentiatePrivilegedOperations: true,
@@ -899,15 +917,20 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         };
       }
 
+      console.log('[buildWallet] Binding permission callbacks...');
       // Store in window for debugging
       (window as any).permissionsManager = permissionsManager;
       newManagers.permissionsManager = permissionsManager;
 
       setManagers(m => ({ ...m, ...newManagers }));
+      console.log('[buildWallet] ========== WALLET BUILD COMPLETE ==========');
+      console.log('[buildWallet] Returning permissionsManager');
 
       return permissionsManager;
     } catch (error: any) {
-      console.error("Error building wallet:", error);
+      console.error("[buildWallet] ========== WALLET BUILD FAILED ==========");
+      console.error("[buildWallet] Error:", error);
+      console.error("[buildWallet] Stack:", error.stack);
       toast.error("Failed to build wallet: " + error.message);
       return null;
     }
@@ -1037,14 +1060,45 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
   // Load snapshot function
   const loadWalletSnapshot = useCallback(async (walletManager: WalletAuthenticationManager) => {
+    console.log('[loadWalletSnapshot] Checking for snapshot...');
     if (localStorage.snap) {
+      console.log('[loadWalletSnapshot] Snapshot found, loading...');
       try {
         const snapArr = Utils.toArray(localStorage.snap, 'base64');
         const { walletSnapshot, config } = loadEnhancedSnapshot(snapArr);
+        console.log('[loadWalletSnapshot] Snapshot decoded. Version:', walletSnapshot[0], 'Has config:', !!config);
 
-        // If Version 3 with config, restore config state
+        // Config is already restored in early useEffect, skip here
         if (config) {
-          console.log('Restoring config from snapshot:', config);
+          console.log('[loadWalletSnapshot] Config present in snapshot (already restored earlier)');
+        }
+
+        // Load wallet snapshot into walletManager
+        console.log('[loadWalletSnapshot] Loading snapshot into walletManager...');
+        await walletManager.loadSnapshot(walletSnapshot);
+        console.log('[loadWalletSnapshot] Snapshot loaded into walletManager successfully');
+        console.log('[loadWalletSnapshot] WalletManager authenticated:', walletManager.authenticated);
+        // We'll handle setting snapshotLoaded in a separate effect watching authenticated state
+      } catch (err: any) {
+        console.error("[loadWalletSnapshot] Error loading snapshot:", err);
+        console.error("[loadWalletSnapshot] Stack:", err.stack);
+        localStorage.removeItem('snap'); // Clear invalid snapshot
+        toast.error("Couldn't load saved data: " + err.message);
+      }
+    } else {
+      console.log('[loadWalletSnapshot] No snapshot found in localStorage');
+    }
+  }, [loadEnhancedSnapshot, configStatus]);
+
+  // ---- Early config restoration from snapshot (before wallet manager creation)
+  useEffect(() => {
+    if (localStorage.snap && configStatus === 'initial') {
+      console.log('[Config Restore] Checking snapshot for config...');
+      try {
+        const snapArr = Utils.toArray(localStorage.snap, 'base64');
+        const { config } = loadEnhancedSnapshot(snapArr);
+        if (config) {
+          console.log('[Config Restore] Restoring config from snapshot BEFORE wallet creation:', config);
           setWabUrl(config.wabUrl || '');
           setSelectedNetwork(config.network || DEFAULT_CHAIN);
           setSelectedStorageUrl(config.storageUrl || '');
@@ -1054,18 +1108,13 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
           setUseRemoteStorage(config.useRemoteStorage || false);
           setUseMessageBox(config.useMessageBox || false);
           setConfigStatus('configured');
+          console.log('[Config Restore] Config restored, wallet manager will be created next');
         }
-
-        // Load wallet snapshot into walletManager
-        await walletManager.loadSnapshot(walletSnapshot);
-        // We'll handle setting snapshotLoaded in a separate effect watching authenticated state
-      } catch (err: any) {
-        console.error("Error loading snapshot", err);
-        localStorage.removeItem('snap'); // Clear invalid snapshot
-        toast.error("Couldn't load saved data: " + err.message);
+      } catch (err) {
+        console.error('[Config Restore] Failed to restore config from snapshot:', err);
       }
     }
-  }, [loadEnhancedSnapshot]);
+  }, [loadEnhancedSnapshot]); // Run only once on mount
 
   // Watch for wallet authentication after snapshot is loaded
   useEffect(() => {
@@ -1076,69 +1125,88 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
   // ---- Build the wallet manager once all required inputs are ready.
   useEffect(() => {
+    console.log('[WalletManager Init] Checking conditions...');
+    console.log('[WalletManager Init] passwordRetriever:', !!passwordRetriever);
+    console.log('[WalletManager Init] recoveryKeySaver:', !!recoveryKeySaver);
+    console.log('[WalletManager Init] configStatus:', configStatus);
+    console.log('[WalletManager Init] managers.walletManager exists:', !!managers.walletManager);
+    console.log('[WalletManager Init] localStorage.snap exists:', !!localStorage.snap);
+
     if (
       passwordRetriever &&
       recoveryKeySaver &&
       configStatus !== 'editing' && // either user configured or snapshot exists
       !managers.walletManager // build only once
     ) {
-      try {
-        // Create network service based on selected network
-        const networkPreset = selectedNetwork === 'main' ? 'mainnet' : 'testnet';
+      console.log('[WalletManager Init] ========== CONDITIONS MET, CREATING WALLET MANAGER ==========');
+      (async () => {
+        try {
+          // Create network service based on selected network
+          const networkPreset = selectedNetwork === 'main' ? 'mainnet' : 'testnet';
+          console.log('[WalletManager Init] Network preset:', networkPreset);
 
-        // Create a LookupResolver instance
-        const resolver = new LookupResolver({
-          networkPreset
-        });
+          // Create a LookupResolver instance
+          const resolver = new LookupResolver({
+            networkPreset
+          });
 
-        // Create a broadcaster with proper network settings
-        const broadcaster = new SHIPBroadcaster(['tm_users'], {
-          networkPreset
-        });
+          // Create a broadcaster with proper network settings
+          const broadcaster = new SHIPBroadcaster(['tm_users'], {
+            networkPreset
+          });
 
-        let walletManager: any;
-        if (useWab) {
-          const wabClient = new WABClient(wabUrl);
-          let phoneInteractor
-          if (selectedAuthMethod === 'DevConsole') {
-            phoneInteractor = new DevConsoleInteractor();
+          let walletManager: any;
+          console.log('[WalletManager Init] useWab:', useWab);
+          if (useWab) {
+            console.log('[WalletManager Init] Creating WalletAuthenticationManager...');
+            const wabClient = new WABClient(wabUrl);
+            let phoneInteractor
+            if (selectedAuthMethod === 'DevConsole') {
+              phoneInteractor = new DevConsoleInteractor();
+            } else {
+              phoneInteractor = new TwilioPhoneInteractor();
+            }
+            walletManager = new WalletAuthenticationManager(
+              adminOriginator,
+              buildWallet,
+              new OverlayUMPTokenInteractor(resolver, broadcaster),
+              recoveryKeySaver,
+              passwordRetriever,
+              wabClient,
+              phoneInteractor
+            );
           } else {
-            phoneInteractor = new TwilioPhoneInteractor();
+            console.log('[WalletManager Init] Creating CWIStyleWalletManager...');
+            walletManager = new CWIStyleWalletManager(
+              adminOriginator,
+              buildWallet,
+              new OverlayUMPTokenInteractor(resolver, broadcaster),
+              recoveryKeySaver,
+              passwordRetriever,
+              walletFunder
+            );
           }
-          walletManager = new WalletAuthenticationManager(
-            adminOriginator,
-            buildWallet,
-            new OverlayUMPTokenInteractor(resolver, broadcaster),
-            recoveryKeySaver,
-            passwordRetriever,
-            wabClient,
-            phoneInteractor
-          );
-        } else {
-          walletManager = new CWIStyleWalletManager(
-            adminOriginator,
-            buildWallet,
-            new OverlayUMPTokenInteractor(resolver, broadcaster),
-            recoveryKeySaver,
-            passwordRetriever,
-            walletFunder
-          );
+          console.log('[WalletManager Init] WalletManager created');
+          // Store in window for debugging
+          (window as any).walletManager = walletManager;
+
+          // Load snapshot if available BEFORE setting managers
+          console.log('[WalletManager Init] About to load snapshot...');
+          await loadWalletSnapshot(walletManager);
+          console.log('[WalletManager Init] Snapshot loading completed');
+
+          // Set managers state after snapshot is loaded
+          console.log('[WalletManager Init] Setting walletManager in state...');
+          setManagers(m => ({ ...m, walletManager }));
+          console.log('[WalletManager Init] ========== WALLET MANAGER SETUP COMPLETE ==========');
+
+        } catch (err: any) {
+          console.error("Error initializing wallet manager:", err);
+          toast.error("Failed to initialize wallet: " + err.message);
+          // Reset configuration if wallet initialization fails
+          setConfigStatus('editing');
         }
-        // Store in window for debugging
-        (window as any).walletManager = walletManager;
-
-        // Set initial managers state to prevent null references
-        setManagers(m => ({ ...m, walletManager }));
-
-        // Load snapshot if available
-        loadWalletSnapshot(walletManager);
-
-      } catch (err: any) {
-        console.error("Error initializing wallet manager:", err);
-        toast.error("Failed to initialize wallet: " + err.message);
-        // Reset configuration if wallet initialization fails
-        setConfigStatus('editing');
-      }
+      })();
     }
   }, [
     passwordRetriever,

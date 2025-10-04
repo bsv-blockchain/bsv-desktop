@@ -800,6 +800,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       setSelectedNetwork(network)
       setSelectedStorageUrl(storageUrl)
       setMessageBoxUrl(messageBoxUrl)
+      setUseRemoteStorage(useRemoteStorage || false)
+      setUseMessageBox(useMessageBox || false)
 
       // Save the configuration
       toast.success("Configuration applied successfully!");
@@ -1105,7 +1107,11 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
           setMessageBoxUrl(config.messageBoxUrl || '');
           setSelectedAuthMethod(config.authMethod || '');
           setUseWab(config.useWab !== undefined ? config.useWab : DEFAULT_USE_WAB);
-          setUseRemoteStorage(config.useRemoteStorage || false);
+          // Infer useRemoteStorage from storage URL if not explicitly set in snapshot
+          const inferredUseRemoteStorage = config.useRemoteStorage !== undefined
+            ? config.useRemoteStorage
+            : !!config.storageUrl;
+          setUseRemoteStorage(inferredUseRemoteStorage);
           setUseMessageBox(config.useMessageBox || false);
           setConfigStatus('configured');
           console.log('[Config Restore] Config restored, wallet manager will be created next');

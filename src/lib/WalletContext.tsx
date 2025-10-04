@@ -86,6 +86,8 @@ export interface WalletContextValue {
   useRemoteStorage: boolean
   useMessageBox: boolean
   saveEnhancedSnapshot: () => string
+  backupStorageUrl: string
+  setBackupStorageUrl: (url: string) => Promise<void>
 }
 
 export const WalletContext = createContext<WalletContextValue>({
@@ -123,7 +125,9 @@ export const WalletContext = createContext<WalletContextValue>({
   messageBoxUrl: '',
   useRemoteStorage: false,
   useMessageBox: false,
-  saveEnhancedSnapshot: () => { throw new Error('Not initialized') }
+  saveEnhancedSnapshot: () => { throw new Error('Not initialized') },
+  backupStorageUrl: '',
+  setBackupStorageUrl: async () => { }
 })
 
 // ---- Group-gating types ----
@@ -211,6 +215,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [recentApps, setRecentApps] = useState([])
   const [activeProfile, setActiveProfile] = useState<WalletProfile | null>(null)
   const [messageBoxUrl, setMessageBoxUrl] = useState('')
+  const [backupStorageUrl, setBackupStorageUrlState] = useState('')
 
   const { isFocused, onFocusRequested, onFocusRelinquished, setBasketAccessModalOpen, setCertificateAccessModalOpen, setProtocolAccessModalOpen, setSpendingAuthorizationModalOpen, setGroupPermissionModalOpen } = useContext(UserContext);
 
@@ -860,6 +865,20 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         console.log('[buildWallet] Local storage fully configured');
       }
 
+      // Add backup storage if configured
+      if (backupStorageUrl) {
+        console.log('[buildWallet] Adding BACKUP storage:', backupStorageUrl);
+        try {
+          const backupClient = new StorageClient(wallet, backupStorageUrl);
+          await backupClient.makeAvailable();
+          await storageManager.addWalletStorageProvider(backupClient);
+          console.log('[buildWallet] Backup storage added to WalletStorageManager');
+        } catch (error: any) {
+          console.error('[buildWallet] Failed to add backup storage:', error);
+          toast.error('Failed to connect to backup storage: ' + error.message);
+        }
+      }
+
       console.log('[buildWallet] Setting up permissions manager...');
       // Setup permissions with provided callbacks.
       const permissionsManager = new WalletPermissionsManager(wallet, adminOriginator, {
@@ -945,7 +964,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     spendingAuthorizationCallback,
     certificateAccessCallback,
     groupPermissionCallback,
-    useRemoteStorage
+    useRemoteStorage,
+    backupStorageUrl
   ]);
 
   // ---- Enhanced Snapshot V3 with Config ----
@@ -972,7 +992,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       authMethod: selectedAuthMethod,
       useWab,
       useRemoteStorage,
-      useMessageBox
+      useMessageBox,
+      backupStorageUrl
     };
 
     // Serialize config to JSON bytes
@@ -1010,7 +1031,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     selectedAuthMethod,
     useWab,
     useRemoteStorage,
-    useMessageBox
+    useMessageBox,
+    backupStorageUrl
   ]);
 
   /**
@@ -1113,6 +1135,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
             : !!config.storageUrl;
           setUseRemoteStorage(inferredUseRemoteStorage);
           setUseMessageBox(config.useMessageBox || false);
+          setBackupStorageUrlState(config.backupStorageUrl || '');
           setConfigStatus('configured');
           console.log('[Config Restore] Config restored, wallet manager will be created next');
         }
@@ -1243,6 +1266,63 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
     loadSettings();
   }, [managers]);
+
+  const setBackupStorageUrl = useCallback(async (url: string) => {
+    if (!managers.walletManager) {
+      throw new Error('Wallet manager not available');
+    }
+
+    // Validate URL format
+    if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+      throw new Error('Backup storage URL must start with http:// or https://');
+    }
+
+    try {
+      // Get the current wallet and storage manager from buildWallet context
+      const permissionsManager = managers.permissionsManager;
+      if (!permissionsManager) {
+        throw new Error('Permissions manager not available');
+      }
+
+      // Access the wallet through permissionsManager
+      const wallet = (permissionsManager as any).wallet;
+      if (!wallet) {
+        throw new Error('Wallet not available');
+      }
+
+      // Access the storage manager
+      const signer = (wallet as any).signer;
+      if (!signer || !signer.storageManager) {
+        throw new Error('Storage manager not available');
+      }
+      const storageManager = signer.storageManager;
+
+      // If there's a new URL, add the backup storage provider
+      if (url) {
+        console.log('[setBackupStorageUrl] Adding new backup storage:', url);
+        const backupClient = new StorageClient(wallet, url);
+        await backupClient.makeAvailable();
+        await storageManager.addWalletStorageProvider(backupClient);
+        console.log('[setBackupStorageUrl] Backup storage added successfully');
+        toast.success('Backup storage added successfully!');
+      }
+
+      // Update state
+      setBackupStorageUrlState(url);
+
+      // Save snapshot with new config
+      try {
+        const snapshot = saveEnhancedSnapshot();
+        localStorage.snap = snapshot;
+      } catch (err) {
+        console.error('[setBackupStorageUrl] Failed to save snapshot:', err);
+      }
+    } catch (error: any) {
+      console.error('[setBackupStorageUrl] Error:', error);
+      toast.error('Failed to add backup storage: ' + error.message);
+      throw error;
+    }
+  }, [managers, saveEnhancedSnapshot]);
 
   const logout = useCallback(() => {
     // Clear localStorage to prevent auto-login
@@ -1446,7 +1526,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     messageBoxUrl,
     useRemoteStorage,
     useMessageBox,
-    saveEnhancedSnapshot
+    saveEnhancedSnapshot,
+    backupStorageUrl,
+    setBackupStorageUrl
   }), [
     managers,
     settings,
@@ -1479,7 +1561,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     messageBoxUrl,
     useRemoteStorage,
     useMessageBox,
-    saveEnhancedSnapshot
+    saveEnhancedSnapshot,
+    backupStorageUrl,
+    setBackupStorageUrl
   ]);
 
   return (

@@ -6,7 +6,12 @@ import {
   Paper,
   Button,
   useTheme,
-  Chip
+  Chip,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material'
 import { Grid } from '@mui/material'
 import { makeStyles } from '@mui/styles'
@@ -62,11 +67,16 @@ const useStyles = makeStyles((theme: Theme) => ({
 
 const Settings = () => {
   const classes = useStyles()
-  const { settings, updateSettings, wabUrl, useRemoteStorage, useMessageBox, storageUrl, useWab, messageBoxUrl } = useContext(WalletContext)
+  const { settings, updateSettings, wabUrl, useRemoteStorage, useMessageBox, storageUrl, useWab, messageBoxUrl, backupStorageUrl, setBackupStorageUrl } = useContext(WalletContext)
   const { pageLoaded } = useContext(UserContext)
   const [settingsLoading, setSettingsLoading] = useState(false)
   const theme = useTheme()
   const isDarkMode = theme.palette.mode === 'dark'
+
+  // Backup storage state
+  const [showBackupDialog, setShowBackupDialog] = useState(false)
+  const [newBackupUrl, setNewBackupUrl] = useState('')
+  const [backupLoading, setBackupLoading] = useState(false)
 
   const currencies = {
     BSV: '0.033',
@@ -131,6 +141,36 @@ const Settings = () => {
       setSelectedCurrency(settings?.currency || 'BSV');
     } finally {
       setSettingsLoading(false);
+    }
+  }
+
+  const handleAddBackupStorage = async () => {
+    if (!newBackupUrl) {
+      toast.error('Please enter a backup storage URL');
+      return;
+    }
+
+    try {
+      setBackupLoading(true);
+      await setBackupStorageUrl(newBackupUrl);
+      setShowBackupDialog(false);
+      setNewBackupUrl('');
+    } catch (e) {
+      // Error already shown by setBackupStorageUrl
+    } finally {
+      setBackupLoading(false);
+    }
+  }
+
+  const handleRemoveBackupStorage = async () => {
+    try {
+      setBackupLoading(true);
+      await setBackupStorageUrl('');
+      toast.success('Backup storage removed');
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setBackupLoading(false);
     }
   }
 
@@ -323,6 +363,91 @@ const Settings = () => {
           )}
         </Box>
       </Paper>
+
+      <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
+        <Typography variant="h4" sx={{ mb: 2 }}>
+          Backup Storage
+        </Typography>
+        <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
+          Add a remote backup storage provider to keep your wallet data synced across multiple locations.
+          The WalletStorageManager will automatically sync new actions to your backup storage.
+        </Typography>
+
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {backupStorageUrl ? (
+            <>
+              <Box>
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                  Backup Storage URL
+                </Typography>
+                <Box component="div" sx={{
+                  fontFamily: 'monospace',
+                  wordBreak: 'break-all',
+                  bgcolor: 'action.hover',
+                  p: 1,
+                  borderRadius: 1
+                }}>
+                  {backupStorageUrl}
+                </Box>
+              </Box>
+              <Box>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={handleRemoveBackupStorage}
+                  disabled={backupLoading}
+                >
+                  Remove Backup Storage
+                </Button>
+              </Box>
+            </>
+          ) : (
+            <Box>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                No backup storage configured
+              </Typography>
+              <Button
+                variant="contained"
+                onClick={() => setShowBackupDialog(true)}
+                disabled={backupLoading}
+              >
+                Add Backup Storage
+              </Button>
+            </Box>
+          )}
+        </Box>
+      </Paper>
+
+      <Dialog open={showBackupDialog} onClose={() => setShowBackupDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Add Backup Storage</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            Enter the URL of your remote wallet storage provider. This will be used as a backup
+            in addition to your primary storage.
+          </Typography>
+          <TextField
+            fullWidth
+            label="Backup Storage URL"
+            placeholder="https://storage.example.com"
+            value={newBackupUrl}
+            onChange={(e) => setNewBackupUrl(e.target.value)}
+            disabled={backupLoading}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowBackupDialog(false)} disabled={backupLoading}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleAddBackupStorage}
+            variant="contained"
+            disabled={backupLoading || !newBackupUrl}
+          >
+            {backupLoading ? 'Adding...' : 'Add Backup'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
         <Typography variant="h4" sx={{ mb: 2 }}>

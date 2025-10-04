@@ -87,7 +87,7 @@ export interface WalletContextValue {
   messageBoxUrl: string
   useRemoteStorage: boolean
   useMessageBox: boolean
-  saveEnhancedSnapshot: () => string
+  saveEnhancedSnapshot: (overrideBackupUrls?: string[]) => string
   backupStorageUrls: string[]
   addBackupStorageUrl: (url: string) => Promise<void>
   removeBackupStorageUrl: (url: string) => Promise<void>
@@ -1008,7 +1008,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
    * with WalletConfig settings.
    * Format: [version=3][varint:config_length][config_json][wallet_snapshot]
    */
-  const saveEnhancedSnapshot = useCallback((): string => {
+  const saveEnhancedSnapshot = useCallback((overrideBackupUrls?: string[]): string => {
     if (!managers.walletManager) {
       throw new Error('Wallet manager not available for snapshot');
     }
@@ -1016,7 +1016,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     // Get the wallet-toolbox snapshot (Version 2)
     const walletSnapshot = managers.walletManager.saveSnapshot();
 
-    // Build config object
+    // Build config object - use override if provided, otherwise use current state
     const config = {
       wabUrl,
       network: selectedNetwork,
@@ -1026,7 +1026,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       useWab,
       useRemoteStorage,
       useMessageBox,
-      backupStorageUrls
+      backupStorageUrls: overrideBackupUrls !== undefined ? overrideBackupUrls : backupStorageUrls
     };
 
     // Serialize config to JSON bytes
@@ -1310,9 +1310,14 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       throw new Error('Backup storage URL must start with http:// or https://');
     }
 
-    // Check for duplicates
+    // Check for duplicates in backup list
     if (backupStorageUrls.includes(url)) {
-      throw new Error('This backup storage URL is already added');
+      throw new Error('This backup storage URL is already added as a backup');
+    }
+
+    // Check if it's the same as the primary storage (only for remote storage)
+    if (useRemoteStorage && selectedStorageUrl === url) {
+      throw new Error('This URL is already your primary storage. Cannot add it as a backup.');
     }
 
     try {
@@ -1343,16 +1348,20 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         console.log('[addBackupStorageUrl] Active storage re-configured');
       }
 
-      // Update state
-      setBackupStorageUrls(prev => [...prev, url]);
+      // Create updated backup URLs list
+      const newBackupUrls = [...backupStorageUrls, url];
 
-      // Save snapshot with new config
+      // Save snapshot with new config BEFORE updating state
       try {
-        const snapshot = saveEnhancedSnapshot();
+        const snapshot = saveEnhancedSnapshot(newBackupUrls);
         localStorage.snap = snapshot;
+        console.log('[addBackupStorageUrl] Snapshot saved with', newBackupUrls.length, 'backups');
       } catch (err) {
         console.error('[addBackupStorageUrl] Failed to save snapshot:', err);
       }
+
+      // Update state after saving snapshot
+      setBackupStorageUrls(newBackupUrls);
 
       toast.success('Backup storage added successfully!');
     } catch (error: any) {
@@ -1360,20 +1369,24 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       toast.error('Failed to add backup storage: ' + error.message);
       throw error;
     }
-  }, [managers, saveEnhancedSnapshot, backupStorageUrls]);
+  }, [managers, saveEnhancedSnapshot, backupStorageUrls, useRemoteStorage, selectedStorageUrl]);
 
   const removeBackupStorageUrl = useCallback(async (url: string) => {
     try {
-      // Update state - remove the URL from the list
-      setBackupStorageUrls(prev => prev.filter(u => u !== url));
+      // Create updated backup URLs list (without the removed URL)
+      const newBackupUrls = backupStorageUrls.filter(u => u !== url);
 
-      // Save snapshot with new config
+      // Save snapshot with new config BEFORE updating state
       try {
-        const snapshot = saveEnhancedSnapshot();
+        const snapshot = saveEnhancedSnapshot(newBackupUrls);
         localStorage.snap = snapshot;
+        console.log('[removeBackupStorageUrl] Snapshot saved with', newBackupUrls.length, 'backups');
       } catch (err) {
         console.error('[removeBackupStorageUrl] Failed to save snapshot:', err);
       }
+
+      // Update state after saving snapshot
+      setBackupStorageUrls(newBackupUrls);
 
       toast.success('Backup storage removed. It will be disconnected on next restart.');
     } catch (error: any) {
@@ -1381,7 +1394,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       toast.error('Failed to remove backup storage: ' + error.message);
       throw error;
     }
-  }, [saveEnhancedSnapshot]);
+  }, [saveEnhancedSnapshot, backupStorageUrls]);
 
   const syncBackupStorage = useCallback(async (progressCallback?: (message: string) => void) => {
     if (!managers.storageManager) {

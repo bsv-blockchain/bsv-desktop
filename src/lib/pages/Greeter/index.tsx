@@ -430,7 +430,7 @@ const Greeter: React.FC<any> = ({ history }) => {
     } finally {
       setLoading(false)
     }
-  }, [walletManager, password, confirmPassword])
+  }, [walletManager, password, confirmPassword, saveEnhancedSnapshot])
 
   if (!pageLoaded) {
     return <PageLoading />

@@ -92,6 +92,8 @@ export interface WalletContextValue {
   addBackupStorageUrl: (url: string) => Promise<void>
   removeBackupStorageUrl: (url: string) => Promise<void>
   syncBackupStorage: (progressCallback?: (message: string) => void) => Promise<void>
+  updateMessageBoxUrl: (url: string) => Promise<void>
+  removeMessageBoxUrl: () => Promise<void>
 }
 
 export const WalletContext = createContext<WalletContextValue>({
@@ -133,7 +135,9 @@ export const WalletContext = createContext<WalletContextValue>({
   backupStorageUrls: [],
   addBackupStorageUrl: async () => { },
   removeBackupStorageUrl: async () => { },
-  syncBackupStorage: async () => { }
+  syncBackupStorage: async () => { },
+  updateMessageBoxUrl: async () => { },
+  removeMessageBoxUrl: async () => { }
 })
 
 // ---- Group-gating types ----
@@ -1432,6 +1436,71 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     }
   }, [managers.storageManager]);
 
+  const updateMessageBoxUrl = useCallback(async (url: string) => {
+    try {
+      if (!url || !url.trim()) {
+        toast.error('Message Box URL cannot be empty');
+        throw new Error('Message Box URL cannot be empty');
+      }
+
+      // Validate URL format
+      try {
+        new URL(url);
+      } catch (e) {
+        toast.error('Invalid Message Box URL format');
+        throw new Error('Invalid Message Box URL format');
+      }
+
+      console.log('[updateMessageBoxUrl] Updating Message Box URL to:', url);
+
+      // Update state
+      setMessageBoxUrl(url);
+      setUseMessageBox(true);
+
+      // Save snapshot with new config
+      try {
+        const snapshot = saveEnhancedSnapshot();
+        localStorage.snap = snapshot;
+        console.log('[updateMessageBoxUrl] Snapshot saved with new Message Box URL');
+      } catch (err) {
+        console.error('[updateMessageBoxUrl] Failed to save snapshot:', err);
+        throw new Error('Failed to save configuration');
+      }
+
+      toast.success('Message Box URL updated successfully!');
+    } catch (error: any) {
+      console.error('[updateMessageBoxUrl] Error:', error);
+      toast.error('Failed to update Message Box URL: ' + error.message);
+      throw error;
+    }
+  }, [saveEnhancedSnapshot]);
+
+  const removeMessageBoxUrl = useCallback(async () => {
+    try {
+      console.log('[removeMessageBoxUrl] Removing Message Box URL');
+
+      // Update state
+      setMessageBoxUrl('');
+      setUseMessageBox(false);
+
+      // Save snapshot with new config
+      try {
+        const snapshot = saveEnhancedSnapshot();
+        localStorage.snap = snapshot;
+        console.log('[removeMessageBoxUrl] Snapshot saved with Message Box removed');
+      } catch (err) {
+        console.error('[removeMessageBoxUrl] Failed to save snapshot:', err);
+        throw new Error('Failed to save configuration');
+      }
+
+      toast.success('Message Box URL removed successfully!');
+    } catch (error: any) {
+      console.error('[removeMessageBoxUrl] Error:', error);
+      toast.error('Failed to remove Message Box URL: ' + error.message);
+      throw error;
+    }
+  }, [saveEnhancedSnapshot]);
+
   const logout = useCallback(() => {
     // Clear localStorage to prevent auto-login
     localStorage.clear();
@@ -1638,7 +1707,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     backupStorageUrls,
     addBackupStorageUrl,
     removeBackupStorageUrl,
-    syncBackupStorage
+    syncBackupStorage,
+    updateMessageBoxUrl,
+    removeMessageBoxUrl
   }), [
     managers,
     settings,
@@ -1675,7 +1746,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     backupStorageUrls,
     addBackupStorageUrl,
     removeBackupStorageUrl,
-    syncBackupStorage
+    syncBackupStorage,
+    updateMessageBoxUrl,
+    removeMessageBoxUrl
   ]);
 
   return (

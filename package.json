@@ -106,8 +106,7 @@
           ]
         }
       ],
-      "icon": "build/icon.ico",
-      "publisherName": "BSV Association"
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,

@@ -16,6 +16,16 @@ export interface ElectronAPI {
     callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
     initializeServices: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; error?: string }>;
   };
+  updates: {
+    check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
+    download: () => Promise<{ success: boolean; error?: string }>;
+    install: () => Promise<{ success: boolean; error?: string }>;
+    onUpdateAvailable: (callback: (info: any) => void) => void;
+    onDownloadProgress: (callback: (progress: any) => void) => void;
+    onUpdateDownloaded: (callback: (info: any) => void) => void;
+    onUpdateError: (callback: (error: string) => void) => void;
+    removeAllListeners: () => void;
+  };
 }
 
 declare global {

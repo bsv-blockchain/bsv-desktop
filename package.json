@@ -17,7 +17,9 @@
     "package": "electron-builder",
     "package:mac": "electron-builder --mac",
     "package:win": "electron-builder --win",
-    "package:linux": "electron-builder --linux"
+    "package:linux": "electron-builder --linux",
+    "lint:ci": "echo 'No linting'",
+    "test": "echo 'No tests'"
   },
   "dependencies": {
     "@bsv/message-box-client": "^1.3.0",

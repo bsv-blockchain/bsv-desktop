@@ -1,0 +1,225 @@
+name: 'release'
+
+on:
+  push:
+    branches:
+      - master
+      - preview/*
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  publish-electron:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest' # Universal binary for both Intel and Apple Silicon
+            args: '--mac'
+          - platform: 'ubuntu-22.04'
+            args: '--linux'
+          - platform: 'windows-2022'
+            args: '--win'
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-dev
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install frontend dependencies
+        run: npm install
+
+      - name: import Apple Developer Certificate
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.METANET_APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.METANET_APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.METANET_KEYCHAIN_PASSWORD }}
+        run: |
+          echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          security find-identity -v -p codesigning build.keychain
+
+      - name: verify certificate
+        if: matrix.platform == 'macos-latest'
+        id: verify_certificate
+        run: |
+          CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "BSV")
+          echo "CERT_INFO=$CERT_INFO"
+          CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
+          echo "cert_id=$CERT_ID" >> $GITHUB_OUTPUT
+          echo "Certificate imported."
+
+      - name: build Electron app (macOS)
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_ID: ${{ secrets.METANET_APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.METANET_APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.METANET_APPLE_TEAM_ID }}
+          CSC_LINK: certificate.p12
+          CSC_KEY_PASSWORD: ${{ secrets.METANET_APPLE_CERTIFICATE_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: true
+        run: |
+          npm run build
+          npm run package:mac
+
+      - name: Upload macOS artifacts
+        if: matrix.platform == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: |
+            release/*.dmg
+            release/*.zip
+
+      # === Linux Build and Packaging ===
+      - name: build Electron app (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          npm run build
+          npm run package:linux
+
+      - name: Import GPG Key for Linux Signing
+        if: matrix.platform == 'ubuntu-22.04'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.METANET_GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --import
+
+      - name: Sign Linux AppImage with GPG
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          # Find the AppImage file
+          APPIMAGE=$(find release -name "*.AppImage" -type f | head -n 1)
+          if [ -n "$APPIMAGE" ]; then
+            gpg --detach-sign --armor "$APPIMAGE"
+          fi
+
+      - name: Create and Sign SHA256SUMS (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          cd release
+          sha256sum *.AppImage *.deb > SHA256SUMS 2>/dev/null || true
+          if [ -f SHA256SUMS ]; then
+            gpg --detach-sign --armor SHA256SUMS
+          fi
+
+      - name: Upload Linux Artifacts
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: |
+            release/*.AppImage
+            release/*.AppImage.asc
+            release/*.deb
+            release/SHA256SUMS
+            release/SHA256SUMS.asc
+
+      # === Windows Build and Signing ===
+      - name: Set up certificate
+        if: matrix.platform == 'windows-2022'
+        run: |
+          echo "${{ secrets.DIGICERT_CLIENT_AUTH_CERT }}" | base64 --decode > /d/Certificate_pkcs12.p12
+        shell: bash
+
+      - name: Set DigiCert environment variables
+        if: matrix.platform == 'windows-2022'
+        run: |
+          echo "SM_HOST=${{ secrets.DIGICERT_HOST }}" >> "$GITHUB_ENV"
+          echo "SM_API_KEY=${{ secrets.DIGICERT_KEY_LOCKER_API_KEY }}" >> "$GITHUB_ENV"
+          echo "SM_FINGERPRINT=${{ secrets.DIGICERT_CODE_SIGNING_SHA1_HASH }}" >> "$GITHUB_ENV"
+          echo "SM_CLIENT_CERT_FILE=D:\\Certificate_pkcs12.p12" >> "$GITHUB_ENV"
+          echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.DIGICERT_CLIENT_AUTH_PASS }}" >> "$GITHUB_ENV"
+        shell: bash
+
+      - name: Code signing with Software Trust Manager
+        if: matrix.platform == 'windows-2022'
+        uses: digicert/ssm-code-signing@v1.1.0
+        env:
+          FORCE_DOWNLOAD_TOOLS: 'true'
+
+      - name: DigiCert tools healthcheck
+        if: matrix.platform == 'windows-2022'
+        shell: cmd
+        run: |
+          smctl version
+          smctl healthcheck
+
+      - name: Sync KeyLocker certificate to Windows store (KSP)
+        if: matrix.platform == 'windows-2022'
+        shell: cmd
+        run: |
+          "%LOCALAPPDATA%\Temp\smtools-windows-x64\smksp_cert_sync.exe"
+          certutil.exe -csp "DigiCert Software Trust Manager KSP" -key -user
+
+      - name: Configure electron-builder for DigiCert signing
+        if: matrix.platform == 'windows-2022'
+        shell: bash
+        run: |
+          # electron-builder will automatically use CSC_ environment variables
+          # We need to configure it to use DigiCert's signing tool
+          echo "WIN_CSC_LINK=$SM_CLIENT_CERT_FILE" >> "$GITHUB_ENV"
+          echo "WIN_CSC_KEY_PASSWORD=$SM_CLIENT_CERT_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: build Electron app (Windows)
+        if: matrix.platform == 'windows-2022'
+        env:
+          # electron-builder signing configuration
+          CSC_LINK: ${{ env.SM_CLIENT_CERT_FILE }}
+          CSC_KEY_PASSWORD: ${{ env.SM_CLIENT_CERT_PASSWORD }}
+        run: |
+          npm run build
+          npm run package:win
+
+      - name: Sign Windows executables with DigiCert (KSP)
+        if: matrix.platform == 'windows-2022'
+        shell: cmd
+        run: |
+          for /r "release" %%f in (*.exe) do (
+            smctl sign --fingerprint %SM_FINGERPRINT% --input "%%f"
+          )
+
+      - name: Verify Windows Signatures
+        if: matrix.platform == 'windows-2022'
+        shell: pwsh
+        run: |
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { throw "signtool.exe not found. Ensure Windows 10 SDK is installed on the runner." }
+          $files = Get-ChildItem -Recurse -Path release\ -Include *.exe | Select-Object -ExpandProperty FullName
+          foreach ($file in $files) {
+            & $signtool verify /pa "$file"
+          }
+
+      - name: Upload Windows Artifacts
+        if: matrix.platform == 'windows-2022'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            release/*.exe
+            release/*.msi
+          if-no-files-found: warn
+
+      - name: List Windows build artifacts for debugging
+        if: matrix.platform == 'windows-2022'
+        shell: powershell
+        run: |
+          Write-Host "Checking build directory structure:"
+          Get-ChildItem -Path release -Recurse | Where-Object { $_.Name -like "*.exe" } | ForEach-Object { $_.FullName }

@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { startHttpServer } from './httpServer.js';
+import { initAutoUpdater, downloadUpdate, quitAndInstall, checkForUpdates } from './updater.js';
 
 // Lazy load storage to avoid loading knex/better-sqlite3 at startup
 let storageManager: any = null;
@@ -314,6 +315,38 @@ ipcMain.handle('storage:initialize-services', async (_event, identityKey: string
   }
 });
 
+// ===== Auto-Update IPC Handlers =====
+
+ipcMain.handle('update:check', async () => {
+  try {
+    const result = await checkForUpdates();
+    return { success: true, updateInfo: result?.updateInfo };
+  } catch (error: any) {
+    console.error('[IPC] update:check error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('update:download', async () => {
+  try {
+    await downloadUpdate();
+    return { success: true };
+  } catch (error: any) {
+    console.error('[IPC] update:download error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('update:install', async () => {
+  try {
+    quitAndInstall();
+    return { success: true };
+  } catch (error: any) {
+    console.error('[IPC] update:install error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // ===== App Lifecycle =====
 
 app.whenReady().then(async () => {
@@ -322,6 +355,9 @@ app.whenReady().then(async () => {
   // Start HTTP server on port 3321
   if (mainWindow) {
     httpServerCleanup = await startHttpServer(mainWindow);
+
+    // Initialize auto-updater
+    initAutoUpdater(mainWindow);
   }
 
   app.on('activate', () => {

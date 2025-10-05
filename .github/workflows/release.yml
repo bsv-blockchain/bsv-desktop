@@ -43,9 +43,9 @@ jobs:
       - name: import Apple Developer Certificate
         if: matrix.platform == 'macos-latest'
         env:
-          APPLE_CERTIFICATE: ${{ secrets.METANET_APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.METANET_APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.METANET_KEYCHAIN_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERT }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASS }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
         run: |
           echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
           security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
@@ -66,18 +66,19 @@ jobs:
           echo "cert_id=$CERT_ID" >> $GITHUB_OUTPUT
           echo "Certificate imported."
 
-      - name: build Electron app (macOS)
+      - name: build and publish Electron app (macOS)
         if: matrix.platform == 'macos-latest'
         env:
-          APPLE_ID: ${{ secrets.METANET_APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.METANET_APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.METANET_APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           CSC_LINK: certificate.p12
-          CSC_KEY_PASSWORD: ${{ secrets.METANET_APPLE_CERTIFICATE_PASSWORD }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASS }}
           CSC_IDENTITY_AUTO_DISCOVERY: true
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build
-          npm run package:mac
+          npx electron-builder --mac --publish always
 
       - name: Upload macOS artifacts
         if: matrix.platform == 'macos-latest'
@@ -87,18 +88,22 @@ jobs:
           path: |
             release/*.dmg
             release/*.zip
+            release/*.yml
+            release/*.blockmap
 
       # === Linux Build and Packaging ===
-      - name: build Electron app (Linux)
+      - name: build and publish Electron app (Linux)
         if: matrix.platform == 'ubuntu-22.04'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build
-          npm run package:linux
+          npx electron-builder --linux --publish always
 
       - name: Import GPG Key for Linux Signing
         if: matrix.platform == 'ubuntu-22.04'
         env:
-          GPG_PRIVATE_KEY: ${{ secrets.METANET_GPG_PRIVATE_KEY }}
+          GPG_PRIVATE_KEY: ${{ secrets.APP_IMAGE_GPG_KEY }}
         run: |
           echo "$GPG_PRIVATE_KEY" | gpg --import
 
@@ -129,6 +134,7 @@ jobs:
             release/*.AppImage
             release/*.AppImage.asc
             release/*.deb
+            release/*.yml
             release/SHA256SUMS
             release/SHA256SUMS.asc
 
@@ -178,15 +184,16 @@ jobs:
           echo "WIN_CSC_LINK=$SM_CLIENT_CERT_FILE" >> "$GITHUB_ENV"
           echo "WIN_CSC_KEY_PASSWORD=$SM_CLIENT_CERT_PASSWORD" >> "$GITHUB_ENV"
 
-      - name: build Electron app (Windows)
+      - name: build and publish Electron app (Windows)
         if: matrix.platform == 'windows-2022'
         env:
           # electron-builder signing configuration
           CSC_LINK: ${{ env.SM_CLIENT_CERT_FILE }}
           CSC_KEY_PASSWORD: ${{ env.SM_CLIENT_CERT_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build
-          npm run package:win
+          npx electron-builder --win --publish always
 
       - name: Sign Windows executables with DigiCert (KSP)
         if: matrix.platform == 'windows-2022'
@@ -214,7 +221,8 @@ jobs:
           name: windows-artifacts
           path: |
             release/*.exe
-            release/*.msi
+            release/*.yml
+            release/*.blockmap
           if-no-files-found: warn
 
       - name: List Windows build artifacts for debugging

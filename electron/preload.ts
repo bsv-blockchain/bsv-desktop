@@ -39,6 +39,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('storage:initialize-services', identityKey, chain),
     callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) =>
       ipcRenderer.invoke('storage:call-method', identityKey, chain, method, args)
+  },
+
+  // Auto-update operations
+  updates: {
+    check: () => ipcRenderer.invoke('update:check'),
+    download: () => ipcRenderer.invoke('update:download'),
+    install: () => ipcRenderer.invoke('update:install'),
+    onUpdateAvailable: (callback: (info: any) => void) => {
+      ipcRenderer.on('update-available', (_event, info) => callback(info));
+    },
+    onDownloadProgress: (callback: (progress: any) => void) => {
+      ipcRenderer.on('update-download-progress', (_event, progress) => callback(progress));
+    },
+    onUpdateDownloaded: (callback: (info: any) => void) => {
+      ipcRenderer.on('update-downloaded', (_event, info) => callback(info));
+    },
+    onUpdateError: (callback: (error: string) => void) => {
+      ipcRenderer.on('update-error', (_event, error) => callback(error));
+    },
+    removeAllListeners: () => {
+      ipcRenderer.removeAllListeners('update-available');
+      ipcRenderer.removeAllListeners('update-download-progress');
+      ipcRenderer.removeAllListeners('update-downloaded');
+      ipcRenderer.removeAllListeners('update-error');
+    }
   }
 });
 
@@ -58,6 +83,16 @@ export interface ElectronAPI {
     makeAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; settings?: any; error?: string }>;
     initializeServices: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; error?: string }>;
     callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+  };
+  updates: {
+    check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
+    download: () => Promise<{ success: boolean; error?: string }>;
+    install: () => Promise<{ success: boolean; error?: string }>;
+    onUpdateAvailable: (callback: (info: any) => void) => void;
+    onDownloadProgress: (callback: (progress: any) => void) => void;
+    onUpdateDownloaded: (callback: (info: any) => void) => void;
+    onUpdateError: (callback: (error: string) => void) => void;
+    removeAllListeners: () => void;
   };
 }
 

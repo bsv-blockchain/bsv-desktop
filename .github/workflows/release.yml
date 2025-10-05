@@ -189,6 +189,7 @@ jobs:
         if: matrix.platform == 'windows-2022'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
           npm run build
           npx electron-builder --win --publish never

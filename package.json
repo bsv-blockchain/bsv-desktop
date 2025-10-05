@@ -107,7 +107,6 @@
         }
       ],
       "icon": "build/icon.ico",
-      "signAndEditExecutable": false,
       "verifyUpdateCodeSignature": false
     },
     "nsis": {

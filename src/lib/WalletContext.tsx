@@ -812,12 +812,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
 
       setUseWab(useWabSetting !== false)
-      setWabUrl(wabUrl)
+      setWabUrl(wabUrl || '')
       setWabInfo(wabInfo)
       setSelectedAuthMethod(method)
       setSelectedNetwork(network)
-      setSelectedStorageUrl(storageUrl)
-      setMessageBoxUrl(messageBoxUrl)
+      setSelectedStorageUrl(storageUrl || '')
+      setMessageBoxUrl(messageBoxUrl || '')
       setUseRemoteStorage(useRemoteStorage || false)
       setUseMessageBox(useMessageBox || false)
 

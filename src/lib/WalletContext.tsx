@@ -94,6 +94,7 @@ export interface WalletContextValue {
   syncBackupStorage: (progressCallback?: (message: string) => void) => Promise<void>
   updateMessageBoxUrl: (url: string) => Promise<void>
   removeMessageBoxUrl: () => Promise<void>
+  initializingBackendServices: boolean
 }
 
 export const WalletContext = createContext<WalletContextValue>({
@@ -137,7 +138,8 @@ export const WalletContext = createContext<WalletContextValue>({
   removeBackupStorageUrl: async () => { },
   syncBackupStorage: async () => { },
   updateMessageBoxUrl: async () => { },
-  removeMessageBoxUrl: async () => { }
+  removeMessageBoxUrl: async () => { },
+  initializingBackendServices: false
 })
 
 // ---- Group-gating types ----
@@ -244,6 +246,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [useRemoteStorage, setUseRemoteStorage] = useState<boolean>(false)
   const [useMessageBox, setUseMessageBox] = useState<boolean>(false)
   const [groupPermissionRequests, setGroupPermissionRequests] = useState<GroupPermissionRequest[]>([])
+  const [initializingBackendServices, setInitializingBackendServices] = useState<boolean>(false)
 
   // ---- Group gate & deferred buffers ----
   const [groupPhase, setGroupPhase] = useState<GroupPhase>('idle');
@@ -840,6 +843,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     console.log('[buildWallet] Storage URL:', selectedStorageUrl);
     console.log('[buildWallet] Admin Originator:', adminOriginator);
 
+    setInitializingBackendServices(true);
+
     try {
       const newManagers = {} as any;
       const chain = selectedNetwork;
@@ -984,12 +989,14 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       console.log('[buildWallet] ========== WALLET BUILD COMPLETE ==========');
       console.log('[buildWallet] Returning permissionsManager');
 
+      setInitializingBackendServices(false);
       return permissionsManager;
     } catch (error: any) {
       console.error("[buildWallet] ========== WALLET BUILD FAILED ==========");
       console.error("[buildWallet] Error:", error);
       console.error("[buildWallet] Stack:", error.stack);
       toast.error("Failed to build wallet: " + error.message);
+      setInitializingBackendServices(false);
       return null;
     }
   }, [
@@ -1709,7 +1716,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     removeBackupStorageUrl,
     syncBackupStorage,
     updateMessageBoxUrl,
-    removeMessageBoxUrl
+    removeMessageBoxUrl,
+    initializingBackendServices
   }), [
     managers,
     settings,
@@ -1748,7 +1756,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     removeBackupStorageUrl,
     syncBackupStorage,
     updateMessageBoxUrl,
-    removeMessageBoxUrl
+    removeMessageBoxUrl,
+    initializingBackendServices
   ]);
 
   return (

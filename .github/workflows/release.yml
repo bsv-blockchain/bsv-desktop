@@ -30,6 +30,7 @@ jobs:
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           # Get version from package.json
           VERSION=$(node -p "require('./package.json').version")
@@ -184,25 +185,13 @@ jobs:
           "%LOCALAPPDATA%\Temp\smtools-windows-x64\smksp_cert_sync.exe"
           certutil.exe -csp "DigiCert Software Trust Manager KSP" -key -user
 
-      - name: Configure electron-builder for DigiCert signing
-        if: matrix.platform == 'windows-2022'
-        shell: bash
-        run: |
-          # electron-builder will automatically use CSC_ environment variables
-          # We need to configure it to use DigiCert's signing tool
-          echo "WIN_CSC_LINK=$SM_CLIENT_CERT_FILE" >> "$GITHUB_ENV"
-          echo "WIN_CSC_KEY_PASSWORD=$SM_CLIENT_CERT_PASSWORD" >> "$GITHUB_ENV"
-
-      - name: build and publish Electron app (Windows)
+      - name: build Electron app (Windows)
         if: matrix.platform == 'windows-2022'
         env:
-          # electron-builder signing configuration
-          CSC_LINK: ${{ env.SM_CLIENT_CERT_FILE }}
-          CSC_KEY_PASSWORD: ${{ env.SM_CLIENT_CERT_PASSWORD }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build
-          npx electron-builder --win --publish always
+          npx electron-builder --win --publish never
 
       - name: Sign Windows executables with DigiCert (KSP)
         if: matrix.platform == 'windows-2022'
@@ -222,6 +211,13 @@ jobs:
           foreach ($file in $files) {
             & $signtool verify /pa "$file"
           }
+
+      - name: Publish Windows artifacts to GitHub Release
+        if: matrix.platform == 'windows-2022'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: npx electron-builder --win --publish always --prepackaged release
 
       - name: Upload Windows Artifacts
         if: matrix.platform == 'windows-2022'

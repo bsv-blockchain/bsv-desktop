@@ -272,7 +272,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
     } finally {
       setProfilesLoading(false)
     }
-  }, [managers?.walletManager])
+  }, [managers?.walletManager, saveEnhancedSnapshot])
 
   // Handle profile creation
   const handleCreateProfile = async () => {

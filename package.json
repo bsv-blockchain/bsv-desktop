@@ -107,7 +107,6 @@
         }
       ],
       "icon": "build/icon.ico",
-      "signingHashAlgorithms": ["sha256"],
       "signAndEditExecutable": false,
       "verifyUpdateCodeSignature": false
     },

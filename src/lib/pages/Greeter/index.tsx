@@ -244,7 +244,7 @@ const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPasswo
 
 // Main Greeter component with reduced complexity
 const Greeter: React.FC<any> = ({ history }) => {
-  const { managers, configStatus, useWab, saveEnhancedSnapshot } = useContext(WalletContext)
+  const { managers, configStatus, useWab, saveEnhancedSnapshot, initializingBackendServices } = useContext(WalletContext)
   const { appVersion, appName, pageLoaded } = useContext(UserContext)
   const theme = useTheme()
 
@@ -436,12 +436,83 @@ const Greeter: React.FC<any> = ({ history }) => {
     return <PageLoading />
   }
 
+  // Show simplified non-interactive version when initializing backend services
+  if (initializingBackendServices) {
+    return (
+      <Container maxWidth="sm" sx={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <Paper
+          elevation={4}
+          sx={{
+            p: 4,
+            borderRadius: 2,
+            bgcolor: 'background.paper',
+            boxShadow: theme.shadows[3]
+          }}
+        >
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 4 }}>
+            <Box sx={{ mb: 2, width: '100px', height: '100px' }}>
+              <AppLogo
+                rotate
+                size="100px"
+                color="#2196F3"
+              />
+            </Box>
+            <Typography
+              variant='h2'
+              fontFamily='Helvetica'
+              fontSize='2em'
+              sx={{
+                mb: 1,
+                fontWeight: 'bold',
+                background: theme.palette.mode === 'dark'
+                  ? 'linear-gradient(90deg, #FFFFFF 0%, #F5F5F5 100%)'
+                  : 'linear-gradient(90deg, #2196F3 0%, #4569E5 100%)',
+                backgroundClip: 'text',
+                WebkitTextFillColor: 'transparent'
+              }}
+            >
+              {appName}
+            </Typography>
+            <Typography
+              variant="body1"
+              color="text.secondary"
+              align="center"
+              sx={{ mb: 3 }}
+            >
+              Secure BSV Blockchain Wallet
+            </Typography>
+            <Divider sx={{ width: '80%' }} />
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              align="center"
+              sx={{ mt: 2 }}
+            >
+              <i>v{appVersion}</i>
+            </Typography>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              align="center"
+              sx={{ mt: 3 }}
+            >
+              Setting up backend services...
+            </Typography>
+            <Box sx={{ width: '100%', mt: 2 }}>
+              <CircularProgress size={24} sx={{ display: 'block', mx: 'auto' }} />
+            </Box>
+          </Box>
+        </Paper>
+      </Container>
+    )
+  }
+
   return (
     <Container maxWidth="sm" sx={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-      <Paper 
-        elevation={4} 
-        sx={{ 
-          p: 4, 
+      <Paper
+        elevation={4}
+        sx={{
+          p: 4,
           borderRadius: 2,
           bgcolor: 'background.paper',
           boxShadow: theme.shadows[3]
@@ -455,14 +526,14 @@ const Greeter: React.FC<any> = ({ history }) => {
               color="#2196F3"
             />
           </Box>
-          <Typography 
-            variant='h2' 
-            fontFamily='Helvetica' 
+          <Typography
+            variant='h2'
+            fontFamily='Helvetica'
             fontSize='2em'
             sx={{
               mb: 1,
               fontWeight: 'bold',
-              background: theme.palette.mode === 'dark' 
+              background: theme.palette.mode === 'dark'
                 ? 'linear-gradient(90deg, #FFFFFF 0%, #F5F5F5 100%)'
                 : 'linear-gradient(90deg, #2196F3 0%, #4569E5 100%)',
               backgroundClip: 'text',
@@ -471,7 +542,7 @@ const Greeter: React.FC<any> = ({ history }) => {
           >
             {appName}
           </Typography>
-          <Typography 
+          <Typography
             variant="body1"
             color="text.secondary"
             align="center"
@@ -480,7 +551,7 @@ const Greeter: React.FC<any> = ({ history }) => {
             Secure BSV Blockchain Wallet
           </Typography>
           <Divider sx={{ width: '80%' }} />
-          <Typography 
+          <Typography
             variant="caption"
             color="text.secondary"
             align="center"

@@ -1178,7 +1178,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
             ? config.useRemoteStorage
             : !!config.storageUrl;
           setUseRemoteStorage(inferredUseRemoteStorage);
-          setUseMessageBox(config.useMessageBox || false);
+          setUseMessageBox(config.useMessageBox !== undefined ? config.useMessageBox : false);
           setBackupStorageUrls(config.backupStorageUrls || []);
           setConfigStatus('configured');
           console.log('[Config Restore] Config restored, wallet manager will be created next');

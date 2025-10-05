@@ -218,7 +218,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
-        run: npx electron-builder --win --publish always --prepackaged release
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}"
+
+          # Create release if it doesn't exist (will be draft)
+          gh release create "$TAG" --draft --title "BSV Desktop v${VERSION}" --notes "Release v${VERSION}" || true
+
+          # Upload Windows artifacts
+          for file in release/*.exe release/*.yml release/*.blockmap; do
+            if [ -f "$file" ]; then
+              gh release upload "$TAG" "$file" --clobber
+            fi
+          done
 
       - name: Upload Windows Artifacts
         if: matrix.platform == 'windows-2022'

@@ -1039,6 +1039,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       useMessageBox,
       backupStorageUrls: overrideBackupUrls !== undefined ? overrideBackupUrls : backupStorageUrls
     };
+    console.log('[saveEnhancedSnapshot] Saving config:', { messageBoxUrl, useMessageBox });
 
     // Serialize config to JSON bytes
     const configJson = JSON.stringify(config);
@@ -1180,6 +1181,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
           setUseRemoteStorage(inferredUseRemoteStorage);
           setUseMessageBox(config.useMessageBox !== undefined ? config.useMessageBox : false);
           setBackupStorageUrls(config.backupStorageUrls || []);
+          console.log('[Config Restore] Message Box URL restored:', config.messageBoxUrl, '| useMessageBox:', config.useMessageBox);
           setConfigStatus('configured');
           console.log('[Config Restore] Config restored, wallet manager will be created next');
         }

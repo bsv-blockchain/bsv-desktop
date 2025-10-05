@@ -26,6 +26,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Delete existing draft releases for this version
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get version from package.json
+          VERSION=$(node -p "require('./package.json').version")
+          # Delete any existing draft release with this version
+          gh release list --limit 100 | grep "Draft" | grep "v$VERSION" | awk '{print $1}' | xargs -I {} gh release delete {} --yes || true
+        continue-on-error: true
+
       - name: install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -72,9 +83,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CSC_LINK: certificate.p12
-          CSC_KEY_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASS }}
-          CSC_IDENTITY_AUTO_DISCOVERY: true
+          APPLE_SIGNING_IDENTITY: ${{ steps.verify_certificate.outputs.cert_id }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build

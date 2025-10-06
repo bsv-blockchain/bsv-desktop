@@ -392,11 +392,7 @@ app.on('window-all-closed', async () => {
     await httpServerCleanup();
   }
 
-  // On macOS, only keep app running if windows closed naturally (not via quit)
-  // If user explicitly quit (Command+Q), app.quit() is already in progress
-  if (process.platform !== 'darwin' || app.isQuitting) {
     app.quit();
-  }
 });
 
 app.on('before-quit', async (event) => {

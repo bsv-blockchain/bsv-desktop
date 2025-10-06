@@ -3,7 +3,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { startHttpServer } from './httpServer.js';
-import { initAutoUpdater, downloadUpdate, quitAndInstall, checkForUpdates } from './updater.js';
 
 // Lazy load storage to avoid loading knex/better-sqlite3 at startup
 let storageManager: any = null;
@@ -13,6 +12,15 @@ async function getStorageManager() {
     storageManager = module.storageManager;
   }
   return storageManager;
+}
+
+// Lazy load updater to avoid loading electron-updater at startup
+let updaterModule: any = null;
+function getUpdaterModule() {
+  if (!updaterModule) {
+    updaterModule = require('./updater.cjs');
+  }
+  return updaterModule;
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -319,6 +327,7 @@ ipcMain.handle('storage:initialize-services', async (_event, identityKey: string
 
 ipcMain.handle('update:check', async () => {
   try {
+    const { checkForUpdates } = getUpdaterModule();
     const result = await checkForUpdates();
     return { success: true, updateInfo: result?.updateInfo };
   } catch (error: any) {
@@ -329,6 +338,7 @@ ipcMain.handle('update:check', async () => {
 
 ipcMain.handle('update:download', async () => {
   try {
+    const { downloadUpdate } = getUpdaterModule();
     await downloadUpdate();
     return { success: true };
   } catch (error: any) {
@@ -339,6 +349,7 @@ ipcMain.handle('update:download', async () => {
 
 ipcMain.handle('update:install', async () => {
   try {
+    const { quitAndInstall } = getUpdaterModule();
     quitAndInstall();
     return { success: true };
   } catch (error: any) {
@@ -357,6 +368,7 @@ app.whenReady().then(async () => {
     httpServerCleanup = await startHttpServer(mainWindow);
 
     // Initialize auto-updater
+    const { initAutoUpdater } = getUpdaterModule();
     initAutoUpdater(mainWindow);
   }
 

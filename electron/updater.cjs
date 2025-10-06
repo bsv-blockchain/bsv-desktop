@@ -1,16 +1,20 @@
-import { autoUpdater } from 'electron-updater';
-import { BrowserWindow, dialog } from 'electron';
-import log from 'electron-log';
+/**
+ * CommonJS wrapper for auto-updater functionality
+ * Transpiled from updater.ts to avoid ESM/CJS compatibility issues with electron-updater
+ */
+
+const { autoUpdater } = require('electron-updater');
+const log = require('electron-log');
 
 // Configure logging
 autoUpdater.logger = log;
-(autoUpdater.logger as typeof log).transports.file.level = 'info';
+autoUpdater.logger.transports.file.level = 'info';
 
 // Configure auto-updater
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
-export function initAutoUpdater(mainWindow: BrowserWindow) {
+function initAutoUpdater(mainWindow) {
   // Don't check for updates in development
   if (process.env.NODE_ENV === 'development') {
     log.info('Auto-updater disabled in development mode');
@@ -64,16 +68,23 @@ export function initAutoUpdater(mainWindow: BrowserWindow) {
 }
 
 // Download update
-export function downloadUpdate() {
+function downloadUpdate() {
   return autoUpdater.downloadUpdate();
 }
 
 // Install update and restart
-export function quitAndInstall() {
+function quitAndInstall() {
   autoUpdater.quitAndInstall(false, true);
 }
 
 // Manually check for updates
-export function checkForUpdates() {
+function checkForUpdates() {
   return autoUpdater.checkForUpdates();
 }
+
+module.exports = {
+  initAutoUpdater,
+  downloadUpdate,
+  quitAndInstall,
+  checkForUpdates
+};

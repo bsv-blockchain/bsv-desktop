@@ -20,6 +20,7 @@ export interface ElectronAPI {
     check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
     download: () => Promise<{ success: boolean; error?: string }>;
     install: () => Promise<{ success: boolean; error?: string }>;
+    getState: () => Promise<{ success: boolean; state?: any; error?: string }>;
     onUpdateAvailable: (callback: (info: any) => void) => void;
     onDownloadProgress: (callback: (progress: any) => void) => void;
     onUpdateDownloaded: (callback: (info: any) => void) => void;

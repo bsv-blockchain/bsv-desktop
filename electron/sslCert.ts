@@ -246,12 +246,23 @@ Certificate location: ${certPath}`;
  * Prompts user to trust the certificate if not already trusted
  */
 export async function ensureCertTrusted(certPath: string): Promise<void> {
+  const userDataPath = app.getPath('userData');
+  const promptedFlagPath = path.join(userDataPath, 'certs', '.ssl-prompted');
+
+  // Check if we've already prompted the user
+  const alreadyPrompted = fs.existsSync(promptedFlagPath);
+
   const trusted = await isCertTrusted(certPath);
 
-  if (!trusted) {
+  if (!trusted && !alreadyPrompted) {
     console.log('Certificate not trusted, prompting user...');
     await installCertificate(certPath);
-  } else {
+
+    // Mark that we've prompted the user, regardless of their choice
+    fs.writeFileSync(promptedFlagPath, new Date().toISOString());
+  } else if (trusted) {
     console.log('Certificate already trusted');
+  } else {
+    console.log('Certificate not trusted, but user already prompted');
   }
 }

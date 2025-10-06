@@ -12,7 +12,7 @@ autoUpdater.logger.transports.file.level = 'info';
 
 // Configure auto-updater
 autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.autoInstallOnAppQuit = false; // Set to false to avoid conflict with manual quitAndInstall()
 
 // Track update state
 let updateState = {
@@ -97,7 +97,14 @@ function downloadUpdate() {
 
 // Install update and restart
 function quitAndInstall() {
-  autoUpdater.quitAndInstall(false, true);
+  const { app } = require('electron');
+  // Remove listeners that may prevent proper app relaunch on macOS
+  setImmediate(() => {
+    app.removeAllListeners('window-all-closed');
+    app.removeAllListeners('before-quit');
+    // isSilent = false, forceRunAfter = true (force app to relaunch)
+    autoUpdater.quitAndInstall(false, true);
+  });
 }
 
 // Manually check for updates

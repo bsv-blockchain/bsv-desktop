@@ -2,14 +2,12 @@ name: 'release'
 
 on:
   push:
-    branches:
-      - master
-      - preview/*
     tags:
       - 'v*.*.*'
 
 jobs:
   publish-electron:
+    if: contains(github.ref, 'refs/tags/') && github.event.base_ref == 'refs/heads/master'
     permissions:
       contents: write
     strategy:

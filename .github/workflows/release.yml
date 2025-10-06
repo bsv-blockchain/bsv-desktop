@@ -7,7 +7,6 @@ on:
 
 jobs:
   publish-electron:
-    if: contains(github.ref, 'refs/tags/') && github.event.base_ref == 'refs/heads/master'
     permissions:
       contents: write
     strategy:

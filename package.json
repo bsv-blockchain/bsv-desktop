@@ -35,6 +35,7 @@
     "amountinator": "^0.2.11",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
+    "dotenv": "^17.2.3",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.6.2",
     "express": "^4.21.2",

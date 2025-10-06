@@ -392,18 +392,28 @@ app.on('window-all-closed', async () => {
     await httpServerCleanup();
   }
 
-  if (process.platform !== 'darwin') {
+  // On macOS, only keep app running if windows closed naturally (not via quit)
+  // If user explicitly quit (Command+Q), app.quit() is already in progress
+  if (process.platform !== 'darwin' || app.isQuitting) {
     app.quit();
   }
 });
 
-app.on('before-quit', async () => {
-  // Cleanup storage connections
-  if (storageManager) {
-    await storageManager.cleanup();
-  }
+app.on('before-quit', async (event) => {
+  // Prevent default quit to perform async cleanup
+  if (storageManager || httpServerCleanup) {
+    event.preventDefault();
 
-  if (httpServerCleanup) {
-    await httpServerCleanup();
+    // Cleanup storage connections
+    if (storageManager) {
+      await storageManager.cleanup();
+    }
+
+    if (httpServerCleanup) {
+      await httpServerCleanup();
+    }
+
+    // Now actually quit
+    app.exit(0);
   }
 });

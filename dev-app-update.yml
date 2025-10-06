@@ -1,0 +1,4 @@
+owner: bsv-blockchain
+repo: bsv-desktop
+provider: github
+updaterCacheDirName: bsv-desktop-updater

@@ -346,5 +346,5 @@ Open BSV License
 ## Related Projects
 
 - [wallet-toolbox](https://github.com/bsv-blockchain/wallet-toolbox) - Core wallet functionality
-- [ts-sdk](https://github.com/bitcoin-sv/ts-sdk) - BSV TypeScript SDK
-- [overlay-services](https://github.com/bsv-blockchain/overlay-services) - Overlay network infrastructure
+- [ts-sdk](https://github.com/bsv-blockchain/ts-sdk) - BSV TypeScript SDK
+- [overlay-services](https://github.com/bsv-blockchain/overlay-express-examples) - Overlay network infrastructure

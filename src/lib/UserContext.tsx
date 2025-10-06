@@ -51,6 +51,12 @@ interface UserContextProps {
     nativeHandlers?: NativeHandlers;
 }
 
+export interface UpdateInfo {
+    version: string;
+    releaseDate?: string;
+    releaseNotes?: string;
+}
+
 export interface UserContextValue {
     isFocused: () => Promise<boolean>;
     onFocusRequested: () => Promise<void>;
@@ -70,6 +76,8 @@ export interface UserContextValue {
     setGroupPermissionModalOpen: Dispatch<SetStateAction<boolean>>;
     pageLoaded: boolean;
     setPageLoaded: Dispatch<SetStateAction<boolean>>;
+    manualUpdateInfo: UpdateInfo | null;
+    setManualUpdateInfo: Dispatch<SetStateAction<UpdateInfo | null>>;
 }
 
 export const UserContext = createContext<UserContextValue>({} as UserContextValue);
@@ -92,12 +100,15 @@ export const UserContextProvider: React.FC<UserContextProps> = ({
     const [spendingAuthorizationModalOpen, setSpendingAuthorizationModalOpen] = useState(false)
     const [groupPermissionModalOpen, setGroupPermissionModalOpen] = useState(false)
     const [pageLoaded, setPageLoaded] = useState(false)
+    const [manualUpdateInfo, setManualUpdateInfo] = useState<UpdateInfo | null>(null)
 
     const userContext = useMemo(() => ({
         isFocused: nativeHandlers.isFocused,
         onFocusRequested: nativeHandlers.onFocusRequested,
         onFocusRelinquished: nativeHandlers.onFocusRelinquished,
         onDownloadFile: nativeHandlers.onDownloadFile,
+        manualUpdateInfo,
+        setManualUpdateInfo,
         appVersion,
         appName,
         basketAccessModalOpen,
@@ -112,7 +123,7 @@ export const UserContextProvider: React.FC<UserContextProps> = ({
         setGroupPermissionModalOpen,
         pageLoaded,
         setPageLoaded
-    }), [appVersion, appName, basketAccessModalOpen, certificateAccessModalOpen, protocolAccessModalOpen, spendingAuthorizationModalOpen, groupPermissionModalOpen, pageLoaded]);
+    }), [appVersion, appName, basketAccessModalOpen, certificateAccessModalOpen, protocolAccessModalOpen, spendingAuthorizationModalOpen, groupPermissionModalOpen, pageLoaded, manualUpdateInfo]);
 
     return (
         <UserContext.Provider value={userContext}>

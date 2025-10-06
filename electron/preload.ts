@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     check: () => ipcRenderer.invoke('update:check'),
     download: () => ipcRenderer.invoke('update:download'),
     install: () => ipcRenderer.invoke('update:install'),
+    getState: () => ipcRenderer.invoke('update:get-state'),
     onUpdateAvailable: (callback: (info: any) => void) => {
       ipcRenderer.on('update-available', (_event, info) => callback(info));
     },
@@ -88,6 +89,7 @@ export interface ElectronAPI {
     check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
     download: () => Promise<{ success: boolean; error?: string }>;
     install: () => Promise<{ success: boolean; error?: string }>;
+    getState: () => Promise<{ success: boolean; state?: any; error?: string }>;
     onUpdateAvailable: (callback: (info: any) => void) => void;
     onDownloadProgress: (callback: (progress: any) => void) => void;
     onUpdateDownloaded: (callback: (info: any) => void) => void;

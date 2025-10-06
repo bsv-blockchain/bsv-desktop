@@ -24,15 +24,63 @@ interface DownloadProgress {
   total: number;
 }
 
-export const UpdateNotification: React.FC = () => {
+interface UpdateNotificationProps {
+  manualUpdateInfo?: UpdateInfo | null;
+  onDismissManualUpdate?: () => void;
+}
+
+export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
+  manualUpdateInfo,
+  onDismissManualUpdate
+}) => {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [updateReady, setUpdateReady] = useState(false);
 
+  // Handle manual update info from Settings
+  useEffect(() => {
+    if (manualUpdateInfo) {
+      setUpdateInfo(manualUpdateInfo);
+      setUpdateAvailable(true);
+    }
+  }, [manualUpdateInfo]);
+
   useEffect(() => {
     if (!window.electronAPI?.updates) return;
+
+    // Query current update state on mount (in case we missed the event)
+    const checkPendingUpdate = async () => {
+      try {
+        const result = await window.electronAPI.updates.getState();
+        if (result.success && result.state) {
+          const state = result.state;
+
+          // If update is ready to install
+          if (state.ready && state.updateInfo) {
+            setUpdateInfo(state.updateInfo);
+            setUpdateReady(true);
+          }
+          // If download is in progress
+          else if (state.downloading && state.downloadProgress) {
+            setUpdateInfo(state.updateInfo);
+            setDownloadProgress(state.downloadProgress);
+            setDownloading(true);
+          }
+          // If update is available but not downloaded
+          else if (state.available && state.updateInfo && !state.downloading && !state.ready) {
+            setUpdateInfo(state.updateInfo);
+            setUpdateAvailable(true);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check pending update:', error);
+      }
+    };
+
+    // Check immediately on mount
+    checkPendingUpdate();
 
     // Listen for update available
     window.electronAPI.updates.onUpdateAvailable((info: UpdateInfo) => {
@@ -91,6 +139,9 @@ export const UpdateNotification: React.FC = () => {
 
   const handleDismiss = () => {
     setUpdateAvailable(false);
+    if (onDismissManualUpdate) {
+      onDismissManualUpdate();
+    }
   };
 
   const handleDismissReady = () => {

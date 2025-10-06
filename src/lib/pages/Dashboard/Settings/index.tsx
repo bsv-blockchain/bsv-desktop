@@ -69,7 +69,7 @@ const useStyles = makeStyles((theme: Theme) => ({
 const Settings = () => {
   const classes = useStyles()
   const { settings, updateSettings, wabUrl, useRemoteStorage, useMessageBox, storageUrl, useWab, messageBoxUrl, backupStorageUrls, addBackupStorageUrl, removeBackupStorageUrl, syncBackupStorage, updateMessageBoxUrl, removeMessageBoxUrl } = useContext(WalletContext)
-  const { pageLoaded } = useContext(UserContext)
+  const { pageLoaded, setManualUpdateInfo } = useContext(UserContext)
   const [settingsLoading, setSettingsLoading] = useState(false)
   const theme = useTheme()
   const isDarkMode = theme.palette.mode === 'dark'
@@ -255,7 +255,8 @@ const Settings = () => {
       const result = await window.electronAPI.updates.check();
       if (result.success) {
         if (result.updateInfo) {
-          toast.info('Update available! Check for the update notification.');
+          // Trigger the update dialog immediately
+          setManualUpdateInfo(result.updateInfo);
         } else {
           toast.success('You are running the latest version!');
         }

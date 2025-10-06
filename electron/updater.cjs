@@ -14,6 +14,16 @@ autoUpdater.logger.transports.file.level = 'info';
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
+// Track update state
+let updateState = {
+  available: false,
+  downloading: false,
+  ready: false,
+  updateInfo: null,
+  downloadProgress: null,
+  error: null
+};
+
 function initAutoUpdater(mainWindow) {
   // Don't check for updates in development
   if (process.env.NODE_ENV === 'development') {
@@ -24,39 +34,52 @@ function initAutoUpdater(mainWindow) {
   // Update available
   autoUpdater.on('update-available', (info) => {
     log.info('Update available:', info);
+    updateState.available = true;
+    updateState.updateInfo = info;
+    updateState.error = null;
     mainWindow.webContents.send('update-available', info);
   });
 
   // Update not available
   autoUpdater.on('update-not-available', (info) => {
     log.info('Update not available:', info);
+    updateState.available = false;
+    updateState.updateInfo = null;
   });
 
   // Download progress
   autoUpdater.on('download-progress', (progressObj) => {
     log.info('Download progress:', progressObj);
+    updateState.downloading = true;
+    updateState.downloadProgress = progressObj;
     mainWindow.webContents.send('update-download-progress', progressObj);
   });
 
   // Update downloaded
   autoUpdater.on('update-downloaded', (info) => {
     log.info('Update downloaded:', info);
+    updateState.downloading = false;
+    updateState.ready = true;
+    updateState.updateInfo = info;
     mainWindow.webContents.send('update-downloaded', info);
   });
 
   // Error handling
   autoUpdater.on('error', (error) => {
     log.error('Update error:', error);
+    updateState.error = error.message;
+    updateState.downloading = false;
     mainWindow.webContents.send('update-error', error.message);
   });
 
-  // Check for updates on app start (after a delay)
+  // Check for updates on app start (after a longer delay to ensure renderer is ready)
   setTimeout(() => {
     log.info('Checking for updates...');
     autoUpdater.checkForUpdates().catch(err => {
       log.error('Failed to check for updates:', err);
+      updateState.error = err.message;
     });
-  }, 3000);
+  }, 10000);
 
   // Check for updates every 4 hours
   setInterval(() => {
@@ -82,9 +105,15 @@ function checkForUpdates() {
   return autoUpdater.checkForUpdates();
 }
 
+// Get current update state
+function getUpdateState() {
+  return updateState;
+}
+
 module.exports = {
   initAutoUpdater,
   downloadUpdate,
   quitAndInstall,
-  checkForUpdates
+  checkForUpdates,
+  getUpdateState
 };

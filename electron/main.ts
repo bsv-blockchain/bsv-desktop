@@ -361,6 +361,17 @@ ipcMain.handle('update:install', async () => {
   }
 });
 
+ipcMain.handle('update:get-state', async () => {
+  try {
+    const { getUpdateState } = getUpdaterModule();
+    const state = getUpdateState();
+    return { success: true, state };
+  } catch (error: any) {
+    console.error('[IPC] update:get-state error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // ===== App Lifecycle =====
 
 app.whenReady().then(async () => {

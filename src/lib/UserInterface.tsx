@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useContext } from 'react'
 import { WalletContextProvider } from './WalletContext'
 import { HashRouter as Router, Route, Switch } from 'react-router-dom'
 import 'react-toastify/dist/ReactToastify.css'
@@ -30,7 +30,7 @@ const queries = {
 }
 
 // Import NativeHandlers from UserContext to avoid circular dependency
-import { NativeHandlers, UserContextProvider } from './UserContext'
+import { NativeHandlers, UserContext, UserContextProvider } from './UserContext'
 import GroupPermissionHandler from './components/GroupPermissionHandler'
 import { UpdateNotification } from './components/UpdateNotification'
 
@@ -67,7 +67,7 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
                 <SpendingAuthorizationHandler />
                 <ThemedToastContainer />
                 <GroupPermissionHandler />
-                <UpdateNotification />
+                <UpdateNotificationWrapper />
                 <Switch>
                   <Route exact path='/' component={Greeter} />
                   <Route path='/dashboard' component={Dashboard} />
@@ -83,5 +83,17 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
     </UserContextProvider>
   )
 }
+
+// Wrapper component to connect UpdateNotification to UserContext
+const UpdateNotificationWrapper: React.FC = () => {
+  const { manualUpdateInfo, setManualUpdateInfo } = useContext(UserContext);
+
+  return (
+    <UpdateNotification
+      manualUpdateInfo={manualUpdateInfo}
+      onDismissManualUpdate={() => setManualUpdateInfo(null)}
+    />
+  );
+};
 
 export default UserInterface

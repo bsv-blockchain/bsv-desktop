@@ -88,7 +88,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build
-          npx electron-builder --mac --publish always
+          npx electron-builder --mac --publish never
 
       - name: Upload macOS artifacts
         if: matrix.platform == 'macos-latest'
@@ -108,7 +108,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm run build
-          npx electron-builder --linux --publish always
+          npx electron-builder --linux --publish never
 
       - name: Import GPG Key for Linux Signing
         if: matrix.platform == 'ubuntu-22.04'
@@ -213,25 +213,6 @@ jobs:
             & $signtool verify /pa "$file"
           }
 
-      - name: Publish Windows artifacts to GitHub Release
-        if: matrix.platform == 'windows-2022'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          TAG="v${VERSION}"
-
-          # Create release if it doesn't exist (will be draft)
-          gh release create "$TAG" --draft --title "BSV Desktop v${VERSION}" --notes "Release v${VERSION}" || true
-
-          # Upload Windows artifacts
-          for file in release/*.exe release/*.yml release/*.blockmap; do
-            if [ -f "$file" ]; then
-              gh release upload "$TAG" "$file" --clobber
-            fi
-          done
-
       - name: Upload Windows Artifacts
         if: matrix.platform == 'windows-2022'
         uses: actions/upload-artifact@v4
@@ -249,3 +230,35 @@ jobs:
         run: |
           Write-Host "Checking build directory structure:"
           Get-ChildItem -Path release -Recurse | Where-Object { $_.Name -like "*.exe" } | ForEach-Object { $_.FullName }
+
+  create-release:
+    needs: publish-electron
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release and Upload Assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}"
+
+          # Create release if it doesn't exist (will be draft)
+          gh release create "$TAG" --draft --title "BSV Desktop v${VERSION}" --notes "Release v${VERSION}" || true
+
+          # Upload all artifacts
+          for dir in artifacts/*/; do
+            for file in "$dir"*; do
+              if [ -f "$file" ]; then
+                gh release upload "$TAG" "$file" --clobber
+              fi
+            done
+          done

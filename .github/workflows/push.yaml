@@ -1,8 +1,8 @@
-on: [push, pull_request]
-name: Build and Test
+on: [pull_request]
+name: Install and Test
 jobs:
   test:
-    name: Build & Test
+    name: Install & Test
     runs-on: ubuntu-latest
     strategy:
       matrix:

@@ -9,6 +9,7 @@ import {
   ExpandLess,
   ExpandMore,
   Person as PersonIcon,
+  AccountBalanceWallet as PaymentsIcon,
 } from '@mui/icons-material'
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
@@ -616,7 +617,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
           <ListItemButton
             onClick={() => navigation.push('/dashboard/transfer')}
             selected={history.location.pathname === '/dashboard/transfer'}
-            sx={menuItemStyle(history.location.pathname === '/dashbaord/transfer')}
+            sx={menuItemStyle(history.location.pathname === '/dashboard/transfer')}
           >
             <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/transfer' ? 'primary.main' : 'inherit' }}>
               <SyncAltIcon />
@@ -628,6 +629,26 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   fontWeight={history.location.pathname === '/dashboard/transfer' ? 600 : 400}
                 >
                   Transfer
+                </Typography>
+              }
+            />
+          </ListItemButton>
+
+          <ListItemButton
+            onClick={() => navigation.push('/dashboard/payments')}
+            selected={history.location.pathname === '/dashboard/payments'}
+            sx={menuItemStyle(history.location.pathname === '/dashboard/payments')}
+          >
+            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/payments' ? 'primary.main' : 'inherit' }}>
+              <PaymentsIcon />
+            </ListItemIcon>
+            <ListItemText
+              primary={
+                <Typography
+                  variant="body1"
+                  fontWeight={history.location.pathname === '/dashboard/payments' ? 600 : 400}
+                >
+                  Payments
                 </Typography>
               }
             />

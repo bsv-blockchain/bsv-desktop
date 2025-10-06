@@ -21,6 +21,7 @@ import Settings from './Settings'; // Assuming index.tsx or similar
 import Security from './Security'; // Assuming index.tsx or similar
 import { UserContext } from '../../UserContext';
 import Transfer from './Transfer';
+import Payments from './Payments';
 // Import the components for the new routes
 // Note: These might still be .jsx files and need refactoring later
 import AppAccess from './AppAccess'; // Assuming index.jsx or similar
@@ -102,6 +103,10 @@ export default function Dashboard() {
           <Route
             path='/dashboard/transfer'
             component={Transfer}
+          />
+          <Route
+            path='/dashboard/payments'
+            component={Payments}
           />
           <Route
             path='/dashboard/identity'

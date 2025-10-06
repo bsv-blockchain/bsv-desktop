@@ -91,6 +91,9 @@ const Settings = () => {
   const [newMessageBoxUrl, setNewMessageBoxUrl] = useState('')
   const [messageBoxLoading, setMessageBoxLoading] = useState(false)
 
+  // Update check state
+  const [updateCheckLoading, setUpdateCheckLoading] = useState(false)
+
   const currencies = {
     BSV: '0.033',
     SATS: '3,333,333',
@@ -243,6 +246,27 @@ const Settings = () => {
       // Error already shown by removeMessageBoxUrl
     } finally {
       setMessageBoxLoading(false);
+    }
+  }
+
+  const handleCheckForUpdates = async () => {
+    try {
+      setUpdateCheckLoading(true);
+      const result = await window.electronAPI.updates.check();
+      if (result.success) {
+        if (result.updateInfo) {
+          toast.info('Update available! Check for the update notification.');
+        } else {
+          toast.success('You are running the latest version!');
+        }
+      } else {
+        toast.error(`Failed to check for updates: ${result.error}`);
+      }
+    } catch (e: any) {
+      console.error('Update check error:', e);
+      toast.error('Failed to check for updates');
+    } finally {
+      setUpdateCheckLoading(false);
     }
   }
 
@@ -742,6 +766,23 @@ const Settings = () => {
             </Grid>
           ))}
         </Grid>
+      </Paper>
+
+      <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
+        <Typography variant="h4" sx={{ mb: 2 }}>
+          Software Updates
+        </Typography>
+        <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
+          BSV Desktop automatically checks for updates on startup and every 4 hours. You can manually check for updates at any time.
+        </Typography>
+
+        <Button
+          variant="contained"
+          onClick={handleCheckForUpdates}
+          disabled={updateCheckLoading}
+        >
+          {updateCheckLoading ? 'Checking for Updates...' : 'Check for Updates'}
+        </Button>
       </Paper>
     </div>
   )

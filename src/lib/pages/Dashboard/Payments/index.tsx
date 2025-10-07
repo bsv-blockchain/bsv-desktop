@@ -12,13 +12,19 @@ import {
   Divider,
   Alert,
   Link,
+  IconButton,
 } from '@mui/material'
+import CheckIcon from '@mui/icons-material/Check'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import { QRCodeSVG } from 'qrcode.react'
-import { PublicKey, P2PKH, Transaction, Beef, Utils, Script } from '@bsv/sdk'
-import Importer from '../../../utils/Importer'
+import { PublicKey, P2PKH, Beef, Utils, Script, WalletClient, WalletProtocol, InternalizeActionArgs, InternalizeOutput } from '@bsv/sdk'
 import getBeefForTxid from '../../../utils/getBeefForTxid'
 import { wocFetch } from '../../../utils/RateLimitedFetch'
 import { toast } from 'react-toastify'
+
+const brc29ProtocolID: WalletProtocol = [2, '3241645161d8']
 
 interface Utxo {
   txid: string
@@ -56,16 +62,41 @@ export default function Payments() {
   const [isImporting, setIsImporting] = useState<boolean>(false)
   const [isLoadingAddress, setIsLoadingAddress] = useState<boolean>(false)
   const [isSending, setIsSending] = useState<boolean>(false)
+  const [copied, setCopied] = useState<boolean>(false)
+  const [daysOffset, setDaysOffset] = useState<number>(0)
+
+  // Calculate the date based on the offset
+  const getCurrentDate = () => {
+    const today = new Date()
+    today.setDate(today.getDate() - daysOffset)
+    return today.toISOString().split('T')[0]
+  }
+
+  const derivationPrefix = Utils.toBase64(Utils.toArray(getCurrentDate(), 'utf8'))
+  const derivationSuffix = Utils.toBase64(Utils.toArray('legacy', 'utf8'))
+  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'BSV-Desktop') : null
+
+  if (!wallet) {
+    return <></>
+  }
+
+  const handleCopy = (data: string) => {
+    navigator.clipboard.writeText(data)
+    setCopied(true)
+    setTimeout(() => {
+      setCopied(false)
+    }, 2000)
+  }
 
   // Derive payment address from wallet public key
   const getPaymentAddress = async (): Promise<string> => {
-    if (!managers?.walletManager) {
+    if (!wallet) {
       throw new Error('Wallet not initialized')
     }
 
-    const { publicKey } = await managers.walletManager.getPublicKey({
-      protocolID: [1, 'legacy address'],
-      keyID: new Date().toISOString().split('T')[0], // date rounded to nearest day
+    const { publicKey } = await wallet.getPublicKey({
+      protocolID: brc29ProtocolID,
+      keyID: derivationPrefix + ' ' + derivationSuffix, // date rounded to nearest day ISO format with "legacy" suffix
       counterparty: 'anyone',
       forSelf: true,
     })
@@ -84,16 +115,60 @@ export default function Payments() {
     return utxos
   }
 
+  // Get internalized UTXOs from transaction history
+  const getInternalizedUtxos = async (): Promise<Set<string>> => {
+    if (!wallet) return new Set()
+
+    try {
+      const response = await wallet.listActions({
+        labels: ['bsvdesktop', 'inbound'],
+        labelQueryMode: 'all',
+        includeOutputs: true,
+        limit: 1000,
+      })
+
+      const internalizedSet = new Set<string>()
+
+      // For each internalized action, track which UTXOs were spent
+      for (const action of response.actions) {
+        // The action represents receiving funds, but we need to track which
+        // UTXOs were internalized. For inbound transactions, we track the
+        // source UTXOs that were imported
+        if (action.inputs) {
+          for (const input of action.inputs) {
+            if (input.sourceOutpoint) {
+              // sourceOutpoint format is "txid.vout"
+              internalizedSet.add(input.sourceOutpoint)
+            }
+          }
+        }
+      }
+
+      return internalizedSet
+    } catch (error) {
+      console.error('Error fetching internalized UTXOs:', error)
+      return new Set()
+    }
+  }
+
   // Fetch BSV balance for address
   const fetchBSVBalance = async (address: string): Promise<number> => {
-    const utxos = await getUtxosForAddress(address)
-    const balanceInSatoshis = utxos.reduce((acc, r) => acc + r.satoshis, 0)
+    const allUtxos = await getUtxosForAddress(address)
+    const internalizedUtxos = await getInternalizedUtxos()
+
+    // Filter out UTXOs that have already been internalized
+    const availableUtxos = allUtxos.filter(utxo => {
+      const outpoint = `${utxo.txid}.${utxo.vout}`
+      return !internalizedUtxos.has(outpoint)
+    })
+
+    const balanceInSatoshis = availableUtxos.reduce((acc, r) => acc + r.satoshis, 0)
     return balanceInSatoshis / 100000000
   }
 
   // Send BSV to recipient address
   const sendBSV = async (to: string, amount: number): Promise<string | undefined> => {
-    if (!managers?.walletManager) {
+    if (!wallet) {
       throw new Error('Wallet not initialized')
     }
 
@@ -104,7 +179,7 @@ export default function Payments() {
     }
 
     const lockingScript = new P2PKH().lock(to).toHex()
-    const { txid } = await managers.walletManager.createAction({
+    const { txid } = await wallet.createAction({
       description: 'Send BSV to address',
       outputs: [
         {
@@ -129,7 +204,7 @@ export default function Payments() {
       return
     }
 
-    if (!managers?.walletManager) {
+    if (!wallet) {
       toast.error('Wallet not initialized')
       return
     }
@@ -138,7 +213,20 @@ export default function Payments() {
 
     let reference: string | undefined = undefined
     try {
-      const utxos = await getUtxosForAddress(paymentAddress)
+      const allUtxos = await getUtxosForAddress(paymentAddress)
+      const internalizedUtxos = await getInternalizedUtxos()
+
+      // Filter out UTXOs that have already been internalized
+      const utxos = allUtxos.filter(utxo => {
+        const outpoint = `${utxo.txid}.${utxo.vout}`
+        return !internalizedUtxos.has(outpoint)
+      })
+
+      if (utxos.length === 0) {
+        toast.info('All available funds have already been imported')
+        setIsImporting(false)
+        return
+      }
 
       const outpoints: string[] = utxos.map((x) => `${x.txid}.${x.vout}`)
       const inputs = outpoints.map((outpoint) => ({
@@ -148,49 +236,53 @@ export default function Payments() {
       }))
 
       // Merge BEEF for the inputs
-      const inputBEEF = new Beef()
+      const beef = new Beef()
       for (let i = 0; i < inputs.length; i++) {
         const txid = inputs[i].outpoint.split('.')[0]
-        if (!inputBEEF.findTxid(txid)) {
-          const beef = await getBeefForTxid(txid, network === 'mainnet' ? 'main' : 'test')
-          inputBEEF.mergeBeef(beef)
+        if (!beef.findTxid(txid)) {
+          const b = await getBeefForTxid(txid, network === 'mainnet' ? 'main' : 'test')
+          beef.mergeBeef(b)
         }
       }
 
-      // Create the action for spending from these inputs
-      const { signableTransaction } = await managers.walletManager.createAction({
-        inputBEEF: inputBEEF.toBinary(),
-        inputs,
-        description: 'Import from Legacy Payments',
-        labels: ['legacy', 'inbound'],
+      console.log({ beef: beef.toLogString() })
+
+      // prepare each tx for internalization
+      const txs = beef.txs.map((beefTx) => {
+        const tx = beef.findAtomicTransaction(beefTx.txid)
+        const outputs: InternalizeOutput[] = utxos.filter(o => o.txid === beefTx.txid).map(o => ({
+          outputIndex: o.vout,
+          protocol: 'wallet payment',
+          paymentRemittance: {
+            senderIdentityKey: 'anyone',
+            derivationPrefix,
+            derivationSuffix
+          }
+        }))
+        const args: InternalizeActionArgs = {
+          tx: tx.toAtomicBEEF(),
+          description: 'BSV Desktop Payment',
+          outputs,
+          labels: ['legacy', 'inbound', 'bsvdesktop'],
+        }
+        return args
       })
 
-      reference = signableTransaction!.reference
+      console.log({ txs })
 
-      // Convert BEEF to a Transaction object
-      const tx = Transaction.fromAtomicBEEF(signableTransaction!.tx)
-      const importer = new Importer()
-      const unlocker = importer.unlock(managers.walletManager)
+      // internalize
+      txs.forEach(async t => {
+        const response = await wallet.internalizeAction(t)
+        if (!response?.accepted) toast.error('Payment was not accepted')
+      })
 
-      const signActionArgs = {
-        reference,
-        spends: {},
+      // Refresh the balance to show remaining funds (if any)
+      if (paymentAddress) {
+        const newBalance = await fetchBSVBalance(paymentAddress)
+        setBalance(newBalance)
       }
 
-      // Sign each input
-      for (let i = 0; i < inputs.length; i++) {
-        const script = await unlocker.sign(tx, i)
-        signActionArgs.spends[i] = {
-          unlockingScript: script.toHex(),
-        }
-      }
-
-      // Broadcast signatures back to the wallet
-      await managers.walletManager.signAction(signActionArgs)
-
-      // Reset the local balance after successful import
-      setBalance(0)
-      toast.success('Funds successfully imported to your wallet!')
+      toast.success('Payment Accepted!')
 
       // Refresh transaction history
       await getPastTransactions()
@@ -198,7 +290,7 @@ export default function Payments() {
       console.error(e)
       // Abort in case something goes wrong
       if (reference) {
-        await managers.walletManager.abortAction({ reference })
+        await wallet.abortAction({ reference })
       }
       const message = `Import failed: ${e.message || 'unknown error'}`
       toast.error(message)
@@ -209,11 +301,12 @@ export default function Payments() {
 
   // Get past transactions from wallet
   const getPastTransactions = async () => {
-    if (!managers?.walletManager || !paymentAddress) return
+    if (!wallet) return
 
     try {
-      const response = await managers.walletManager.listActions({
-        labels: ['legacy'],
+      const response = await wallet.listActions({
+        labels: ['bsvdesktop', 'legacy'],
+        labelQueryMode: 'any', 
         includeOutputLockingScripts: true,
         includeOutputs: true,
         limit: 100,
@@ -224,28 +317,18 @@ export default function Payments() {
         const pastTxs = response.actions.map((action) => {
           let address = ''
           // Try to find BSV recipient output first
-          let theOutput = action.outputs?.find((o) => o.outputDescription === 'BSV for recipient address')
-          if (theOutput) {
-            try {
-              address = Utils.toBase58Check(
-                Script.fromHex(theOutput!.lockingScript!).chunks[2].data as number[]
-              )
-            } catch (error) {
-              console.log({ error })
-              address = ''
-            }
-          } else {
-            // Fallback to checking for payment address output
-            if (action.description === 'Import from Legacy Payments') {
-              address = paymentAddress
-            } else {
-              return { txid: '', to: '', amount: 0 }
-            }
+          try {
+            address = Utils.toBase58Check(
+              Script.fromHex(action.outputs![0].lockingScript!).chunks[2].data as number[]
+            )
+          } catch (error) {
+            console.log({ error })
+            address = ''
           }
 
           return {
             txid: action.txid,
-            to: address,
+            to: address || 'unknown',
             amount: action.satoshis / 100000000,
           }
         })
@@ -322,12 +405,18 @@ export default function Payments() {
     }
   }
 
-  // Load address on mount
+  // Load address when offset changes
   useEffect(() => {
-    if (managers?.walletManager) {
+    if (wallet) {
+      setBalance(-1) // Reset balance when date changes
       handleViewAddress()
     }
-  }, [managers?.walletManager])
+  }, [daysOffset])
+
+  // Load transactions on mount
+  useEffect(() => {
+    getPastTransactions()
+  }, [])
 
   return (
     <Box sx={{ p: 3, maxWidth: 800, mx: 'auto' }}>
@@ -335,20 +424,46 @@ export default function Payments() {
         Legacy Payments
       </Typography>
       <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-        Address-based BSV payments to and from your BRC-100 wallet
+        Address-based BSV payments to and from external wallets.
       </Typography>
 
       <Alert severity="info" sx={{ mb: 3 }}>
-        This feature allows you to receive BSV at a legacy P2PKH address and import it into your wallet,
-        or send BSV from your wallet to any legacy address.
+        This feature serves as a bridge to and from legacy wallets, may be removed in future, and relies on free WhatsOnChain services, which may cease without warning.
       </Alert>
 
       {/* Receive Section */}
       <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom sx={{ fontWeight: 500 }}>
-          Receive
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h6" sx={{ fontWeight: 500 }}>
+            Receive
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <IconButton
+              size="small"
+              onClick={() => setDaysOffset(daysOffset + 1)}
+              title="Previous day's address"
+            >
+              <ArrowBackIcon />
+            </IconButton>
+            <Typography variant="body2" sx={{ minWidth: 90, textAlign: 'center', fontFamily: 'monospace' }}>
+              {getCurrentDate()}
+            </Typography>
+            <IconButton
+              size="small"
+              onClick={() => setDaysOffset(Math.max(0, daysOffset - 1))}
+              disabled={daysOffset === 0}
+              title="Next day's address"
+            >
+              <ArrowForwardIcon />
+            </IconButton>
+          </Box>
+        </Box>
         <Divider sx={{ mb: 2 }} />
+
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          A unique payment address is generated for each day as a privacy measure. Use the date controls above to view addresses
+          from previous days if you need to check for payments sent to an older address.
+        </Alert>
 
         {isLoadingAddress ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
@@ -360,25 +475,39 @@ export default function Payments() {
           </Button>
         ) : (
           <>
-            <Typography variant="body2" color="textSecondary" gutterBottom>
-              Your Payment Address:
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+              <b>Your Payment Address:</b>
             </Typography>
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2,
-                mb: 2,
-                backgroundColor: 'grey.50',
-                wordBreak: 'break-all',
-                fontFamily: 'monospace',
-                fontSize: '0.9rem',
-              }}
-            >
-              {paymentAddress}
-            </Paper>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontFamily: 'monospace',
+                  bgcolor: 'action.hover',
+                  py: 1,
+                  px: 2,
+                  borderRadius: 1,
+                  flexGrow: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {paymentAddress}
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={() => handleCopy(paymentAddress)}
+                disabled={copied}
+                sx={{ ml: 1 }}
+              >
+                {copied ? <CheckIcon /> : <ContentCopyIcon fontSize="small" />}
+              </IconButton>
+            </Box>
 
             <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-              <QRCodeSVG value={paymentAddress || ''} size={200} bgColor="#ffffff" fgColor="#1976d2" />
+              <Box sx={{ padding: '8px', backgroundColor: '#ffffff', display: 'inline-block', width: '216px', height: '216px' }}>
+                <QRCodeSVG value={paymentAddress || ''} size={200} bgColor="#ffffff" fgColor="#000000" />
+              </Box>
             </Box>
 
             <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>

@@ -1,4 +1,4 @@
-import { Beef } from '@bsv/sdk'
+import { Beef, Utils } from '@bsv/sdk'
 import { wocFetch } from './RateLimitedFetch'
 
 export default async function getBeefForTxid(txid: string, chain: 'main' | 'test'): Promise<Beef> {
@@ -18,7 +18,7 @@ export default async function getBeefForTxid(txid: string, chain: 'main' | 'test
   }
 
   // Parse BEEF from hex
-  const beef = Beef.fromBinary(Array.from(Buffer.from(beefHex, 'hex')))
+  const beef = Beef.fromBinary(Utils.toArray(beefHex, 'hex'))
 
   return beef
 }

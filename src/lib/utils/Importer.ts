@@ -68,8 +68,8 @@ export default class Importer implements ScriptTemplate {
                 const hashToSign = sha256(sha256(preimage))
                 const { signature } = await client.createSignature({
                     hashToDirectlySign: hashToSign,
-                    protocolID: [1, 'legacy-payments'],
-                    keyID: '1',
+                    protocolID: [1, 'legacy address'],
+                    keyID: new Date().toISOString().split('T')[0],
                     counterparty: 'anyone'
                 })
                 const rawSignature = Signature.fromDER(signature)
@@ -80,8 +80,8 @@ export default class Importer implements ScriptTemplate {
                 )
                 const sigForScript = sig.toChecksigFormat()
                 const { publicKey } = await client.getPublicKey({
-                    protocolID: [1, 'legacy-payments'],
-                    keyID: '1',
+                    protocolID: [1, 'legacy address'],
+                    keyID: new Date().toISOString().split('T')[0],
                     counterparty: 'anyone',
                     forSelf: true
                 })

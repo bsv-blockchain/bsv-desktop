@@ -20,9 +20,8 @@ import App from './App/Index'; // Assuming index.tsx or similar
 import Settings from './Settings'; // Assuming index.tsx or similar
 import Security from './Security'; // Assuming index.tsx or similar
 import { UserContext } from '../../UserContext';
-import Transfer from './Transfer';
 import Payments from './Payments';
-// Import the components for the new routes
+import LegacyBridge from './LegacyBridge';
 // Note: These might still be .jsx files and need refactoring later
 import AppAccess from './AppAccess'; // Assuming index.jsx or similar
 import BasketAccess from './BasketAccess'; // Assuming index.jsx or similar
@@ -101,12 +100,12 @@ export default function Dashboard() {
             component={Settings}
           />
           <Route
-            path='/dashboard/transfer'
-            component={Transfer}
-          />
-          <Route
             path='/dashboard/payments'
             component={Payments}
+          />
+          <Route
+            path='/dashboard/legacybridge'
+            component={LegacyBridge}
           />
           <Route
             path='/dashboard/identity'

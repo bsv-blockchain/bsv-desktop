@@ -1,613 +1,495 @@
-import { useState, useContext, useEffect } from 'react'
-import { WalletContext } from '../../../WalletContext'
+// src/routes/PeerPayRoute.tsx
+import React, { useCallback, useEffect, useMemo, useState, useContext, useRef } from 'react'
+import { useHistory } from 'react-router'
 import {
-  Box,
-  Typography,
-  Button,
-  TextField,
-  Paper,
-  CircularProgress,
-  Card,
-  CardContent,
-  Divider,
   Alert,
-  Link,
-  IconButton,
+  Avatar,
+  Box,
+  Button,
+  Chip,
+  Container,
+  Divider,
+  LinearProgress,
+  List,
+  ListItem,
+  ListItemText,
+  Paper,
+  Snackbar,
+  Stack,
+  TextField,
+  Typography,
+  Select,
+  MenuItem,
+  FormControl,
+  CircularProgress,
+  Autocomplete
 } from '@mui/material'
-import CheckIcon from '@mui/icons-material/Check'
-import ContentCopyIcon from '@mui/icons-material/ContentCopy'
-import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
-import { QRCodeSVG } from 'qrcode.react'
-import { PublicKey, P2PKH, Beef, Utils, Script, WalletClient, WalletProtocol, InternalizeActionArgs, InternalizeOutput } from '@bsv/sdk'
-import getBeefForTxid from '../../../utils/getBeefForTxid'
-import { wocFetch } from '../../../utils/RateLimitedFetch'
+import InputAdornment from '@mui/material/InputAdornment'
+import { PeerPayClient, IncomingPayment } from '@bsv/message-box-client'
+import { PubKeyHex, WalletClient } from '@bsv/sdk'
+import { WalletContext } from '../../../WalletContext'
 import { toast } from 'react-toastify'
+import { CurrencyConverter } from 'amountinator'
+import useAsyncEffect from 'use-async-effect'
+import { WalletProfile } from '../../../types/WalletProfile'
+import { OutlinedInput, Tabs, Tab } from '@mui/material'
+import { useIdentitySearch } from '@bsv/identity-react'
 
-const brc29ProtocolID: WalletProtocol = [2, '3241645161d8']
-
-interface Utxo {
-  txid: string
-  vout: number
-  satoshis: number
+/* --------------------------- Inline: Payment Form -------------------------- */
+type PaymentFormProps = {
+  peerPay: PeerPayClient
+  onSent?: () => void
+  defaultRecipient?: string
 }
+function PaymentForm({ peerPay, onSent, defaultRecipient }: PaymentFormProps) {
+  const {managers, activeProfile, messageBoxUrl, useMessageBox} = useContext(WalletContext)
+  const [recipient, setRecipient] = useState(defaultRecipient ?? '')
+  const [amount, setAmount] = useState<number>(0)
+  const [sending, setSending] = useState(false)
+  const [profiles, setProfiles] = useState<WalletProfile[]>([])
+  const [currencySymbol, setCurrencySymbol] = useState('$')
+  const currencyConverter = new CurrencyConverter()
+  const [input, setInput] = useState('')
+  const [tabValue, setTabValue] = useState(0) // 0 = profiles, 1 = anyone
 
-interface WoCAddressUnspentAll {
-  error: string
-  address: string
-  script: string
-  result: {
-    height?: number
-    tx_pos: number
-    tx_hash: string
-    value: number
-    isSpentInMempoolTx: boolean
-    status: string
-  }[]
-}
-
-interface TransactionRecord {
-  txid: string
-  to: string
-  amount: number
-}
-
-export default function Payments() {
-  const { managers, network } = useContext(WalletContext)
-  const [paymentAddress, setPaymentAddress] = useState<string | null>(null)
-  const [balance, setBalance] = useState<number>(-1)
-  const [recipientAddress, setRecipientAddress] = useState<string>('')
-  const [amount, setAmount] = useState<string>('')
-  const [transactions, setTransactions] = useState<TransactionRecord[]>([])
-  const [isImporting, setIsImporting] = useState<boolean>(false)
-  const [isLoadingAddress, setIsLoadingAddress] = useState<boolean>(false)
-  const [isSending, setIsSending] = useState<boolean>(false)
-  const [copied, setCopied] = useState<boolean>(false)
-  const [daysOffset, setDaysOffset] = useState<number>(0)
-
-  // Calculate the date based on the offset
-  const getCurrentDate = () => {
-    const today = new Date()
-    today.setDate(today.getDate() - daysOffset)
-    return today.toISOString().split('T')[0]
-  }
-
-  const derivationPrefix = Utils.toBase64(Utils.toArray(getCurrentDate(), 'utf8'))
-  const derivationSuffix = Utils.toBase64(Utils.toArray('legacy', 'utf8'))
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'BSV-Desktop') : null
-
-  if (!wallet) {
-    return <></>
-  }
-
-  const handleCopy = (data: string) => {
-    navigator.clipboard.writeText(data)
-    setCopied(true)
-    setTimeout(() => {
-      setCopied(false)
-    }, 2000)
-  }
-
-  // Derive payment address from wallet public key
-  const getPaymentAddress = async (): Promise<string> => {
-    if (!wallet) {
-      throw new Error('Wallet not initialized')
-    }
-
-    const { publicKey } = await wallet.getPublicKey({
-      protocolID: brc29ProtocolID,
-      keyID: derivationPrefix + ' ' + derivationSuffix, // date rounded to nearest day ISO format with "legacy" suffix
-      counterparty: 'anyone',
-      forSelf: true,
-    })
-    return PublicKey.fromString(publicKey).toAddress(network === 'mainnet' ? 'mainnet' : 'testnet')
-  }
-
-  // Fetch UTXOs for address from WhatsOnChain (rate-limited)
-  const getUtxosForAddress = async (address: string): Promise<Utxo[]> => {
-    const response = await wocFetch.fetch(
-      `https://api.whatsonchain.com/v1/bsv/${network === 'mainnet' ? 'main' : 'test'}/address/${address}/unspent/all`
-    )
-    const rp: WoCAddressUnspentAll = await response.json()
-    const utxos: Utxo[] = rp.result
-      .filter((r) => r.isSpentInMempoolTx === false)
-      .map((r) => ({ txid: r.tx_hash, vout: r.tx_pos, satoshis: r.value }))
-    return utxos
-  }
-
-  // Get internalized UTXOs from transaction history
-  const getInternalizedUtxos = async (): Promise<Set<string>> => {
-    if (!wallet) return new Set()
-
-    try {
-      const response = await wallet.listActions({
-        labels: ['bsvdesktop', 'inbound'],
-        labelQueryMode: 'all',
-        includeOutputs: true,
-        limit: 1000,
-      })
-
-      const internalizedSet = new Set<string>()
-
-      // For each internalized action, track which UTXOs were spent
-      for (const action of response.actions) {
-        // The action represents receiving funds, but we need to track which
-        // UTXOs were internalized. For inbound transactions, we track the
-        // source UTXOs that were imported
-        if (action.inputs) {
-          for (const input of action.inputs) {
-            if (input.sourceOutpoint) {
-              // sourceOutpoint format is "txid.vout"
-              internalizedSet.add(input.sourceOutpoint)
-            }
-          }
-        }
+  // Identity search hook for "Send to Anyone" tab
+  const identitySearch = useIdentitySearch({
+    onIdentitySelected: (identity) => {
+      if (identity) {
+        setRecipient(identity.identityKey)
       }
-
-      return internalizedSet
-    } catch (error) {
-      console.error('Error fetching internalized UTXOs:', error)
-      return new Set()
     }
-  }
+  })
 
-  // Fetch BSV balance for address
-  const fetchBSVBalance = async (address: string): Promise<number> => {
-    const allUtxos = await getUtxosForAddress(address)
-    const internalizedUtxos = await getInternalizedUtxos()
-
-    // Filter out UTXOs that have already been internalized
-    const availableUtxos = allUtxos.filter(utxo => {
-      const outpoint = `${utxo.txid}.${utxo.vout}`
-      return !internalizedUtxos.has(outpoint)
-    })
-
-    const balanceInSatoshis = availableUtxos.reduce((acc, r) => acc + r.satoshis, 0)
-    return balanceInSatoshis / 100000000
-  }
-
-  // Send BSV to recipient address
-  const sendBSV = async (to: string, amount: number): Promise<string | undefined> => {
-    if (!wallet) {
-      throw new Error('Wallet not initialized')
+  // Generate initials from identity info
+  const getInitials = (name: string, identityKey: string): string => {
+    if (!name || name.trim() === '') {
+      // If no name, use first 2 characters of identity key
+      return identityKey.slice(0, 2).toUpperCase()
     }
 
-    // Basic network vs. address check
-    if (network === 'mainnet' && !to.startsWith('1')) {
-      toast.error('You are on mainnet but the recipient address does not look like a mainnet address (starting with 1)!')
-      return
-    }
-
-    const lockingScript = new P2PKH().lock(to).toHex()
-    const { txid } = await wallet.createAction({
-      description: 'Send BSV to address',
-      outputs: [
-        {
-          lockingScript,
-          satoshis: Math.round(amount * 100000000),
-          outputDescription: 'BSV for recipient address',
-        },
-      ],
-      labels: ['legacy', 'outbound'],
-    })
-    return txid
-  }
-
-  // Import funds from payment address into wallet
-  const handleImportFunds = async () => {
-    if (!paymentAddress || balance < 0) {
-      toast.error('Get your address and balance first!')
-      return
-    }
-    if (balance === 0) {
-      toast.error('No money to import!')
-      return
-    }
-
-    if (!wallet) {
-      toast.error('Wallet not initialized')
-      return
-    }
-
-    setIsImporting(true)
-
-    let reference: string | undefined = undefined
-    try {
-      const allUtxos = await getUtxosForAddress(paymentAddress)
-      const internalizedUtxos = await getInternalizedUtxos()
-
-      // Filter out UTXOs that have already been internalized
-      const utxos = allUtxos.filter(utxo => {
-        const outpoint = `${utxo.txid}.${utxo.vout}`
-        return !internalizedUtxos.has(outpoint)
-      })
-
-      if (utxos.length === 0) {
-        toast.info('All available funds have already been imported')
-        setIsImporting(false)
-        return
-      }
-
-      const outpoints: string[] = utxos.map((x) => `${x.txid}.${x.vout}`)
-      const inputs = outpoints.map((outpoint) => ({
-        outpoint,
-        inputDescription: 'Redeem from Legacy Payments',
-        unlockingScriptLength: 108,
-      }))
-
-      // Merge BEEF for the inputs
-      const beef = new Beef()
-      for (let i = 0; i < inputs.length; i++) {
-        const txid = inputs[i].outpoint.split('.')[0]
-        if (!beef.findTxid(txid)) {
-          const b = await getBeefForTxid(txid, network === 'mainnet' ? 'main' : 'test')
-          beef.mergeBeef(b)
-        }
-      }
-
-      console.log({ beef: beef.toLogString() })
-
-      // prepare each tx for internalization
-      const txs = beef.txs.map((beefTx) => {
-        const tx = beef.findAtomicTransaction(beefTx.txid)
-        const outputs: InternalizeOutput[] = utxos.filter(o => o.txid === beefTx.txid).map(o => ({
-          outputIndex: o.vout,
-          protocol: 'wallet payment',
-          paymentRemittance: {
-            senderIdentityKey: 'anyone',
-            derivationPrefix,
-            derivationSuffix
-          }
-        }))
-        const args: InternalizeActionArgs = {
-          tx: tx.toAtomicBEEF(),
-          description: 'BSV Desktop Payment',
-          outputs,
-          labels: ['legacy', 'inbound', 'bsvdesktop'],
-        }
-        return args
-      })
-
-      console.log({ txs })
-
-      // internalize
-      txs.forEach(async t => {
-        const response = await wallet.internalizeAction(t)
-        if (!response?.accepted) toast.error('Payment was not accepted')
-      })
-
-      // Refresh the balance to show remaining funds (if any)
-      if (paymentAddress) {
-        const newBalance = await fetchBSVBalance(paymentAddress)
-        setBalance(newBalance)
-      }
-
-      toast.success('Payment Accepted!')
-
-      // Refresh transaction history
-      await getPastTransactions()
-    } catch (e: any) {
-      console.error(e)
-      // Abort in case something goes wrong
-      if (reference) {
-        await wallet.abortAction({ reference })
-      }
-      const message = `Import failed: ${e.message || 'unknown error'}`
-      toast.error(message)
-    } finally {
-      setIsImporting(false)
-    }
-  }
-
-  // Get past transactions from wallet
-  const getPastTransactions = async () => {
-    if (!wallet) return
-
-    try {
-      const response = await wallet.listActions({
-        labels: ['bsvdesktop', 'legacy'],
-        labelQueryMode: 'any', 
-        includeOutputLockingScripts: true,
-        includeOutputs: true,
-        limit: 100,
-      })
-
-      setTransactions((txs) => {
-        const set = new Set(txs.map((tx) => tx.txid))
-        const pastTxs = response.actions.map((action) => {
-          let address = ''
-          // Try to find BSV recipient output first
-          try {
-            address = Utils.toBase58Check(
-              Script.fromHex(action.outputs![0].lockingScript!).chunks[2].data as number[]
-            )
-          } catch (error) {
-            console.log({ error })
-            address = ''
-          }
-
-          return {
-            txid: action.txid,
-            to: address || 'unknown',
-            amount: action.satoshis / 100000000,
-          }
-        })
-        const newTxs = pastTxs.filter((tx) => tx.amount !== 0 && !set.has(tx.txid))
-        return [...txs, ...newTxs]
-      })
-    } catch (error) {
-      console.error('Error fetching transactions:', error)
-    }
-  }
-
-  // Handle showing address
-  const handleViewAddress = async () => {
-    setIsLoadingAddress(true)
-    try {
-      const address = await getPaymentAddress()
-      setPaymentAddress(address)
-    } catch (error: any) {
-      toast.error(`Error generating address: ${error.message || 'unknown error'}`)
-    } finally {
-      setIsLoadingAddress(false)
-    }
-  }
-
-  // Handle getting balance
-  const handleGetBalance = async () => {
-    if (paymentAddress) {
-      try {
-        const fetchedBalance = await fetchBSVBalance(paymentAddress)
-        setBalance(fetchedBalance)
-      } catch (error: any) {
-        toast.error(`Error fetching balance: ${error.message || 'unknown error'}`)
-      }
+    const words = name.trim().split(/\s+/)
+    if (words.length >= 2) {
+      // First letter of first word + first letter of last word
+      return (words[0][0] + words[words.length - 1][0]).toUpperCase()
     } else {
-      toast.error('Get your address first!')
+      // Single word: take first 2 letters
+      return name.slice(0, 2).toUpperCase()
     }
   }
 
-  // Handle sending BSV
-  const handleSendBSV = async () => {
-    if (!recipientAddress || !amount) {
-      toast.error('Please enter a recipient address AND an amount first!')
-      return
-    }
-
-    const amt = Number(amount)
-    if (isNaN(amt) || amt <= 0) {
-      toast.error('Please enter a valid amount > 0.')
-      return
-    }
-
-    setIsSending(true)
-    try {
-      const txid = await sendBSV(recipientAddress, amt)
-      if (txid) {
-        toast.success(`Successfully sent ${amt} BSV to ${recipientAddress}`)
-
-        // Record the transaction locally
-        setTransactions((prev) => [
-          ...prev,
-          {
-            txid,
-            to: recipientAddress,
-            amount: amt,
-          },
-        ])
-        setRecipientAddress('')
-        setAmount('')
-      }
-    } catch (error: any) {
-      toast.error(`Error sending BSV: ${error.message || 'unknown error'}`)
-    } finally {
-      setIsSending(false)
-    }
-  }
-
-  // Load address when offset changes
-  useEffect(() => {
-    if (wallet) {
-      setBalance(-1) // Reset balance when date changes
-      handleViewAddress()
-    }
-  }, [daysOffset])
-
-  // Load transactions on mount
-  useEffect(() => {
-    getPastTransactions()
+  useAsyncEffect(async () => {
+    // Note: Handle errors at a higher layer!
+    await currencyConverter.initialize()
+    setCurrencySymbol(currencyConverter.getCurrencySymbol())
   }, [])
 
+  const otherProfiles = useMemo(
+  () => profiles.filter(p => p.identityKey !== activeProfile?.identityKey),
+  [profiles, activeProfile?.identityKey]
+  )
+
+  const handleAmountChange = useCallback(async (event) => {
+    const input = event.target.value.replace(/[^0-9.]/g, '')
+    if (input !== amount) {
+      setInput(input)
+      const satoshis = await currencyConverter.convertToSatoshis(input)
+      setAmount(satoshis)
+    }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+      ; (async () => {
+        try {
+          if (!managers?.walletManager) return
+          const list: WalletProfile[] = await managers.walletManager.listProfiles()
+          if (!alive) return
+          const cloned = list.map(p => ({
+            id: [...p.id],
+            name: String(p.name),
+            createdAt: p.createdAt ?? null,
+            active: !!p.active,
+            identityKey: p.identityKey
+          }))
+          setProfiles(cloned)
+        } catch (e) {
+          toast.error('[PaymentForm] listProfiles error:', e as any)
+        }
+      })()
+    return () => { alive = false }
+  }, [managers])
+
+  const canSend = recipient.trim().length > 0 && amount > 0 && !sending
+
+  const send = async () => {
+    if (!canSend) return
+    try {
+      setSending(true)
+      await peerPay.sendLivePayment({
+        recipient: recipient.trim(),
+        amount
+      })
+      onSent?.()
+      toast.success('Payment Success!')
+      setInput('0')
+    } catch (e) {
+      toast.error('[PaymentForm] sendLivePayment error:', e as any)
+      alert((e as Error)?.message ?? 'Failed to send payment')
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
-    <Box sx={{ p: 3, maxWidth: 800, mx: 'auto' }}>
-      <Typography variant="h4" gutterBottom sx={{ fontWeight: 600, color: 'primary.main' }}>
-        Legacy Payments
+    <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
+      <Typography variant="h6" sx={{ mb: 1 }}>
+        Create New Payment
       </Typography>
-      <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-        Address-based BSV payments to and from external wallets.
-      </Typography>
+      <Stack spacing={2}>
+        <Tabs value={tabValue} onChange={(e, newValue) => {
+          setTabValue(newValue)
+          setRecipient('')
+        }}>
+          <Tab label="Pay Someone" />
+          <Tab label="Internal Trasnfer" />
+        </Tabs>
 
-      <Alert severity="info" sx={{ mb: 3 }}>
-        This feature serves as a bridge to and from legacy wallets, may be removed in future, and relies on free WhatsOnChain services, which may cease without warning.
-      </Alert>
-
-      {/* Receive Section */}
-      <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6" sx={{ fontWeight: 500 }}>
-            Receive
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <IconButton
-              size="small"
-              onClick={() => setDaysOffset(daysOffset + 1)}
-              title="Previous day's address"
-            >
-              <ArrowBackIcon />
-            </IconButton>
-            <Typography variant="body2" sx={{ minWidth: 90, textAlign: 'center', fontFamily: 'monospace' }}>
-              {getCurrentDate()}
-            </Typography>
-            <IconButton
-              size="small"
-              onClick={() => setDaysOffset(Math.max(0, daysOffset - 1))}
-              disabled={daysOffset === 0}
-              title="Next day's address"
-            >
-              <ArrowForwardIcon />
-            </IconButton>
-          </Box>
-        </Box>
-        <Divider sx={{ mb: 2 }} />
-
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          A unique payment address is generated for each day as a privacy measure. Use the date controls above to view addresses
-          from previous days if you need to check for payments sent to an older address.
-        </Alert>
-
-        {isLoadingAddress ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-            <CircularProgress />
-          </Box>
-        ) : !paymentAddress ? (
-          <Button variant="contained" onClick={handleViewAddress} fullWidth>
-            Show Payment Address
-          </Button>
-        ) : (
-          <>
-            <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-              <b>Your Payment Address:</b>
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <Typography
-                variant="body2"
-                sx={{
-                  fontFamily: 'monospace',
-                  bgcolor: 'action.hover',
-                  py: 1,
-                  px: 2,
-                  borderRadius: 1,
-                  flexGrow: 1,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
+        {tabValue === 0 ? (
+          <Autocomplete
+            options={identitySearch.identities}
+            loading={identitySearch.isLoading}
+            inputValue={identitySearch.inputValue}
+            value={identitySearch.selectedIdentity}
+            onInputChange={identitySearch.handleInputChange}
+            onChange={identitySearch.handleSelect}
+            getOptionLabel={(option) => {
+              if (typeof option === 'string') return option
+              return option.name || option.identityKey.slice(0, 16)
+            }}
+            isOptionEqualToValue={(option, value) => {
+              if (typeof option === 'string' || typeof value === 'string') return false
+              return option.identityKey === value.identityKey
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Search for Recipient"
+                placeholder="Search by name, email, etc."
+                InputProps={{
+                  ...params.InputProps,
+                  endAdornment: (
+                    <>
+                      {identitySearch.isLoading ? <CircularProgress size={20} /> : null}
+                      {params.InputProps.endAdornment}
+                    </>
+                  )
                 }}
-              >
-                {paymentAddress}
-              </Typography>
-              <IconButton
-                size="small"
-                onClick={() => handleCopy(paymentAddress)}
-                disabled={copied}
-                sx={{ ml: 1 }}
-              >
-                {copied ? <CheckIcon /> : <ContentCopyIcon fontSize="small" />}
-              </IconButton>
-            </Box>
-
-            <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-              <Box sx={{ padding: '8px', backgroundColor: '#ffffff', display: 'inline-block', width: '216px', height: '216px' }}>
-                <QRCodeSVG value={paymentAddress || ''} size={200} bgColor="#ffffff" fgColor="#000000" />
-              </Box>
-            </Box>
-
-            <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-              <Button variant="outlined" onClick={handleGetBalance} fullWidth>
-                Check Balance
-              </Button>
-              <Button
-                variant="contained"
-                onClick={handleImportFunds}
-                disabled={isImporting || balance <= 0}
-                fullWidth
-              >
-                {isImporting ? <CircularProgress size={24} /> : 'Import Funds'}
-              </Button>
-            </Box>
-
-            <Typography variant="body1" color="textPrimary" sx={{ textAlign: 'center' }}>
-              Available Balance:{' '}
-              <strong>{balance === -1 ? 'Not checked yet' : `${balance} BSV`}</strong>
-            </Typography>
-          </>
-        )}
-      </Paper>
-
-      {/* Send Section */}
-      <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom sx={{ fontWeight: 500 }}>
-          Send
-        </Typography>
-        <Divider sx={{ mb: 2 }} />
-
-        <TextField
-          fullWidth
-          label="Recipient Address"
-          placeholder="Enter BSV address"
-          value={recipientAddress}
-          onChange={(e) => setRecipientAddress(e.target.value)}
-          sx={{ mb: 2 }}
-        />
-        <TextField
-          fullWidth
-          label="Amount (BSV)"
-          placeholder="0.00000000"
-          type="number"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          sx={{ mb: 2 }}
-        />
-        <Button
-          variant="contained"
-          onClick={handleSendBSV}
-          disabled={isSending || !recipientAddress || !amount}
-          fullWidth
-        >
-          {isSending ? <CircularProgress size={24} /> : 'Send BSV'}
-        </Button>
-      </Paper>
-
-      {/* Transaction History Section */}
-      <Paper elevation={2} sx={{ p: 3 }}>
-        <Typography variant="h6" gutterBottom sx={{ fontWeight: 500 }}>
-          Transaction History
-        </Typography>
-        <Divider sx={{ mb: 2 }} />
-
-        <Button variant="outlined" onClick={getPastTransactions} fullWidth sx={{ mb: 2 }}>
-          Refresh Transactions
-        </Button>
-
-        {transactions.length === 0 ? (
-          <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-            No transactions yet...
-          </Typography>
+              />
+            )}
+            renderOption={(props, option) => {
+              if (typeof option === 'string') return null
+              return (
+                <li {...props}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
+                    {option.avatarURL ? (
+                      <Avatar
+                        src={option.avatarURL}
+                        alt={option.name}
+                        sx={{ width: 40, height: 40 }}
+                      />
+                    ) : (
+                      <Avatar
+                        sx={{
+                          width: 40,
+                          height: 40,
+                          bgcolor: 'primary.main',
+                          fontSize: '0.875rem',
+                          fontWeight: 600
+                        }}
+                      >
+                        {getInitials(option.name, option.identityKey)}
+                      </Avatar>
+                    )}
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                        {option.name || 'Unknown'}
+                      </Typography>
+                      <Typography variant="caption" color="textSecondary" sx={{ fontFamily: 'monospace' }}>
+                        {option.identityKey.slice(0, 20)}...
+                      </Typography>
+                    </Box>
+                    {option.badgeLabel && (
+                      <Chip
+                        size="small"
+                        label={option.badgeLabel}
+                        sx={{ ml: 1 }}
+                      />
+                    )}
+                  </Box>
+                </li>
+              )
+            }}
+            noOptionsText={identitySearch.inputValue ? "No identities found" : "Start typing to search"}
+            fullWidth
+          />
         ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {transactions.map((tx, index) => (
-              <Card key={index} variant="outlined">
-                <CardContent>
-                  <Typography variant="body2" color="textSecondary">
-                    <strong>TXID:</strong>{' '}
-                    <Link
-                      href={`https://whatsonchain.com/tx/${tx.txid}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {tx.txid}
-                    </Link>
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                    <strong>To:</strong> {tx.to}
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                    <strong>Amount:</strong> {tx.amount} BSV
-                  </Typography>
-                </CardContent>
-              </Card>
-            ))}
-          </Box>
+          <FormControl fullWidth>
+            <Select
+              label="Destination Profile"
+              value={recipient || ''}
+              displayEmpty
+              onChange={(e) => setRecipient(e.target.value as string)}
+              renderValue={(val) => {
+                if (!val) return 'Select a profile'
+                const p = profiles.find(p => p.identityKey === val)
+                return p ? `${p.name} — ${p.identityKey.slice(0, 10)}` : ''
+              }}
+              input={<OutlinedInput notched={false} />}
+            >
+              {otherProfiles.map((p) => (
+                <MenuItem key={p.identityKey} value={p.identityKey}>
+                  {p.name} — {p.identityKey.slice(0, 10)}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         )}
-      </Paper>
-    </Box>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+          <TextField
+            label="Enter Amount"
+            variant="outlined"
+            value={input}
+            onChange={handleAmountChange}
+            InputProps={{
+              startAdornment: <InputAdornment position="start">{currencySymbol}</InputAdornment>
+            }}
+            fullWidth
+          />
+
+        </Stack>
+
+        <Box>
+          <Button variant="contained" disabled={!canSend} onClick={send}>
+            {sending ? 'Sending…' : 'Send'}
+          </Button>
+        </Box>
+      </Stack>
+    </Paper>
+  )
+}
+
+/* --------------------------- Inline: Payment List -------------------------- */
+type PaymentListProps = {
+  payments: IncomingPayment[]
+  onRefresh: () => void
+  peerPay: PeerPayClient
+}
+
+function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
+  // Track loading per messageId so buttons aren't linked
+  const { messageBoxUrl, useMessageBox } = useContext(WalletContext)  
+  const history = useHistory()
+  const [loadingById, setLoadingById] = useState<Record<string, boolean>>({})
+
+  if (!useMessageBox || !messageBoxUrl) {
+    return <Button variant="outlined" onClick={() => history.push('/dashboard/settings')}>Enable Inbound Payments in Settings by Configuring a Message Box</Button>
+  }
+
+  const setLoadingFor = (id: string, on: boolean) => {
+    setLoadingById(prev => {
+      if (on) return { ...prev, [id]: true }
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }
+
+  const acceptWithRetry = async (p: IncomingPayment) => {
+    const id = String(p.messageId)
+    setLoadingFor(id, true)
+    try {
+      await peerPay.acceptPayment(p)
+      return true
+    } catch (e1) {
+      toast.error('[PaymentList] acceptPayment raw failed → refetching by id', e1 as any)
+      try {
+        const list = await peerPay.listIncomingPayments(messageBoxUrl)
+        const fresh = list.find(x => String(x.messageId) === id)
+        if (!fresh) throw new Error('Payment not found on refresh')
+        await peerPay.acceptPayment(fresh)
+        return true
+      } catch (e2) {
+        toast.error('[PaymentList] acceptPayment refresh retry failed', e2 as any)
+        return false
+      } finally {
+        setLoadingFor(id, false)
+      }
+    } finally {
+      // Ensure we clear loading even on the success path
+      setLoadingFor(id, false)
+    }
+  }
+
+  const accept = async (p: IncomingPayment) => {
+    try {
+      const ok = await acceptWithRetry(p)
+      if (!ok) throw new Error('Accept failed')
+    } catch (e) {
+      toast.error('[PaymentList] acceptPayment error (final):', e as any)
+      alert((e as Error)?.message ?? 'Failed to accept payment')
+    } finally {
+      onRefresh()
+    }
+  }
+
+  return (
+    <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+        <Typography variant="h6">Pending Payments</Typography>
+        <Button onClick={onRefresh}>Refresh</Button>
+      </Box>
+
+      {payments.length === 0 ? (
+        <Typography color="text.secondary">No pending payments.</Typography>
+      ) : (
+        <List sx={{ width: '100%' }}>
+          {payments.map((p) => {
+            const id = String(p.messageId)
+            const isLoading = !!loadingById[id]
+            return (
+              <React.Fragment key={id}>
+                <ListItem
+                  secondaryAction={
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        startIcon={
+                          isLoading ? <CircularProgress size={16} sx={{ color: 'black' }} /> : null
+                        }
+                        disabled={isLoading}
+                        onClick={() => accept(p)}
+                      >
+                        {isLoading ? 'Receiving' : 'receive'}
+                      </Button>
+                    </Stack>
+                  }
+                >
+                  <ListItemText
+                    primary={
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Chip size="small" label={`${p.token.amount} sats`} />
+                        <Typography fontFamily="monospace" fontSize="0.9rem">
+                          {id.slice(0, 10)}…
+                        </Typography>
+                      </Stack>
+                    }
+                    secondary={
+                      <Typography variant="body2" color="text.secondary">
+                        From: {p.sender?.slice?.(0, 14) ?? 'unknown'}…
+                      </Typography>
+                    }
+                  />
+                </ListItem>
+                <Divider component="li" />
+              </React.Fragment>
+            )
+          })}
+        </List>
+      )}
+    </Paper>
+  )
+}
+
+/* ------------------------------- Route View -------------------------------- */
+export default function PeerPayRoute({ walletClient, defaultRecipient }: PeerPayRouteProps) {
+  const { messageBoxUrl, managers, adminOriginator } = useContext(WalletContext)
+
+  const peerPay = useMemo(() => {
+    const wc = managers.permissionsManager
+    return new PeerPayClient({
+      walletClient: wc,
+      messageBoxHost: messageBoxUrl,
+      enableLogging: true,
+      originator: adminOriginator
+    })
+  }, [walletClient])
+
+  const [payments, setPayments] = useState<IncomingPayment[]>([])
+  const [loading, setLoading] = useState(false)
+  const [snack, setSnack] = useState<{ open: boolean; msg: string; severity: 'success' | 'info' | 'warning' | 'error' }>({
+    open: false,
+    msg: '',
+    severity: 'info',
+  })
+
+  const fetchPayments = useCallback(async () => {
+    try {
+      setLoading(true)
+      const list = await peerPay.listIncomingPayments(messageBoxUrl)
+      setPayments(list)
+    } catch (e) {
+      setSnack({ open: true, msg: (e as Error)?.message ?? 'Failed to load payments', severity: 'error' })
+    } finally {
+      setLoading(false)
+    }
+  }, [peerPay])
+
+  useEffect(() => {
+    fetchPayments()
+  }, [fetchPayments])
+
+  useEffect(() => {
+    let mounted = true
+      ; (async () => {
+        try {
+          await peerPay.initializeConnection()
+          await peerPay.listenForLivePayments({
+            overrideHost: messageBoxUrl,
+            onPayment: (payment) => {
+              if (!mounted) return
+              setPayments((prev) => [...prev, payment])
+              setSnack({ open: true, msg: 'New incoming payment', severity: 'success' })
+            },
+          })
+        } catch (e) {
+          // silently handle errors
+        }
+      })()
+    return () => { mounted = false }
+  }, [peerPay])
+
+  return (
+    <Container maxWidth="sm">
+      <Box sx={{ minHeight: '100vh', py: 5 }}>
+        <Typography variant="h5" sx={{ mb: 2 }}>
+          Payments
+        </Typography>
+
+        <Stack spacing={2}>
+          <PaymentForm
+            peerPay={peerPay}
+            onSent={fetchPayments}
+            defaultRecipient={defaultRecipient}
+          />
+
+          {loading && <LinearProgress />}
+
+          <PaymentList payments={payments} onRefresh={fetchPayments} peerPay={peerPay} />
+        </Stack>
+
+        <Snackbar
+          open={snack.open}
+          autoHideDuration={3500}
+          onClose={() => setSnack((s) => ({ ...s, open: false }))}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert severity={snack.severity} onClose={() => setSnack((s) => ({ ...s, open: false }))} variant="filled" sx={{ width: '100%' }}>
+            {snack.msg}
+          </Alert>
+        </Snackbar>
+      </Box>
+    </Container>
   )
 }

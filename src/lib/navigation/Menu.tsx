@@ -615,32 +615,12 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
           </ListItemButton>
 
           <ListItemButton
-            onClick={() => navigation.push('/dashboard/transfer')}
-            selected={history.location.pathname === '/dashboard/transfer'}
-            sx={menuItemStyle(history.location.pathname === '/dashboard/transfer')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/transfer' ? 'primary.main' : 'inherit' }}>
-              <SyncAltIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/transfer' ? 600 : 400}
-                >
-                  Transfer
-                </Typography>
-              }
-            />
-          </ListItemButton>
-
-          <ListItemButton
             onClick={() => navigation.push('/dashboard/payments')}
             selected={history.location.pathname === '/dashboard/payments'}
             sx={menuItemStyle(history.location.pathname === '/dashboard/payments')}
           >
             <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/payments' ? 'primary.main' : 'inherit' }}>
-              <PaymentsIcon />
+              <SyncAltIcon />
             </ListItemIcon>
             <ListItemText
               primary={
@@ -649,6 +629,26 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   fontWeight={history.location.pathname === '/dashboard/payments' ? 600 : 400}
                 >
                   Payments
+                </Typography>
+              }
+            />
+          </ListItemButton>
+
+          <ListItemButton
+            onClick={() => navigation.push('/dashboard/legacybridge')}
+            selected={history.location.pathname === '/dashboard/legacybridge'}
+            sx={menuItemStyle(history.location.pathname === '/dashboard/legacybridge')}
+          >
+            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/legacybridge' ? 'primary.main' : 'inherit' }}>
+              <PaymentsIcon />
+            </ListItemIcon>
+            <ListItemText
+              primary={
+                <Typography
+                  variant="body1"
+                  fontWeight={history.location.pathname === '/dashboard/legacybridge' ? 600 : 400}
+                >
+                  Legacy Bridge
                 </Typography>
               }
             />
@@ -760,20 +760,20 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
           <FormControlLabel
             control={
             <ListItemButton
-            onClick={() => {navigation.push('/dashboard/transfer')
+            onClick={() => {navigation.push('/dashboard/payments')
               setDeleteConfirmOpen(false)
             }}
-            selected={history.location.pathname === '/dashboard/transfer'}
-            sx={menuItemStyle(history.location.pathname === '/dashbaord/transfer')}
+            selected={history.location.pathname === '/dashboard/payments'}
+            sx={menuItemStyle(history.location.pathname === '/dashboard/payments')}
           >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/transfer' ? 'primary.main' : 'inherit' }}>
+            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/payments' ? 'primary.main' : 'inherit' }}>
               <SyncAltIcon />
             </ListItemIcon>
             <ListItemText
               primary={
                 <Typography
                   variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/transfer' ? 600 : 400}
+                  fontWeight={history.location.pathname === '/dashboard/payments' ? 600 : 400}
                 >
                   Transfer
                 </Typography>

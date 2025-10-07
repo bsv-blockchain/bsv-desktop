@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState, useContext, useRef } from 'react'
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   Chip,
@@ -18,9 +19,9 @@ import {
   Typography,
   Select,
   MenuItem,
-  InputLabel,
   FormControl,
-  CircularProgress
+  CircularProgress,
+  Autocomplete
 } from '@mui/material'
 import InputAdornment from '@mui/material/InputAdornment'
 import { PeerPayClient, IncomingPayment } from '@bsv/message-box-client'
@@ -31,7 +32,8 @@ import { MESSAGEBOX_HOST } from '../../../config'
 import { CurrencyConverter } from 'amountinator'
 import useAsyncEffect from 'use-async-effect'
 import { WalletProfile } from '../../../types/WalletProfile'
-import { OutlinedInput } from '@mui/material';
+import { OutlinedInput, Tabs, Tab } from '@mui/material'
+import { useIdentitySearch } from '@bsv/identity-react'
 
 export type PeerPayRouteProps = {
   walletClient?: WalletClient
@@ -50,10 +52,36 @@ function PaymentForm({ peerPay, onSent, defaultRecipient }: PaymentFormProps) {
   const [amount, setAmount] = useState<number>(0)
   const [sending, setSending] = useState(false)
   const [profiles, setProfiles] = useState<WalletProfile[]>([])
-  const [destProfileId, setDestProfileId] = useState<string>('')
   const [currencySymbol, setCurrencySymbol] = useState('$')
   const currencyConverter = new CurrencyConverter()
   const [input, setInput] = useState('')
+  const [tabValue, setTabValue] = useState(0) // 0 = profiles, 1 = anyone
+
+  // Identity search hook for "Send to Anyone" tab
+  const identitySearch = useIdentitySearch({
+    onIdentitySelected: (identity) => {
+      if (identity) {
+        setRecipient(identity.identityKey)
+      }
+    }
+  })
+
+  // Generate initials from identity info
+  const getInitials = (name: string, identityKey: string): string => {
+    if (!name || name.trim() === '') {
+      // If no name, use first 2 characters of identity key
+      return identityKey.slice(0, 2).toUpperCase()
+    }
+
+    const words = name.trim().split(/\s+/)
+    if (words.length >= 2) {
+      // First letter of first word + first letter of last word
+      return (words[0][0] + words[words.length - 1][0]).toUpperCase()
+    } else {
+      // Single word: take first 2 letters
+      return name.slice(0, 2).toUpperCase()
+    }
+  }
 
   useAsyncEffect(async () => {
     // Note: Handle errors at a higher layer!
@@ -124,16 +152,102 @@ function PaymentForm({ peerPay, onSent, defaultRecipient }: PaymentFormProps) {
         Transfer
       </Typography>
       <Stack spacing={2}>
-        <Stack spacing={2}>
+        <Tabs value={tabValue} onChange={(e, newValue) => {
+          setTabValue(newValue)
+          setRecipient('')
+        }}>
+          <Tab label="Send to Anyone" />
+          <Tab label="My Profiles" />
+        </Tabs>
+
+        {tabValue === 0 ? (
+          <Autocomplete
+            options={identitySearch.identities}
+            loading={identitySearch.isLoading}
+            inputValue={identitySearch.inputValue}
+            value={identitySearch.selectedIdentity}
+            onInputChange={identitySearch.handleInputChange}
+            onChange={identitySearch.handleSelect}
+            getOptionLabel={(option) => {
+              if (typeof option === 'string') return option
+              return option.name || option.identityKey.slice(0, 16)
+            }}
+            isOptionEqualToValue={(option, value) => {
+              if (typeof option === 'string' || typeof value === 'string') return false
+              return option.identityKey === value.identityKey
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Search for Recipient"
+                placeholder="Search by name, email, etc."
+                InputProps={{
+                  ...params.InputProps,
+                  endAdornment: (
+                    <>
+                      {identitySearch.isLoading ? <CircularProgress size={20} /> : null}
+                      {params.InputProps.endAdornment}
+                    </>
+                  )
+                }}
+              />
+            )}
+            renderOption={(props, option) => {
+              if (typeof option === 'string') return null
+              return (
+                <li {...props}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
+                    {option.avatarURL ? (
+                      <Avatar
+                        src={option.avatarURL}
+                        alt={option.name}
+                        sx={{ width: 40, height: 40 }}
+                      />
+                    ) : (
+                      <Avatar
+                        sx={{
+                          width: 40,
+                          height: 40,
+                          bgcolor: 'primary.main',
+                          fontSize: '0.875rem',
+                          fontWeight: 600
+                        }}
+                      >
+                        {getInitials(option.name, option.identityKey)}
+                      </Avatar>
+                    )}
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                        {option.name || 'Unknown'}
+                      </Typography>
+                      <Typography variant="caption" color="textSecondary" sx={{ fontFamily: 'monospace' }}>
+                        {option.identityKey.slice(0, 20)}...
+                      </Typography>
+                    </Box>
+                    {option.badgeLabel && (
+                      <Chip
+                        size="small"
+                        label={option.badgeLabel}
+                        sx={{ ml: 1 }}
+                      />
+                    )}
+                  </Box>
+                </li>
+              )
+            }}
+            noOptionsText={identitySearch.inputValue ? "No identities found" : "Start typing to search"}
+            fullWidth
+          />
+        ) : (
           <FormControl fullWidth>
             <Select
               label="Destination Profile"
-              value={recipient || ''}                 // recipient is the identityKey string
+              value={recipient || ''}
               displayEmpty
               onChange={(e) => setRecipient(e.target.value as string)}
               renderValue={(val) => {
-                if (!val) return ''
-                const p = profiles.find(p => p.identityKey === val)  // <- fix
+                if (!val) return 'Select a profile'
+                const p = profiles.find(p => p.identityKey === val)
                 return p ? `${p.name} — ${p.identityKey.slice(0, 10)}` : ''
               }}
               input={<OutlinedInput notched={false} />}
@@ -145,7 +259,7 @@ function PaymentForm({ peerPay, onSent, defaultRecipient }: PaymentFormProps) {
               ))}
             </Select>
           </FormControl>
-        </Stack>
+        )}
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField
             label="Enter Amount"

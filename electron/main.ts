@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -84,6 +84,28 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Open external links in the default browser
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // If the URL is external (not our app), open it in the default browser
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      shell.openExternal(url);
+      return { action: 'deny' }; // Prevent Electron from opening a new window
+    }
+    return { action: 'allow' };
+  });
+
+  // Handle navigation attempts (like clicking links)
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    // Allow navigation within our app, but open external URLs in browser
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      const appUrl = isDev ? 'http://localhost:5173' : 'file://';
+      if (!url.startsWith(appUrl)) {
+        event.preventDefault();
+        shell.openExternal(url);
+      }
+    }
   });
 }
 

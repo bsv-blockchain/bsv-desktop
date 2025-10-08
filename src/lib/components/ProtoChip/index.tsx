@@ -116,6 +116,11 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
         }
         const trusted = results[mostTrustedIndex]
 
+        if (!trusted) {
+          console.error('ProtoChip: No trusted protocol found for protocolID:', protocolID, 'securityLevel:', securityLevel)
+          return
+        }
+
         // Update state and cache the results
         setProtocolName(trusted.name)
         setIconURL(trusted.iconURL)

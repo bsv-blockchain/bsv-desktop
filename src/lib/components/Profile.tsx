@@ -40,6 +40,16 @@ const Profile = () => {
 
   useEffect(() => {
     refreshBalance()
+
+    // Listen for balance change events
+    const handleBalanceChange = () => {
+      refreshBalance()
+    }
+    window.addEventListener('balance-changed', handleBalanceChange)
+
+    return () => {
+      window.removeEventListener('balance-changed', handleBalanceChange)
+    }
   }, [refreshBalance])
 
   return (<Stack alignItems="center">

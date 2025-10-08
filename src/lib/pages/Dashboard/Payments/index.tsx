@@ -1,5 +1,5 @@
 // src/routes/PeerPayRoute.tsx
-import React, { useCallback, useEffect, useMemo, useState, useContext, useRef } from 'react'
+import React, { useCallback, useEffect, useMemo, useState, useContext } from 'react'
 import { useHistory } from 'react-router'
 import {
   Alert,
@@ -40,12 +40,11 @@ import { useIdentitySearch } from '@bsv/identity-react'
 
 /* --------------------------- Inline: Payment Form -------------------------- */
 type PaymentFormProps = {
-  peerPay: PeerPayClient
   onSent?: () => void
   wallet: WalletClient
 }
-function PaymentForm({ peerPay, onSent }: PaymentFormProps) {
-  const {managers, activeProfile} = useContext(WalletContext)
+function PaymentForm({ wallet, onSent }: PaymentFormProps) {
+  const {managers, messageBoxUrl, adminOriginator, activeProfile} = useContext(WalletContext)
   const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState<number>(0)
   const [sending, setSending] = useState(false)
@@ -88,8 +87,8 @@ function PaymentForm({ peerPay, onSent }: PaymentFormProps) {
   }, [])
 
   const otherProfiles = useMemo(
-  () => profiles.filter(p => p.identityKey !== activeProfile?.identityKey),
-  [profiles, activeProfile?.identityKey]
+    () => profiles.filter(p => p.identityKey !== activeProfile?.identityKey),
+    [profiles, activeProfile?.identityKey]
   )
 
   const handleAmountChange = useCallback(async (event) => {
@@ -129,19 +128,38 @@ function PaymentForm({ peerPay, onSent }: PaymentFormProps) {
     if (!canSend) return
     try {
       setSending(true)
-      await peerPay.sendLivePayment({
+      const peerPay = new PeerPayClient({
+        walletClient: wallet,
+        messageBoxHost: messageBoxUrl,
+        enableLogging: true,
+        originator: adminOriginator
+      })
+       await peerPay.sendPayment({
         recipient: recipient.trim(),
         amount
       })
       onSent?.()
       toast.success('Payment Success!')
       setInput('0')
+      // Dispatch custom event to refresh balance
+      window.dispatchEvent(new CustomEvent('balance-changed'))
     } catch (e) {
-      toast.error('[PaymentForm] sendLivePayment error:', e as any)
+      toast.error('[PaymentForm] sendPayment error:', e as any)
       alert((e as Error)?.message ?? 'Failed to send payment')
     } finally {
       setSending(false)
     }
+  }
+
+  type IdentityOption = {
+    identityKey: string
+    name?: string
+    avatarURL?: string
+    badgeLabel?: string
+  } | string
+
+  type StrictIdentityOption = {
+    identityKey: string
   }
 
   return (
@@ -166,6 +184,7 @@ function PaymentForm({ peerPay, onSent }: PaymentFormProps) {
             value={identitySearch.selectedIdentity}
             onInputChange={identitySearch.handleInputChange}
             onChange={identitySearch.handleSelect}
+            filterOptions={(options: IdentityOption[]) => options.filter((identity: IdentityOption, index, array) => array.findIndex((i: StrictIdentityOption) => i.identityKey === (identity as StrictIdentityOption).identityKey) === index)}
             getOptionLabel={(option) => {
               if (typeof option === 'string') return option
               return option.name || option.identityKey.slice(0, 16)
@@ -192,8 +211,9 @@ function PaymentForm({ peerPay, onSent }: PaymentFormProps) {
             )}
             renderOption={(props, option) => {
               if (typeof option === 'string') return null
+              const { key, ...otherProps } = props
               return (
-                <li {...props}>
+                <li key={key} {...otherProps}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
                     {option.avatarURL ? (
                       <Avatar
@@ -286,12 +306,12 @@ function PaymentForm({ peerPay, onSent }: PaymentFormProps) {
 type PaymentListProps = {
   payments: IncomingPayment[]
   onRefresh: () => void
-  peerPay: PeerPayClient
+  wallet: WalletClient
 }
 
-function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
+function PaymentList({ payments, onRefresh, wallet }: PaymentListProps) {
   // Track loading per messageId so buttons aren't linked
-  const { messageBoxUrl, useMessageBox } = useContext(WalletContext)  
+  const { messageBoxUrl, useMessageBox, adminOriginator } = useContext(WalletContext)  
   const history = useHistory()
   const [loadingById, setLoadingById] = useState<Record<string, boolean>>({})
 
@@ -309,6 +329,12 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
   }
 
   const acceptWithRetry = async (p: IncomingPayment) => {
+    const peerPay = new PeerPayClient({
+      walletClient: wallet,
+      messageBoxHost: messageBoxUrl,
+      enableLogging: true,
+      originator: adminOriginator
+    })
     const id = String(p.messageId)
     setLoadingFor(id, true)
     try {
@@ -338,6 +364,8 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
     try {
       const ok = await acceptWithRetry(p)
       if (!ok) throw new Error('Accept failed')
+      // Dispatch custom event to refresh balance on successful payment
+      window.dispatchEvent(new CustomEvent('balance-changed'))
     } catch (e) {
       toast.error('[PaymentList] acceptPayment error (final):', e as any)
       alert((e as Error)?.message ?? 'Failed to accept payment')
@@ -410,15 +438,6 @@ export default function PeerPayRoute() {
   const { messageBoxUrl, managers, adminOriginator } = useContext(WalletContext)
   const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'localhost:2121') : null
 
-  const peerPay = useMemo(() => {
-    return new PeerPayClient({
-      walletClient: wallet,
-      messageBoxHost: messageBoxUrl,
-      enableLogging: true,
-      originator: adminOriginator
-    })
-  }, [wallet])
-
   const [payments, setPayments] = useState<IncomingPayment[]>([])
   const [loading, setLoading] = useState(false)
   const [transactions, setTransactions] = useState([])
@@ -430,7 +449,14 @@ export default function PeerPayRoute() {
 
   const fetchPayments = useCallback(async () => {
     try {
+      if (!wallet || !messageBoxUrl || !adminOriginator) return
       setLoading(true)
+      const peerPay = new PeerPayClient({
+        walletClient: wallet,
+        messageBoxHost: messageBoxUrl,
+        enableLogging: true,
+        originator: adminOriginator
+      })
       const list = await peerPay.listIncomingPayments(messageBoxUrl)
       setPayments(list)
     } catch (e) {
@@ -438,7 +464,7 @@ export default function PeerPayRoute() {
     } finally {
       setLoading(false)
     }
-  }, [peerPay, messageBoxUrl])
+  }, [messageBoxUrl, wallet, adminOriginator])
 
   const getPastTransactions = async () => {
     if (!wallet) return
@@ -482,35 +508,6 @@ export default function PeerPayRoute() {
     }
   }
 
-  // Only fetch payments once on mount
-  const hasInitialFetch = useRef(false)
-  useEffect(() => {
-    if (!hasInitialFetch.current) {
-      hasInitialFetch.current = true
-      fetchPayments()
-    }
-  }, [])
-
-  useEffect(() => {
-    let mounted = true
-      ; (async () => {
-        try {
-          await peerPay.initializeConnection()
-          await peerPay.listenForLivePayments({
-            overrideHost: messageBoxUrl,
-            onPayment: (payment) => {
-              if (!mounted) return
-              setPayments((prev) => [...prev, payment])
-              setSnack({ open: true, msg: 'New incoming payment', severity: 'success' })
-            },
-          })
-        } catch (e) {
-          // silently handle errors
-        }
-      })()
-    return () => { mounted = false }
-  }, [peerPay])
-
   return (
     <Container maxWidth="sm">
       <Box sx={{ minHeight: '100vh', py: 5 }}>
@@ -520,14 +517,13 @@ export default function PeerPayRoute() {
 
         <Stack spacing={2}>
           <PaymentForm
-            peerPay={peerPay}
             onSent={fetchPayments}
             wallet={wallet}
           />
 
           {loading && <LinearProgress />}
 
-          <PaymentList payments={payments} onRefresh={fetchPayments} peerPay={peerPay} />
+          <PaymentList payments={payments} onRefresh={fetchPayments} wallet={wallet} />
 
           {/* Transaction History Section */}
           <Paper elevation={2} sx={{ p: 3 }}>

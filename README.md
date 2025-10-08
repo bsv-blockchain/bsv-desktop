@@ -1,6 +1,8 @@
 # BSV Desktop
 
-A cross-platform desktop wallet application for the BSV blockchain, built with Electron and React. BSV Desktop provides a complete wallet interface with support for both self-custody (local) and remote storage options.
+A cross-platform desktop wallet application for the BSV Blockchain, built with Electron and Vite. BSV Desktop provides a complete wallet interface with support for both self-custody (local) and remote storage options.
+
+The default configuration is for locally stored transactions and metadata, entirely self custody.
 
 > **Note**: This project was migrated from Tauri to Electron to enable local database storage. See [PORTED.md](PORTED.md) for the full migration story.
 
@@ -9,8 +11,8 @@ A cross-platform desktop wallet application for the BSV blockchain, built with E
 BSV Desktop is a feature-rich Bitcoin SV wallet that runs on macOS, Windows, and Linux. It provides:
 
 - **🔐 Self-Custody Mode** - Full control with local key management and SQLite storage
-- **☁️ Remote Storage Mode** - WAB (Wallet Authentication Bundle) integration with remote storage
-- **🌐 BRC-100 Interface** - HTTP server on port 3321 for external app integration
+- **☁️ Remote Storage Mode** - WAB (Wallet Authentication Backend) integration with remote storage
+- **🌐 BRC-100 Interface** - HTTPS server on port 2121 for external app integration
 - **📱 Identity Certificates** - BRC-64/65 certificate management
 - **💸 Payment Protocol** - BRC-29 payment support
 - **🎯 Overlay Services** - App permissions, baskets, protocols, counterparties
@@ -31,7 +33,7 @@ Reusable React components and wallet logic:
 ### 2. **Electron Main Process** (`electron/`)
 Native functionality and backend services:
 - `main.ts` - Window management, IPC handlers
-- `httpServer.ts` - BRC-100 HTTP server on port 3321
+- `httpServer.ts` - BRC-100 HTTPS server on port 2121
 - `storage.ts` - SQLite storage manager with IPC proxy
 - `monitor-worker.ts` - Background monitoring process
 
@@ -74,7 +76,7 @@ This will:
 - Automatic recompilation on file changes
 - React DevTools enabled
 - Console logs from both main and renderer processes
-- HTTP server running on `http://127.0.0.1:3321`
+- HTTPS server running on `https://localhost:2121`
 
 ### Building
 
@@ -117,19 +119,18 @@ bsv-desktop/
 │   │   └── *Handler.tsx          # Permission request modals
 │   ├── pages/                    # Dashboard pages
 │   │   ├── Dashboard/            # Main dashboard and settings
-│   │   ├── Greeter/              # Login/authentication flow
 │   │   └── Recovery/             # Password/phone recovery
 │   └── navigation/               # Menu and routing
 │
 ├── src/                          # Electron app entry
 │   ├── main.tsx                  # React app initialization
-│   ├── onWalletReady.ts          # BRC-100 HTTP handler
-│   ├── electronFunctions.ts      # Native handlers
+│   ├── onWalletReady.ts          # BRC-100 HTTPS handler
+│   ├── electronFunctions.ts      # Native handlers (focus, downloads, dialogs)
 │   └── StorageElectronIPC.ts     # IPC storage proxy
 │
 ├── electron/                     # Electron backend
 │   ├── main.ts                   # Main process, window lifecycle
-│   ├── httpServer.ts             # Express server (port 3321)
+│   ├── httpServer.ts             # Express server (port 2121)
 │   ├── storage.ts                # Storage manager + IPC handlers
 │   ├── monitor-worker.ts         # Background monitoring process
 │   ├── preload.ts                # IPC bridge (context isolation)
@@ -145,25 +146,15 @@ bsv-desktop/
 ├── vite.config.ts                # Vite build config
 └── electron-builder.json5        # Packaging config
 ```
-
 ## Configuration
 
-Wallet configuration is managed in `src/lib/config.ts`:
-
-```typescript
-export const DEFAULT_CHAIN = 'main'         // 'main' or 'test'
-export const DEFAULT_USE_WAB = false        // true = WAB, false = self-custody
-export const ADMIN_ORIGINATOR = 'admin.com' // Admin domain for permissions
-```
-
 Users can configure at runtime via the WalletConfig component:
-- **Authentication**: WAB or self-custody
+- **Authentication**: WAB or self-custody (default: self-custody)
 - **Network**: Mainnet or testnet
 - **Storage**: Remote (StorageClient) or local (SQLite)
 - **Message Box**: Enable/disable message box integration
 
 Configuration is persisted in **Version 3 snapshots** (localStorage + encrypted).
-
 ## Storage Modes
 
 ### Local Storage (Self-Custody)
@@ -176,7 +167,7 @@ Configuration is persisted in **Version 3 snapshots** (localStorage + encrypted)
 - **Provider**: StorageClient (HTTP-based)
 - **Server**: User-configured URL (e.g., `https://storage.babbage.systems`)
 - **Features**: Cloud backup, multi-device sync
-- **Authentication**: WAB with phone/DevConsole verification
+- **Authentication**: WAB (Wallet Authentication Backend) with phone/DevConsole verification
 
 ## Background Monitoring
 
@@ -194,7 +185,7 @@ BSV Desktop runs a separate Monitor worker process that:
 
 ## HTTP Server (BRC-100 Interface)
 
-External apps can connect to the wallet via HTTP on port 3321:
+External apps can connect to the wallet via HTTPS on port 2121:
 
 **Endpoints**:
 - `POST /createAction` - Create and broadcast transactions
@@ -207,7 +198,7 @@ External apps can connect to the wallet via HTTP on port 3321:
 
 **Testing**:
 ```bash
-curl http://127.0.0.1:3321/isAuthenticated
+curl https://127.0.0.1:2121/isAuthenticated
 ```
 
 ## Contributing
@@ -260,7 +251,7 @@ console.log('[Renderer]', 'Debug message')
 **HTTP Server**:
 ```bash
 # Test endpoints
-curl -X POST http://127.0.0.1:3321/isAuthenticated
+curl -X POST https://127.0.0.1:2121/isAuthenticated
 ```
 
 ## Releasing a New Version

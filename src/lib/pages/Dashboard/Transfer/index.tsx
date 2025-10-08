@@ -1,6 +1,5 @@
 // src/routes/PeerPayRoute.tsx
 import React, { useCallback, useEffect, useMemo, useState, useContext, useRef } from 'react'
-import { useHistory } from 'react-router'
 import {
   Alert,
   Avatar,
@@ -22,31 +21,34 @@ import {
   MenuItem,
   FormControl,
   CircularProgress,
-  Autocomplete,
-  Card,
-  CardContent,
-  Link
+  Autocomplete
 } from '@mui/material'
 import InputAdornment from '@mui/material/InputAdornment'
 import { PeerPayClient, IncomingPayment } from '@bsv/message-box-client'
-import { Utils, WalletClient, Script } from '@bsv/sdk'
+import { PubKeyHex, WalletClient } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
 import { toast } from 'react-toastify'
+import { MESSAGEBOX_HOST } from '../../../config'
 import { CurrencyConverter } from 'amountinator'
 import useAsyncEffect from 'use-async-effect'
 import { WalletProfile } from '../../../types/WalletProfile'
 import { OutlinedInput, Tabs, Tab } from '@mui/material'
 import { useIdentitySearch } from '@bsv/identity-react'
 
+export type PeerPayRouteProps = {
+  walletClient?: WalletClient
+  defaultRecipient?: string
+}
+
 /* --------------------------- Inline: Payment Form -------------------------- */
 type PaymentFormProps = {
   peerPay: PeerPayClient
   onSent?: () => void
-  wallet: WalletClient
+  defaultRecipient?: string
 }
-function PaymentForm({ peerPay, onSent }: PaymentFormProps) {
+function PaymentForm({ peerPay, onSent, defaultRecipient }: PaymentFormProps) {
   const {managers, activeProfile} = useContext(WalletContext)
-  const [recipient, setRecipient] = useState('')
+  const [recipient, setRecipient] = useState(defaultRecipient ?? '')
   const [amount, setAmount] = useState<number>(0)
   const [sending, setSending] = useState(false)
   const [profiles, setProfiles] = useState<WalletProfile[]>([])
@@ -147,15 +149,15 @@ function PaymentForm({ peerPay, onSent }: PaymentFormProps) {
   return (
     <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
       <Typography variant="h6" sx={{ mb: 1 }}>
-        Create New Payment
+        Transfer
       </Typography>
       <Stack spacing={2}>
         <Tabs value={tabValue} onChange={(e, newValue) => {
           setTabValue(newValue)
           setRecipient('')
         }}>
-          <Tab label="Pay Someone" />
-          <Tab label="Internal Trasnfer" />
+          <Tab label="Send to Anyone" />
+          <Tab label="My Profiles" />
         </Tabs>
 
         {tabValue === 0 ? (
@@ -291,13 +293,7 @@ type PaymentListProps = {
 
 function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
   // Track loading per messageId so buttons aren't linked
-  const { messageBoxUrl, useMessageBox } = useContext(WalletContext)  
-  const history = useHistory()
   const [loadingById, setLoadingById] = useState<Record<string, boolean>>({})
-
-  if (!useMessageBox || !messageBoxUrl) {
-    return <Button variant="outlined" onClick={() => history.push('/dashboard/settings')}>Enable Inbound Payments in Settings by Configuring a Message Box</Button>
-  }
 
   const setLoadingFor = (id: string, on: boolean) => {
     setLoadingById(prev => {
@@ -317,7 +313,7 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
     } catch (e1) {
       toast.error('[PaymentList] acceptPayment raw failed → refetching by id', e1 as any)
       try {
-        const list = await peerPay.listIncomingPayments(messageBoxUrl)
+        const list = await peerPay.listIncomingPayments(MESSAGEBOX_HOST)
         const fresh = list.find(x => String(x.messageId) === id)
         if (!fresh) throw new Error('Payment not found on refresh')
         await peerPay.acceptPayment(fresh)
@@ -349,12 +345,12 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
   return (
     <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-        <Typography variant="h6">Pending Payments</Typography>
+        <Typography variant="h6">Pending Transfer</Typography>
         <Button onClick={onRefresh}>Refresh</Button>
       </Box>
 
       {payments.length === 0 ? (
-        <Typography color="text.secondary">No pending payments.</Typography>
+        <Typography color="text.secondary">No pending transfers.</Typography>
       ) : (
         <List sx={{ width: '100%' }}>
           {payments.map((p) => {
@@ -406,22 +402,21 @@ function PaymentList({ payments, onRefresh, peerPay }: PaymentListProps) {
 }
 
 /* ------------------------------- Route View -------------------------------- */
-export default function PeerPayRoute() {
-  const { messageBoxUrl, managers, adminOriginator } = useContext(WalletContext)
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'localhost:2121') : null
+export default function PeerPayRoute({ walletClient, defaultRecipient }: PeerPayRouteProps) {
+  const { activeProfile, managers, adminOriginator } = useContext(WalletContext)
 
   const peerPay = useMemo(() => {
+    const wc = managers.permissionsManager
     return new PeerPayClient({
-      walletClient: wallet,
-      messageBoxHost: messageBoxUrl,
+      walletClient: wc,
+      messageBoxHost: MESSAGEBOX_HOST,
       enableLogging: true,
       originator: adminOriginator
     })
-  }, [wallet])
+  }, [walletClient])
 
   const [payments, setPayments] = useState<IncomingPayment[]>([])
   const [loading, setLoading] = useState(false)
-  const [transactions, setTransactions] = useState([])
   const [snack, setSnack] = useState<{ open: boolean; msg: string; severity: 'success' | 'info' | 'warning' | 'error' }>({
     open: false,
     msg: '',
@@ -431,65 +426,14 @@ export default function PeerPayRoute() {
   const fetchPayments = useCallback(async () => {
     try {
       setLoading(true)
-      const list = await peerPay.listIncomingPayments(messageBoxUrl)
+      const list = await peerPay.listIncomingPayments(MESSAGEBOX_HOST)
       setPayments(list)
     } catch (e) {
       setSnack({ open: true, msg: (e as Error)?.message ?? 'Failed to load payments', severity: 'error' })
     } finally {
       setLoading(false)
     }
-  }, [peerPay, messageBoxUrl])
-
-  const getPastTransactions = async () => {
-    if (!wallet) return
-
-    try {
-      const response = await wallet.listActions({
-        labels: ['peerpay'],
-        labelQueryMode: 'any',
-        includeOutputLockingScripts: true,
-        includeOutputs: true,
-        limit: 100,
-      })
-
-      console.log({ response })
-
-      setTransactions((txs) => {
-        const set = new Set(txs.map((tx) => tx.txid))
-        const pastTxs = response.actions.map((action) => {
-          let address = ''
-          // Try to find BSV recipient output first
-          try {
-            address = Utils.toBase58Check(
-              Script.fromHex(action.outputs![0].lockingScript!).chunks[2].data as number[]
-            )
-          } catch (error) {
-            console.log({ error })
-            address = ''
-          }
-
-          return {
-            txid: action.txid,
-            to: address || 'unknown',
-            amount: action.satoshis / 100000000,
-          }
-        })
-        const newTxs = pastTxs.filter((tx) => tx.amount !== 0 && !set.has(tx.txid))
-        return [...txs, ...newTxs]
-      })
-    } catch (error) {
-      console.error('Error fetching transactions:', error)
-    }
-  }
-
-  // Only fetch payments once on mount
-  const hasInitialFetch = useRef(false)
-  useEffect(() => {
-    if (!hasInitialFetch.current) {
-      hasInitialFetch.current = true
-      fetchPayments()
-    }
-  }, [])
+  }, [peerPay])
 
   useEffect(() => {
     let mounted = true
@@ -497,7 +441,7 @@ export default function PeerPayRoute() {
         try {
           await peerPay.initializeConnection()
           await peerPay.listenForLivePayments({
-            overrideHost: messageBoxUrl,
+            overrideHost: MESSAGEBOX_HOST,
             onPayment: (payment) => {
               if (!mounted) return
               setPayments((prev) => [...prev, payment])
@@ -515,62 +459,19 @@ export default function PeerPayRoute() {
     <Container maxWidth="sm">
       <Box sx={{ minHeight: '100vh', py: 5 }}>
         <Typography variant="h5" sx={{ mb: 2 }}>
-          Payments
+          Wallet Transfer
         </Typography>
 
         <Stack spacing={2}>
           <PaymentForm
             peerPay={peerPay}
             onSent={fetchPayments}
-            wallet={wallet}
+            defaultRecipient={defaultRecipient}
           />
 
           {loading && <LinearProgress />}
 
           <PaymentList payments={payments} onRefresh={fetchPayments} peerPay={peerPay} />
-
-          {/* Transaction History Section */}
-          <Paper elevation={2} sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom sx={{ fontWeight: 500 }}>
-              Transaction History
-            </Typography>
-            <Divider sx={{ mb: 2 }} />
-
-            <Button variant="outlined" onClick={getPastTransactions} fullWidth sx={{ mb: 2 }}>
-              Refresh Transactions
-            </Button>
-
-            {transactions.length === 0 ? (
-              <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-                No transactions yet...
-              </Typography>
-            ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {transactions.map((tx, index) => (
-                  <Card key={index} variant="outlined">
-                    <CardContent>
-                      <Typography variant="body2" color="textSecondary">
-                        <strong>TXID:</strong>{' '}
-                        <Link
-                          href={`https://whatsonchain.com/tx/${tx.txid}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {tx.txid}
-                        </Link>
-                      </Typography>
-                      <Typography variant="body2" color="textSecondary">
-                        <strong>To:</strong> {tx.to || 'N/A'}
-                      </Typography>
-                      <Typography variant="body2" color="textSecondary">
-                        <strong>Amount:</strong> {tx.amount || 'N/A'} BSV
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                ))}
-              </Box>
-            )}
-          </Paper>
         </Stack>
 
         <Snackbar

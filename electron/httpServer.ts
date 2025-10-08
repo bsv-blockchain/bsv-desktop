@@ -48,6 +48,36 @@ export async function startHttpServer(mainWindow: BrowserWindow): Promise<() => 
     res.sendStatus(200);
   });
 
+  // Serve manifest.json
+  app.get('/manifest.json', (_req: Request, res: Response) => {
+    const manifest = {
+      "short_name": "BSV Desktop",
+      "name": "BSV Desktop",
+      "icons": [
+        {
+          "src": "favicon.ico",
+          "sizes": "64x64 32x32 24x24 16x16",
+          "type": "image/x-icon"
+        }
+      ],
+      "start_url": ".",
+      "display": "standalone",
+      "theme_color": "#000000",
+      "background_color": "#ffffff",
+      "babbage": {
+        "trust": {
+          "name": "BSV Desktop",
+          "note": "Allows basic payments between counterparties",
+          "icon": "https://localhost:2121/favicon.ico",
+          "publicKey": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        }
+      }
+    };
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Content-Type', 'application/json');
+    res.json(manifest);
+  });
+
   // Listen for responses from renderer
   mainWindow.webContents.on('ipc-message', (_event, channel, response) => {
     if (channel === 'http-response') {

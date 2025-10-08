@@ -74,7 +74,7 @@ export default function Payments() {
 
   const derivationPrefix = Utils.toBase64(Utils.toArray(getCurrentDate(), 'utf8'))
   const derivationSuffix = Utils.toBase64(Utils.toArray('legacy', 'utf8'))
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'BSV-Desktop') : null
+  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'localhost:2121') : null
 
   if (!wallet) {
     return <></>

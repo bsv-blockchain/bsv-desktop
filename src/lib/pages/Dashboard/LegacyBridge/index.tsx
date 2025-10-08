@@ -19,7 +19,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import { QRCodeSVG } from 'qrcode.react'
-import { PublicKey, P2PKH, Beef, Utils, Script, WalletClient, WalletProtocol, InternalizeActionArgs, InternalizeOutput } from '@bsv/sdk'
+import { PublicKey, P2PKH, Beef, Utils, Script, WalletClient, WalletProtocol, InternalizeActionArgs, InternalizeOutput, PrivateKey } from '@bsv/sdk'
 import getBeefForTxid from '../../../utils/getBeefForTxid'
 import { wocFetch } from '../../../utils/RateLimitedFetch'
 import { toast } from 'react-toastify'
@@ -52,6 +52,12 @@ interface TransactionRecord {
   amount: number
 }
 
+const getCurrentDate = (daysOffset: number) => {
+  const today = new Date()
+  today.setDate(today.getDate() - daysOffset)
+  return today.toISOString().split('T')[0]
+}
+
 export default function Payments() {
   const { managers, network } = useContext(WalletContext)
   const [paymentAddress, setPaymentAddress] = useState<string | null>(null)
@@ -64,15 +70,7 @@ export default function Payments() {
   const [isSending, setIsSending] = useState<boolean>(false)
   const [copied, setCopied] = useState<boolean>(false)
   const [daysOffset, setDaysOffset] = useState<number>(0)
-
-  // Calculate the date based on the offset
-  const getCurrentDate = () => {
-    const today = new Date()
-    today.setDate(today.getDate() - daysOffset)
-    return today.toISOString().split('T')[0]
-  }
-
-  const derivationPrefix = Utils.toBase64(Utils.toArray(getCurrentDate(), 'utf8'))
+  const [derivationPrefix, setDerivationPrefix] = useState<string>(Utils.toBase64(Utils.toArray(getCurrentDate(0), 'utf8')))
   const derivationSuffix = Utils.toBase64(Utils.toArray('legacy', 'utf8'))
   const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'localhost:2121') : null
 
@@ -89,7 +87,7 @@ export default function Payments() {
   }
 
   // Derive payment address from wallet public key
-  const getPaymentAddress = async (): Promise<string> => {
+  const getPaymentAddress = async (derivationPrefix: string): Promise<string> => {
     if (!wallet) {
       throw new Error('Wallet not initialized')
     }
@@ -100,6 +98,7 @@ export default function Payments() {
       counterparty: 'anyone',
       forSelf: true,
     })
+    console.log({ keyID: derivationPrefix + ' ' + derivationSuffix, counterparty: 'anyone', forSelf: true })
     return PublicKey.fromString(publicKey).toAddress(network === 'mainnet' ? 'mainnet' : 'testnet')
   }
 
@@ -194,7 +193,7 @@ export default function Payments() {
   }
 
   // Import funds from payment address into wallet
-  const handleImportFunds = async () => {
+  const handleImportFunds = async (paymentAddress, derivationPrefix) => {
     if (!paymentAddress || balance < 0) {
       toast.error('Get your address and balance first!')
       return
@@ -247,14 +246,40 @@ export default function Payments() {
 
       console.log({ beef: beef.toLogString() })
 
-      // prepare each tx for internalization
+      // Verify the derived address matches
+      const { publicKey: derivedPubKey } = await wallet.getPublicKey({
+        protocolID: brc29ProtocolID,
+        keyID: derivationPrefix + ' ' + derivationSuffix,
+        counterparty: new PrivateKey(1).toPublicKey().toString(),
+        forSelf: true,
+      })
+      const derivedAddress = PublicKey.fromString(derivedPubKey).toAddress(network === 'mainnet' ? 'mainnet' : 'testnet')
+      console.log('Address verification:', {
+        paymentAddress,
+        derivedAddress,
+        match: paymentAddress === derivedAddress,
+        keyID: derivationPrefix + ' ' + derivationSuffix
+      })
+
       const txs = beef.txs.map((beefTx) => {
         const tx = beef.findAtomicTransaction(beefTx.txid)
-        const outputs: InternalizeOutput[] = utxos.filter(o => o.txid === beefTx.txid).map(o => ({
+        const relevantUtxos = utxos.filter(o => o.txid === beefTx.txid)
+        console.log({
+          txid: tx.id('hex'),
+          paymentAddress,
+          derivationPrefix,
+          derivationSuffix,
+          relevantUtxos,
+          outputs: relevantUtxos.map((o, i) => ({
+            index: o.vout,
+            lockingScript: tx.outputs[o.vout].lockingScript.toHex()
+          }))
+        })
+        const outputs: InternalizeOutput[] = relevantUtxos.map(o => ({
           outputIndex: o.vout,
           protocol: 'wallet payment',
           paymentRemittance: {
-            senderIdentityKey: 'anyone',
+            senderIdentityKey: new PrivateKey(1).toPublicKey().toString(),
             derivationPrefix,
             derivationSuffix
           }
@@ -271,18 +296,37 @@ export default function Payments() {
       console.log({ txs })
 
       // internalize
-      txs.forEach(async t => {
-        const response = await wallet.internalizeAction(t)
-        if (!response?.accepted) toast.error('Payment was not accepted')
-      })
+      for (const t of txs) {
+        try {
+          console.log('Attempting to internalize:', {
+            description: t.description,
+            outputCount: t.outputs.length,
+            outputs: t.outputs.map(o => ({
+              outputIndex: o.outputIndex,
+              protocol: o.protocol,
+              paymentRemittance: o.paymentRemittance
+            }))
+          })
+          console.log('paymentRemittance senderIdentityKey:', t.outputs[0].paymentRemittance?.senderIdentityKey)
+          const response = await wallet.internalizeAction(t)
+          console.log('Internalize response:', response)
+          if (response?.accepted) {
+            toast.success('Payment accepted')
+          } else {
+            toast.error('Payment was rejected')
+          }
+        } catch (error: any) {
+          console.error('Internalize error:', error)
+          console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
+          toast.error(`Payment failed: ${error?.message || 'unknown error'}`)
+        }
+      }
 
       // Refresh the balance to show remaining funds (if any)
       if (paymentAddress) {
         const newBalance = await fetchBSVBalance(paymentAddress)
         setBalance(newBalance)
       }
-
-      toast.success('Payment Accepted!')
 
       // Refresh transaction history
       await getPastTransactions()
@@ -309,7 +353,7 @@ export default function Payments() {
         labelQueryMode: 'any', 
         includeOutputLockingScripts: true,
         includeOutputs: true,
-        limit: 100,
+        limit: 10,
       })
 
       setTransactions((txs) => {
@@ -341,10 +385,13 @@ export default function Payments() {
   }
 
   // Handle showing address
-  const handleViewAddress = async () => {
+  const handleViewAddress = async (offset: number = 0) => {
     setIsLoadingAddress(true)
     try {
-      const address = await getPaymentAddress()
+      const prefix = Utils.toBase64(Utils.toArray(getCurrentDate(offset), 'utf8'))
+      const address = await getPaymentAddress(prefix)
+      setDaysOffset(offset)
+      setDerivationPrefix(prefix)
       setPaymentAddress(address)
     } catch (error: any) {
       toast.error(`Error generating address: ${error.message || 'unknown error'}`)
@@ -406,9 +453,8 @@ export default function Payments() {
   }
 
   function dateChange (offset: number) {
-    setDaysOffset(offset)
-    setBalance(-1) // Reset balance when date changes
-    handleViewAddress()
+    setBalance(-1)
+    handleViewAddress(offset)
   }
 
   // Load transactions on mount
@@ -444,7 +490,7 @@ export default function Payments() {
               <ArrowBackIcon />
             </IconButton>
             <Typography variant="body2" sx={{ minWidth: 90, textAlign: 'center', fontFamily: 'monospace' }}>
-              {getCurrentDate()}
+              {getCurrentDate(daysOffset)}
             </Typography>
             <IconButton
               size="small"
@@ -468,7 +514,7 @@ export default function Payments() {
             <CircularProgress />
           </Box>
         ) : !paymentAddress ? (
-          <Button variant="contained" onClick={handleViewAddress} fullWidth>
+          <Button variant="contained" onClick={() => handleViewAddress()} fullWidth>
             Show Payment Address
           </Button>
         ) : (
@@ -514,7 +560,7 @@ export default function Payments() {
               </Button>
               <Button
                 variant="contained"
-                onClick={handleImportFunds}
+                onClick={() => handleImportFunds(paymentAddress, derivationPrefix)}
                 disabled={isImporting || balance <= 0}
                 fullWidth
               >

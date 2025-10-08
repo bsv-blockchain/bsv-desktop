@@ -175,9 +175,27 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                   <Typography variant="body2" color="textSecondary">
                     Release Notes:
                   </Typography>
-                  <Typography variant="body2" style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>
-                    {updateInfo.releaseNotes}
-                  </Typography>
+                  <Box
+                    sx={{
+                      marginTop: 1,
+                      padding: 1,
+                      backgroundColor: 'background.paper',
+                      borderRadius: 1,
+                      border: '1px solid',
+                      borderColor: 'divider'
+                    }}
+                  >
+                    <div
+                      dangerouslySetInnerHTML={{
+                        __html: updateInfo.releaseNotes || 'No release notes available.'
+                      }}
+                      style={{
+                        fontSize: '0.875rem',
+                        lineHeight: 1.5,
+                        color: 'text.secondary'
+                      }}
+                    />
+                  </Box>
                 </Box>
               )}
             </>

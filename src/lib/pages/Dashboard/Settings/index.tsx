@@ -252,6 +252,62 @@ const Settings = () => {
   const handleCheckForUpdates = async () => {
     try {
       setUpdateCheckLoading(true);
+
+      // In development mode, fetch latest release data from GitHub for testing
+      if (process.env.NODE_ENV === 'development') {
+        try {
+          const response = await fetch('https://api.github.com/repos/bsv-blockchain/bsv-desktop/releases/latest');
+          if (response.ok) {
+            const release = await response.json();
+            setManualUpdateInfo({
+              version: release.tag_name.replace('v', ''),
+              releaseDate: release.published_at,
+              releaseNotes: release.body || 'No release notes available.'
+            });
+          } else {
+            // Fallback to sample data if API fails
+            setManualUpdateInfo({
+              version: '0.8.1-dev',
+              releaseDate: new Date().toISOString(),
+              releaseNotes: `
+<p><strong>Version 0.8.1</strong> - Latest Release</p>
+<p>This update brings several important improvements:</p>
+<ul>
+<li><strong>Enhanced Security:</strong> Improved encryption for all wallet data</li>
+<li><strong>Better Performance:</strong> Faster transaction processing and UI responsiveness</li>
+<li><strong>New Features:</strong> Added support for batch transactions</li>
+<li><strong>Bug Fixes:</strong> Resolved issues with payment notifications</li>
+</ul>
+<p><strong>Breaking Changes:</strong></p>
+<p>Please note that this update requires a restart of the application.</p>
+<p>For more information, visit our <a href="https://docs.bsvblockchain.org" target="_blank">documentation</a>.</p>
+`
+            });
+          }
+        } catch (error) {
+          console.error('Failed to fetch release data:', error);
+          // Fallback to sample data
+          setManualUpdateInfo({
+            version: '0.8.1-dev',
+            releaseDate: new Date().toISOString(),
+            releaseNotes: `
+<p><strong>Version 0.8.1</strong> - Latest Release</p>
+<p>This update brings several important improvements:</p>
+<ul>
+<li><strong>Enhanced Security:</strong> Improved encryption for all wallet data</li>
+<li><strong>Better Performance:</strong> Faster transaction processing and UI responsiveness</li>
+<li><strong>New Features:</strong> Added support for batch transactions</li>
+<li><strong>Bug Fixes:</strong> Resolved issues with payment notifications</li>
+</ul>
+<p><strong>Breaking Changes:</strong></p>
+<p>Please note that this update requires a restart of the application.</p>
+<p>For more information, visit our <a href="https://docs.bsvblockchain.org" target="_blank">documentation</a>.</p>
+`
+          });
+        }
+        return;
+      }
+
       const result = await window.electronAPI.updates.check();
       if (result.success) {
         if (result.updateInfo) {

@@ -14,7 +14,7 @@
 import path from 'path';
 import os from 'os';
 import { createRequire } from 'module';
-import { StorageKnex, KnexMigrations, Services, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
+import { StorageKnex, Services, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
 
 const require = createRequire(import.meta.url);
 

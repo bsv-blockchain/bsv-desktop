@@ -24,10 +24,10 @@
   "dependencies": {
     "@bsv/identity-react": "^1.1.7",
     "@bsv/message-box-client": "^1.4.0",
-    "@bsv/sdk": "^1.8.0",
+    "@bsv/sdk": "^1.8.2",
     "@bsv/uhrp-react": "^1.0.4",
-    "@bsv/wallet-toolbox": "^1.6.23",
-    "@bsv/wallet-toolbox-client": "^1.6.23",
+    "@bsv/wallet-toolbox": "^1.6.26",
+    "@bsv/wallet-toolbox-client": "^1.6.26",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^6.4.8",

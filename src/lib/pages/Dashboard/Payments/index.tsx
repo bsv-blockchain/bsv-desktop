@@ -29,7 +29,7 @@ import {
 } from '@mui/material'
 import InputAdornment from '@mui/material/InputAdornment'
 import { PeerPayClient, IncomingPayment } from '@bsv/message-box-client'
-import { Utils, WalletClient, Script } from '@bsv/sdk'
+import { Utils, WalletClient, Script, PublicKey } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
 import { toast } from 'react-toastify'
 import { CurrencyConverter } from 'amountinator'
@@ -53,6 +53,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
   const currencyConverter = new CurrencyConverter()
   const [input, setInput] = useState('')
   const [tabValue, setTabValue] = useState(0) // 0 = profiles, 1 = anyone
+  const [publicKeyInput, setPublicKeyInput] = useState('')
 
   // Identity search hook for "Send to Anyone" tab
   const identitySearch = useIdentitySearch({
@@ -177,85 +178,119 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
         </Tabs>
 
         {tabValue === 0 ? (
-          <Autocomplete
-            options={identitySearch.identities}
-            loading={identitySearch.isLoading}
-            inputValue={identitySearch.inputValue}
-            value={identitySearch.selectedIdentity}
-            onInputChange={identitySearch.handleInputChange}
-            onChange={identitySearch.handleSelect}
-            filterOptions={(options: IdentityOption[]) => options.filter((identity: IdentityOption, index, array) => array.findIndex((i: StrictIdentityOption) => i.identityKey === (identity as StrictIdentityOption).identityKey) === index)}
-            getOptionLabel={(option) => {
-              if (typeof option === 'string') return option
-              return option.name || option.identityKey.slice(0, 16)
-            }}
-            isOptionEqualToValue={(option, value) => {
-              if (typeof option === 'string' || typeof value === 'string') return false
-              return option.identityKey === value.identityKey
-            }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Search for Recipient"
-                placeholder="Search by name, email, etc."
-                InputProps={{
-                  ...params.InputProps,
-                  endAdornment: (
-                    <>
-                      {identitySearch.isLoading ? <CircularProgress size={20} /> : null}
-                      {params.InputProps.endAdornment}
-                    </>
-                  )
-                }}
-              />
-            )}
-            renderOption={(props, option) => {
-              if (typeof option === 'string') return null
-              const { key, ...otherProps } = props
-              return (
-                <li key={key} {...otherProps}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
-                    {option.avatarURL ? (
-                      <Avatar
-                        src={option.avatarURL}
-                        alt={option.name}
-                        sx={{ width: 40, height: 40 }}
-                      />
-                    ) : (
-                      <Avatar
-                        sx={{
-                          width: 40,
-                          height: 40,
-                          bgcolor: 'primary.main',
-                          fontSize: '0.875rem',
-                          fontWeight: 600
-                        }}
-                      >
-                        {getInitials(option.name, option.identityKey)}
-                      </Avatar>
-                    )}
-                    <Box sx={{ flexGrow: 1 }}>
-                      <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                        {option.name || 'Unknown'}
-                      </Typography>
-                      <Typography variant="caption" color="textSecondary" sx={{ fontFamily: 'monospace' }}>
-                        {option.identityKey.slice(0, 20)}...
-                      </Typography>
+          <>
+            <Autocomplete
+              options={identitySearch.identities}
+              loading={identitySearch.isLoading}
+              inputValue={identitySearch.inputValue}
+              value={identitySearch.selectedIdentity}
+              onInputChange={identitySearch.handleInputChange}
+              onChange={(event, value) => {
+                identitySearch.handleSelect(event, value as any);
+                if (value && typeof value !== 'string') {
+                  setRecipient(value.identityKey);
+                  setPublicKeyInput(''); // clear direct input
+                } else {
+                  setRecipient('');
+                }
+              }}
+              filterOptions={(options: IdentityOption[]) => options.filter((identity: IdentityOption, index, array) => array.findIndex((i: StrictIdentityOption) => i.identityKey === (identity as StrictIdentityOption).identityKey) === index)}
+              getOptionLabel={(option) => {
+                if (typeof option === 'string') return option
+                return option.name || option.identityKey.slice(0, 16)
+              }}
+              isOptionEqualToValue={(option, value) => {
+                if (typeof option === 'string' || typeof value === 'string') return false
+                return option.identityKey === value.identityKey
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Search for Recipient"
+                  placeholder="Search by name, email, etc."
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {identitySearch.isLoading ? <CircularProgress size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    )
+                  }}
+                />
+              )}
+              renderOption={(props, option) => {
+                if (typeof option === 'string') return null
+                const { key, ...otherProps } = props
+                return (
+                  <li key={key} {...otherProps}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
+                      {option.avatarURL ? (
+                        <Avatar
+                          src={option.avatarURL}
+                          alt={option.name}
+                          sx={{ width: 40, height: 40 }}
+                        />
+                      ) : (
+                        <Avatar
+                          sx={{
+                            width: 40,
+                            height: 40,
+                            bgcolor: 'primary.main',
+                            fontSize: '0.875rem',
+                            fontWeight: 600
+                          }}
+                        >
+                          {getInitials(option.name, option.identityKey)}
+                        </Avatar>
+                      )}
+                      <Box sx={{ flexGrow: 1 }}>
+                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                          {option.name || 'Unknown'}
+                        </Typography>
+                        <Typography variant="caption" color="textSecondary" sx={{ fontFamily: 'monospace' }}>
+                          {option.identityKey.slice(0, 20)}...
+                        </Typography>
+                      </Box>
+                      {option.badgeLabel && (
+                        <Chip
+                          size="small"
+                          label={option.badgeLabel}
+                          sx={{ ml: 1 }}
+                        />
+                      )}
                     </Box>
-                    {option.badgeLabel && (
-                      <Chip
-                        size="small"
-                        label={option.badgeLabel}
-                        sx={{ ml: 1 }}
-                      />
-                    )}
-                  </Box>
-                </li>
-              )
-            }}
-            noOptionsText={identitySearch.inputValue ? "No identities found" : "Start typing to search"}
-            fullWidth
-          />
+                  </li>
+                )
+              }}
+              noOptionsText={identitySearch.inputValue ? "No identities found" : "Start typing to search"}
+              fullWidth
+            />
+            <TextField
+              fullWidth
+              label="Or Enter Recipient Public Key"
+              value={publicKeyInput}
+              onChange={(e) => {
+                const val = e.target.value.trim();
+                setPublicKeyInput(val);
+                if (val) {
+                  try {
+                    PublicKey.fromString(val);
+                    setRecipient(val);
+                    // Clear the autocomplete selection
+                    identitySearch.handleSelect(null, null);
+                  } catch (error) {
+                    setRecipient('');
+                  }
+                } else {
+                  setRecipient('');
+                }
+              }}
+              error={publicKeyInput && !recipient}
+              helperText={publicKeyInput && !recipient ? 'Invalid public key' : ''}
+              sx={{ mt: 1 }}
+            />
+          </>
         ) : (
           <FormControl fullWidth>
             <Select

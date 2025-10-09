@@ -160,15 +160,15 @@ const WalletConfig: React.FC = () => {
 
   return <Box sx={{ mb: 3 }}>
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mb: 2 }}>
         <Button
           startIcon={<SettingsIcon />}
           onClick={toggle}
-          variant="text"
-          color='secondary'
-          size="small"
+          variant={showWalletConfig ? "text" : "contained"}
+          color={showWalletConfig ? "secondary" : "primary"}
+          size={showWalletConfig ? "small" : "medium"}
         >
-          {showWalletConfig ? 'Hide Details' : 'Show Config'}
+          {showWalletConfig ? 'Hide Configuration' : 'Configure Wallet'}
         </Button>
       </Box>
       {isLoadingConfig ? (

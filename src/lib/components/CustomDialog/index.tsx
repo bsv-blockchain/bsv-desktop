@@ -28,6 +28,8 @@ const CustomDialog: React.FC<CustomDialogProps> = ({
   children, 
   actions,
   className = '',
+  maxWidth,
+  fullWidth,
   ...props 
 }) => {
   // No longer need classes from useStyles
@@ -36,8 +38,8 @@ const CustomDialog: React.FC<CustomDialogProps> = ({
 
   return (
     <Dialog
-      maxWidth={isFullscreen ? undefined : 'sm'}
-      fullWidth={!isFullscreen}
+      maxWidth={isFullscreen ? undefined : (maxWidth || 'sm')}
+      fullWidth={isFullscreen ? true : (fullWidth !== undefined ? fullWidth : true)}
       fullScreen={isFullscreen}
       className={className}
       {...props}

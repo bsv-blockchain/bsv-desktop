@@ -154,10 +154,10 @@ const RecoveryKeyHandler: FC = () => {
             Any 2 of 3 factors are required to access your data:
           </DialogContentText>
           <DialogContentText sx={{ mb: 3, textAlign: 'center', fontWeight: 'bold', color: theme.palette.getContrastText(theme.palette.background.default) }}>
-            Phone, Password, Recovery Key
+            Presentation Key, Password Key, Recovery Key
           </DialogContentText>
           <DialogContentText variant='body1' sx={{ mt: 3, mb: 1 }}>
-            When you lose your phone or forget your password, you must use the other factors to re-establish secure control. This is a perfectly normal and unavoidable fact of life. However -
+            When you lose your phone or mnemonic or forget your password, you must use the other factors to re-establish secure control. This is a perfectly normal and unavoidable fact of life. However -
           </DialogContentText>
           <DialogContentText>
             <Typography

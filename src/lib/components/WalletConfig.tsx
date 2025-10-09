@@ -228,7 +228,7 @@ const WalletConfig: React.FC = () => {
                         control={<Radio size="small" />}
                         label={
                           <Typography variant="body2">
-                            I will provide my own presentation key.
+                            I prefer to use a mnemonic presentation key
                           </Typography>
                         }
                       />
@@ -237,7 +237,7 @@ const WalletConfig: React.FC = () => {
                         control={<Radio size="small" />}
                         label={
                           <Typography variant="body2">
-                            I want to use WAB.
+                            I prefer to use WAB.
                           </Typography>
                         }
                       />

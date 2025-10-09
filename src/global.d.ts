@@ -6,6 +6,7 @@ export interface ElectronAPI {
   relinquishFocus: () => Promise<void>;
   downloadFile: (fileName: string, content: number[]) => Promise<{ success: boolean; path?: string; error?: string }>;
   saveFile: (defaultPath: string, content: number[]) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>;
+  saveMnemonic: (mnemonic: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   proxyFetchManifest: (url: string) => Promise<{ status: number; headers: [string, string][]; body: string }>;
   onHttpRequest: (callback: (event: any) => void) => void;
   sendHttpResponse: (response: any) => void;

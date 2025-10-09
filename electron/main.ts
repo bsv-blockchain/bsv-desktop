@@ -251,6 +251,30 @@ ipcMain.handle('save-file', async (_event, defaultPath: string, content: number[
   }
 });
 
+// Save mnemonic to ~/.bsv-desktop/
+ipcMain.handle('save-mnemonic', async (_event, mnemonic: string) => {
+  try {
+    const homeDir = app.getPath('home');
+    const bsvDir = path.join(homeDir, '.bsv-desktop');
+    
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(bsvDir)) {
+      fs.mkdirSync(bsvDir, { recursive: true });
+    }
+    
+    const timestamp = Date.now();
+    const fileName = `mnemonic${timestamp}.txt`;
+    const filePath = path.join(bsvDir, fileName);
+    
+    fs.writeFileSync(filePath, mnemonic, 'utf-8');
+    
+    return { success: true, path: filePath };
+  } catch (error) {
+    console.error('Save mnemonic failed:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
 // Proxy fetch for manifest.json files
 ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
   try {
@@ -397,6 +421,13 @@ ipcMain.handle('update:get-state', async () => {
 // ===== App Lifecycle =====
 
 app.whenReady().then(async () => {
+  // Disable SSL certificate validation for development
+  if (isDev) {
+    app.commandLine.appendSwitch('--ignore-certificate-errors');
+    app.commandLine.appendSwitch('--ignore-ssl-errors');
+    app.commandLine.appendSwitch('--disable-web-security');
+  }
+
   createWindow();
 
   // Start HTTP server on port 3321

@@ -14,7 +14,13 @@ import {
   Stepper,
   Step,
   StepLabel,
-  StepContent
+  StepContent,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Alert,
+  AlertTitle,
 } from '@mui/material'
 import {
   SettingsPhone as PhoneIcon,
@@ -25,14 +31,17 @@ import {
   Visibility,
   VisibilityOff,
   CheckCircle as CheckCircleIcon,
+  Casino as RandomIcon,
+  ContentCopy as CopyIcon,
 } from '@mui/icons-material'
 import PhoneEntry from '../../components/PhoneEntry.js'
 import AppLogo from '../../components/AppLogo.js'
 import { toast } from 'react-toastify'
+import { saveMnemonic } from '../../../electronFunctions.js'
 import { WalletContext } from '../../WalletContext.js'
 import { UserContext } from '../../UserContext.js'
 import PageLoading from '../../components/PageLoading.js'
-import { Utils } from '@bsv/sdk'
+import { Utils, Mnemonic, HD } from '@bsv/sdk'
 import { Link as RouterLink } from 'react-router-dom'
 import WalletConfig from '../../components/WalletConfig.js'
 
@@ -126,30 +135,71 @@ const CodeForm = ({ code, setCode, loading, handleSubmitCode, handleResendCode, 
   );
 };
 
-// Presentation key form component
-const PresentationKeyForm = ({ presentationKey, setPresentationKey, loading, handleSubmitPresentationKey, presentationKeyFieldRef }) => {
+// Presentation key form component (using mnemonic)
+const PresentationKeyForm = ({ mnemonic, setMnemonic, loading, handleSubmitMnemonic, mnemonicFieldRef, onGenerateRandom, isLocked }) => {
   const theme = useTheme();
+  
+  const handleCopy = () => {
+    if (mnemonic) {
+      navigator.clipboard.writeText(mnemonic)
+      toast.success('Mnemonic copied to clipboard')
+    }
+  }
+  
   return (
-    <form onSubmit={handleSubmitPresentationKey}>
+    <form onSubmit={handleSubmitMnemonic}>
       <TextField
-        label="Presentation Key"
-        value={presentationKey}
-        onChange={(e) => setPresentationKey(e.target.value)}
+        label="Recovery Mnemonic"
+        value={mnemonic}
+        onChange={(e) => setMnemonic(e.target.value)}
         variant="outlined"
         fullWidth
-        disabled={loading}
+        multiline
+        rows={3}
+        disabled={loading || isLocked}
+        placeholder="Enter your 12 or 24 word recovery phrase"
         slotProps={{
-          input: { ref: presentationKeyFieldRef }
+          input: { 
+            ref: mnemonicFieldRef,
+            endAdornment: mnemonic && (
+              <InputAdornment position="end">
+                <IconButton
+                  onClick={handleCopy}
+                  edge="end"
+                  size="small"
+                  sx={{ alignSelf: 'flex-start', mt: 1 }}
+                >
+                  <CopyIcon />
+                </IconButton>
+              </InputAdornment>
+            )
+          }
         }}
         sx={{ mb: 2 }}
       />
+      {!isLocked && (
+        <Button
+          variant='outlined'
+          onClick={onGenerateRandom}
+          disabled={loading}
+          fullWidth
+          startIcon={<RandomIcon />}
+          sx={{
+            borderRadius: theme.shape.borderRadius,
+            textTransform: 'none',
+            py: 1.2,
+            mb: 2
+          }}
+        >
+          Generate Random Mnemonic
+        </Button>
+      )}
       <Button
         variant='contained'
         type='submit'
-        disabled={loading || !presentationKey}
+        disabled={loading || !mnemonic}
         fullWidth
         sx={{
-          mt: 2,
           borderRadius: theme.shape.borderRadius,
           textTransform: 'none',
           py: 1.2
@@ -283,16 +333,18 @@ const Greeter: React.FC<any> = ({ history }) => {
   const [step, setStep] = useState(useWab ? 'phone' : 'presentation')
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
-  const [presentationKey, setPresentationKey] = useState('')
+  const [mnemonic, setMnemonic] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [accountStatus, setAccountStatus] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [showMnemonicDialog, setShowMnemonicDialog] = useState(false)
+  const [mnemonicLocked, setMnemonicLocked] = useState(false)
 
   const phoneFieldRef = useRef(null)
   const codeFieldRef = useRef(null)
-  const presentationKeyFieldRef = useRef(null)
+  const mnemonicFieldRef = useRef(null)
   const passwordFieldRef = useRef(null)
 
   const walletManager = managers?.walletManager
@@ -371,8 +423,30 @@ const Greeter: React.FC<any> = ({ history }) => {
     }
   }, [walletManager, phone])
 
-  // Step for manually providing presentation key when not using WAB
-  const handleSubmitPresentationKey = useCallback(async (e: React.FormEvent) => {
+  // Generate random mnemonic
+  const handleGenerateRandomMnemonic = useCallback(async () => {
+    try {
+      const randomMnemonic = Mnemonic.fromRandom()
+      const mnemonicStr = randomMnemonic.toString()
+      setMnemonic(mnemonicStr)
+      
+      // Save mnemonic to file
+      const result = await saveMnemonic(mnemonicStr)
+      if (result.success) {
+        toast.success(`Mnemonic saved to ${result.path}`)
+        setMnemonicLocked(true)
+        setShowMnemonicDialog(true)
+      } else {
+        toast.error(`Failed to save mnemonic: ${result.error}`)
+      }
+    } catch (err: any) {
+      console.error(err)
+      toast.error('Failed to generate random mnemonic')
+    }
+  }, [])
+
+  // Step for providing mnemonic when not using WAB
+  const handleSubmitMnemonic = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!walletManager) {
       toast.error('Wallet Manager not ready yet.')
@@ -380,7 +454,15 @@ const Greeter: React.FC<any> = ({ history }) => {
     }
     try {
       setLoading(true)
-      await walletManager.providePresentationKey(Utils.toArray(presentationKey, 'hex'))
+      
+      // Derive presentation key from mnemonic using HD path m/0'/0/0
+      const mnemonicObj = Mnemonic.fromString(mnemonic.trim())
+      const seed = mnemonicObj.toSeed()
+      const hdKey = HD.fromSeed(seed)
+      const derivedKey = hdKey.derive("m/0'/0/0")
+      const presentationKey = derivedKey.privKey.toArray()
+      
+      await walletManager.providePresentationKey(presentationKey)
       if (walletManager.authenticationFlow === 'new-user') {
         setAccountStatus('new-user')
       } else {
@@ -392,11 +474,11 @@ const Greeter: React.FC<any> = ({ history }) => {
       }
     } catch (err: any) {
       console.error(err)
-      toast.error(err.message || 'Failed to set presentation key')
+      toast.error(err.message || 'Failed to set presentation key from mnemonic')
     } finally {
       setLoading(false)
     }
-  }, [walletManager, presentationKey])
+  }, [walletManager, mnemonic])
 
   // Step 3: Provide a password for the final step.
   const handleSubmitPassword = useCallback(async (e: React.FormEvent) => {
@@ -592,11 +674,13 @@ const Greeter: React.FC<any> = ({ history }) => {
                     />
                   ) : (
                     <PresentationKeyForm
-                      presentationKey={presentationKey}
-                      setPresentationKey={setPresentationKey}
+                      mnemonic={mnemonic}
+                      setMnemonic={setMnemonic}
                       loading={loading}
-                      handleSubmitPresentationKey={handleSubmitPresentationKey}
-                      presentationKeyFieldRef={presentationKeyFieldRef}
+                      handleSubmitMnemonic={handleSubmitMnemonic}
+                      mnemonicFieldRef={mnemonicFieldRef}
+                      onGenerateRandom={handleGenerateRandomMnemonic}
+                      isLocked={mnemonicLocked}
                     />
                   )
                 )}
@@ -675,6 +759,87 @@ const Greeter: React.FC<any> = ({ history }) => {
           </a>.
         </Typography>
       </Paper>
+
+      {/* Mnemonic Security Dialog */}
+      <Dialog
+        open={showMnemonicDialog}
+        onClose={() => setShowMnemonicDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <LockIcon color="warning" />
+            <Typography variant="h6">Secure Your Recovery Mnemonic</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            <AlertTitle>Important: Save This Mnemonic</AlertTitle>
+            Your recovery mnemonic is the ONLY way to recover your wallet. Store it in a safe place indefinitely.
+          </Alert>
+          
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2,
+              bgcolor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.100',
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 1,
+              mb: 2
+            }}
+          >
+            <Typography
+              variant="body2"
+              sx={{
+                fontFamily: 'monospace',
+                wordBreak: 'break-word',
+                userSelect: 'all'
+              }}
+            >
+              {mnemonic}
+            </Typography>
+          </Paper>
+
+          <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<CopyIcon />}
+              onClick={() => {
+                navigator.clipboard.writeText(mnemonic)
+                toast.success('Mnemonic copied to clipboard')
+              }}
+              fullWidth
+            >
+              Copy to Clipboard
+            </Button>
+          </Box>
+
+          <Alert severity="info">
+            <AlertTitle>Security Tips</AlertTitle>
+            <Typography variant="body2" component="div">
+              • Write it down on paper and store it securely
+              <br />
+              • Never share it with anyone
+              <br />
+              • Keep multiple backups in different locations
+              <br />
+              • Do not store it digitally (photos, cloud, etc.)
+            </Typography>
+          </Alert>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => setShowMnemonicDialog(false)}
+            variant="contained"
+            fullWidth
+          >
+            I Have Saved My Mnemonic Securely
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   )
 }

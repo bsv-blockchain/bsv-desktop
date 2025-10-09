@@ -6,8 +6,8 @@ import { BreakpointProvider } from './utils/useBreakpoints'
 import { ExchangeRateContextProvider } from './components/AmountDisplay/ExchangeRateContextProvider'
 import Greeter from './pages/Greeter'
 import Dashboard from './pages/Dashboard'
-import LostPhone from './pages/Recovery/LostPhone'
-import LostPassword from './pages/Recovery/LostPassword'
+import RecoverPresentationKey from './pages/Recovery/RecoverPresentationKey'
+import RecoverPassword from './pages/Recovery/RecoverPassword'
 import Recovery from './pages/Recovery'
 import BasketAccessHandler from './components/BasketAccessHandler'
 import CertificateAccessHandler from './components/CertificateAccessHandler'
@@ -71,8 +71,8 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
                 <Switch>
                   <Route exact path='/' component={Greeter} />
                   <Route path='/dashboard' component={Dashboard} />
-                  <Route exact path='/recovery/lost-phone' component={LostPhone} />
-                  <Route exact path='/recovery/lost-password' component={LostPassword} />
+                  <Route exact path='/recovery/presentation-key' component={RecoverPresentationKey} />
+                  <Route exact path='/recovery/password' component={RecoverPassword} />
                   <Route exact path='/recovery' component={Recovery} />
                 </Switch>
               </BreakpointProvider>

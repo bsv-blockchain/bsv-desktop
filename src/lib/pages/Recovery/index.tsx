@@ -2,7 +2,7 @@ import style from './style'
 import { makeStyles } from '@mui/styles'
 import {
   Lock as LockIcon,
-  SettingsPhone as PhoneIcon
+  VpnKey as KeyIcon
 } from '@mui/icons-material'
 import {
   List, ListItem, ListItemIcon, ListItemText, Button, Typography
@@ -20,28 +20,33 @@ const Recovery: React.FC<any> = ({ history }) => {
         <Typography variant='h2' paragraph fontFamily='Helvetica' fontSize='2em'>
           Account Recovery
         </Typography>
+        <Typography variant='body1' paragraph>
+          Choose what you need to recover:
+        </Typography>
         <List style={{ marginTop: '1rem', marginBottom: '1rem' }}>
           <ListItem
-            // button
-            onClick={() => history.push('/recovery/lost-phone')}
+            button
+            onClick={() => history.push('/recovery/presentation-key')}
           >
             <ListItemIcon>
-              <PhoneIcon />
+              <KeyIcon />
             </ListItemIcon>
-            <ListItemText>
-              Lost Phone
-            </ListItemText>
+            <ListItemText
+              primary="Presentation Key (Lost access to WAB or mnemonic)"
+              secondary="Use your password and recovery key to regain access"
+            />
           </ListItem>
           <ListItem
-            // button
-            onClick={() => history.push('/recovery/lost-password')}
+            button
+            onClick={() => history.push('/recovery/password')}
           >
             <ListItemIcon>
               <LockIcon />
             </ListItemIcon>
-            <ListItemText>
-              Lost Password
-            </ListItemText>
+            <ListItemText
+              primary="Password (Forgotten)"
+              secondary="Use your presentation key (mnemonic or WAB) and recovery key"
+            />
           </ListItem>
         </List>
         <Button

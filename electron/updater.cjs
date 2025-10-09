@@ -34,6 +34,19 @@ function initAutoUpdater(mainWindow) {
   // Update available
   autoUpdater.on('update-available', (info) => {
     log.info('Update available:', info);
+
+    // Get current version from package.json
+    const { version: currentVersion } = require('../package.json');
+    const latestVersion = info.version;
+
+    // Don't notify if versions are the same
+    if (currentVersion === latestVersion) {
+      log.info(`Current version ${currentVersion} matches latest version ${latestVersion}, skipping update notification`);
+      updateState.available = false;
+      updateState.updateInfo = null;
+      return;
+    }
+
     updateState.available = true;
     updateState.updateInfo = info;
     updateState.error = null;
@@ -108,8 +121,22 @@ function quitAndInstall() {
 }
 
 // Manually check for updates
-function checkForUpdates() {
-  return autoUpdater.checkForUpdates();
+async function checkForUpdates() {
+  const result = await autoUpdater.checkForUpdates();
+
+  // Apply version comparison for manual checks
+  if (result && result.updateInfo) {
+    const { version: currentVersion } = require('../package.json');
+    const latestVersion = result.updateInfo.version;
+
+    // If versions match, return null to indicate no update available
+    if (currentVersion === latestVersion) {
+      log.info(`Manual check: Current version ${currentVersion} matches latest version ${latestVersion}`);
+      return { updateInfo: null };
+    }
+  }
+
+  return result;
 }
 
 // Get current update state

@@ -61,26 +61,15 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
     setAuthMethod(newMethod)
   }
 
-  const handleSubmitRecoveryKeyFirst = async (e) => {
+  const handleSelectAuthMethod = async (e) => {
     e.preventDefault()
-    try {
-      setLoading(true)
 
-      // Convert recovery key from base64 to bytes
-      const recoveryKeyBytes = Utils.toArray(recoveryKey, 'base64')
+    // Set authentication mode for recovery flow
+    managers.walletManager.authenticationFlow = 'existing-user'
+    managers.walletManager.authenticationMode = 'presentation-key-and-recovery-key'
 
-      managers.walletManager.authenticationFlow = 'existing-user'
-      managers.walletManager.authenticationMode = 'presentation-key-and-recovery-key'
-      await managers.walletManager!.provideRecoveryKey(recoveryKeyBytes)
-
-      // Move to the appropriate auth method view
-      setAccordianView(authMethod === 'wab' ? 'phone' : 'mnemonic')
-    } catch (e) {
-      console.error(e)
-      toast.error(e.message)
-    } finally {
-      setLoading(false)
-    }
+    // Move to the appropriate auth method view
+    setAccordianView(authMethod === 'wab' ? 'phone' : 'mnemonic')
   }
 
   const handleSubmitPhone = async e => {
@@ -234,20 +223,17 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
         <AccordionSummary className={classes.panel_header}>
           <KeyIcon className={classes.expansion_icon} />
           <Typography className={classes.panel_heading}>
-            Recovery Key
+            Choose Authentication Method
           </Typography>
           {accordianView !== 'recovery-key' && (
             <CheckCircleIcon className={classes.complete_icon} />
           )}
         </AccordionSummary>
-        <form onSubmit={handleSubmitRecoveryKeyFirst}>
+        <form onSubmit={handleSelectAuthMethod}>
           <AccordionDetails className={classes.expansion_body}>
-            <TextField
-              onChange={e => setRecoveryKey(e.target.value)}
-              label='Recovery Key'
-              fullWidth
-              helperText="We'll use this to look up your wallet"
-            />
+            <Typography variant='body2' color='textSecondary' paragraph>
+              Select how you want to authenticate. You'll need your recovery key in a later step.
+            </Typography>
             <Box sx={{ mt: 2 }}>
               <FormControl component="fieldset">
                 <FormLabel component="legend">Choose authentication method</FormLabel>
@@ -263,13 +249,9 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
             </Box>
           </AccordionDetails>
           <AccordionActions>
-            {loading
-              ? <CircularProgress />
-              : (
-                <Button variant='contained' color='primary' type='submit'>
-                  Next
-                </Button>
-              )}
+            <Button variant='contained' color='primary' type='submit'>
+              Next
+            </Button>
           </AccordionActions>
         </form>
       </Accordion>
@@ -381,7 +363,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
         <AccordionSummary className={classes.panel_header}>
           <KeyIcon className={classes.expansion_icon} />
           <Typography className={classes.panel_heading}>
-            Confirm Recovery Key
+            Recovery Key
           </Typography>
           {accordianView === 'new-password' && (
             <CheckCircleIcon className={classes.complete_icon} />
@@ -389,16 +371,21 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
         </AccordionSummary>
         <form onSubmit={handleSubmitRecoveryKeyFinal}>
           <AccordionDetails className={classes.expansion_body}>
-            <Typography variant='body2' color='textSecondary' paragraph>
-              Click Continue to authenticate with your recovery key
-            </Typography>
+            <TextField
+              value={recoveryKey}
+              onChange={e => setRecoveryKey(e.target.value)}
+              label='Recovery Key'
+              fullWidth
+              helperText="Enter your recovery key to authenticate"
+              placeholder="Paste your recovery key here"
+            />
           </AccordionDetails>
           <AccordionActions>
             {loading
               ? <CircularProgress />
               : (
-                <Button variant='contained' color='primary' type='submit'>
-                  Continue
+                <Button variant='contained' color='primary' type='submit' disabled={!recoveryKey}>
+                  Authenticate
                 </Button>
               )}
           </AccordionActions>

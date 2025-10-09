@@ -36,7 +36,7 @@ import { CurrencyConverter } from '@bsv/amountinator'
 import useAsyncEffect from 'use-async-effect'
 import { WalletProfile } from '../../../types/WalletProfile'
 import { OutlinedInput, Tabs, Tab } from '@mui/material'
-import { useIdentitySearch } from '../../../../../../identity-react/src/hooks/useIdentitySearch'
+import { useIdentitySearch } from '@bsv/identity-react'
 
 /* --------------------------- Inline: Payment Form -------------------------- */
 type PaymentFormProps = {

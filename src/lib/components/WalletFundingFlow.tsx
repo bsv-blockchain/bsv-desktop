@@ -150,13 +150,13 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
         return
       }
 
+      const txids = Array.from(new Set(utxos.map(o => o.txid)))
+
       // Merge BEEF for all inputs
       const beef = new Beef()
-      for (const utxo of utxos) {
-        if (!beef.findTxid(utxo.txid)) {
-          const b = await getBeefForTxid(utxo.txid, network === 'mainnet' ? 'main' : 'test')
-          beef.mergeBeef(b)
-        }
+      for (const txid of txids) {
+        const b = await getBeefForTxid(txid, network === 'mainnet' ? 'main' : 'test')
+        beef.mergeBeef(b)
       }
 
       console.log({ beef: beef.toLogString() })
@@ -181,7 +181,10 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
       const txs = beef.txs.map((beefTx) => {
         const tx = beef.findAtomicTransaction(beefTx.txid)
         const relevantUtxos = utxos.filter(o => o.txid === beefTx.txid)
-        
+        if (relevantUtxos.length === 0) {
+          return null
+        }
+
         console.log({
           txid: tx.id('hex'),
           paymentAddress,
@@ -212,7 +215,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
         }
 
         return args
-      })
+      }).filter((t) => t !== null)
 
       console.log({ txs })
 

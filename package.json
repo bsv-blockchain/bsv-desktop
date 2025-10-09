@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@bsv/amountinator": "^0.2.12",
-    "@bsv/identity-react": "^1.1.8",
+    "@bsv/identity-react": "^1.1.9",
     "@bsv/message-box-client": "^1.4.0",
     "@bsv/sdk": "^1.8.2",
     "@bsv/uhrp-react": "^1.0.4",

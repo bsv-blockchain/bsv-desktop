@@ -717,12 +717,13 @@ const Greeter: React.FC<any> = ({ history }) => {
         )}
 
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4, mb: 2 }}>
-          <RouterLink to='/recovery' style={{ textDecoration: 'none' }}>
-            <Button 
-              variant="text" 
+          <RouterLink to='/recovery' style={{ textDecoration: 'none', pointerEvents: configStatus !== 'configured' ? 'none' : 'auto' }}>
+            <Button
+              variant="text"
               color='secondary'
               size="small"
               startIcon={<RestoreIcon />}
+              disabled={configStatus !== 'configured'}
             >
               Account Recovery
             </Button>

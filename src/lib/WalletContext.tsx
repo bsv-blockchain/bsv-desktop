@@ -132,6 +132,7 @@ export interface WalletContextValue {
   setConfigStatus: (status: ConfigStatus) => void
   configStatus: ConfigStatus
   wabUrl: string
+  setWabUrl: (url: string) => void
   storageUrl: string
   messageBoxUrl: string
   useRemoteStorage: boolean
@@ -179,6 +180,7 @@ export const WalletContext = createContext<WalletContextValue>({
   setConfigStatus: () => { },
   configStatus: 'initial',
   wabUrl: '',
+  setWabUrl: () => { },
   storageUrl: '',
   messageBoxUrl: '',
   useRemoteStorage: false,
@@ -1769,6 +1771,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     setConfigStatus,
     configStatus,
     wabUrl,
+    setWabUrl,
     storageUrl: selectedStorageUrl,
     messageBoxUrl,
     useRemoteStorage,
@@ -1811,6 +1814,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     setConfigStatus,
     configStatus,
     wabUrl,
+    setWabUrl,
     selectedStorageUrl,
     messageBoxUrl,
     useRemoteStorage,

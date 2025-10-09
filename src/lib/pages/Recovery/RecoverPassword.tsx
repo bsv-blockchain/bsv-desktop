@@ -32,10 +32,9 @@ import { Utils, Mnemonic, HD, LookupResolver, Hash } from '@bsv/sdk'
 const useStyles = makeStyles(style as any, { name: 'RecoverPassword' })
 
 const RecoverPassword: React.FC<any> = ({ history }) => {
-  const { managers, saveEnhancedSnapshot, useWab, network } = useContext(WalletContext)
+  const { managers, saveEnhancedSnapshot, useWab } = useContext(WalletContext)
   const classes = useStyles()
-  const [accordianView, setAccordianView] = useState('recovery-key')
-  const [authMethod, setAuthMethod] = useState<'wab' | 'mnemonic'>(useWab ? 'wab' : 'mnemonic')
+  const [accordianView, setAccordianView] = useState('auth-method')
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
   const [mnemonic, setMnemonic] = useState('')
@@ -52,24 +51,15 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
     }
   }, [managers.walletManager])
 
-  useEffect(() => {
-    setAuthMethod(useWab ? 'wab' : 'mnemonic')
-  }, [useWab])
-
-  const handleAuthMethodChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const newMethod = event.target.value as 'wab' | 'mnemonic'
-    setAuthMethod(newMethod)
-  }
-
-  const handleSelectAuthMethod = async (e) => {
+  const handleConfirmAuthMethod = async (e) => {
     e.preventDefault()
 
     // Set authentication mode for recovery flow
     managers.walletManager.authenticationFlow = 'existing-user'
     managers.walletManager.authenticationMode = 'presentation-key-and-recovery-key'
 
-    // Move to the appropriate auth method view
-    setAccordianView(authMethod === 'wab' ? 'phone' : 'mnemonic')
+    // Move to the appropriate auth method view based on wallet configuration
+    setAccordianView(useWab ? 'phone' : 'mnemonic')
   }
 
   const handleSubmitPhone = async e => {
@@ -219,34 +209,24 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
         Use your presentation key (mnemonic or WAB) and recovery key to reset your password.
       </Typography>
 
-      <Accordion expanded={accordianView === 'recovery-key'}>
+      <Accordion expanded={accordianView === 'auth-method'}>
         <AccordionSummary className={classes.panel_header}>
           <KeyIcon className={classes.expansion_icon} />
           <Typography className={classes.panel_heading}>
-            Choose Authentication Method
+            Confirm Authentication Method
           </Typography>
-          {accordianView !== 'recovery-key' && (
+          {accordianView !== 'auth-method' && (
             <CheckCircleIcon className={classes.complete_icon} />
           )}
         </AccordionSummary>
-        <form onSubmit={handleSelectAuthMethod}>
+        <form onSubmit={handleConfirmAuthMethod}>
           <AccordionDetails className={classes.expansion_body}>
             <Typography variant='body2' color='textSecondary' paragraph>
-              Select how you want to authenticate. You'll need your recovery key in a later step.
+              Your wallet is configured to use {useWab ? 'WAB (Phone)' : 'Mnemonic'} authentication.
             </Typography>
-            <Box sx={{ mt: 2 }}>
-              <FormControl component="fieldset">
-                <FormLabel component="legend">Choose authentication method</FormLabel>
-                <RadioGroup
-                  row
-                  value={authMethod}
-                  onChange={handleAuthMethodChange}
-                >
-                  <FormControlLabel value="mnemonic" control={<Radio />} label="Mnemonic" />
-                  <FormControlLabel value="wab" control={<Radio />} label="WAB (Phone)" />
-                </RadioGroup>
-              </FormControl>
-            </Box>
+            <Typography variant='body2' color='textSecondary' paragraph>
+              You'll need your {useWab ? 'phone number' : 'mnemonic phrase'} and recovery key to reset your password.
+            </Typography>
           </AccordionDetails>
           <AccordionActions>
             <Button variant='contained' color='primary' type='submit'>
@@ -256,7 +236,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
         </form>
       </Accordion>
 
-      {authMethod === 'wab' && (
+      {useWab && (
         <>
           <Accordion expanded={accordianView === 'phone'}>
             <AccordionSummary className={classes.panel_header}>
@@ -323,7 +303,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
         </>
       )}
 
-      {authMethod === 'mnemonic' && (
+      {!useWab && (
         <Accordion expanded={accordianView === 'mnemonic'}>
           <AccordionSummary className={classes.panel_header}>
             <KeyIcon className={classes.expansion_icon} />

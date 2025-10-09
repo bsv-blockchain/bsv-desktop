@@ -29,22 +29,22 @@ import {
 } from '@mui/material'
 import InputAdornment from '@mui/material/InputAdornment'
 import { PeerPayClient, IncomingPayment } from '@bsv/message-box-client'
-import { Utils, WalletClient, Script, PublicKey } from '@bsv/sdk'
+import { Utils, WalletClient, Script, PublicKey, WalletInterface } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
 import { toast } from 'react-toastify'
 import { CurrencyConverter } from '@bsv/amountinator'
 import useAsyncEffect from 'use-async-effect'
 import { WalletProfile } from '../../../types/WalletProfile'
 import { OutlinedInput, Tabs, Tab } from '@mui/material'
-import { useIdentitySearch } from '@bsv/identity-react'
+import { useIdentitySearch } from '../../../../../../identity-react/src/hooks/useIdentitySearch'
 
 /* --------------------------- Inline: Payment Form -------------------------- */
 type PaymentFormProps = {
   onSent?: () => void
-  wallet: WalletClient
+  wallet: WalletInterface
 }
 function PaymentForm({ wallet, onSent }: PaymentFormProps) {
-  const {managers, messageBoxUrl, adminOriginator, activeProfile} = useContext(WalletContext)
+  const {managers, messageBoxUrl, activeProfile} = useContext(WalletContext)
   const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState<number>(0)
   const [sending, setSending] = useState(false)
@@ -57,7 +57,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
 
   // Identity search hook for "Send to Anyone" tab
   const identitySearch = useIdentitySearch({
-    originator: adminOriginator,
+    originator: 'desktop.bsvb.tech',
     wallet,
     onIdentitySelected: (identity) => {
       if (identity) {
@@ -135,7 +135,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
         walletClient: wallet,
         messageBoxHost: messageBoxUrl,
         enableLogging: true,
-        originator: adminOriginator
+        originator: 'desktop.bsvb.tech'
       })
        await peerPay.sendPayment({
         recipient: recipient.trim(),
@@ -348,7 +348,7 @@ type PaymentListProps = {
 function PaymentList({ payments, onRefresh }: PaymentListProps) {
   // Track loading per messageId so buttons aren't linked
   const { managers, messageBoxUrl, useMessageBox, adminOriginator } = useContext(WalletContext)
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, adminOriginator) : null
+  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
 
   const history = useHistory()
   const [loadingById, setLoadingById] = useState<Record<string, boolean>>({})
@@ -473,8 +473,8 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
 
 /* ------------------------------- Route View -------------------------------- */
 export default function PeerPayRoute() {
-  const { messageBoxUrl, managers, adminOriginator } = useContext(WalletContext)
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, adminOriginator) : null
+  const { messageBoxUrl, managers } = useContext(WalletContext)
+  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
 
   const [payments, setPayments] = useState<IncomingPayment[]>([])
   const [loading, setLoading] = useState(false)
@@ -487,13 +487,13 @@ export default function PeerPayRoute() {
 
   const fetchPayments = useCallback(async () => {
     try {
-      if (!wallet || !messageBoxUrl || !adminOriginator) return
+      if (!wallet || !messageBoxUrl) return
       setLoading(true)
       const peerPay = new PeerPayClient({
         walletClient: wallet,
         messageBoxHost: messageBoxUrl,
         enableLogging: true,
-        originator: adminOriginator
+        originator: 'desktop.bsvb.tech'
       })
       const list = await peerPay.listIncomingPayments(messageBoxUrl)
       setPayments(list)
@@ -502,7 +502,7 @@ export default function PeerPayRoute() {
     } finally {
       setLoading(false)
     }
-  }, [messageBoxUrl, wallet, adminOriginator])
+  }, [messageBoxUrl, wallet])
 
   const getPastTransactions = async () => {
     if (!wallet) return

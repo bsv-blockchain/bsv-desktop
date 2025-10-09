@@ -223,7 +223,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
                 if (typeof option === 'string') return null
                 const { key, ...otherProps } = props
                 return (
-                  <li key={key} {...otherProps}>
+                  <li key={key + option.identityKey} {...otherProps}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
                       {option.avatarURL ? (
                         <Avatar
@@ -471,7 +471,7 @@ function PaymentList({ payments, onRefresh, wallet }: PaymentListProps) {
 /* ------------------------------- Route View -------------------------------- */
 export default function PeerPayRoute() {
   const { messageBoxUrl, managers, adminOriginator } = useContext(WalletContext)
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'localhost:2121') : null
+  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
 
   const [payments, setPayments] = useState<IncomingPayment[]>([])
   const [loading, setLoading] = useState(false)

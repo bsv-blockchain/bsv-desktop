@@ -133,23 +133,9 @@ const AmountDisplay: React.FC<Props> = ({ abbreviate, showPlus, description, chi
     }
   }, [satoshis, satoshisPerUSD, fiatFormat, settingsCurrency, eurPerUSD, gbpPerUSD, showFiatAsInteger]) 
 
-  // Create handlers for clicks with proper accessibility
-  const handleFiatClick = () => {
-    cycleFiatFormat();
-  };
-
-  const handleSatsClick = () => {
-    cycleSatsFormat();
-  };
-
-  const handleTogglePreference = () => {
-    toggleIsFiatPreferred();
-  };
-
   // Accessibility improvements - make interactive elements proper buttons with aria attributes
-  const renderAccessibleAmount = (content, onClick) => (
+  const renderAccessibleAmount = (content) => (
     <Button 
-      onClick={onClick}
       variant="text" 
       size="small"
       sx={{ 
@@ -183,13 +169,13 @@ const AmountDisplay: React.FC<Props> = ({ abbreviate, showPlus, description, chi
   } else {
     return isFiatPreferred
       ? (
-        <Tooltip title={<Typography onClick={handleTogglePreference} color='inherit'>{formattedSatoshis}</Typography>} arrow>
-          {renderAccessibleAmount(formattedFiatAmount, handleFiatClick)}
+        <Tooltip title={<Typography color='inherit'>{formattedSatoshis}</Typography>} arrow>
+          {renderAccessibleAmount(formattedFiatAmount)}
         </Tooltip>
       )
       : (
-        <Tooltip title={<Typography onClick={handleTogglePreference} color='inherit'>{formattedFiatAmount}</Typography>} arrow>
-          {renderAccessibleAmount(formattedSatoshis, handleSatsClick)}
+        <Tooltip title={<Typography color='inherit'>{formattedFiatAmount}</Typography>} arrow>
+          {renderAccessibleAmount(formattedSatoshis)}
         </Tooltip>
       )
   }

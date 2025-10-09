@@ -72,7 +72,7 @@ export default function Payments() {
   const [daysOffset, setDaysOffset] = useState<number>(0)
   const [derivationPrefix, setDerivationPrefix] = useState<string>(Utils.toBase64(Utils.toArray(getCurrentDate(0), 'utf8')))
   const derivationSuffix = Utils.toBase64(Utils.toArray('legacy', 'utf8'))
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'localhost:2121') : null
+  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
 
   if (!wallet) {
     return <></>

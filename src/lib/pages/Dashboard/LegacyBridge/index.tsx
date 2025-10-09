@@ -264,6 +264,9 @@ export default function Payments() {
       const txs = beef.txs.map((beefTx) => {
         const tx = beef.findAtomicTransaction(beefTx.txid)
         const relevantUtxos = utxos.filter(o => o.txid === beefTx.txid)
+        if (relevantUtxos.length === 0) {
+          return null
+        }
         console.log({
           txid: tx.id('hex'),
           paymentAddress,
@@ -291,7 +294,7 @@ export default function Payments() {
           labels: ['legacy', 'inbound', 'bsvdesktop'],
         }
         return args
-      })
+      }).filter((t) => t !== null)
 
       console.log({ txs })
 

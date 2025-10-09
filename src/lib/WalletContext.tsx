@@ -33,6 +33,55 @@ import { GroupPermissionRequest, GroupedPermissions } from './types/GroupedPermi
 import { updateRecentApp } from './pages/Dashboard/Apps/getApps'
 import { RequestInterceptorWallet } from './RequestInterceptorWallet'
 import { WalletProfile } from './types/WalletProfile'
+
+// -----
+// Permission Configuration Types
+// -----
+
+export interface PermissionsConfig {
+  differentiatePrivilegedOperations: boolean;
+  seekBasketInsertionPermissions: boolean;
+  seekBasketListingPermissions: boolean;
+  seekBasketRemovalPermissions: boolean;
+  seekCertificateAcquisitionPermissions: boolean;
+  seekCertificateDisclosurePermissions: boolean;
+  seekCertificateRelinquishmentPermissions: boolean;
+  seekCertificateListingPermissions: boolean;
+  seekGroupedPermission: boolean;
+  seekPermissionsForIdentityKeyRevelation: boolean;
+  seekPermissionsForIdentityResolution: boolean;
+  seekPermissionsForKeyLinkageRevelation: boolean;
+  seekPermissionsForPublicKeyRevelation: boolean;
+  seekPermissionWhenApplyingActionLabels: boolean;
+  seekPermissionWhenListingActionsByLabel: boolean;
+  seekProtocolPermissionsForEncrypting: boolean;
+  seekProtocolPermissionsForHMAC: boolean;
+  seekProtocolPermissionsForSigning: boolean;
+  seekSpendingPermissions: boolean;
+}
+
+export const DEFAULT_PERMISSIONS_CONFIG: PermissionsConfig = {
+  differentiatePrivilegedOperations: true,
+  seekBasketInsertionPermissions: false,
+  seekBasketListingPermissions: false,
+  seekBasketRemovalPermissions: false,
+  seekCertificateAcquisitionPermissions: false,
+  seekCertificateDisclosurePermissions: false,
+  seekCertificateRelinquishmentPermissions: false,
+  seekCertificateListingPermissions: false,
+  seekGroupedPermission: true,
+  seekPermissionsForIdentityKeyRevelation: false,
+  seekPermissionsForIdentityResolution: false,
+  seekPermissionsForKeyLinkageRevelation: false,
+  seekPermissionsForPublicKeyRevelation: false,
+  seekPermissionWhenApplyingActionLabels: false,
+  seekPermissionWhenListingActionsByLabel: false,
+  seekProtocolPermissionsForEncrypting: false,
+  seekProtocolPermissionsForHMAC: false,
+  seekProtocolPermissionsForSigning: false,
+  seekSpendingPermissions: true,
+};
+
 // -----
 // Context Types
 // -----
@@ -95,6 +144,8 @@ export interface WalletContextValue {
   updateMessageBoxUrl: (url: string) => Promise<void>
   removeMessageBoxUrl: () => Promise<void>
   initializingBackendServices: boolean
+  permissionsConfig: PermissionsConfig
+  updatePermissionsConfig: (config: PermissionsConfig) => Promise<void>
 }
 
 export const WalletContext = createContext<WalletContextValue>({
@@ -139,7 +190,9 @@ export const WalletContext = createContext<WalletContextValue>({
   syncBackupStorage: async () => { },
   updateMessageBoxUrl: async () => { },
   removeMessageBoxUrl: async () => { },
-  initializingBackendServices: false
+  initializingBackendServices: false,
+  permissionsConfig: DEFAULT_PERMISSIONS_CONFIG,
+  updatePermissionsConfig: async () => { }
 })
 
 // ---- Group-gating types ----
@@ -247,6 +300,20 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [useMessageBox, setUseMessageBox] = useState<boolean>(false)
   const [groupPermissionRequests, setGroupPermissionRequests] = useState<GroupPermissionRequest[]>([])
   const [initializingBackendServices, setInitializingBackendServices] = useState<boolean>(false)
+  const [permissionsConfig, setPermissionsConfig] = useState<PermissionsConfig>(DEFAULT_PERMISSIONS_CONFIG)
+
+  // Load permissions config from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('permissionsConfig');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setPermissionsConfig({ ...DEFAULT_PERMISSIONS_CONFIG, ...parsed });
+      }
+    } catch (e) {
+      console.error('Failed to load permissions config from localStorage:', e);
+    }
+  }, []);
 
   // ---- Group gate & deferred buffers ----
   const [groupPhase, setGroupPhase] = useState<GroupPhase>('idle');
@@ -923,27 +990,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
       console.log('[buildWallet] Setting up permissions manager...');
       // Setup permissions with provided callbacks.
-      const permissionsManager = new WalletPermissionsManager(wallet, adminOriginator, {
-        differentiatePrivilegedOperations: true,
-        seekBasketInsertionPermissions: false,
-        seekBasketListingPermissions: false,
-        seekBasketRemovalPermissions: false,
-        seekCertificateAcquisitionPermissions: false,
-        seekCertificateDisclosurePermissions: false,
-        seekCertificateRelinquishmentPermissions: false,
-        seekCertificateListingPermissions: false,
-        seekGroupedPermission: true,
-        seekPermissionsForIdentityKeyRevelation: false,
-        seekPermissionsForIdentityResolution: false,
-        seekPermissionsForKeyLinkageRevelation: false,
-        seekPermissionsForPublicKeyRevelation: false,
-        seekPermissionWhenApplyingActionLabels: false,
-        seekPermissionWhenListingActionsByLabel: false,
-        seekProtocolPermissionsForEncrypting: false,
-        seekProtocolPermissionsForHMAC: false,
-        seekProtocolPermissionsForSigning: true,
-        seekSpendingPermissions: true,
-      });
+      const permissionsManager = new WalletPermissionsManager(wallet, adminOriginator, permissionsConfig);
 
       if (protocolPermissionCallback) {
         permissionsManager.bindCallback('onProtocolPermissionRequested', protocolPermissionCallback);
@@ -1294,7 +1341,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     useWab,
     buildWallet,
     loadWalletSnapshot,
-    adminOriginator
+    adminOriginator,
+    permissionsConfig
   ]);
 
   // When Settings manager becomes available, populate the user's settings
@@ -1677,6 +1725,19 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     })
   }
 
+  // Update permissions configuration and save to localStorage
+  const updatePermissionsConfig = useCallback(async (config: PermissionsConfig) => {
+    try {
+      setPermissionsConfig(config);
+      localStorage.setItem('permissionsConfig', JSON.stringify(config));
+      toast.success('Permissions configuration updated. Please reload the app for changes to take effect.');
+    } catch (e: any) {
+      console.error('Failed to update permissions config:', e);
+      toast.error('Failed to update permissions configuration');
+      throw e;
+    }
+  }, []);
+
   const contextValue = useMemo<WalletContextValue>(() => ({
     managers,
     updateManagers: setManagers,
@@ -1719,7 +1780,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     syncBackupStorage,
     updateMessageBoxUrl,
     removeMessageBoxUrl,
-    initializingBackendServices
+    initializingBackendServices,
+    permissionsConfig,
+    updatePermissionsConfig
   }), [
     managers,
     settings,
@@ -1759,7 +1822,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     syncBackupStorage,
     updateMessageBoxUrl,
     removeMessageBoxUrl,
-    initializingBackendServices
+    initializingBackendServices,
+    permissionsConfig,
+    updatePermissionsConfig
   ]);
 
   return (

@@ -12,7 +12,11 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Alert
+  Alert,
+  Switch,
+  FormControlLabel,
+  Collapse,
+  Divider
 } from '@mui/material'
 import { Grid } from '@mui/material'
 import { makeStyles } from '@mui/styles'
@@ -68,7 +72,7 @@ const useStyles = makeStyles((theme: Theme) => ({
 
 const Settings = () => {
   const classes = useStyles()
-  const { settings, updateSettings, wabUrl, useRemoteStorage, useMessageBox, storageUrl, useWab, messageBoxUrl, backupStorageUrls, addBackupStorageUrl, removeBackupStorageUrl, syncBackupStorage, updateMessageBoxUrl, removeMessageBoxUrl } = useContext(WalletContext)
+  const { settings, updateSettings, wabUrl, useRemoteStorage, useMessageBox, storageUrl, useWab, messageBoxUrl, backupStorageUrls, addBackupStorageUrl, removeBackupStorageUrl, syncBackupStorage, updateMessageBoxUrl, removeMessageBoxUrl, permissionsConfig, updatePermissionsConfig } = useContext(WalletContext)
   const { pageLoaded, setManualUpdateInfo } = useContext(UserContext)
   const [settingsLoading, setSettingsLoading] = useState(false)
   const theme = useTheme()
@@ -93,6 +97,14 @@ const Settings = () => {
 
   // Update check state
   const [updateCheckLoading, setUpdateCheckLoading] = useState(false)
+
+  // Permissions configuration state
+  const [localPermissionsConfig, setLocalPermissionsConfig] = useState(permissionsConfig)
+  const [permissionsExpanded, setPermissionsExpanded] = useState(false)
+
+  useEffect(() => {
+    setLocalPermissionsConfig(permissionsConfig)
+  }, [permissionsConfig])
 
   const currencies = {
     BSV: '0.033',
@@ -325,6 +337,31 @@ const Settings = () => {
     } finally {
       setUpdateCheckLoading(false);
     }
+  }
+
+  const handlePermissionToggle = (key: keyof typeof localPermissionsConfig) => {
+    setLocalPermissionsConfig(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }))
+  }
+
+  const handleSavePermissions = async () => {
+    try {
+      await updatePermissionsConfig(localPermissionsConfig)
+      handleReloadApp()
+    } catch (e) {
+      // Error already shown by updatePermissionsConfig
+    }
+  }
+
+  const handleResetPermissions = () => {
+    setLocalPermissionsConfig(permissionsConfig)
+    setPermissionsExpanded(false)
+  }
+
+  const handleReloadApp = () => {
+    window.location.reload()
   }
 
   const renderThemeIcon = (themeType) => {
@@ -840,6 +877,249 @@ const Settings = () => {
         >
           {updateCheckLoading ? 'Checking for Updates...' : 'Check for Updates'}
         </Button>
+      </Paper>
+
+      <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h4">
+            Permissions Configuration
+          </Typography>
+          <Button
+            size="small"
+            onClick={() => setPermissionsExpanded(!permissionsExpanded)}
+          >
+            {permissionsExpanded ? 'Hide' : 'Show'} Advanced Settings
+          </Button>
+        </Box>
+
+        <Alert severity="info" sx={{ mb: 2 }}>
+          These settings control what permissions external apps need to request before accessing wallet functionality.
+          Changes require app reload to take effect.
+        </Alert>
+
+        <Collapse in={permissionsExpanded}>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="h6" sx={{ mb: 2 }}>Protocol Permissions</Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 2 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekProtocolPermissionsForSigning}
+                    onChange={() => handlePermissionToggle('seekProtocolPermissionsForSigning')}
+                  />
+                }
+                label="Require permission for signature creation"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekProtocolPermissionsForEncrypting}
+                    onChange={() => handlePermissionToggle('seekProtocolPermissionsForEncrypting')}
+                  />
+                }
+                label="Require permission for encryption operations"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekProtocolPermissionsForHMAC}
+                    onChange={() => handlePermissionToggle('seekProtocolPermissionsForHMAC')}
+                  />
+                }
+                label="Require permission for HMAC operations"
+              />
+            </Box>
+
+            <Divider sx={{ my: 3 }} />
+
+            <Typography variant="h6" sx={{ mb: 2 }}>Key & Identity Permissions</Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 2 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekPermissionsForPublicKeyRevelation}
+                    onChange={() => handlePermissionToggle('seekPermissionsForPublicKeyRevelation')}
+                  />
+                }
+                label="Require permission for public key revelation"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekPermissionsForIdentityKeyRevelation}
+                    onChange={() => handlePermissionToggle('seekPermissionsForIdentityKeyRevelation')}
+                  />
+                }
+                label="Require permission for identity key revelation"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekPermissionsForKeyLinkageRevelation}
+                    onChange={() => handlePermissionToggle('seekPermissionsForKeyLinkageRevelation')}
+                  />
+                }
+                label="Require permission for key linkage revelation"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekPermissionsForIdentityResolution}
+                    onChange={() => handlePermissionToggle('seekPermissionsForIdentityResolution')}
+                  />
+                }
+                label="Require permission for identity resolution"
+              />
+            </Box>
+
+            <Divider sx={{ my: 3 }} />
+
+            <Typography variant="h6" sx={{ mb: 2 }}>Basket Permissions</Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 2 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekBasketInsertionPermissions}
+                    onChange={() => handlePermissionToggle('seekBasketInsertionPermissions')}
+                  />
+                }
+                label="Require permission for basket insertion"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekBasketListingPermissions}
+                    onChange={() => handlePermissionToggle('seekBasketListingPermissions')}
+                  />
+                }
+                label="Require permission for basket listing"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekBasketRemovalPermissions}
+                    onChange={() => handlePermissionToggle('seekBasketRemovalPermissions')}
+                  />
+                }
+                label="Require permission for basket removal"
+              />
+            </Box>
+
+            <Divider sx={{ my: 3 }} />
+
+            <Typography variant="h6" sx={{ mb: 2 }}>Certificate Permissions</Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 2 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekCertificateAcquisitionPermissions}
+                    onChange={() => handlePermissionToggle('seekCertificateAcquisitionPermissions')}
+                  />
+                }
+                label="Require permission for certificate acquisition"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekCertificateDisclosurePermissions}
+                    onChange={() => handlePermissionToggle('seekCertificateDisclosurePermissions')}
+                  />
+                }
+                label="Require permission for certificate disclosure"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekCertificateRelinquishmentPermissions}
+                    onChange={() => handlePermissionToggle('seekCertificateRelinquishmentPermissions')}
+                  />
+                }
+                label="Require permission for certificate relinquishment"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekCertificateListingPermissions}
+                    onChange={() => handlePermissionToggle('seekCertificateListingPermissions')}
+                  />
+                }
+                label="Require permission for certificate listing"
+              />
+            </Box>
+
+            <Divider sx={{ my: 3 }} />
+
+            <Typography variant="h6" sx={{ mb: 2 }}>Action & Label Permissions</Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 2 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekPermissionWhenApplyingActionLabels}
+                    onChange={() => handlePermissionToggle('seekPermissionWhenApplyingActionLabels')}
+                  />
+                }
+                label="Require permission when applying action labels"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekPermissionWhenListingActionsByLabel}
+                    onChange={() => handlePermissionToggle('seekPermissionWhenListingActionsByLabel')}
+                  />
+                }
+                label="Require permission when listing actions by label"
+              />
+            </Box>
+
+            <Divider sx={{ my: 3 }} />
+
+            <Typography variant="h6" sx={{ mb: 2 }}>General Settings</Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 2 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekGroupedPermission}
+                    onChange={() => handlePermissionToggle('seekGroupedPermission')}
+                  />
+                }
+                label="Enable grouped permission requests (recommended)"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.seekSpendingPermissions}
+                    onChange={() => handlePermissionToggle('seekSpendingPermissions')}
+                  />
+                }
+                label="Require permission for spending wallet funds"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={localPermissionsConfig.differentiatePrivilegedOperations}
+                    onChange={() => handlePermissionToggle('differentiatePrivilegedOperations')}
+                  />
+                }
+                label="Differentiate privileged operations"
+              />
+            </Box>
+
+            <Box sx={{ mt: 3, display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+              <Button
+                variant="outlined"
+                onClick={handleResetPermissions}
+              >
+                Reset Changes
+              </Button>
+              <Button
+                variant="contained"
+                onClick={handleSavePermissions}
+              >
+                Save Permissions Configuration
+              </Button>
+            </Box>
+          </Box>
+        </Collapse>
       </Paper>
     </div>
   )

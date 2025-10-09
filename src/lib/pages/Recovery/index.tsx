@@ -5,7 +5,7 @@ import {
   VpnKey as KeyIcon
 } from '@mui/icons-material'
 import {
-  List, ListItem, ListItemIcon, ListItemText, Button, Typography
+  List, ListItem, ListItemButton, ListItemIcon, ListItemText, Button, Typography
 } from '@mui/material'
 
 const useStyles = makeStyles(style as any, {
@@ -24,29 +24,27 @@ const Recovery: React.FC<any> = ({ history }) => {
           Choose what you need to recover:
         </Typography>
         <List style={{ marginTop: '1rem', marginBottom: '1rem' }}>
-          <ListItem
-            button
-            onClick={() => history.push('/recovery/presentation-key')}
-          >
-            <ListItemIcon>
-              <KeyIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary="Presentation Key (Lost access to WAB or mnemonic)"
-              secondary="Use your password and recovery key to regain access"
-            />
+          <ListItem disablePadding>
+            <ListItemButton onClick={() => history.push('/recovery/presentation-key')}>
+              <ListItemIcon>
+                <KeyIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary="Presentation Key (Lost access to WAB or mnemonic)"
+                secondary="Use your password and recovery key to regain access"
+              />
+            </ListItemButton>
           </ListItem>
-          <ListItem
-            button
-            onClick={() => history.push('/recovery/password')}
-          >
-            <ListItemIcon>
-              <LockIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary="Password (Forgotten)"
-              secondary="Use your presentation key (mnemonic or WAB) and recovery key"
-            />
+          <ListItem disablePadding>
+            <ListItemButton onClick={() => history.push('/recovery/password')}>
+              <ListItemIcon>
+                <LockIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary="Password (Forgotten)"
+                secondary="Use your presentation key (mnemonic or WAB) and recovery key"
+              />
+            </ListItemButton>
           </ListItem>
         </List>
         <Button

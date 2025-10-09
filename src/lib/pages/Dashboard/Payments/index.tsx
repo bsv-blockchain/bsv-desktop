@@ -32,7 +32,7 @@ import { PeerPayClient, IncomingPayment } from '@bsv/message-box-client'
 import { Utils, WalletClient, Script, PublicKey } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
 import { toast } from 'react-toastify'
-import { CurrencyConverter } from 'amountinator'
+import { CurrencyConverter } from '@bsv/amountinator'
 import useAsyncEffect from 'use-async-effect'
 import { WalletProfile } from '../../../types/WalletProfile'
 import { OutlinedInput, Tabs, Tab } from '@mui/material'
@@ -50,13 +50,15 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
   const [sending, setSending] = useState(false)
   const [profiles, setProfiles] = useState<WalletProfile[]>([])
   const [currencySymbol, setCurrencySymbol] = useState('$')
-  const currencyConverter = new CurrencyConverter()
+  const currencyConverter = new CurrencyConverter(undefined, managers?.settingsManager as any)
   const [input, setInput] = useState('')
   const [tabValue, setTabValue] = useState(0) // 0 = profiles, 1 = anyone
   const [publicKeyInput, setPublicKeyInput] = useState('')
 
   // Identity search hook for "Send to Anyone" tab
   const identitySearch = useIdentitySearch({
+    originator: adminOriginator,
+    wallet,
     onIdentitySelected: (identity) => {
       if (identity) {
         setRecipient(identity.identityKey)
@@ -174,7 +176,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
           setRecipient('')
         }}>
           <Tab label="Pay Someone" />
-          <Tab label="Internal Trasnfer" />
+          <Tab label="Internal Transfer" />
         </Tabs>
 
         {tabValue === 0 ? (
@@ -286,7 +288,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
                   setRecipient('');
                 }
               }}
-              error={publicKeyInput && !recipient}
+              error={Boolean(publicKeyInput && !recipient)}
               helperText={publicKeyInput && !recipient ? 'Invalid public key' : ''}
               sx={{ mt: 1 }}
             />
@@ -341,12 +343,13 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
 type PaymentListProps = {
   payments: IncomingPayment[]
   onRefresh: () => void
-  wallet: WalletClient
 }
 
-function PaymentList({ payments, onRefresh, wallet }: PaymentListProps) {
+function PaymentList({ payments, onRefresh }: PaymentListProps) {
   // Track loading per messageId so buttons aren't linked
-  const { messageBoxUrl, useMessageBox, adminOriginator } = useContext(WalletContext)  
+  const { managers, messageBoxUrl, useMessageBox, adminOriginator } = useContext(WalletContext)
+  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, adminOriginator) : null
+
   const history = useHistory()
   const [loadingById, setLoadingById] = useState<Record<string, boolean>>({})
 
@@ -471,7 +474,7 @@ function PaymentList({ payments, onRefresh, wallet }: PaymentListProps) {
 /* ------------------------------- Route View -------------------------------- */
 export default function PeerPayRoute() {
   const { messageBoxUrl, managers, adminOriginator } = useContext(WalletContext)
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
+  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, adminOriginator) : null
 
   const [payments, setPayments] = useState<IncomingPayment[]>([])
   const [loading, setLoading] = useState(false)
@@ -558,7 +561,7 @@ export default function PeerPayRoute() {
 
           {loading && <LinearProgress />}
 
-          <PaymentList payments={payments} onRefresh={fetchPayments} wallet={wallet} />
+          <PaymentList payments={payments} onRefresh={fetchPayments} />
 
           {/* Transaction History Section */}
           <Paper elevation={2} sx={{ p: 3 }}>

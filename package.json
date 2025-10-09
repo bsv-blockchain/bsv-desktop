@@ -22,7 +22,8 @@
     "test": "echo 'No tests'"
   },
   "dependencies": {
-    "@bsv/identity-react": "^1.1.7",
+    "@bsv/amountinator": "^0.2.12",
+    "@bsv/identity-react": "^1.1.8",
     "@bsv/message-box-client": "^1.4.0",
     "@bsv/sdk": "^1.8.2",
     "@bsv/uhrp-react": "^1.0.4",
@@ -33,7 +34,6 @@
     "@mui/icons-material": "^6.4.8",
     "@mui/material": "^6.4.8",
     "@mui/styles": "^6.4.8",
-    "amountinator": "^0.2.11",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",

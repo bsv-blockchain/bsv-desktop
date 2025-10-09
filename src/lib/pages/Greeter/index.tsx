@@ -149,7 +149,7 @@ const PresentationKeyForm = ({ mnemonic, setMnemonic, loading, handleSubmitMnemo
   return (
     <form onSubmit={handleSubmitMnemonic}>
       <TextField
-        label="Recovery Mnemonic"
+        label="Mnemonic"
         value={mnemonic}
         onChange={(e) => setMnemonic(e.target.value)}
         variant="outlined"
@@ -776,7 +776,7 @@ const Greeter: React.FC<any> = ({ history }) => {
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 2 }}>
             <AlertTitle>Important: Save This Mnemonic</AlertTitle>
-            Your recovery mnemonic is the ONLY way to recover your wallet. Store it in a safe place indefinitely.
+            Your mnemonic is the ONLY way to recover your presentation key. Store it in a safe place indefinitely.
           </Alert>
           
           <Paper

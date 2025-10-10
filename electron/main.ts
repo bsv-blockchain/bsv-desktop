@@ -256,18 +256,21 @@ ipcMain.handle('save-mnemonic', async (_event, mnemonic: string) => {
   try {
     const homeDir = app.getPath('home');
     const bsvDir = path.join(homeDir, '.bsv-desktop');
-    
+
     // Create directory if it doesn't exist
     if (!fs.existsSync(bsvDir)) {
       fs.mkdirSync(bsvDir, { recursive: true });
     }
-    
+
     const timestamp = Date.now();
     const fileName = `mnemonic${timestamp}.txt`;
     const filePath = path.join(bsvDir, fileName);
-    
+
     fs.writeFileSync(filePath, mnemonic, 'utf-8');
-    
+
+    // Set file permissions to read-only (0o400 = owner read only)
+    fs.chmodSync(filePath, 0o400);
+
     return { success: true, path: filePath };
   } catch (error) {
     console.error('Save mnemonic failed:', error);

@@ -157,7 +157,7 @@ const PresentationKeyForm = ({ mnemonic, setMnemonic, loading, handleSubmitMnemo
         multiline
         rows={3}
         disabled={loading || isLocked}
-        placeholder="Enter your 12 or 24 word recovery phrase"
+        placeholder="Enter recovery phrase"
         slotProps={{
           input: { 
             ref: mnemonicFieldRef,

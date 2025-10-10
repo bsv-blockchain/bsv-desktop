@@ -426,7 +426,7 @@ const Greeter: React.FC<any> = ({ history }) => {
   // Generate random mnemonic
   const handleGenerateRandomMnemonic = useCallback(async () => {
     try {
-      const randomMnemonic = Mnemonic.fromRandom()
+      const randomMnemonic = Mnemonic.fromRandom(256)
       const mnemonicStr = randomMnemonic.toString()
       setMnemonic(mnemonicStr)
       

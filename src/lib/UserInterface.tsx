@@ -33,6 +33,8 @@ const queries = {
 import { NativeHandlers, UserContext, UserContextProvider } from './UserContext'
 import GroupPermissionHandler from './components/GroupPermissionHandler'
 import { UpdateNotification } from './components/UpdateNotification'
+import PrivacyPolicy from './pages/Policies/privacy'
+import UsagePolicy from './pages/Policies/usage'
 
 interface UserInterfaceProps {
   onWalletReady: (wallet: WalletInterface) => Promise<(() => void) | undefined>;
@@ -74,6 +76,8 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
                   <Route exact path='/recovery/presentation-key' component={RecoverPresentationKey} />
                   <Route exact path='/recovery/password' component={RecoverPassword} />
                   <Route exact path='/recovery' component={Recovery} />
+                  <Route exact path='/privacy' component={PrivacyPolicy} />
+                  <Route exact path='/usage' component={UsagePolicy} />
                 </Switch>
               </BreakpointProvider>
             </Router>

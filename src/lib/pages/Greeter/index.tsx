@@ -497,7 +497,6 @@ const Greeter: React.FC<any> = ({ history }) => {
     setLoading(true)
     try {
       await walletManager.providePassword(password)
-
       if (walletManager.authenticated) {
         // Save snapshot to local storage
         localStorage.snap = saveEnhancedSnapshot()
@@ -518,6 +517,39 @@ const Greeter: React.FC<any> = ({ history }) => {
     return <PageLoading />
   }
 
+  const Header = () => <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 4 }}>
+    <Box sx={{ mb: 2, width: '100px', height: '100px' }}>
+      <AppLogo
+        rotate
+        size="100px"
+        color="#2196F3"
+      />
+    </Box>
+    <Typography
+      variant='h2'
+      fontFamily='Helvetica'
+      fontSize='2em'
+      sx={{
+        mb: 1,
+        fontWeight: 'bold',
+        background: theme.palette.mode === 'dark'
+          ? 'linear-gradient(90deg, #FFFFFF 0%, #F5F5F5 100%)'
+          : 'linear-gradient(90deg, #2196F3 0%, #4569E5 100%)',
+        backgroundClip: 'text',
+        WebkitTextFillColor: 'transparent'
+      }}
+    >
+      {appName}
+    </Typography>
+    <Typography
+      variant="caption"
+      color="text.secondary"
+      align="center"
+    >
+      <i>v{appVersion}</i>
+    </Typography>
+  </Box>
+
   // Show simplified non-interactive version when initializing backend services
   if (initializingBackendServices) {
     return (
@@ -531,59 +563,7 @@ const Greeter: React.FC<any> = ({ history }) => {
             boxShadow: theme.shadows[3]
           }}
         >
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 4 }}>
-            <Box sx={{ mb: 2, width: '100px', height: '100px' }}>
-              <AppLogo
-                rotate
-                size="100px"
-                color="#2196F3"
-              />
-            </Box>
-            <Typography
-              variant='h2'
-              fontFamily='Helvetica'
-              fontSize='2em'
-              sx={{
-                mb: 1,
-                fontWeight: 'bold',
-                background: theme.palette.mode === 'dark'
-                  ? 'linear-gradient(90deg, #FFFFFF 0%, #F5F5F5 100%)'
-                  : 'linear-gradient(90deg, #2196F3 0%, #4569E5 100%)',
-                backgroundClip: 'text',
-                WebkitTextFillColor: 'transparent'
-              }}
-            >
-              {appName}
-            </Typography>
-            <Typography
-              variant="body1"
-              color="text.secondary"
-              align="center"
-              sx={{ mb: 3 }}
-            >
-              Secure BSV Blockchain Wallet
-            </Typography>
-            <Divider sx={{ width: '80%' }} />
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              align="center"
-              sx={{ mt: 2 }}
-            >
-              <i>v{appVersion}</i>
-            </Typography>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              align="center"
-              sx={{ mt: 3 }}
-            >
-              Setting up backend services...
-            </Typography>
-            <Box sx={{ width: '100%', mt: 2 }}>
-              <CircularProgress size={24} sx={{ display: 'block', mx: 'auto' }} />
-            </Box>
-          </Box>
+          <Header />
         </Paper>
       </Container>
     )
@@ -600,49 +580,7 @@ const Greeter: React.FC<any> = ({ history }) => {
           boxShadow: theme.shadows[3]
         }}
       >
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 4 }}>
-          <Box sx={{ mb: 2, width: '100px', height: '100px' }}>
-            <AppLogo
-              rotate
-              size="100px"
-              color="#2196F3"
-            />
-          </Box>
-          <Typography
-            variant='h2'
-            fontFamily='Helvetica'
-            fontSize='2em'
-            sx={{
-              mb: 1,
-              fontWeight: 'bold',
-              background: theme.palette.mode === 'dark'
-                ? 'linear-gradient(90deg, #FFFFFF 0%, #F5F5F5 100%)'
-                : 'linear-gradient(90deg, #2196F3 0%, #4569E5 100%)',
-              backgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
-            }}
-          >
-            {appName}
-          </Typography>
-          <Typography
-            variant="body1"
-            color="text.secondary"
-            align="center"
-            sx={{ mb: 3 }}
-          >
-            Secure BSV Blockchain Wallet
-          </Typography>
-          <Divider sx={{ width: '80%' }} />
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            align="center"
-            sx={{ mt: 1 }}
-          >
-            <i>v{appVersion}</i>
-          </Typography>
-        </Box>
-
+        <Header />
         <WalletConfig />
         
         {/* Authentication Stepper - replaces Accordions for clearer progression */}
@@ -736,6 +674,7 @@ const Greeter: React.FC<any> = ({ history }) => {
           align='center'
           sx={{ 
             display: 'block',
+            px: 5,
             mt: 3,
             mb: 1,
             fontSize: '0.75rem',
@@ -743,21 +682,19 @@ const Greeter: React.FC<any> = ({ history }) => {
           }}
         >
           By using this software, you acknowledge that you have read, understood and accepted the terms of the{' '}
-          <a
-            href='https://github.com/bitcoin-sv/metanet-desktop/blob/master/LICENSE.txt'
-            target='_blank'
-            rel='noopener noreferrer'
-            onClick={(e) => {
-              // Prevent default behavior for the link
-              e.preventDefault()
-              // In a browser environment, this will work as expected
-              // In Tauri, this will be handled by the configured shell handler
-              window.open('https://github.com/bitcoin-sv/metanet-desktop/blob/master/LICENSE.txt', '_blank', 'noopener,noreferrer')
-            }}
+          <RouterLink
+            to='/privacy'
             style={{ color: theme.palette.primary.main, textDecoration: 'none' }}
           >
-            Software License
-          </a>.
+            Privacy
+          </RouterLink> and {' '}
+          <RouterLink
+            to='/usage'
+            style={{ color: theme.palette.primary.main, textDecoration: 'none' }}
+          >
+            Usage
+          </RouterLink> {' '}
+          policies.
         </Typography>
       </Paper>
 

@@ -1,0 +1,687 @@
+/* Reset and Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Fixed Back Button */
+.back-button {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 1000;
+    background-color: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    border-radius: 50%;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.back-button:hover {
+    background-color: rgba(255, 255, 255, 1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transform: translateX(-2px);
+}
+
+.back-button a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    text-decoration: none;
+    color: #333;
+}
+
+.back-button svg {
+    transition: transform 0.3s ease;
+}
+
+.back-button:hover svg {
+    transform: translateX(-2px);
+}
+
+.privacy, .usage {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background-color: #ffffff;
+}
+
+.privacy .container, .usage .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Privacy Policy Document Styles */
+.privacy, .usage {
+    line-height: 1.8;
+    color: #2c2c2c;
+    background-color: #fafafa;
+    min-height: 100vh;
+    padding: 40px 0;
+}
+
+.privacy .container, .usage .container {
+    max-width: 1000px;
+    background-color: white;
+    padding: 60px 40px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    margin: 0 auto;
+}
+
+.privacy h1, .usage h1 {
+    font-size: 2.3rem;
+    font-weight: 200;
+    color: #1a1a1a;
+    text-align: center;
+    margin-bottom: 0rem;
+}
+
+.privacy h3, .usage h3 {
+    font-size: 1rem;
+    font-weight: 100;
+    margin-bottom: 1.5rem;
+    color: #7c7c7c;
+    text-align: center;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.privacy .last-updated, .usage .last-updated {
+    text-align: center;
+    font-style: italic;
+    color: #666;
+    margin-bottom: 2rem;
+    font-size: 1rem;
+}
+
+.privacy h2, .usage h2 {
+    font-size: 1.6rem;
+    font-weight: 200;
+    margin: 2.5rem 0 1.5rem 0;
+    color: #282828;
+    text-align: left;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 0.5rem;
+    page-break-after: avoid;
+}
+
+.privacy h4, .usage h4 {
+    font-size: 1.25rem;
+    font-weight: 300;
+    margin: 2.5rem 0 0.25rem 0;
+    color: #282828;
+    text-align: left;
+    page-break-after: avoid;
+}
+
+.privacy p, .usage p {
+    margin-bottom: 1.5rem;
+    text-align: justify;
+    text-justify: inter-word;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.privacy ul, .usage ul, .privacy ol, .usage ol {
+    margin: 1rem 0 1.5rem 2rem;
+    padding-left: 1rem;
+}
+
+.privacy li, .usage li {
+    margin-bottom: 0.8rem;
+    text-align: justify;
+    text-justify: inter-word;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.privacy a, .usage a {
+    color: #0066cc;
+    text-decoration: underline;
+}
+
+.privacy a:hover, .usage a:hover {
+    color: #004499;
+}
+
+/* Typography */
+.privacy h1, .usage h1 {
+    font-size: 3.5rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: #1a1a1a;
+}
+
+.privacy h2, .usage h2 {
+    font-size: 2.5rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: #1a1a1a;
+    text-align: center;
+}
+
+.privacy h3, .usage h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #1a1a1a;
+}
+
+.privacy h4, .usage h4 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #1a1a1a;
+}
+
+/* Hero Section */
+.privacy .hero, .usage .hero {
+    background: linear-gradient(135deg, #080c1e 0%, #844ba2 100%);
+    color: white;
+    padding: 100px 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+}
+
+.privacy .hero-content, .usage .hero-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: center;
+}
+
+.privacy .hero-text h1, .usage .hero-text h1 {
+    color: white;
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.privacy .hero-subtitle, .usage .hero-subtitle {
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+    opacity: 0.9;
+    font-weight: 300;
+}
+
+.privacy .hero-description, .usage .hero-description {
+    font-size: 1.1rem;
+    margin-top: 2.5rem;
+    margin-bottom: 2.5rem;
+    opacity: 0.8;
+    line-height: 1.7;
+}
+
+.privacy .hero-image, .usage .hero-image {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.privacy .phone-mockup, .usage .phone-mockup {
+    max-width: 300px;
+    width: 100%;
+    height: auto;
+    border-radius: 25px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    transform: perspective(1000px) rotateY(-5deg);
+    transition: transform 0.3s ease;
+}
+
+.privacy .phone-mockup:hover, .usage .phone-mockup:hover {
+    transform: perspective(1000px) rotateY(0deg) scale(1.05);
+}
+
+/* Download Buttons */
+.privacy .download-buttons, .usage .download-buttons {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.privacy .btn, .usage .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.privacy .btn-primary, .usage .btn-primary {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    padding: 8px 16px;
+}
+
+.privacy .btn-primary:hover, .usage .btn-primary:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+/* Store badge buttons - remove conflicting styling */
+.privacy .btn-primary:has(.store-badge), .usage .btn-primary:has(.store-badge) {
+    background: transparent;
+    backdrop-filter: none;
+    border: none;
+    padding: 0;
+}
+
+.privacy .btn-primary:has(.store-badge):hover, .usage .btn-primary:has(.store-badge):hover {
+    background: transparent;
+    transform: translateY(-2px);
+}
+
+.privacy .btn-secondary, .usage .btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    padding: 12px 24px;
+    color: white;
+    font-weight: 600;
+}
+
+.privacy .btn-secondary:hover, .usage .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.privacy .desktop-button, .usage .desktop-button {
+    margin-top: 40px;
+}
+
+.privacy .desktop-label, .usage .desktop-label {
+    font-size: 1rem;
+}
+
+.privacy .store-badge, .usage .store-badge {
+    height: 60px;
+    width: auto;
+}
+
+.privacy .coming-soon, .usage .coming-soon {
+    position: relative;
+    opacity: 0.7;
+}
+
+.privacy .coming-soon-label, .usage .coming-soon-label {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #ff6b6b;
+    color: white;
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+/* Features Section */
+.privacy .features, .usage .features {
+    padding: 100px 0;
+    background: #f8fafc;
+}
+
+.privacy .section-subtitle, .usage .section-subtitle {
+    font-size: 1.2rem;
+    color: #666;
+    text-align: center;
+    margin-bottom: 4rem;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.privacy .features-grid, .usage .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 40px;
+    margin-top: 4rem;
+}
+
+.privacy .feature-card, .usage .feature-card {
+    background: white;
+    padding: 40px 30px;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    text-align: center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.privacy .feature-card:hover, .usage .feature-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+.privacy .feature-icon, .usage .feature-icon {
+    font-size: 3rem;
+    margin-bottom: 1.5rem;
+    display: block;
+}
+
+.privacy .feature-card h3, .usage .feature-card h3 {
+    margin-bottom: 1rem;
+    color: #1a1a1a;
+}
+
+.privacy .feature-card p, .usage .feature-card p {
+    color: #666;
+    line-height: 1.6;
+}
+
+/* Screenshots Section */
+.privacy .screenshots, .usage .screenshots {
+    padding: 100px 0;
+    background: white;
+}
+
+.privacy .screenshots-grid, .usage .screenshots-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 40px;
+    margin-top: 4rem;
+}
+
+.privacy .screenshot-item, .usage .screenshot-item {
+    text-align: center;
+}
+
+.privacy .screenshot, .usage .screenshot {
+    width: 100%;
+    max-width: 250px;
+    height: auto;
+    border-radius: 20px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    margin-bottom: 1.5rem;
+    transition: transform 0.3s ease;
+}
+
+.privacy .screenshot:hover, .usage .screenshot:hover {
+    transform: scale(1.05);
+}
+
+.privacy .screenshot-item h4, .usage .screenshot-item h4 {
+    margin-bottom: 0.5rem;
+    color: #1a1a1a;
+}
+
+.privacy .screenshot-item p, .usage .screenshot-item p {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+/* Technical Highlights */
+.privacy .tech-highlights, .usage .tech-highlights {
+    padding: 100px 0;
+    background: linear-gradient(135deg, #080c1e 0%, #844ba2 100%);
+    color: white;
+}
+
+.privacy .tech-highlights h2, .usage .tech-highlights h2 {
+    color: white;
+}
+
+.privacy .tech-highlights .section-subtitle, .usage .tech-highlights .section-subtitle {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.privacy .tech-list, .usage .tech-list {
+    max-width: 800px;
+    margin: 0 auto;
+    margin-top: 3rem;
+}
+
+.privacy .tech-item, .usage .tech-item {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 1.5rem;
+    font-size: 1.1rem;
+    line-height: 1.7;
+}
+
+.privacy .tech-bullet, .usage .tech-bullet {
+    color: #4ade80;
+    font-weight: bold;
+    margin-right: 1rem;
+    font-size: 1.5rem;
+}
+
+/* Download CTA */
+.privacy .download-cta, .usage .download-cta {
+    padding: 100px 0;
+    background: #1a1a1a;
+    color: white;
+    text-align: center;
+}
+
+.privacy .download-cta h2, .usage .download-cta h2 {
+    color: white;
+    margin-bottom: 1rem;
+}
+
+.privacy .download-cta p, .usage .download-cta p {
+    font-size: 1.2rem;
+    margin-bottom: 3rem;
+    opacity: 0.9;
+}
+
+.privacy .download-cta .download-buttons, .usage .download-cta .download-buttons {
+    justify-content: center;
+}
+
+/* Footer */
+.privacy .footer, .usage .footer {
+    background: #0f0f0f;
+    color: white;
+    padding: 40px 0;
+}
+
+.privacy .footer-content, .usage .footer-content {
+    text-align: center;
+}
+
+.privacy .footer-links, .usage .footer-links {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.privacy .footer-links a, .usage .footer-links a {
+    color: #ccc;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+.privacy .footer-links a:hover, .usage .footer-links a:hover {
+    color: white;
+}
+
+.privacy .footer-copyright, .usage .footer-copyright {
+    color: #888;
+    font-size: 0.9rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .privacy .hero-content, .usage .hero-content {
+        grid-template-columns: 1fr;
+        text-align: center;
+        gap: 40px;
+    }
+    
+    .privacy .hero-text, .usage .hero-text {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .privacy .hero-description, .usage .hero-description {
+        order: 3;
+        margin-top: 2rem;
+    }
+    
+    .privacy .hero-image, .usage .hero-image {
+        order: 2;
+    }
+    
+    .privacy .hero-text h1, .usage .hero-text h1 {
+        font-size: 2.5rem;
+    }
+    
+    .privacy .hero-subtitle, .usage .hero-subtitle {
+        font-size: 1.2rem;
+    }
+    
+    .privacy h2, .usage h2 {
+        font-size: 2rem;
+    }
+    
+    .privacy .features-grid, .usage .features-grid {
+        grid-template-columns: 1fr;
+        gap: 30px;
+    }
+    
+    .privacy .screenshots-grid, .usage .screenshots-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 30px;
+    }
+    
+    .privacy .download-buttons, .usage .download-buttons {
+        justify-content: center;
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .privacy .desktop-button, .usage .desktop-button {
+        display: none;
+    }
+    
+    .privacy .footer-links, .usage .footer-links {
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .privacy .container, .usage .container {
+        padding: 0 15px;
+    }
+    
+    .privacy .hero, .usage .hero {
+        padding: 60px 0;
+        min-height: auto;
+    }
+    
+    .privacy .features,
+    .usage .features,
+    .privacy .screenshots,
+    .usage .screenshots,
+    .privacy .tech-highlights,
+    .usage .tech-highlights,
+    .privacy .download-cta,
+    .usage .download-cta {
+        padding: 60px 0;
+    }
+}
+
+@media (max-width: 480px) {
+    .privacy .hero-text h1, .usage .hero-text h1 {
+        font-size: 2rem;
+    }
+    
+    .privacy .hero-subtitle, .usage .hero-subtitle {
+        font-size: 1rem;
+    }
+    
+    .privacy .hero-description, .usage .hero-description {
+        font-size: 1rem;
+    }
+    
+    .privacy h2, .usage h2 {
+        font-size: 1.5rem;
+    }
+    
+    .privacy .section-subtitle, .usage .section-subtitle {
+        font-size: 1rem;
+    }
+    
+    .privacy .phone-mockup, .usage .phone-mockup {
+        max-width: 250px;
+    }
+    
+    .privacy .feature-card, .usage .feature-card {
+        padding: 30px 20px;
+    }
+    
+    .privacy .store-badge, .usage .store-badge {
+        height: 50px;
+    }
+}
+
+/* Privacy Policy Responsive Design */
+@media (max-width: 768px) {
+    .privacy .container, .usage .container {
+        padding: 30px 20px;
+        margin: 0 15px;
+    }
+    
+    .privacy h1, .usage h1 {
+        font-size: 2rem;
+    }
+    
+    .privacy h2, .usage h2 {
+        font-size: 1.5rem;
+        margin: 2rem 0 1rem 0;
+    }
+    
+    .privacy p, .usage p {
+        font-size: 1rem;
+        line-height: 1.6;
+    }
+    
+    .privacy li, .usage li {
+        font-size: 1rem;
+        line-height: 1.5;
+    }
+    
+    .privacy ul, .usage ul {
+        margin-left: 1.5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .privacy .container, .usage .container {
+        padding: 20px 15px;
+        margin: 0 10px;
+    }
+    
+    .privacy h1, .usage h1 {
+        font-size: 1.8rem;
+    }
+    
+    .privacy h2, .usage h2 {
+        font-size: 1.3rem;
+        margin: 1.5rem 0 1rem 0;
+    }
+    
+    .privacy p, .usage p {
+        font-size: 0.95rem;
+    }
+    
+    .privacy li, .usage li {
+        font-size: 0.95rem;
+    }
+}

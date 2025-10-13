@@ -37,6 +37,7 @@ import useAsyncEffect from 'use-async-effect'
 import { WalletProfile } from '../../../types/WalletProfile'
 import { OutlinedInput, Tabs, Tab } from '@mui/material'
 import { useIdentitySearch } from '@bsv/identity-react'
+import MessageBoxConfig from '../../../components/MessageBoxConfig/index.tsx'
 
 /* --------------------------- Inline: Payment Form -------------------------- */
 type PaymentFormProps = {
@@ -191,9 +192,10 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
                 identitySearch.handleSelect(event, value as any);
                 if (value && typeof value !== 'string') {
                   setRecipient(value.identityKey);
-                  setPublicKeyInput(''); // clear direct input
+                  setPublicKeyInput(value.identityKey); // show selected identity key
                 } else {
                   setRecipient('');
+                  setPublicKeyInput('');
                 }
               }}
               filterOptions={(options: IdentityOption[]) => options.filter((identity: IdentityOption, index, array) => array.findIndex((i: StrictIdentityOption) => i.identityKey === (identity as StrictIdentityOption).identityKey) === index)}
@@ -270,7 +272,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
             />
             <TextField
               fullWidth
-              label="Or Enter Recipient Public Key"
+              label={identitySearch.selectedIdentity ? "Selected Recipient Identity Key" : "Or Enter Recipient Public Key"}
               value={publicKeyInput}
               onChange={(e) => {
                 const val = e.target.value.trim();
@@ -288,8 +290,9 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
                   setRecipient('');
                 }
               }}
-              error={Boolean(publicKeyInput && !recipient)}
-              helperText={publicKeyInput && !recipient ? 'Invalid public key' : ''}
+              disabled={!!identitySearch.selectedIdentity}
+              error={Boolean(publicKeyInput && !recipient && !identitySearch.selectedIdentity)}
+              helperText={publicKeyInput && !recipient && !identitySearch.selectedIdentity ? 'Invalid public key' : ''}
               sx={{ mt: 1 }}
             />
           </>
@@ -350,12 +353,7 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
   const { managers, messageBoxUrl, useMessageBox, adminOriginator } = useContext(WalletContext)
   const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
 
-  const history = useHistory()
   const [loadingById, setLoadingById] = useState<Record<string, boolean>>({})
-
-  if (!useMessageBox || !messageBoxUrl) {
-    return <Button variant="outlined" onClick={() => history.push('/dashboard/settings')}>Enable Inbound Payments in Settings by Configuring a Message Box</Button>
-  }
 
   const setLoadingFor = (id: string, on: boolean) => {
     setLoadingById(prev => {
@@ -410,6 +408,10 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
     } finally {
       onRefresh()
     }
+  }
+
+  if (!useMessageBox || !messageBoxUrl) {
+    return null
   }
 
   return (
@@ -473,7 +475,7 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
 
 /* ------------------------------- Route View -------------------------------- */
 export default function PeerPayRoute() {
-  const { messageBoxUrl, managers } = useContext(WalletContext)
+  const { messageBoxUrl, managers, useMessageBox } = useContext(WalletContext)
   const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
 
   const [payments, setPayments] = useState<IncomingPayment[]>([])
@@ -544,6 +546,23 @@ export default function PeerPayRoute() {
     } catch (error) {
       console.error('Error fetching transactions:', error)
     }
+  }
+
+  // If Message Box is not configured, show configuration UI instead
+  if (!useMessageBox || !messageBoxUrl) {
+    return (
+      <Container maxWidth="sm">
+        <Box sx={{ minHeight: '100vh', py: 5 }}>
+          <Typography variant="h5" sx={{ mb: 2 }}>
+            Setup Required
+          </Typography>
+          <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
+            To send and receive payments with other users, enter your Message Box server URL below.
+          </Typography>
+          <MessageBoxConfig embedded showTitle={false} />
+        </Box>
+      </Container>
+    )
   }
 
   return (

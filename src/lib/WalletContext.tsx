@@ -23,8 +23,10 @@ import {
   LookupResolver,
   WalletInterface,
   CachedKeyDeriver,
+  WalletClient,
 } from '@bsv/sdk'
 import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox/out/src/WalletSettingsManager'
+import { PeerPayClient } from '@bsv/message-box-client'
 import { toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB } from './config'
@@ -147,6 +149,8 @@ export interface WalletContextValue {
   initializingBackendServices: boolean
   permissionsConfig: PermissionsConfig
   updatePermissionsConfig: (config: PermissionsConfig) => Promise<void>
+  // PeerPay Client
+  peerPayClient: PeerPayClient | null
 }
 
 export const WalletContext = createContext<WalletContextValue>({
@@ -194,7 +198,8 @@ export const WalletContext = createContext<WalletContextValue>({
   removeMessageBoxUrl: async () => { },
   initializingBackendServices: false,
   permissionsConfig: DEFAULT_PERMISSIONS_CONFIG,
-  updatePermissionsConfig: async () => { }
+  updatePermissionsConfig: async () => { },
+  peerPayClient: null
 })
 
 // ---- Group-gating types ----
@@ -303,6 +308,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [groupPermissionRequests, setGroupPermissionRequests] = useState<GroupPermissionRequest[]>([])
   const [initializingBackendServices, setInitializingBackendServices] = useState<boolean>(false)
   const [permissionsConfig, setPermissionsConfig] = useState<PermissionsConfig>(DEFAULT_PERMISSIONS_CONFIG)
+  const [peerPayClient, setPeerPayClient] = useState<PeerPayClient | null>(null)
 
   // Load permissions config from localStorage on mount
   useEffect(() => {
@@ -1512,8 +1518,23 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
       console.log('[updateMessageBoxUrl] Updating Message Box URL to:', url);
 
-      // Update state
+      // Update state - this will trigger PeerPayClient initialization via useEffect
+      console.log('[WalletContext] Initializing PeerPayClient...');
+      const wallet = new WalletClient(managers.walletManager, 'desktop.bsvb.tech');
+      const client = new PeerPayClient({
+        walletClient: wallet,
+        messageBoxHost: url,
+        enableLogging: true,
+        originator: adminOriginator
+      });
+      
+      // Initialize the client - this will check for and create an advertisement if needed
+      await client.init(url);
+
+      console.log('[updateMessageBoxUrl] PeerPayClient initialized successfully');
+      
       setMessageBoxUrl(url);
+      setPeerPayClient(client);
       setUseMessageBox(true);
 
       // Save snapshot with new config
@@ -1526,13 +1547,13 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         throw new Error('Failed to save configuration');
       }
 
-      toast.success('Message Box URL updated successfully!');
+      toast.success('Message Box URL configured successfully!');
     } catch (error: any) {
       console.error('[updateMessageBoxUrl] Error:', error);
       toast.error('Failed to update Message Box URL: ' + error.message);
       throw error;
     }
-  }, [saveEnhancedSnapshot]);
+  }, [saveEnhancedSnapshot, managers]);
 
   const removeMessageBoxUrl = useCallback(async () => {
     try {
@@ -1541,6 +1562,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       // Update state
       setMessageBoxUrl('');
       setUseMessageBox(false);
+      setPeerPayClient(null); // Clear the PeerPayClient
 
       // Save snapshot with new config
       try {
@@ -1573,6 +1595,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     // Reset configuration state
     setConfigStatus('configured');
     setSnapshotLoaded(false);
+    setPeerPayClient(null); // Clear PeerPayClient on logout
   }, []);
 
   // Automatically set active profile when wallet manager becomes available
@@ -1785,7 +1808,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     removeMessageBoxUrl,
     initializingBackendServices,
     permissionsConfig,
-    updatePermissionsConfig
+    updatePermissionsConfig,
+    peerPayClient
   }), [
     managers,
     settings,
@@ -1828,7 +1852,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     removeMessageBoxUrl,
     initializingBackendServices,
     permissionsConfig,
-    updatePermissionsConfig
+    updatePermissionsConfig,
+    peerPayClient
   ]);
 
   return (

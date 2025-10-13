@@ -438,7 +438,7 @@ const Settings = () => {
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
         <Typography variant="h4" sx={{ mb: 2 }}>
-          Wallet Configuration
+          At a Glance
         </Typography>
         <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
           Current wallet service configuration. Logout to change.
@@ -610,7 +610,9 @@ const Settings = () => {
         </Box>
       </Paper>
 
-      <MessageBoxConfig />
+      <Box sx={{ my: 3 }}>
+        <MessageBoxConfig />
+      </Box>
 
       <Dialog open={showBackupDialog} onClose={() => setShowBackupDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Add Backup Storage</DialogTitle>

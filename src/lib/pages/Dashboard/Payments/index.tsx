@@ -28,7 +28,7 @@ import {
   Link
 } from '@mui/material'
 import InputAdornment from '@mui/material/InputAdornment'
-import { PeerPayClient, IncomingPayment } from '@bsv/message-box-client'
+import { IncomingPayment } from '@bsv/message-box-client'
 import { Utils, WalletClient, Script, PublicKey, WalletInterface } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
 import { toast } from 'react-toastify'
@@ -45,7 +45,7 @@ type PaymentFormProps = {
   wallet: WalletInterface
 }
 function PaymentForm({ wallet, onSent }: PaymentFormProps) {
-  const {managers, messageBoxUrl, activeProfile} = useContext(WalletContext)
+  const {managers, messageBoxUrl, activeProfile, peerPayClient} = useContext(WalletContext)
   const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState<number>(0)
   const [sending, setSending] = useState(false)
@@ -129,16 +129,10 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
   const canSend = recipient.trim().length > 0 && amount > 0 && !sending
 
   const send = async () => {
-    if (!canSend) return
+    if (!canSend || !peerPayClient) return
     try {
       setSending(true)
-      const peerPay = new PeerPayClient({
-        walletClient: wallet,
-        messageBoxHost: messageBoxUrl,
-        enableLogging: true,
-        originator: 'desktop.bsvb.tech'
-      })
-       await peerPay.sendPayment({
+      await peerPayClient.sendPayment({
         recipient: recipient.trim(),
         amount
       })
@@ -350,8 +344,7 @@ type PaymentListProps = {
 
 function PaymentList({ payments, onRefresh }: PaymentListProps) {
   // Track loading per messageId so buttons aren't linked
-  const { managers, messageBoxUrl, useMessageBox, adminOriginator } = useContext(WalletContext)
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
+  const { messageBoxUrl, useMessageBox, peerPayClient } = useContext(WalletContext)
 
   const [loadingById, setLoadingById] = useState<Record<string, boolean>>({})
 
@@ -365,24 +358,19 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
   }
 
   const acceptWithRetry = async (p: IncomingPayment) => {
-    const peerPay = new PeerPayClient({
-      walletClient: wallet,
-      messageBoxHost: messageBoxUrl,
-      enableLogging: true,
-      originator: adminOriginator
-    })
+    if (!peerPayClient) return false
     const id = String(p.messageId)
     setLoadingFor(id, true)
     try {
-      await peerPay.acceptPayment(p)
+      await peerPayClient.acceptPayment(p)
       return true
     } catch (e1) {
       toast.error('[PaymentList] acceptPayment raw failed → refetching by id', e1 as any)
       try {
-        const list = await peerPay.listIncomingPayments(messageBoxUrl)
+        const list = await peerPayClient.listIncomingPayments(messageBoxUrl)
         const fresh = list.find(x => String(x.messageId) === id)
         if (!fresh) throw new Error('Payment not found on refresh')
-        await peerPay.acceptPayment(fresh)
+        await peerPayClient.acceptPayment(fresh)
         return true
       } catch (e2) {
         toast.error('[PaymentList] acceptPayment refresh retry failed', e2 as any)
@@ -475,7 +463,7 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
 
 /* ------------------------------- Route View -------------------------------- */
 export default function PeerPayRoute() {
-  const { messageBoxUrl, managers, useMessageBox } = useContext(WalletContext)
+  const { messageBoxUrl, managers, useMessageBox, peerPayClient } = useContext(WalletContext)
   const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
 
   const [payments, setPayments] = useState<IncomingPayment[]>([])
@@ -489,22 +477,16 @@ export default function PeerPayRoute() {
 
   const fetchPayments = useCallback(async () => {
     try {
-      if (!wallet || !messageBoxUrl) return
+      if (!peerPayClient || !messageBoxUrl) return
       setLoading(true)
-      const peerPay = new PeerPayClient({
-        walletClient: wallet,
-        messageBoxHost: messageBoxUrl,
-        enableLogging: true,
-        originator: 'desktop.bsvb.tech'
-      })
-      const list = await peerPay.listIncomingPayments(messageBoxUrl)
+      const list = await peerPayClient.listIncomingPayments(messageBoxUrl)
       setPayments(list)
     } catch (e) {
       setSnack({ open: true, msg: (e as Error)?.message ?? 'Failed to load payments', severity: 'error' })
     } finally {
       setLoading(false)
     }
-  }, [messageBoxUrl, wallet])
+  }, [peerPayClient, messageBoxUrl])
 
   const getPastTransactions = async () => {
     if (!wallet) return

@@ -14,6 +14,13 @@ autoUpdater.logger.transports.file.level = 'info';
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false; // Set to false to avoid conflict with manual quitAndInstall()
 
+// Disable differential downloads on Windows to avoid checksum mismatch errors
+// This forces full downloads which are more reliable
+if (process.platform === 'win32') {
+  log.info('Disabling differential downloads on Windows');
+  autoUpdater.disableDifferentialDownload = true;
+}
+
 // Track update state
 let updateState = {
   available: false,

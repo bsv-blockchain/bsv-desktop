@@ -139,7 +139,7 @@ export interface WalletContextValue {
   messageBoxUrl: string
   useRemoteStorage: boolean
   useMessageBox: boolean
-  saveEnhancedSnapshot: (overrideBackupUrls?: string[]) => string
+  saveEnhancedSnapshot: (configOverrides?: { backupStorageUrls?: string[], messageBoxUrl?: string, useMessageBox?: boolean }) => string
   backupStorageUrls: string[]
   addBackupStorageUrl: (url: string) => Promise<void>
   removeBackupStorageUrl: (url: string) => Promise<void>
@@ -886,13 +886,18 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         return;
       }
 
+      // Trim trailing slashes from URLs
+      const trimmedWabUrl = (wabUrl || '').replace(/\/+$/, '');
+      const trimmedStorageUrl = (storageUrl || '').replace(/\/+$/, '');
+      const trimmedMessageBoxUrl = (messageBoxUrl || '').replace(/\/+$/, '');
+
       setUseWab(useWabSetting !== false)
-      setWabUrl(wabUrl || '')
+      setWabUrl(trimmedWabUrl)
       setWabInfo(wabInfo)
       setSelectedAuthMethod(method)
       setSelectedNetwork(network)
-      setSelectedStorageUrl(storageUrl || '')
-      setMessageBoxUrl(messageBoxUrl || '')
+      setSelectedStorageUrl(trimmedStorageUrl)
+      setMessageBoxUrl(trimmedMessageBoxUrl)
       setUseRemoteStorage(useRemoteStorage || false)
       setUseMessageBox(useMessageBox || false)
 
@@ -1074,7 +1079,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
    * with WalletConfig settings.
    * Format: [version=3][varint:config_length][config_json][wallet_snapshot]
    */
-  const saveEnhancedSnapshot = useCallback((overrideBackupUrls?: string[]): string => {
+  const saveEnhancedSnapshot = useCallback((configOverrides?: { backupStorageUrls?: string[], messageBoxUrl?: string, useMessageBox?: boolean }) => {
     if (!managers.walletManager) {
       throw new Error('Wallet manager not available for snapshot');
     }
@@ -1084,17 +1089,17 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
     // Build config object - use override if provided, otherwise use current state
     const config = {
-      wabUrl,
       network: selectedNetwork,
-      storageUrl: selectedStorageUrl,
-      messageBoxUrl,
-      authMethod: selectedAuthMethod,
       useWab,
+      wabUrl,
+      authMethod: selectedAuthMethod,
       useRemoteStorage,
-      useMessageBox,
-      backupStorageUrls: overrideBackupUrls !== undefined ? overrideBackupUrls : backupStorageUrls
+      storageUrl: selectedStorageUrl,
+      backupStorageUrls: configOverrides?.backupStorageUrls || backupStorageUrls,
+      useMessageBox: configOverrides?.useMessageBox || useMessageBox,
+      messageBoxUrl: configOverrides?.messageBoxUrl || messageBoxUrl,
     };
-    console.log('[saveEnhancedSnapshot] Saving config:', { messageBoxUrl, useMessageBox });
+    console.log('[saveEnhancedSnapshot] Saving config:', { configOverrides });
 
     // Serialize config to JSON bytes
     const configJson = JSON.stringify(config);
@@ -1330,6 +1335,31 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
           setManagers(m => ({ ...m, walletManager }));
           console.log('[WalletManager Init] ========== WALLET MANAGER SETUP COMPLETE ==========');
 
+          // Initialize PeerPayClient if messageBoxUrl is configured
+          console.log('[WalletManager Init] messageBoxUrl:', messageBoxUrl);
+          console.log('[WalletManager Init] useMessageBox:', useMessageBox);
+          
+          if (messageBoxUrl && useMessageBox) {
+            (async () => {
+              try {
+                console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
+                const wallet = new WalletClient(managers.walletManager, 'desktop.bsvb.tech');
+                const client = new PeerPayClient({
+                  walletClient: wallet,
+                  messageBoxHost: messageBoxUrl,
+                  enableLogging: true,
+                  originator: 'desktop.bsvb.tech'
+                });
+
+                await client.init(messageBoxUrl);
+                setPeerPayClient(client);
+                console.log('[WalletContext] PeerPayClient initialized successfully');
+              } catch (error: any) {
+                console.error('[WalletContext] Failed to initialize PeerPayClient:', error);
+              }
+            })();
+          }
+
         } catch (err: any) {
           console.error("Error initializing wallet manager:", err);
           toast.error("Failed to initialize wallet: " + err.message);
@@ -1346,6 +1376,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     selectedNetwork,
     wabUrl,
     walletFunder,
+    messageBoxUrl,
+    useMessageBox,
     useWab,
     buildWallet,
     loadWalletSnapshot,
@@ -1422,7 +1454,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
       // Save snapshot with new config BEFORE updating state
       try {
-        const snapshot = saveEnhancedSnapshot(newBackupUrls);
+        const snapshot = saveEnhancedSnapshot({ backupStorageUrls: newBackupUrls });
         localStorage.snap = snapshot;
         console.log('[addBackupStorageUrl] Snapshot saved with', newBackupUrls.length, 'backups');
       } catch (err) {
@@ -1447,7 +1479,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
       // Save snapshot with new config BEFORE updating state
       try {
-        const snapshot = saveEnhancedSnapshot(newBackupUrls);
+        const snapshot = saveEnhancedSnapshot({ backupStorageUrls: newBackupUrls });
         localStorage.snap = snapshot;
         console.log('[removeBackupStorageUrl] Snapshot saved with', newBackupUrls.length, 'backups');
       } catch (err) {
@@ -1508,38 +1540,48 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         throw new Error('Message Box URL cannot be empty');
       }
 
+      // Trim trailing slashes
+      const trimmedUrl = url.trim().replace(/\/+$/, '');
+
       // Validate URL format
       try {
-        new URL(url);
+        new URL(trimmedUrl);
       } catch (e) {
         toast.error('Invalid Message Box URL format');
         throw new Error('Invalid Message Box URL format');
       }
 
-      console.log('[updateMessageBoxUrl] Updating Message Box URL to:', url);
+      console.log('[updateMessageBoxUrl] Updating Message Box URL to:', trimmedUrl);
 
-      // Update state - this will trigger PeerPayClient initialization via useEffect
-      console.log('[WalletContext] Initializing PeerPayClient...');
-      const wallet = new WalletClient(managers.walletManager, 'desktop.bsvb.tech');
-      const client = new PeerPayClient({
-        walletClient: wallet,
-        messageBoxHost: url,
-        enableLogging: true,
-        originator: adminOriginator
-      });
-      
-      // Initialize the client - this will check for and create an advertisement if needed
-      await client.init(url);
-
-      console.log('[updateMessageBoxUrl] PeerPayClient initialized successfully');
-      
-      setMessageBoxUrl(url);
-      setPeerPayClient(client);
+      // Update state
+      setMessageBoxUrl(trimmedUrl);
       setUseMessageBox(true);
+
+      // Initialize PeerPayClient immediately if wallet manager is available
+      if (managers?.walletManager) {
+        try {
+          console.log('[updateMessageBoxUrl] Initializing PeerPayClient...');
+          const wallet = new WalletClient(managers.walletManager, 'desktop.bsvb.tech');
+          const client = new PeerPayClient({
+            walletClient: wallet,
+            messageBoxHost: trimmedUrl,
+            enableLogging: true,
+            originator: 'desktop.bsvb.tech'
+          });
+
+          // Initialize the client - this will check for and create an advertisement if needed
+          await client.init(trimmedUrl);
+          setPeerPayClient(client);
+          console.log('[updateMessageBoxUrl] PeerPayClient initialized successfully');
+        } catch (initError: any) {
+          console.error('[updateMessageBoxUrl] Failed to initialize PeerPayClient:', initError);
+          // Don't throw - we can retry later
+        }
+      }
 
       // Save snapshot with new config
       try {
-        const snapshot = saveEnhancedSnapshot();
+        const snapshot = saveEnhancedSnapshot({ messageBoxUrl: trimmedUrl, useMessageBox: true });
         localStorage.snap = snapshot;
         console.log('[updateMessageBoxUrl] Snapshot saved with new Message Box URL');
       } catch (err) {
@@ -1553,7 +1595,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       toast.error('Failed to update Message Box URL: ' + error.message);
       throw error;
     }
-  }, [saveEnhancedSnapshot, managers]);
+  }, [saveEnhancedSnapshot, managers, adminOriginator]);
 
   const removeMessageBoxUrl = useCallback(async () => {
     try {
@@ -1607,10 +1649,33 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         console.log('PROFILE IS NOW BEING SET!', profileToSet)
         setActiveProfile(profileToSet)
       }
+
+      // Initialize PeerPayClient if messageBoxUrl is configured
+      if (messageBoxUrl && useMessageBox) {
+        (async () => {
+          try {
+            console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
+            const wallet = new WalletClient(managers.walletManager, 'desktop.bsvb.tech');
+            const client = new PeerPayClient({
+              walletClient: wallet,
+              messageBoxHost: messageBoxUrl,
+              enableLogging: true,
+              originator: 'desktop.bsvb.tech'
+            });
+
+            await client.init(messageBoxUrl);
+            setPeerPayClient(client);
+            console.log('[WalletContext] PeerPayClient initialized successfully');
+          } catch (error: any) {
+            console.error('[WalletContext] Failed to initialize PeerPayClient:', error);
+          }
+        })();
+      }
     } else {
       setActiveProfile(null)
+      setPeerPayClient(null)
     }
-  }, [managers?.walletManager?.authenticated])
+  }, [managers?.walletManager?.authenticated, messageBoxUrl, useMessageBox, adminOriginator])
 
   // Track recent origins to prevent duplicate updates in a short time period
   const recentOriginsRef = useRef<Map<string, number>>(new Map());
@@ -1671,15 +1736,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
     }
   }, [managers, activeProfile])
-
-  useEffect(() => {
-    if (typeof managers.walletManager === 'object') {
-      (async () => {
-
-      })()
-    }
-  }, [adminOriginator, managers?.permissionsManager])
-
+  
   // Pop the first request from the basket queue, close if empty, relinquish focus if needed
   const advanceBasketQueue = () => {
     setBasketRequests(prev => {

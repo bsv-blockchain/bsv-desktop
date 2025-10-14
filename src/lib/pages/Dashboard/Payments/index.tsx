@@ -129,7 +129,8 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
   const canSend = recipient.trim().length > 0 && amount > 0 && !sending
 
   const send = async () => {
-    if (!canSend || !peerPayClient) return
+    console.log({ canSend, peerPayClient, amount , recipient, sending })
+    if (!canSend || !peerPayClient) throw new Error('peerPayClient is not initialized')
     try {
       setSending(true)
       await peerPayClient.sendPayment({
@@ -531,7 +532,7 @@ export default function PeerPayRoute() {
   }
 
   // If Message Box is not configured, show configuration UI instead
-  if (!useMessageBox || !messageBoxUrl) {
+  if (!useMessageBox || !messageBoxUrl || !peerPayClient) {
     return (
       <Container maxWidth="sm">
         <Box sx={{ minHeight: '100vh', py: 5 }}>

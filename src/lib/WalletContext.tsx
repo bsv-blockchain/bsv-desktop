@@ -25,7 +25,7 @@ import {
   CachedKeyDeriver,
   WalletClient,
 } from '@bsv/sdk'
-import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox/out/src/WalletSettingsManager'
+import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox/src/WalletSettingsManager'
 import { PeerPayClient } from '@bsv/message-box-client'
 import { toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
@@ -990,10 +990,21 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         for (const backupUrl of backupStorageUrls) {
           try {
             console.log('[buildWallet] Adding backup storage:', backupUrl);
-            const backupClient = new StorageClient(wallet, backupUrl);
-            await backupClient.makeAvailable();
-            await storageManager.addWalletStorageProvider(backupClient);
-            console.log('[buildWallet] Backup storage added:', backupUrl);
+
+            // Handle LOCAL_STORAGE special case
+            if (backupUrl === 'LOCAL_STORAGE') {
+              const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain);
+              electronStorage.setServices(services);
+              await electronStorage.makeAvailable();
+              await storageManager.addWalletStorageProvider(electronStorage);
+              console.log('[buildWallet] Local Electron storage added as backup');
+            } else {
+              // Remote storage client
+              const backupClient = new StorageClient(wallet, backupUrl);
+              await backupClient.makeAvailable();
+              await storageManager.addWalletStorageProvider(backupClient);
+              console.log('[buildWallet] Backup storage added:', backupUrl);
+            }
           } catch (error: any) {
             console.error('[buildWallet] Failed to add backup storage:', backupUrl, error);
             toast.error(`Failed to connect to backup storage ${backupUrl}: ${error.message}`);
@@ -1406,19 +1417,27 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       throw new Error('Wallet manager not available');
     }
 
-    // Validate URL format
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    // Check for duplicates in backup list
+    if (backupStorageUrls.includes(url)) {
+      throw new Error('This backup storage is already added');
+    }
+
+    // Special handling for LOCAL_STORAGE
+    const isLocalStorage = url === 'LOCAL_STORAGE';
+
+    // Validate URL format for remote storage
+    if (!isLocalStorage && !url.startsWith('http://') && !url.startsWith('https://')) {
       throw new Error('Backup storage URL must start with http:// or https://');
     }
 
-    // Check for duplicates in backup list
-    if (backupStorageUrls.includes(url)) {
-      throw new Error('This backup storage URL is already added as a backup');
+    // Check if it's the same as the primary storage (only for remote storage)
+    if (!isLocalStorage && useRemoteStorage && selectedStorageUrl === url) {
+      throw new Error('This URL is already your primary storage. Cannot add it as a backup.');
     }
 
-    // Check if it's the same as the primary storage (only for remote storage)
-    if (useRemoteStorage && selectedStorageUrl === url) {
-      throw new Error('This URL is already your primary storage. Cannot add it as a backup.');
+    // Check if local storage is already primary storage
+    if (isLocalStorage && !useRemoteStorage) {
+      throw new Error('Local storage is already your primary storage. Cannot add it as a backup.');
     }
 
     try {
@@ -1435,9 +1454,29 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
 
       console.log('[addBackupStorageUrl] Adding new backup storage:', url);
-      const backupClient = new StorageClient(wallet, url);
-      await backupClient.makeAvailable();
-      await storageManager.addWalletStorageProvider(backupClient);
+
+      // Create appropriate storage provider
+      let backupProvider: any;
+      if (isLocalStorage) {
+        // Create local Electron storage as backup
+        const keyDeriver = (wallet as any).signer?.keyDeriver;
+        if (!keyDeriver || !keyDeriver.identityKey) {
+          throw new Error('Could not get identity key from wallet');
+        }
+        const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, selectedNetwork);
+        const services = new Services(selectedNetwork);
+        electronStorage.setServices(services);
+        await electronStorage.makeAvailable();
+        backupProvider = electronStorage;
+        console.log('[addBackupStorageUrl] Local Electron storage created as backup');
+      } else {
+        // Create remote storage client as backup
+        backupProvider = new StorageClient(wallet, url);
+        await backupProvider.makeAvailable();
+        console.log('[addBackupStorageUrl] Remote storage client created as backup');
+      }
+
+      await storageManager.addWalletStorageProvider(backupProvider);
       console.log('[addBackupStorageUrl] Backup storage provider added');
 
       // Re-verify and set active storage to ensure proper configuration

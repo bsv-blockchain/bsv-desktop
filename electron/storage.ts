@@ -64,8 +64,9 @@ class StorageManager {
       fs.mkdirSync(bsvDir, { recursive: true });
     }
 
-    // Use separate database files for different chains
-    const dbFileName = chain === 'main' ? 'wallet.db' : 'wallet-test.db';
+    // Use separate database files for different identities and chains
+    // Format: wallet-<identityKey>-<chain>.db
+    const dbFileName = `wallet-${key}.db`;
     const dbPath = path.join(bsvDir, dbFileName);
 
     console.log(`[Storage] Creating storage at: ${dbPath}`);
@@ -225,12 +226,34 @@ class StorageManager {
       });
 
       // Pipe worker stdout/stderr to main process for logging
+      // Buffer to handle partial lines that may arrive in chunks
+      let stdoutBuffer = '';
+      let stderrBuffer = '';
+
       worker.stdout?.on('data', (data) => {
-        console.log(`[Monitor Worker ${key}]`, data.toString().trim());
+        stdoutBuffer += data.toString();
+        const lines = stdoutBuffer.split('\n');
+        // Keep the last incomplete line in the buffer
+        stdoutBuffer = lines.pop() || '';
+        // Log complete lines
+        lines.forEach(line => {
+          if (line.trim()) {
+            console.log(`[Monitor Worker ${key}]`, line.trim());
+          }
+        });
       });
 
       worker.stderr?.on('data', (data) => {
-        console.error(`[Monitor Worker ${key}]`, data.toString().trim());
+        stderrBuffer += data.toString();
+        const lines = stderrBuffer.split('\n');
+        // Keep the last incomplete line in the buffer
+        stderrBuffer = lines.pop() || '';
+        // Log complete lines
+        lines.forEach(line => {
+          if (line.trim()) {
+            console.error(`[Monitor Worker ${key}]`, line.trim());
+          }
+        });
       });
 
       // Wait for worker ready signal

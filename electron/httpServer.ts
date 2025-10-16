@@ -170,7 +170,10 @@ export async function startHttpServer(mainWindow: BrowserWindow): Promise<() => 
 
     srv.listen(2121, '127.0.0.1', () => {
       console.log('HTTPS server listening on https://127.0.0.1:2121');
-      resolve(srv);
+      app.listen(3321, '127.0.0.1', () => {
+        console.log('HTTP server listening on http://127.0.0.1:3321');
+        resolve(srv);
+      })
     });
 
     srv.on('error', (error: NodeJS.ErrnoException) => {

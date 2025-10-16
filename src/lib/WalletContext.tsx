@@ -94,7 +94,7 @@ interface ManagerState {
   permissionsManager?: WalletPermissionsManager;
   settingsManager?: WalletSettingsManager;
   wallet?: any;
-  storageManager?: any;
+  storageManager?: WalletStorageManager | any;
 }
 
 type ConfigStatus = 'editing' | 'configured' | 'initial'
@@ -1454,16 +1454,18 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
 
       console.log('[addBackupStorageUrl] Adding new backup storage:', url);
+      console.log({storageManager})
 
       // Create appropriate storage provider
       let backupProvider: any;
       if (isLocalStorage) {
         // Create local Electron storage as backup
-        const keyDeriver = (wallet as any).signer?.keyDeriver;
-        if (!keyDeriver || !keyDeriver.identityKey) {
+        // Get identityKey from storageManager which always has it
+        const identityKey = storageManager?._authId?.identityKey
+        if (!identityKey) {
           throw new Error('Could not get identity key from wallet');
         }
-        const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, selectedNetwork);
+        const electronStorage = new StorageElectronIPC(identityKey, selectedNetwork);
         const services = new Services(selectedNetwork);
         electronStorage.setServices(services);
         await electronStorage.makeAvailable();

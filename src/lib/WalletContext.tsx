@@ -1454,7 +1454,6 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
 
       console.log('[addBackupStorageUrl] Adding new backup storage:', url);
-      console.log({storageManager})
 
       // Create appropriate storage provider
       let backupProvider: any;

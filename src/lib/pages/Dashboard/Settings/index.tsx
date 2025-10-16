@@ -168,15 +168,15 @@ const Settings = () => {
     }
   }
 
-  const handleAddBackupStorage = async () => {
-    if (!newBackupUrl) {
+  const handleAddBackupStorage = async (local?: boolean) => {
+    if (!newBackupUrl && !local) {
       toast.error('Please enter a backup storage URL');
       return;
     }
 
     try {
       setBackupLoading(true);
-      await addBackupStorageUrl(newBackupUrl);
+      await addBackupStorageUrl(local ? 'LOCAL_STORAGE' : newBackupUrl);
       setShowBackupDialog(false);
       setNewBackupUrl('');
     } catch (e) {
@@ -622,9 +622,11 @@ const Settings = () => {
             <>
               <Box sx={{ my: 3 }}>
                 <Button
-                  variant="outlined"
+                  variant="contained"
                   fullWidth
-                  onClick={() => setNewBackupUrl('LOCAL_STORAGE')}
+                  onClick={() => {
+                    handleAddBackupStorage(true)
+                  }}
                   disabled={backupLoading}
                   sx={{ mb: 2 }}
                 >
@@ -651,7 +653,7 @@ const Settings = () => {
             Cancel
           </Button>
           <Button
-            onClick={handleAddBackupStorage}
+            onClick={() => handleAddBackupStorage(false)}
             variant="contained"
             disabled={backupLoading || !newBackupUrl}
           >

@@ -48,7 +48,8 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     // Create database path
     const homeDir = os.homedir();
     const bsvDir = path.join(homeDir, '.bsv-desktop');
-    const dbFileName = chain === 'main' ? 'wallet.db' : 'wallet-test.db';
+    // Use same naming convention as storage.ts: wallet-<identityKey>-<chain>.db
+    const dbFileName = `wallet-${key}.db`;
     const dbPath = path.join(bsvDir, dbFileName);
 
     console.log(`[Monitor Worker] Connecting to database: ${dbPath}`);

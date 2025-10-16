@@ -53,7 +53,7 @@ Application entry point that uses the UI library:
 ### Installation
 
 ```bash
-git clone https://github.com/your-org/bsv-desktop.git
+git clone https://github.com/bsv-blockchain/bsv-desktop.git
 cd bsv-desktop
 npm install
 ```
@@ -330,8 +330,8 @@ Open BSV License
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/your-org/bsv-desktop/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/bsv-desktop/discussions)
+- **Issues**: [GitHub Issues](https://github.com/bsv-blockchain/bsv-desktop/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/bsv-blockchain/bsv-desktop/discussions)
 - **Documentation**: See [PORTED.md](PORTED.md) for architecture details
 
 ## Related Projects

@@ -537,7 +537,7 @@ const Settings = () => {
               Active Storage (Primary)
             </Typography>
             <Box component="div">
-              {useRemoteStorage ? storageUrl : 'Local File ~/.bsv-desktop/wallet.db'}
+              {useRemoteStorage ? storageUrl : 'Local File ~/.bsv-desktop/wallet-<identityKey>-<chain>.db'}
             </Box>
           </Box>
 
@@ -561,11 +561,11 @@ const Settings = () => {
                     }}
                   >
                     <Box component="div" sx={{
-                      fontFamily: 'monospace',
+                      fontFamily: url === 'LOCAL_STORAGE' ? 'inherit' : 'monospace',
                       wordBreak: 'break-all',
                       flex: 1
                     }}>
-                      {url}
+                      {url === 'LOCAL_STORAGE' ? 'Local Electron Storage (~/.bsv-desktop/wallet-*.db)' : url}
                     </Box>
                     <Button
                       variant="outlined"
@@ -617,15 +617,30 @@ const Settings = () => {
       <Dialog open={showBackupDialog} onClose={() => setShowBackupDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Add Backup Storage</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-            Enter the URL of your remote wallet storage provider. This will be used as a backup
-            in addition to your primary storage.
-          </Typography>
+          {/* Only show local storage option if remote storage is primary AND local storage not already in backups */}
+          {useRemoteStorage && !backupStorageUrls.includes('LOCAL_STORAGE') && (
+            <>
+              <Box sx={{ my: 3 }}>
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  onClick={() => setNewBackupUrl('LOCAL_STORAGE')}
+                  disabled={backupLoading}
+                  sx={{ mb: 2 }}
+                >
+                  Add Local Storage Backup
+                </Button>
+              </Box>
+
+              <Divider sx={{ my: 2 }}>OR</Divider>
+            </>
+          )}
+
           <TextField
             fullWidth
-            label="Backup Storage URL"
+            label="Remote Backup Storage URL"
             placeholder="https://storage.example.com"
-            value={newBackupUrl}
+            value={newBackupUrl === 'LOCAL_STORAGE' ? '' : newBackupUrl}
             onChange={(e) => setNewBackupUrl(e.target.value)}
             disabled={backupLoading}
             sx={{ mt: 2 }}

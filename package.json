@@ -1,6 +1,6 @@
 {
   "name": "bsv-desktop-electron",
-  "version": "0.8.10",
+  "version": "0.8.11",
   "description": "BSV Desktop Wallet - Electron Edition",
   "main": "dist-electron/main.js",
   "type": "module",

@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+  <title>BSV Desktop - BSV Blockchain Wallet</title>
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="BSV Desktop: BSV Blockchain Wallet" />
+  <meta
+    property="og:description"
+    content="BSV Desktop is an open source BSV Blockchain wallet that provides a secure and accessible way to manage your BSV assets and identity."
+  />
+  <meta property="og:image" content="https://bsv.bsvb.tech/og.png" />
+  <meta property="og:url" content="https://bsv.bsvb.tech" />
+  <meta property="og:type" content="software" />
+  <meta property="og:site_name" content="BSV Desktop" />
+  <meta property="og:locale" content="en_US" />
+
+  <style>
+    :root{
+      --color-background:#0e0f1c;
+      --color-background-gradient:linear-gradient(90deg,#101323 0%,#1a1633 100%);
+      --color-surface:#1c1d2f;
+      --color-surface-alt:#25263a;
+      --color-text-primary:#ffffff;
+      --color-text-secondary:#b0b2c3;
+      --color-accent-purple:#a86efc;
+      --color-accent-blue:#3ebdf2;
+      --color-accent-indigo:#646cff;
+      --color-icon-blue:#36b3e1;
+      --color-icon-purple:#7d6eff;
+      --color-icon-teal:#50c4ba;
+      --color-button-gradient-start:#646cff;
+      --color-button-gradient-end:#a86efc;
+      --color-border:#2d2e41
+    }
+    *{box-sizing:border-box}
+    body{
+      font-family:Helvetica,Arial,sans-serif;
+      margin:0;padding:0;line-height:1.6;
+      color:var(--color-text-primary);
+      background:var(--color-background-gradient);
+      min-height:100vh
+    }
+    .container{max-width:1280px;margin:0 auto;padding:2rem;text-align:center}
+    .header-container{margin:7rem 0;position:relative;display:inline-block}
+    .header-container h2{font-weight:lighter;margin-top:-20px;color:rgba(255,255,255,.7)}
+    .alpha-tag{
+      position:absolute;top:45px;right:-35px;color:#fff;font-size:.7rem;font-weight:bold;
+      padding:2px 6px;border-radius:4px;letter-spacing:1px
+    }
+    h1{
+      font-size:3.5rem;margin-bottom:1rem;
+      background:linear-gradient(135deg,var(--color-accent-indigo),var(--color-accent-purple));
+      -webkit-background-clip:text;background-clip:text;color:transparent;
+      text-shadow:0 0 15px rgba(230,226,241,.2)
+    }
+    .description{font-size:1.4rem;color:var(--color-text-primary);margin-bottom:2.5rem;opacity:.9}
+    .download-btn{
+      display:inline-block;background:linear-gradient(135deg,var(--color-button-gradient-start),var(--color-button-gradient-end));
+      color:#fff;padding:1rem 2rem;text-decoration:none;border-radius:8px;font-weight:bold;transition:all .3s;border:none;
+      box-shadow:0 4px 20px rgba(110,70,229,.3)
+    }
+    .download-btn:hover{transform:translateY(-2px);box-shadow:0 6px 25px rgba(110,70,229,.4)}
+    .platform-options{margin-top:2.5rem;color:var(--color-text-primary)}
+    .platform-btn{
+      display:inline-block;background:rgba(100,108,255,.1);border:1px solid rgba(100,108,255,.3);color:var(--color-text-primary);
+      padding:.5rem 1.5rem;margin:.5rem;text-decoration:none;border-radius:6px;transition:all .3s
+    }
+    .platform-btn:hover{background:rgba(100,108,255,.2);border-color:rgba(100,108,255,.5);transform:translateY(-1px)}
+    .features-section{
+      margin:3rem auto;max-width:1280px;background:var(--color-surface);padding:2rem;border-radius:10px;border:1px solid var(--color-border)
+    }
+    .features-section h2{text-align:center;font-size:2rem;margin-bottom:2rem;color:var(--color-text-primary)}
+    .features-section p{text-align:center;margin-bottom:2.5rem;max-width:800px;margin-left:auto;margin-right:auto}
+    .features-section b{
+      background:linear-gradient(135deg,var(--color-accent-indigo),var(--color-accent-purple));
+      -webkit-background-clip:text;background-clip:text;color:transparent
+    }
+    .features-container{display:flex;flex-wrap:wrap;justify-content:center;gap:2rem;margin:0 auto}
+    .feature-item{
+      width:320px;margin-bottom:2rem;background:var(--color-surface-alt);padding:1.5rem;border-radius:8px;border:1px solid var(--color-border);
+      transition:transform .3s ease,box-shadow .3s ease
+    }
+    .feature-item:hover{transform:translateY(-5px);box-shadow:0 10px 20px rgba(0,0,0,.2)}
+    .feature-item h3{font-size:1.4rem;margin-bottom:.5rem;color:#fff;display:inline-block}
+    .feature-item p{color:var(--color-text-secondary);line-height:1.6;text-align:left;margin-bottom:0}
+    .screenshot-section{
+      display:flex;align-items:center;margin:3rem auto;max-width:1280px;background:var(--color-surface-alt);border-radius:10px;overflow:hidden;
+      border:1px solid var(--color-border);flex-direction:row
+    }
+    .screenshot-container{display:flex;flex-wrap:wrap;padding:2rem;gap:2rem}
+    @media (max-width:960px){
+      .screenshot-section{flex-direction:column}
+      .screenshot-container{flex-direction:column}
+      .alpha-tag{top:25px;right:-5px}
+      h1{font-size:2.5rem}
+      .header-container h2{font-size:1rem}
+    }
+    .screenshot-content{flex:1;padding:1rem}
+    .screenshot-content h2{font-size:1.8rem;margin-bottom:1rem;color:#fff;text-align:left}
+    .screenshot-content h2 b{
+      background:linear-gradient(135deg,var(--color-accent-indigo),var(--color-accent-purple));
+      -webkit-background-clip:text;background-clip:text;color:transparent
+    }
+    .screenshot-content p{margin-bottom:1.5rem;line-height:1.6;color:var(--color-text-secondary);text-align:left}
+    .feature-list{list-style:none;padding:0;margin:0;text-align:left}
+    .feature-list li{margin-bottom:.8rem;padding-left:1.5rem;position:relative;line-height:1.4;color:var(--color-text-secondary)}
+    .feature-list li:before{content:"✓";position:absolute;left:0;color:var(--color-accent-purple);font-weight:bold}
+    .screenshot-image{flex:1;text-align:center;padding:1rem}
+    .screenshot-image img{max-width:100%;border-radius:8px;box-shadow:0 5px 20px rgba(0,0,0,.3);border:1px solid var(--color-border)}
+    .release-notes{margin-top:1.5rem;font-size:.9rem;opacity:.8;color:var(--color-text-secondary)}
+    .release-notes a{color:var(--color-accent-purple);text-decoration:none}
+    .release-notes a:hover{text-decoration:underline}
+    .footer-section{margin-top:5rem;padding:3rem 0;background:var(--color-surface);border-top:1px solid var(--color-border);text-align:center}
+    .footer-links{display:flex;justify-content:center;gap:2rem;margin-bottom:2rem;flex-wrap:wrap}
+    .footer-link{color:var(--color-text-secondary);text-decoration:none;display:flex;align-items:center;gap:.5rem;transition:color .2s;padding:.5rem 1rem;border-radius:4px}
+    .footer-link:hover{color:var(--color-accent-purple);background:rgba(168,110,252,.1)}
+    .footer-link svg{width:20px;height:20px}
+    .footer-copyright{color:var(--color-text-secondary);font-size:.9rem;opacity:.7}
+  </style>
+
+  <!-- Mobile Redirect: iOS/Android (incl. iPadOS that spoofs MacIntel) -->
+  <script>
+    (function enforceMobileRedirect(){
+      try{
+        const ua = navigator.userAgent || '';
+        const isAndroid = /Android/i.test(ua);
+        const isIOSFamily = /iPhone|iPad|iPod/i.test(ua);
+        // iPadOS 13+ often identifies as Mac; detect by touch points.
+        const isIPadOSMasquerade = !isIOSFamily && /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
+
+        if (isAndroid || isIOSFamily || isIPadOSMasquerade) {
+          // Use replace() so back button doesn't bounce users back here.
+          location.replace('https://mobile.bsvb.tech/');
+        }
+      }catch(_e){}
+    })();
+  </script>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header-container">
+      <h1>BSV Desktop</h1>
+      <h2>Secure BSV Blockchain Wallet</h2>
+    </div>
+
+    <div id="download-section">
+      <!-- Download UI injected by JavaScript -->
+    </div>
+
+    <div style="margin-top: 1.5rem; text-align: center;">
+      <a href="https://mobile.bsvb.tech" class="platform-btn" rel="noopener noreferrer">Mobile Version</a>
+    </div>
+
+    <div class="features-section">
+      <h2><b>Powerful</b> Features</h2>
+      <p>BSV Desktop provides all the tools you need to interact with the BSV Blockchain efficiently.</p>
+      <div class="features-container">
+        <div class="feature-item">
+          <h3>Vendor <b>Interoperable</b></h3>
+          <p>Implements the BRC-100 Wallet Interface. Configure with any Wallet Authentication Backend and Storage Infrastructure.</p>
+        </div>
+        <div class="feature-item">
+          <h3><b>Secure</b> Management</h3>
+          <p>Linked key derivation, robust cryptographic signatures, secure encryption, and strict access permissions safeguard your keys.</p>
+        </div>
+        <div class="feature-item">
+          <h3><b>Decentralized</b> Identity</h3>
+          <p>Leverage cryptographic identity certificates for selective data revelation. Manage identity securely and privately without centralized liabilities.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="screenshot-section">
+      <div class="screenshot-container">
+        <div class="screenshot-content">
+          <h2>Unleash the <b>BSV Blockchain</b></h2>
+          <p>BSV Desktop combines powerful features with a user-friendly interface, allowing both beginners and experts to take full advantage of BSV Blockchain technology.</p>
+          <ul class="feature-list">
+            <li>Action oriented design with transparent controls and rich metadata</li>
+            <li>Robust AES-256-GCM Encryption and ECDSA Signatures</li>
+            <li>Identity &amp; Certificate Manager for selective data revelation</li>
+            <li>SPV Scalability using BEEF Transaction data standards</li>
+            <li>Auditable Proofs &amp; Key Linkages for enhanced privacy</li>
+            <li>Flexible Asset &amp; Key Permissions through named baskets</li>
+          </ul>
+        </div>
+        <div class="screenshot-image">
+          <img src="screen.jpg" alt="BSV Desktop Screenshot" />
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-section">
+      <div class="footer-links">
+        <a href="https://github.com/bsv-blockchain/bsv-desktop/releases" class="footer-link" rel="noopener noreferrer">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+          </svg>
+          Previous Releases
+        </a>
+        <a href="https://bsvblockchain.org" class="footer-link" rel="noopener noreferrer">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          BSV Blockchain
+        </a>
+        <a href="https://x.com/bsvblockchain" class="footer-link" rel="noopener noreferrer">
+          <svg width="1200" height="1227" viewBox="0 0 1200 1227" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M714.163 519.284L1160.89 0H1055.03L667.137 450.887L357.328 0H0L468.492 681.821L0 1226.37H105.866L515.491 750.218L842.672 1226.37H1200L714.137 519.284H714.163ZM569.165 687.828L521.697 619.934L144.011 79.6944H306.615L611.412 515.685L658.88 583.579L1055.08 1150.3H892.476L569.165 687.854V687.828Z" fill="white"/>
+          </svg>
+          @bsvblockchain
+        </a>
+      </div>
+      <p class="footer-copyright">
+        &copy; 2025 BSV Association
+      </p>
+    </div>
+  </div>
+
+  <script>
+    "use strict";
+
+    // ------------- Platform Detection (Safari-safe, no hand-wavy guesses) -------------
+
+    /**
+     * Try to use User-Agent Client Hints (Chromium) for high-confidence arch info.
+     * Returns { platform: 'windows'|'linux'|'macos-arm64'|'macos-x64'|null, confidence: 'high'|'low' }
+     */
+    async function detectPlatformConfidence() {
+      const ua = navigator.userAgent || "";
+      const uaLower = ua.toLowerCase();
+
+      const isWindows = /windows nt/i.test(ua);
+      const isAndroid = /android/i.test(ua);
+      const isLinux = /linux/i.test(ua) && !isAndroid; // exclude Android (redirected anyway)
+      const isMac = /macintosh|mac os x/i.test(ua);
+
+      // Browser detection just to handle Safari's misleading UA
+      const isSafari = /^((?!chrome|crios|android|edg|opr|fxios).)*safari/i.test(ua);
+
+      if (isWindows) return { platform: "windows", confidence: "high" };
+      if (isLinux) return { platform: "linux", confidence: "high" };
+
+      if (isMac) {
+        // 1) Chromium path: ask for high-entropy values
+        try {
+          if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+            const { platform, architecture } = await navigator.userAgentData.getHighEntropyValues(["platform", "architecture"]);
+            const plat = (platform || "").toLowerCase();
+            const arch = (architecture || "").toLowerCase();
+            if (plat.includes("mac")) {
+              if (arch.includes("arm")) return { platform: "macos-arm64", confidence: "high" };
+              if (arch.includes("x86") || arch.includes("x64")) return { platform: "macos-x64", confidence: "high" };
+            }
+          }
+        } catch (_) {
+          // ignore and fall through to UA heuristics
+        }
+
+        // 2) UA fallback: look for explicit ARM markers first
+        if (/arm64|aarch64|apple ?silicon/i.test(ua)) {
+          return { platform: "macos-arm64", confidence: "high" };
+        }
+
+        // 3) "Intel Mac OS X" shows up on real Intel AND on Apple Silicon Safari (for compatibility).
+        // If Safari says "Intel", we treat it as AMBIGUOUS (low confidence) and won't auto-pick.
+        if (/Intel Mac OS X/i.test(ua)) {
+          return { platform: "macos-x64", confidence: isSafari ? "low" : "high" };
+        }
+
+        // Couldn’t be certain.
+        return { platform: null, confidence: "low" };
+      }
+
+      // Unknown desktop
+      return { platform: null, confidence: "low" };
+    }
+
+    // -------------------------- GitHub Releases Fetch --------------------------
+
+    async function fetchReleaseInfo() {
+      try {
+        const resp = await fetch("https://api.github.com/repos/bsv-blockchain/bsv-desktop/releases/latest", {
+          headers: { "Accept": "application/vnd.github+json" }
+        });
+
+        if (!resp.ok) {
+          throw new Error(`Failed to fetch release info: ${resp.status} ${resp.statusText}`);
+        }
+
+        const releaseData = await resp.json();
+        return {
+          release_version: releaseData.tag_name,
+          release_name: releaseData.name,
+          release_date: releaseData.published_at,
+          release_url: releaseData.html_url,
+          assets: (releaseData.assets || []).map(asset => ({
+            name: asset.name,
+            browser_download_url: asset.browser_download_url,
+            size: asset.size,
+            download_count: asset.download_count,
+            created_at: asset.created_at,
+            updated_at: asset.updated_at,
+            content_type: asset.content_type
+          }))
+        };
+      } catch (error) {
+        console.error("Error loading release info:", error);
+        return null;
+      }
+    }
+
+    // ------------------------------ Asset Selection ------------------------------
+
+    function formatMB(bytes) {
+      if (!bytes && bytes !== 0) return "";
+      const mb = bytes / (1024 * 1024);
+      return `${mb.toFixed(1)} MB`;
+    }
+
+    function getPlatformDisplay(platform) {
+      switch (platform) {
+        case "windows": return "Windows";
+        case "macos-arm64": return "macOS (Apple Silicon)";
+        case "macos-x64": return "macOS (Intel)";
+        case "linux": return "Linux";
+        default: return platform || "Unknown";
+      }
+    }
+
+    function findDownloadForPlatform(assets, platform) {
+      if (!assets || !assets.length) return null;
+      const list = assets.map(a => ({ ...a, lname: (a.name || "").toLowerCase() }));
+
+      const pickMac = (arch) => {
+        const macFiles = list.filter(a =>
+          /mac|darwin|osx|\.dmg$|\.pkg$|\.zip$/.test(a.lname)
+        );
+
+        // Prefer universal when available
+        const universal = macFiles.find(a => /universal|all-arch|fat/i.test(a.lname));
+        if (universal) return universal;
+
+        if (arch === "arm") {
+          return macFiles.find(a => /arm64|aarch64|apple.?silicon/i.test(a.lname));
+        }
+        // x64 / Intel
+        return macFiles.find(a => /x86_64|x64|intel/i.test(a.lname));
+      };
+
+      switch (platform) {
+        case "windows": {
+          // Prefer MSI > EXE > generic windows
+          return (
+            list.find(a => /\.msi$/i.test(a.name)) ||
+            list.find(a => /\.exe$/i.test(a.name)) ||
+            list.find(a => /windows/i.test(a.lname))
+          );
+        }
+        case "macos-arm64":
+          return pickMac("arm");
+        case "macos-x64":
+          return pickMac("x64");
+        case "linux": {
+          // Prefer AppImage, then deb/rpm/tar.gz, then generic linux
+          return (
+            list.find(a => /\.appimage$/i.test(a.name)) ||
+            list.find(a => /\.(deb|rpm|tar\.gz)$/i.test(a.name)) ||
+            list.find(a => /linux/i.test(a.lname))
+          );
+        }
+        default:
+          return null;
+      }
+    }
+
+    function buildPlatformButton(asset, label) {
+      if (!asset) return "";
+      const sizeStr = asset.size ? ` (${formatMB(asset.size)})` : "";
+      return `<a href="${asset.browser_download_url}" class="platform-btn">${label}${sizeStr}</a>`;
+    }
+
+    // ------------------------------ Render UI ------------------------------
+
+    async function createDownloadSection() {
+      const container = document.getElementById("download-section");
+      const releaseInfo = await fetchReleaseInfo();
+
+      if (!releaseInfo) {
+        container.innerHTML = `
+          <div class="platform-options">
+            <p>Couldn't load release information. Please visit our
+              <a href="https://github.com/bsv-blockchain/bsv-desktop/releases/latest" class="download-btn" rel="noopener noreferrer">
+                GitHub Releases Page
+              </a>
+              to download the latest version.
+            </p>
+          </div>
+        `;
+        return;
+      }
+
+      const { platform, confidence } = await detectPlatformConfidence();
+
+      const allPlatforms = ["windows", "macos-arm64", "macos-x64", "linux"];
+      const assetsMap = Object.fromEntries(
+        allPlatforms.map(p => [p, findDownloadForPlatform(releaseInfo.assets, p)])
+      );
+
+      const hasAnyAsset = Object.values(assetsMap).some(Boolean);
+
+      if (!hasAnyAsset) {
+        container.innerHTML = `
+          <div class="platform-options">
+            <p>No downloadable assets found for this release.
+              <a href="${releaseInfo.release_url}" class="download-btn" rel="noopener noreferrer">Release Notes</a>
+            </p>
+          </div>
+        `;
+        return;
+      }
+
+      // If we’re very confident about the platform, present a big primary button.
+      // If detection is low-confidence (e.g., Safari says "Intel" on M-series),
+      // don’t guess—show selection buttons instead (fixes Intel being mislabeled as Apple Silicon).
+      if (platform && confidence === "high" && assetsMap[platform]) {
+        const main = assetsMap[platform];
+        const others = allPlatforms.filter(p => p !== platform).map(p => buildPlatformButton(assetsMap[p], getPlatformDisplay(p))).join("");
+
+        container.innerHTML = `
+          <a href="${main.browser_download_url}" class="download-btn">
+            Download for ${getPlatformDisplay(platform)}
+          </a>
+          <div class="platform-options">
+            ${others}
+          </div>
+          <p class="release-notes">
+            Version ${releaseInfo.release_version}
+            &nbsp;|&nbsp;<a href="${releaseInfo.release_url}" target="_blank" rel="noopener noreferrer">Release Notes</a>
+          </p>
+        `;
+      } else {
+        // Low confidence or unknown: show a neutral selector.
+        // Special-case Mac: if the user is on macOS and we’re unsure, headline it as “Select your Mac build”.
+        const ua = navigator.userAgent || "";
+        const isMac = /macintosh|mac os x/i.test(ua);
+
+        const selectorHeader = isMac
+          ? `<p>Select your macOS build:</p>`
+          : `<p>Select your platform:</p>`;
+
+        const buttons = allPlatforms
+          .map(p => buildPlatformButton(assetsMap[p], getPlatformDisplay(p)))
+          .filter(Boolean)
+          .join("");
+
+        container.innerHTML = `
+          <div class="platform-options">
+            ${selectorHeader}
+            ${buttons}
+          </div>
+          <p class="release-notes">
+            Version ${releaseInfo.release_version}
+            &nbsp;|&nbsp;<a href="${releaseInfo.release_url}" target="_blank" rel="noopener noreferrer">Release Notes</a>
+          </p>
+        `;
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", createDownloadSection);
+  </script>
+</body>
+</html>

@@ -17,7 +17,7 @@ import os from 'os';
 import { createRequire } from 'module';
 import { fork, ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
-import { StorageKnex, KnexMigrations, Services, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
+import { StorageKnex, KnexMigrations, Services, Monitor, WalletStorageManager, ChaintracksServiceClient } from '@bsv/wallet-toolbox';
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
@@ -157,7 +157,9 @@ class StorageManager {
     console.log(`[Storage] Initializing services for ${key}`);
 
     // Create Services instance in the backend
-    const services = new Services(chain);
+    const options = Services.createDefaultOptions(chain);
+    options.chaintracks = new ChaintracksServiceClient(chain, chain === 'main' ? 'https://chaintracks-us-1.bsvb.tech' : 'https://chaintracks-testnet-us-1.bsvb.tech')
+    const services = new Services(options);
 
     // Type assertion to access setServices method
     const storageAny = storage as any;

@@ -104,7 +104,7 @@ class StorageManager {
     const storage = new StorageKnex({
       knex: db,
       chain: chain,
-      feeModel: { model: 'sat/kb' },
+      feeModel: { model: 'sat/kb', value: 100 },
       commissionSatoshis: 0
     });
 

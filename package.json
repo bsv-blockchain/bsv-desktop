@@ -111,10 +111,10 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "artifactName": "${productName}-${version}-${arch}-mac.${ext}",
-      "dmg": {
-        "writeUpdateInfo": true
-      }
+      "artifactName": "${productName}-${version}-${arch}-mac.${ext}"
+    },
+    "dmg": {
+      "writeUpdateInfo": true
     },
     "win": {
       "target": [

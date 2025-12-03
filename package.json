@@ -91,14 +91,30 @@
     "mac": {
       "category": "public.app-category.finance",
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "icon": "build/icon.icns",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "artifactName": "${productName}-${version}-${arch}-mac.${ext}",
+      "dmg": {
+        "writeUpdateInfo": true
+      }
     },
     "win": {
       "target": [
@@ -110,7 +126,8 @@
         }
       ],
       "icon": "build/icon.ico",
-      "verifyUpdateCodeSignature": false
+      "verifyUpdateCodeSignature": false,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -118,7 +135,9 @@
       "perMachine": false,
       "deleteAppDataOnUninstall": false,
       "artifactName": "${productName}-Setup-${version}.${ext}",
-      "differentialPackage": false
+      "differentialPackage": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true
     },
     "linux": {
       "target": [

@@ -96,7 +96,6 @@ jobs:
             release/*.dmg
             release/*.zip
             release/*.yml
-            release/*.blockmap
 
       # === Linux Build and Packaging ===
       - name: build and publish Electron app (Linux)
@@ -218,7 +217,6 @@ jobs:
           path: |
             release/*.exe
             release/*.yml
-            release/*.blockmap
           if-no-files-found: warn
 
       - name: List Windows build artifacts for debugging

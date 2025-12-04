@@ -37,6 +37,27 @@ let prevBundleId: string | null = null;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
+// Linux display server configuration
+// Add command-line switches for better Wayland/X11 compatibility
+if (process.platform === 'linux') {
+  // Try Wayland first, but allow fallback to X11
+  // If WAYLAND_DISPLAY is not set or Wayland fails, Electron will automatically fall back to X11
+  // This helps with various Linux display server configurations
+  
+  // Disable GPU sandbox on Linux for better compatibility with different display servers
+  // This is commonly needed for AppImages and snap packages
+  app.commandLine.appendSwitch('--disable-gpu-sandbox');
+  
+  // Enable features that improve display server compatibility
+  app.commandLine.appendSwitch('--enable-features', 'WaylandWindowDecorations');
+  
+  // If user explicitly sets X11, respect that
+  if (process.env.GDK_BACKEND === 'x11' || process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+    app.commandLine.appendSwitch('--ozone-platform', 'x11');
+  }
+  // Otherwise, let Electron auto-detect and use Wayland if available, with X11 fallback
+}
+
 // Get icon path based on platform and environment
 function getIconPath(): string | undefined {
   if (process.platform === 'darwin') {

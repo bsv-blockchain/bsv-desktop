@@ -114,7 +114,7 @@ const SpendingAuthorizationHandler: React.FC = () => {
             clickable={false}
             showDomain
           />
-          <Box mt={2} />
+          <div>{currentPerm.description}</div>
 
           {isSpendingLimitIncrease ? (
             // Simplified UI for spending limit increases

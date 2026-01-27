@@ -1687,6 +1687,21 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     try {
       console.log('[removeMessageBoxUrl] Removing Message Box URL');
 
+      // Revoke any existing anointments before removing
+      if (peerPayClient && anointedHosts.length > 0) {
+        console.log('[removeMessageBoxUrl] Revoking', anointedHosts.length, 'anointment(s)...');
+        for (const token of anointedHosts) {
+          try {
+            console.log('[removeMessageBoxUrl] Revoking anointment for:', token.host);
+            await peerPayClient.revokeHostAdvertisement(token);
+            console.log('[removeMessageBoxUrl] Revoked anointment for:', token.host);
+          } catch (revokeError: any) {
+            console.warn('[removeMessageBoxUrl] Failed to revoke anointment:', revokeError);
+            // Continue with removal even if revoke fails
+          }
+        }
+      }
+
       // Update state
       setMessageBoxUrl('');
       setUseMessageBox(false);
@@ -1710,7 +1725,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       toast.error('Failed to remove Message Box URL: ' + error.message);
       throw error;
     }
-  }, [saveEnhancedSnapshot]);
+  }, [saveEnhancedSnapshot, peerPayClient, anointedHosts]);
 
   // Check anointment status without triggering anointment
   const checkAnointmentStatus = useCallback(async () => {

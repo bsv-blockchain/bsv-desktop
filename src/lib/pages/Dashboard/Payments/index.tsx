@@ -464,7 +464,15 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
 
 /* ------------------------------- Route View -------------------------------- */
 export default function PeerPayRoute() {
-  const { messageBoxUrl, managers, useMessageBox, peerPayClient } = useContext(WalletContext)
+  const {
+    messageBoxUrl,
+    managers,
+    useMessageBox,
+    peerPayClient,
+    isHostAnointed,
+    anointCurrentHost,
+    anointmentLoading
+  } = useContext(WalletContext)
   const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
 
   const [payments, setPayments] = useState<IncomingPayment[]>([])
@@ -543,6 +551,39 @@ export default function PeerPayRoute() {
             To send and receive payments with other users, enter your Message Box server URL below.
           </Typography>
           <MessageBoxConfig embedded showTitle={false} />
+        </Box>
+      </Container>
+    )
+  }
+
+  // If Message Box is configured but host is not anointed, show anoint prompt
+  if (!isHostAnointed) {
+    return (
+      <Container maxWidth="sm">
+        <Box sx={{ minHeight: '100vh', py: 5 }}>
+          <Typography variant="h5" sx={{ mb: 2 }}>
+            Anoint Host Required
+          </Typography>
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              Your Message Box URL is configured, but you need to anoint the host before you can receive payments.
+              Anointing broadcasts your identity to the overlay network so others can find and send payments to you.
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 2, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+              Host: {messageBoxUrl}
+            </Typography>
+            <Button
+              variant="contained"
+              onClick={anointCurrentHost}
+              disabled={anointmentLoading}
+              startIcon={anointmentLoading ? <CircularProgress size={16} /> : null}
+            >
+              {anointmentLoading ? 'Anointing...' : 'Anoint Host'}
+            </Button>
+          </Alert>
+          <Typography variant="body2" color="textSecondary">
+            You can also manage your Message Box configuration in Settings.
+          </Typography>
         </Box>
       </Container>
     )

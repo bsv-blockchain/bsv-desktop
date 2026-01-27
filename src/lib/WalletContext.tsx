@@ -1370,12 +1370,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
             (async () => {
               try {
                 console.log('[WalletContext] Creating PeerPayClient (without auto-anoint)...');
-                const wallet = new WalletClient(walletManager, 'desktop.bsvb.tech');
+                const wallet = new WalletClient(walletManager, adminOriginator);
                 const client = new PeerPayClient({
                   walletClient: wallet,
                   messageBoxHost: messageBoxUrl,
                   enableLogging: true,
-                  originator: 'desktop.bsvb.tech'
+                  originator: adminOriginator
                 });
 
                 // DON'T call init() - this would auto-anoint and trigger spending authorization
@@ -1632,12 +1632,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (managers?.walletManager) {
         try {
           console.log('[updateMessageBoxUrl] Creating PeerPayClient (without auto-anoint)...');
-          const wallet = new WalletClient(managers.walletManager, 'desktop.bsvb.tech');
+          const wallet = new WalletClient(managers.walletManager, adminOriginator);
           const client = new PeerPayClient({
             walletClient: wallet,
             messageBoxHost: trimmedUrl,
             enableLogging: true,
-            originator: 'desktop.bsvb.tech'
+            originator: adminOriginator
           });
 
           // DON'T call init() - this would auto-anoint and trigger spending authorization
@@ -1840,12 +1840,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         (async () => {
           try {
             console.log('[WalletContext] Creating PeerPayClient (without auto-anoint)...');
-            const wallet = new WalletClient(managers.walletManager, 'desktop.bsvb.tech');
+            const wallet = new WalletClient(managers.walletManager, adminOriginator);
             const client = new PeerPayClient({
               walletClient: wallet,
               messageBoxHost: messageBoxUrl,
               enableLogging: true,
-              originator: 'desktop.bsvb.tech'
+              originator: adminOriginator
             });
 
             // DON'T call init() - this would auto-anoint and trigger spending authorization

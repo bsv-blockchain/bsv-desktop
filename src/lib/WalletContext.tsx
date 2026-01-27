@@ -26,7 +26,7 @@ import {
   WalletClient,
 } from '@bsv/sdk'
 import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox/src/WalletSettingsManager'
-import { PeerPayClient } from '@bsv/message-box-client'
+import { PeerPayClient, AdvertisementToken } from '@bsv/message-box-client'
 import { toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB } from './config'
@@ -151,6 +151,13 @@ export interface WalletContextValue {
   updatePermissionsConfig: (config: PermissionsConfig) => Promise<void>
   // PeerPay Client
   peerPayClient: PeerPayClient | null
+  // Anointment state and functions
+  isHostAnointed: boolean
+  anointedHosts: AdvertisementToken[]
+  anointmentLoading: boolean
+  anointCurrentHost: () => Promise<void>
+  revokeHostAnointment: (token: AdvertisementToken) => Promise<void>
+  checkAnointmentStatus: () => Promise<void>
 }
 
 export const WalletContext = createContext<WalletContextValue>({
@@ -199,7 +206,13 @@ export const WalletContext = createContext<WalletContextValue>({
   initializingBackendServices: false,
   permissionsConfig: DEFAULT_PERMISSIONS_CONFIG,
   updatePermissionsConfig: async () => { },
-  peerPayClient: null
+  peerPayClient: null,
+  isHostAnointed: false,
+  anointedHosts: [],
+  anointmentLoading: false,
+  anointCurrentHost: async () => { },
+  revokeHostAnointment: async () => { },
+  checkAnointmentStatus: async () => { }
 })
 
 // ---- Group-gating types ----
@@ -309,6 +322,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [initializingBackendServices, setInitializingBackendServices] = useState<boolean>(false)
   const [permissionsConfig, setPermissionsConfig] = useState<PermissionsConfig>(DEFAULT_PERMISSIONS_CONFIG)
   const [peerPayClient, setPeerPayClient] = useState<PeerPayClient | null>(null)
+  const [isHostAnointed, setIsHostAnointed] = useState<boolean>(false)
+  const [anointedHosts, setAnointedHosts] = useState<AdvertisementToken[]>([])
+  const [anointmentLoading, setAnointmentLoading] = useState<boolean>(false)
 
   // Load permissions config from localStorage on mount
   useEffect(() => {
@@ -943,7 +959,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         console.log('[buildWallet] Preparing LOCAL Electron storage as active');
         // Create and initialize local storage first
         const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain);
-        electronStorage.setServices(services);
+        electronStorage.setServices(services as any);
         console.log('[buildWallet] Initializing backend services...');
         await electronStorage.initializeBackendServices();
         console.log('[buildWallet] Making local storage available...');
@@ -994,9 +1010,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
             // Handle LOCAL_STORAGE special case
             if (backupUrl === 'LOCAL_STORAGE') {
               const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain);
-              electronStorage.setServices(services);
+              electronStorage.setServices(services as any);
               await electronStorage.makeAvailable();
-              await storageManager.addWalletStorageProvider(electronStorage);
+              await storageManager.addWalletStorageProvider(electronStorage as any);
               console.log('[buildWallet] Local Electron storage added as backup');
             } else {
               // Remote storage client
@@ -1346,15 +1362,15 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
           setManagers(m => ({ ...m, walletManager }));
           console.log('[WalletManager Init] ========== WALLET MANAGER SETUP COMPLETE ==========');
 
-          // Initialize PeerPayClient if messageBoxUrl is configured
+          // Create PeerPayClient if messageBoxUrl is configured (without auto-anointing)
           console.log('[WalletManager Init] messageBoxUrl:', messageBoxUrl);
           console.log('[WalletManager Init] useMessageBox:', useMessageBox);
-          
+
           if (messageBoxUrl && useMessageBox) {
             (async () => {
               try {
-                console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
-                const wallet = new WalletClient(managers.walletManager, 'desktop.bsvb.tech');
+                console.log('[WalletContext] Creating PeerPayClient (without auto-anoint)...');
+                const wallet = new WalletClient(walletManager, 'desktop.bsvb.tech');
                 const client = new PeerPayClient({
                   walletClient: wallet,
                   messageBoxHost: messageBoxUrl,
@@ -1362,11 +1378,25 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
                   originator: 'desktop.bsvb.tech'
                 });
 
-                await client.init(messageBoxUrl);
+                // DON'T call init() - this would auto-anoint and trigger spending authorization
+                // User must explicitly anoint the host via the UI
                 setPeerPayClient(client);
-                console.log('[WalletContext] PeerPayClient initialized successfully');
+
+                // Check anointment status (read-only, no transaction)
+                try {
+                  const identityKey = await client.getIdentityKey();
+                  const ads = await client.queryAdvertisements(identityKey, messageBoxUrl);
+                  const isAnointed = ads.length > 0 && ads.some(ad => ad.host === messageBoxUrl);
+                  setIsHostAnointed(isAnointed);
+                  setAnointedHosts(ads);
+                  console.log('[WalletContext] Anointment status:', isAnointed);
+                } catch (checkError) {
+                  console.warn('[WalletContext] Could not check anointment status:', checkError);
+                }
+
+                console.log('[WalletContext] PeerPayClient created successfully');
               } catch (error: any) {
-                console.error('[WalletContext] Failed to initialize PeerPayClient:', error);
+                console.error('[WalletContext] Failed to create PeerPayClient:', error);
               }
             })();
           }
@@ -1466,7 +1496,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         }
         const electronStorage = new StorageElectronIPC(identityKey, selectedNetwork);
         const services = new Services(selectedNetwork);
-        electronStorage.setServices(services);
+        electronStorage.setServices(services as any);
         await electronStorage.makeAvailable();
         backupProvider = electronStorage;
         console.log('[addBackupStorageUrl] Local Electron storage created as backup');
@@ -1597,10 +1627,11 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       setMessageBoxUrl(trimmedUrl);
       setUseMessageBox(true);
 
-      // Initialize PeerPayClient immediately if wallet manager is available
+      // Create PeerPayClient without auto-anointing
+      // User must explicitly anoint the host via the UI
       if (managers?.walletManager) {
         try {
-          console.log('[updateMessageBoxUrl] Initializing PeerPayClient...');
+          console.log('[updateMessageBoxUrl] Creating PeerPayClient (without auto-anoint)...');
           const wallet = new WalletClient(managers.walletManager, 'desktop.bsvb.tech');
           const client = new PeerPayClient({
             walletClient: wallet,
@@ -1609,12 +1640,27 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
             originator: 'desktop.bsvb.tech'
           });
 
-          // Initialize the client - this will check for and create an advertisement if needed
-          await client.init(trimmedUrl);
+          // DON'T call init() - this would auto-anoint and trigger spending authorization
+          // Instead, just set the client and check anointment status
           setPeerPayClient(client);
-          console.log('[updateMessageBoxUrl] PeerPayClient initialized successfully');
+
+          // Check if host is already anointed (read-only, no transaction)
+          try {
+            const identityKey = await client.getIdentityKey();
+            const ads = await client.queryAdvertisements(identityKey, trimmedUrl);
+            const isAnointed = ads.length > 0 && ads.some(ad => ad.host === trimmedUrl);
+            setIsHostAnointed(isAnointed);
+            setAnointedHosts(ads);
+            console.log('[updateMessageBoxUrl] Anointment status checked:', isAnointed);
+          } catch (checkError) {
+            console.warn('[updateMessageBoxUrl] Could not check anointment status:', checkError);
+            setIsHostAnointed(false);
+            setAnointedHosts([]);
+          }
+
+          console.log('[updateMessageBoxUrl] PeerPayClient created successfully');
         } catch (initError: any) {
-          console.error('[updateMessageBoxUrl] Failed to initialize PeerPayClient:', initError);
+          console.error('[updateMessageBoxUrl] Failed to create PeerPayClient:', initError);
           // Don't throw - we can retry later
         }
       }
@@ -1645,6 +1691,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       setMessageBoxUrl('');
       setUseMessageBox(false);
       setPeerPayClient(null); // Clear the PeerPayClient
+      setIsHostAnointed(false); // Clear anointment state
+      setAnointedHosts([]);
 
       // Save snapshot with new config
       try {
@@ -1664,6 +1712,86 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     }
   }, [saveEnhancedSnapshot]);
 
+  // Check anointment status without triggering anointment
+  const checkAnointmentStatus = useCallback(async () => {
+    try {
+      if (!peerPayClient || !messageBoxUrl) {
+        setIsHostAnointed(false);
+        setAnointedHosts([]);
+        return;
+      }
+
+      console.log('[checkAnointmentStatus] Checking anointment status for:', messageBoxUrl);
+      const identityKey = await peerPayClient.getIdentityKey();
+      const ads = await peerPayClient.queryAdvertisements(identityKey, messageBoxUrl);
+
+      const isAnointed = ads.length > 0 && ads.some(ad => ad.host === messageBoxUrl);
+      setIsHostAnointed(isAnointed);
+      setAnointedHosts(ads);
+
+      console.log('[checkAnointmentStatus] Host anointed:', isAnointed, 'Advertisements:', ads.length);
+    } catch (error: any) {
+      console.error('[checkAnointmentStatus] Error:', error);
+      setIsHostAnointed(false);
+      setAnointedHosts([]);
+    }
+  }, [peerPayClient, messageBoxUrl]);
+
+  // Explicitly anoint the current host (requires user authorization)
+  const anointCurrentHost = useCallback(async () => {
+    try {
+      if (!peerPayClient || !messageBoxUrl) {
+        toast.error('Message Box URL not configured');
+        return;
+      }
+
+      setAnointmentLoading(true);
+      console.log('[anointCurrentHost] Anointing host:', messageBoxUrl);
+
+      // Call init which will anoint if needed
+      await peerPayClient.init(messageBoxUrl);
+
+      // Refresh anointment status
+      await checkAnointmentStatus();
+
+      toast.success('Host anointed successfully!');
+      console.log('[anointCurrentHost] Host anointed successfully');
+    } catch (error: any) {
+      console.error('[anointCurrentHost] Error:', error);
+      toast.error('Failed to anoint host: ' + error.message);
+      throw error;
+    } finally {
+      setAnointmentLoading(false);
+    }
+  }, [peerPayClient, messageBoxUrl, checkAnointmentStatus]);
+
+  // Revoke an existing host anointment
+  const revokeHostAnointment = useCallback(async (token: AdvertisementToken) => {
+    try {
+      if (!peerPayClient) {
+        toast.error('PeerPay client not initialized');
+        return;
+      }
+
+      setAnointmentLoading(true);
+      console.log('[revokeHostAnointment] Revoking anointment for:', token.host);
+
+      await peerPayClient.revokeHostAdvertisement(token);
+
+      // Refresh anointment status
+      await checkAnointmentStatus();
+
+      toast.success('Host anointment revoked successfully!');
+      console.log('[revokeHostAnointment] Anointment revoked successfully');
+    } catch (error: any) {
+      console.error('[revokeHostAnointment] Error:', error);
+      toast.error('Failed to revoke anointment: ' + error.message);
+      throw error;
+    } finally {
+      setAnointmentLoading(false);
+    }
+  }, [peerPayClient, checkAnointmentStatus]);
+
   const logout = useCallback(() => {
     // Clear localStorage to prevent auto-login
     localStorage.clear();
@@ -1678,6 +1806,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     setConfigStatus('configured');
     setSnapshotLoaded(false);
     setPeerPayClient(null); // Clear PeerPayClient on logout
+    setIsHostAnointed(false); // Clear anointment state on logout
+    setAnointedHosts([]);
   }, []);
 
   // Automatically set active profile when wallet manager becomes available
@@ -1690,11 +1820,11 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         setActiveProfile(profileToSet)
       }
 
-      // Initialize PeerPayClient if messageBoxUrl is configured
+      // Create PeerPayClient if messageBoxUrl is configured (without auto-anointing)
       if (messageBoxUrl && useMessageBox) {
         (async () => {
           try {
-            console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
+            console.log('[WalletContext] Creating PeerPayClient (without auto-anoint)...');
             const wallet = new WalletClient(managers.walletManager, 'desktop.bsvb.tech');
             const client = new PeerPayClient({
               walletClient: wallet,
@@ -1703,17 +1833,33 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
               originator: 'desktop.bsvb.tech'
             });
 
-            await client.init(messageBoxUrl);
+            // DON'T call init() - this would auto-anoint and trigger spending authorization
+            // User must explicitly anoint the host via the UI
             setPeerPayClient(client);
-            console.log('[WalletContext] PeerPayClient initialized successfully');
+
+            // Check anointment status (read-only, no transaction)
+            try {
+              const identityKey = await client.getIdentityKey();
+              const ads = await client.queryAdvertisements(identityKey, messageBoxUrl);
+              const isAnointed = ads.length > 0 && ads.some(ad => ad.host === messageBoxUrl);
+              setIsHostAnointed(isAnointed);
+              setAnointedHosts(ads);
+              console.log('[WalletContext] Anointment status:', isAnointed);
+            } catch (checkError) {
+              console.warn('[WalletContext] Could not check anointment status:', checkError);
+            }
+
+            console.log('[WalletContext] PeerPayClient created successfully');
           } catch (error: any) {
-            console.error('[WalletContext] Failed to initialize PeerPayClient:', error);
+            console.error('[WalletContext] Failed to create PeerPayClient:', error);
           }
         })();
       }
     } else {
       setActiveProfile(null)
       setPeerPayClient(null)
+      setIsHostAnointed(false)
+      setAnointedHosts([])
     }
   }, [managers?.walletManager?.authenticated, messageBoxUrl, useMessageBox, adminOriginator])
 
@@ -1906,7 +2052,13 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     initializingBackendServices,
     permissionsConfig,
     updatePermissionsConfig,
-    peerPayClient
+    peerPayClient,
+    isHostAnointed,
+    anointedHosts,
+    anointmentLoading,
+    anointCurrentHost,
+    revokeHostAnointment,
+    checkAnointmentStatus
   }), [
     managers,
     settings,
@@ -1950,7 +2102,13 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     initializingBackendServices,
     permissionsConfig,
     updatePermissionsConfig,
-    peerPayClient
+    peerPayClient,
+    isHostAnointed,
+    anointedHosts,
+    anointmentLoading,
+    anointCurrentHost,
+    revokeHostAnointment,
+    checkAnointmentStatus
   ]);
 
   return (

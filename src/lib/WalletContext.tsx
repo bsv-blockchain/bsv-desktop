@@ -23,7 +23,6 @@ import {
   LookupResolver,
   WalletInterface,
   CachedKeyDeriver,
-  WalletClient,
 } from '@bsv/sdk'
 import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox/src/WalletSettingsManager'
 import { PeerPayClient, AdvertisementToken } from '@bsv/message-box-client'
@@ -807,7 +806,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         releaseDeferredAfterGroup(null)
       }, GROUP_GRACE_MS)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupPermissionRequests.length])
 
   // ---- WAB + network + storage configuration ----
@@ -1055,14 +1054,14 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (originalGrantGrouped) {
         (permissionsManager as any).grantGroupedPermission = async (requestID: string, granted: any) => {
           const res = await originalGrantGrouped(requestID, granted);
-          try { await releaseDeferredAfterGroup(decisionFromGranted(granted)); } catch {}
+          try { await releaseDeferredAfterGroup(decisionFromGranted(granted)); } catch { }
           return res;
         };
       }
       if (originalDenyGrouped) {
         (permissionsManager as any).denyGroupedPermission = async (requestID: string) => {
           const res = await originalDenyGrouped(requestID);
-          try { await releaseDeferredAfterGroup(null); } catch {}
+          try { await releaseDeferredAfterGroup(null); } catch { }
           return res;
         };
       }
@@ -1370,9 +1369,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
             (async () => {
               try {
                 console.log('[WalletContext] Creating PeerPayClient (without auto-anoint)...');
-                const wallet = new WalletClient(walletManager, adminOriginator);
                 const client = new PeerPayClient({
-                  walletClient: wallet,
+                  walletClient: walletManager,
                   messageBoxHost: messageBoxUrl,
                   enableLogging: true,
                   originator: adminOriginator
@@ -1632,9 +1630,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (managers?.walletManager) {
         try {
           console.log('[updateMessageBoxUrl] Creating PeerPayClient (without auto-anoint)...');
-          const wallet = new WalletClient(managers.walletManager, adminOriginator);
           const client = new PeerPayClient({
-            walletClient: wallet,
+            walletClient: managers.permissionsManager,
             messageBoxHost: trimmedUrl,
             enableLogging: true,
             originator: adminOriginator
@@ -1840,9 +1837,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         (async () => {
           try {
             console.log('[WalletContext] Creating PeerPayClient (without auto-anoint)...');
-            const wallet = new WalletClient(managers.walletManager, adminOriginator);
             const client = new PeerPayClient({
-              walletClient: wallet,
+              walletClient: managers.permissionsManager,
               messageBoxHost: messageBoxUrl,
               enableLogging: true,
               originator: adminOriginator
@@ -1937,7 +1933,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
     }
   }, [managers, activeProfile])
-  
+
   // Pop the first request from the basket queue, close if empty, relinquish focus if needed
   const advanceBasketQueue = () => {
     setBasketRequests(prev => {

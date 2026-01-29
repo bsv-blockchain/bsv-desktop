@@ -39,7 +39,6 @@ const RecentActions: FC<RecentActionsProps> = ({
       </Typography>
     {appActions?.length ? (
       [...appActions] // copy so we don't mutate state/props
-        .reverse()
         .map((action, idx) => {
           const actionToDisplay = {
             txid: action.txid,

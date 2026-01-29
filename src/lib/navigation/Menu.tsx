@@ -43,7 +43,7 @@ import {
 import Profile from '../components/Profile.js'
 import React, { useState, useContext, useEffect, useCallback } from 'react'
 import { toast } from 'react-toastify'
-import { useHistory } from 'react-router'
+import { useHistory } from 'react-router-dom'
 import { WalletContext } from '../WalletContext.js'
 import { UserContext } from '../UserContext.js'
 import { useBreakpoint } from '../utils/useBreakpoints.js'

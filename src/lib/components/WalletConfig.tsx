@@ -15,11 +15,11 @@ import {
 } from '@mui/material';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { toast } from 'react-toastify';
-import { DEFAULT_CHAIN, DEFAULT_USE_WAB } from '../config';
-import { WalletContext, WABConfig } from '../WalletContext';
+import { DEFAULT_CHAIN } from '../config';
+import { WalletContext, WABConfig, LoginType } from '../WalletContext';
 
 const WalletConfig: React.FC = () => {
-  const { managers, finalizeConfig, setConfigStatus, useWab: contextUseWab } = useContext(WalletContext)
+  const { managers, finalizeConfig, setConfigStatus, loginType: contextLoginType } = useContext(WalletContext)
 
   // Wallet configuration state
   const [showWalletConfig, setShowWalletConfig] = useState(false)
@@ -33,7 +33,7 @@ const WalletConfig: React.FC = () => {
   const [method, setMethod] = useState<string>("")
   const [network, setNetwork] = useState<'main' | 'test'>(DEFAULT_CHAIN)
   const [storageUrl, setStorageUrl] = useState<string>('')
-  const [useWab, setUseWab] = useState<boolean>(DEFAULT_USE_WAB)
+  const [loginType, setLoginType] = useState<LoginType>(contextLoginType)
   const [useRemoteStorage, setUseRemoteStorage] = useState<boolean>(false)
   const [useMessageBox, setUseMessageBox] = useState<boolean>(false)
   const [isLoadingConfig, setIsLoadingConfig] = useState(false)
@@ -49,15 +49,15 @@ const WalletConfig: React.FC = () => {
     }
   }, [])
 
-  // Sync useWab with context when component mounts
+  // Sync loginType with context when component mounts
   useEffect(() => {
-    setUseWab(contextUseWab)
-  }, [contextUseWab])
+    setLoginType(contextLoginType)
+  }, [contextLoginType])
 
   // Fetch wallet configuration info
   const fetchWalletConfig = async () => {
-    // Don't fetch if wabUrl is empty or useWab is false
-    if (!wabUrl || !useWab) {
+    // Don't fetch if wabUrl is empty or not using WAB
+    if (!wabUrl || loginType !== 'wab') {
       return
     }
 
@@ -91,17 +91,18 @@ const WalletConfig: React.FC = () => {
       network,
       storageUrl,
       messageBoxUrl,
-      useWab,
+      loginType,
+      useWab: loginType === 'wab',
       useRemoteStorage,
       useMessageBox,
     })
     if (valid) setShowWalletConfig(false)
-  }, [wabUrl, wabInfo, method, network, storageUrl, messageBoxUrl, useWab, useRemoteStorage, useMessageBox, finalizeConfig, setShowWalletConfig])
+  }, [wabUrl, wabInfo, method, network, storageUrl, messageBoxUrl, loginType, useRemoteStorage, useMessageBox, finalizeConfig, setShowWalletConfig])
 
-  // Force the manager to use the "presentation-key-and-password" flow:
+  // Force the manager to use the "presentation-key-and-password" flow (only for WAB/CWIStyle managers):
   useEffect(() => {
-    if (walletManager) {
-      walletManager.authenticationMode = 'presentation-key-and-password'
+    if (walletManager && 'authenticationMode' in walletManager) {
+      (walletManager as any).authenticationMode = 'presentation-key-and-password'
     }
   }, [walletManager])
 
@@ -113,7 +114,8 @@ const WalletConfig: React.FC = () => {
       network,
       storageUrl,
       messageBoxUrl,
-      useWab,
+      loginType,
+      useWab: loginType === 'wab',
       useRemoteStorage,
       useMessageBox
     })
@@ -136,7 +138,7 @@ const WalletConfig: React.FC = () => {
       setNetwork(backupConfig.network)
       setStorageUrl(backupConfig.storageUrl)
       setMessageBoxUrl(backupConfig.messageBoxUrl)
-      setUseWab(backupConfig.useWab !== false)
+      setLoginType(backupConfig.loginType || (backupConfig.useWab !== false ? 'wab' : 'mnemonic-advanced'))
       setUseRemoteStorage(backupConfig.useRemoteStorage || false)
       setUseMessageBox(backupConfig.useMessageBox || false)
       finalizeConfig(backupConfig)
@@ -208,44 +210,52 @@ const WalletConfig: React.FC = () => {
 
                 <Divider sx={{ my: 3 }} />
 
-                {/* WAB Configuration Section */}
+                {/* Wallet Login Type Section */}
                 <Box sx={{ mb: 3 }}>
                   <FormControl component="fieldset">
                     <FormLabel component="legend">
                       <Typography variant="body2" gutterBottom sx={{ fontWeight: 'bold' }}>
-                        Presentation Key
+                        Wallet Login Type
                       </Typography>
                     </FormLabel>
                     <Typography variant="body2" gutterBottom sx={{ mt: 1, mb: 2 }}>
-                      This wallet uses a 2 of 3 backup and recovery scheme for your root key. One factor is called the presentation key, and can either be provided by you, or stored in a Wallet Authentication Backend (WAB) for convenience.
+                      Choose how you want to authenticate and manage your wallet keys.
                     </Typography>
                     <RadioGroup
-                      value={useWab.toString()}
-                      onChange={(e) => setUseWab(e.target.value === 'true')}
+                      value={loginType}
+                      onChange={(e) => setLoginType(e.target.value as LoginType)}
                     >
                       <FormControlLabel
-                        value="false"
+                        value="wab"
                         control={<Radio size="small" />}
                         label={
                           <Typography variant="body2">
-                            I prefer to use a mnemonic presentation key
+                            I prefer to use WAB
                           </Typography>
                         }
                       />
                       <FormControlLabel
-                        value="true"
+                        value="direct-key"
                         control={<Radio size="small" />}
                         label={
                           <Typography variant="body2">
-                            I prefer to use WAB.
+                            I prefer to manage my private key directly
                           </Typography>
                         }
                       />
-                      
+                      <FormControlLabel
+                        value="mnemonic-advanced"
+                        control={<Radio size="small" />}
+                        label={
+                          <Typography variant="body2">
+                            I prefer to use a mnemonic presentation key (advanced)
+                          </Typography>
+                        }
+                      />
                     </RadioGroup>
                   </FormControl>
 
-                  {useWab && (
+                  {loginType === 'wab' && (
                     <Box sx={{ mt: 2, ml: 3, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
                       <TextField
                         label="WAB URL"
@@ -405,7 +415,7 @@ const WalletConfig: React.FC = () => {
                   color="primary"
                   onClick={applyWalletConfig}
                   disabled={
-                    (useWab && (!wabInfo || !method || !wabUrl)) ||
+                    (loginType === 'wab' && (!wabInfo || !method || !wabUrl)) ||
                     (useRemoteStorage && !storageUrl) ||
                     (useMessageBox && !messageBoxUrl)
                   }

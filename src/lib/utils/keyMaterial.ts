@@ -63,3 +63,41 @@ export const mnemonicFromKeyHex = (keyHex: string): string => {
   const keyBytes = Utils.toArray(keyHex, 'hex')
   return Mnemonic.fromEntropy(keyBytes).toString()
 }
+
+export const persistKeyMaterial = (keyHex: string, mnemonic?: string): string => {
+  const phrase = mnemonic ? normalizeMnemonic(mnemonic) : mnemonicFromKeyHex(keyHex)
+  localStorage.setItem('primaryKeyHex', keyHex)
+  localStorage.setItem('mnemonic12', phrase)
+  return phrase
+}
+
+export const reconcileStoredKeyMaterial = (): { keyHex: string; mnemonic: string } => {
+  if (typeof window === 'undefined') {
+    return { keyHex: '', mnemonic: '' }
+  }
+
+  const storedMnemonic = (localStorage.getItem('mnemonic12') || '').trim()
+  const storedHex = (localStorage.getItem('primaryKeyHex') || '').trim()
+
+  if (storedMnemonic) {
+    try {
+      const { keyHex, mnemonic } = deriveKeyMaterialFromMnemonic(storedMnemonic)
+      persistKeyMaterial(keyHex, mnemonic)
+      return { keyHex, mnemonic }
+    } catch (err) {
+      console.error('Failed to derive key from stored mnemonic', err)
+      localStorage.removeItem('mnemonic12')
+    }
+  }
+
+  if (storedHex) {
+    try {
+      const phrase = persistKeyMaterial(storedHex)
+      return { keyHex: storedHex, mnemonic: phrase }
+    } catch (err) {
+      console.error('Failed to derive mnemonic from stored key', err)
+    }
+  }
+
+  return { keyHex: '', mnemonic: '' }
+}

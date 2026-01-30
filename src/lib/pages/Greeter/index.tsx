@@ -45,7 +45,7 @@ import PageLoading from '../../components/PageLoading.js'
 import { Utils, Mnemonic, HD, PrivateKey } from '@bsv/sdk'
 import { Link as RouterLink } from 'react-router-dom'
 import WalletConfig from '../../components/WalletConfig.js'
-import { deriveKeyMaterialFromMnemonic } from '../../utils/keyMaterial.js'
+import { deriveKeyMaterialFromMnemonic, persistKeyMaterial } from '../../utils/keyMaterial.js'
 
 // Helper functions for the Stepper will be defined inside the component
 
@@ -677,16 +677,24 @@ const Greeter: React.FC<any> = ({ history }) => {
       setLoading(true)
 
       let keyBytes: number[]
+      let keyHex: string
+      let mnemonic: string | undefined
       if (keyMode === 'mnemonic') {
-        const { keyBytes: derived } = deriveKeyMaterialFromMnemonic(keyInput)
-        keyBytes = derived
+        const derived = deriveKeyMaterialFromMnemonic(keyInput)
+        keyBytes = derived.keyBytes
+        keyHex = derived.keyHex
+        mnemonic = derived.mnemonic
       } else {
         keyBytes = Utils.toArray(keyInput.trim(), 'hex')
+        keyHex = keyInput.trim()
       }
 
       if (keyBytes.length !== 32) {
         throw new Error(`Key must be exactly 32 bytes (64 hex characters), but got ${keyBytes.length} bytes. Make sure you are entering a private key, not a public key.`)
       }
+
+      // Persist key material so the Security page can reveal it later
+      persistKeyMaterial(keyHex, mnemonic)
 
       // SimpleWalletManager flow: provide primary key then disabled privileged manager
       await (walletManager as any).providePrimaryKey(keyBytes)

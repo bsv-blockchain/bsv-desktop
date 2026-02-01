@@ -4,6 +4,7 @@ import { withRouter, RouteComponentProps } from 'react-router-dom'
 import CloseIcon from '@mui/icons-material/Close'
 import makeStyles from '@mui/styles/makeStyles'
 import { useTheme } from '@mui/material/styles'
+import { useRef } from 'react'
 import style from './style'
 import { deterministicImage } from '../../utils/deterministicImage'
 import CounterpartyChip from '../CounterpartyChip/index'
@@ -49,6 +50,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
   backgroundColor = 'transparent'
 }) => {
   const theme = useTheme()
+  const missingTrustedProtocolLoggedRef = useRef<Set<string>>(new Set())
 
   const navToProtocolDocumentation = (e: any) => {
     console.log('navToProtocolDocumentation', encodeURIComponent(securityLevel))
@@ -80,8 +82,8 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
   const [description, setDescription] = useState('Protocol description not found.')
   const [imageError, setImageError] = useState(false)
   const [documentationURL, setDocumentationURL] = useState('https://docs.bsvblockchain.org')
-  const { managers, settings } = useContext(WalletContext)
-  const registrant = new RegistryClient(managers.permissionsManager)
+  const { managers, settings, adminOriginator } = useContext(WalletContext)
+  const registrant = new RegistryClient(managers.permissionsManager, undefined, adminOriginator)
 
   useEffect(() => {
     const cacheKey = `protocolInfo_${protocolID}_${securityLevel}`
@@ -117,7 +119,11 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
         const trusted = results[mostTrustedIndex]
 
         if (!trusted) {
-          console.error('ProtoChip: No trusted protocol found for protocolID:', protocolID, 'securityLevel:', securityLevel)
+          const key = `${securityLevel}:${protocolID}`
+          if (!missingTrustedProtocolLoggedRef.current.has(key)) {
+            missingTrustedProtocolLoggedRef.current.add(key)
+            console.debug('ProtoChip: No trusted protocol found for protocolID:', protocolID, 'securityLevel:', securityLevel)
+          }
           return
         }
 

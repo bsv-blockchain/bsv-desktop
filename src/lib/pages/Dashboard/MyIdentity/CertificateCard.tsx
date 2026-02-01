@@ -67,7 +67,7 @@ const CertificateCard: React.FC<CertificateCardProps> = ({
   const [isRevoked, setIsRevoked] = useState<boolean>(false)
   const [documentationURL, setDocumentationURL] = useState<string>('')
 
-  const registrant = new RegistryClient(managers.walletManager)
+  const registrant = new RegistryClient(managers.walletManager, undefined, adminOriginator)
 
   // Handle modal actions
   const handleModalOpen = () => {

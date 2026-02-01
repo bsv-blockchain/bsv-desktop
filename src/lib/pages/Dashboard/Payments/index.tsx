@@ -45,7 +45,7 @@ type PaymentFormProps = {
   wallet: WalletInterface
 }
 function PaymentForm({ wallet, onSent }: PaymentFormProps) {
-  const {managers, messageBoxUrl, activeProfile, peerPayClient} = useContext(WalletContext)
+  const { managers, messageBoxUrl, activeProfile, peerPayClient, adminOriginator } = useContext(WalletContext)
   const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState<number>(0)
   const [sending, setSending] = useState(false)
@@ -58,7 +58,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
 
   // Identity search hook for "Send to Anyone" tab
   const identitySearch = useIdentitySearch({
-    originator: 'desktop.bsvb.tech',
+    originator: adminOriginator,
     wallet,
     onIdentitySelected: (identity) => {
       if (identity) {

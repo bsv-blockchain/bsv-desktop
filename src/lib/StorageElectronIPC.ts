@@ -21,7 +21,7 @@
  * - IPC is more efficient and simpler for Electron's architecture
  */
 
-import type { WalletStorageProvider, WalletServices } from '@bsv/wallet-toolbox/out/src/sdk';
+import type { WalletStorageProvider, WalletServices } from '@bsv/wallet-toolbox-client/out/src/sdk';
 
 export class StorageElectronIPC implements WalletStorageProvider {
   private identityKey: string;

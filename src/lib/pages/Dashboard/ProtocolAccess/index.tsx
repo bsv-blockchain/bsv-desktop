@@ -46,7 +46,7 @@ const ProtocolAccess: React.FC = () => {
   const protocolId = decodeURIComponent(encodedProtocolId);
   const securityLevel = Number(decodeURIComponent(encodedSecurityLevel));
   const history = useHistory<LocationState>();
-  const { managers, settings } = useContext(WalletContext);
+  const { managers, settings, adminOriginator } = useContext(WalletContext);
 
   // Get passed data from navigation state
   const locationState = history.location.state;
@@ -88,7 +88,7 @@ const ProtocolAccess: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const registrant = new RegistryClient(managers.walletManager)
+        const registrant = new RegistryClient(managers.walletManager, undefined, adminOriginator)
         const certifiers = settings.trustSettings.trustedCertifiers.map(x => x.identityKey)
         const results = await registrant.resolve('protocol', {
           protocolID: [securityLevel as SecurityLevel, protocolId],

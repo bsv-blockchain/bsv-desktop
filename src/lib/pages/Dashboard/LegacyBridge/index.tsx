@@ -59,7 +59,7 @@ const getCurrentDate = (daysOffset: number) => {
 }
 
 export default function Payments() {
-  const { managers, network } = useContext(WalletContext)
+  const { managers, network, adminOriginator } = useContext(WalletContext)
   const [paymentAddress, setPaymentAddress] = useState<string | null>(null)
   const [balance, setBalance] = useState<number>(-1)
   const [recipientAddress, setRecipientAddress] = useState<string>('')
@@ -72,7 +72,7 @@ export default function Payments() {
   const [daysOffset, setDaysOffset] = useState<number>(0)
   const [derivationPrefix, setDerivationPrefix] = useState<string>(Utils.toBase64(Utils.toArray(getCurrentDate(0), 'utf8')))
   const derivationSuffix = Utils.toBase64(Utils.toArray('legacy', 'utf8'))
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
+  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, adminOriginator) : null
 
   if (!wallet) {
     return <></>

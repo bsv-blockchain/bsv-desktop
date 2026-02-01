@@ -42,6 +42,7 @@ const BasketChip: React.FC<BasketChipProps> = ({
   const {
     managers,
     settings,
+    adminOriginator,
   } = useContext(WalletContext)
 
   if (typeof basketId !== 'string') {
@@ -51,7 +52,7 @@ const BasketChip: React.FC<BasketChipProps> = ({
   const theme = useTheme()
 
   // Initialize BasketMap
-  const registrant = new RegistryClient(managers.permissionsManager)
+  const registrant = new RegistryClient(managers.permissionsManager, undefined, adminOriginator)
 
   const [basketName, setBasketName] = useState(basketId)
   const [iconURL, setIconURL] = useState(generateDefaultIcon(basketId))

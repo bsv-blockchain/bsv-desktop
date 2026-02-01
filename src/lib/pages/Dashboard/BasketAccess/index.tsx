@@ -60,7 +60,7 @@ const BasketAccess: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-      const registrant = new RegistryClient(managers.permissionsManager)
+      const registrant = new RegistryClient(managers.permissionsManager, undefined, adminOriginator)
         // We don't need to call listBasketAccess here since BasketAccessList component handles that
         // The BasketAccessList component will fetch and display permissions for this basket
         // Update the itemsInBasket state with the outputs

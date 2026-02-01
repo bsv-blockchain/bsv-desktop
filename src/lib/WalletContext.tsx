@@ -1616,12 +1616,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
             (async () => {
               try {
                 console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
-                const wallet = new WalletClient(walletManager, 'desktop.bsvb.tech');
+                const wallet = new WalletClient(walletManager, adminOriginator);
                 const client = new PeerPayClient({
                   walletClient: wallet,
                   messageBoxHost: messageBoxUrl,
                   enableLogging: true,
-                  originator: 'desktop.bsvb.tech'
+                  originator: adminOriginator
                 });
 
                 await client.init(messageBoxUrl);
@@ -1863,12 +1863,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (managers?.walletManager) {
         try {
           console.log('[updateMessageBoxUrl] Initializing PeerPayClient...');
-          const wallet = new WalletClient(managers.walletManager, 'desktop.bsvb.tech');
+          const wallet = new WalletClient(managers.walletManager, adminOriginator);
           const client = new PeerPayClient({
             walletClient: wallet,
             messageBoxHost: trimmedUrl,
             enableLogging: true,
-            originator: 'desktop.bsvb.tech'
+            originator: adminOriginator
           });
 
           // Initialize the client - this will check for and create an advertisement if needed
@@ -1897,7 +1897,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       toast.error('Failed to update Message Box URL: ' + error.message);
       throw error;
     }
-  }, [saveEnhancedSnapshot, managers, adminOriginator]);
+  }, [saveEnhancedSnapshot, managers?.walletManager, adminOriginator]);
 
   const removeMessageBoxUrl = useCallback(async () => {
     try {
@@ -1957,12 +1957,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         (async () => {
           try {
             console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
-            const wallet = new WalletClient(managers.walletManager, 'desktop.bsvb.tech');
+            const wallet = new WalletClient(managers.walletManager, adminOriginator);
             const client = new PeerPayClient({
               walletClient: wallet,
               messageBoxHost: messageBoxUrl,
               enableLogging: true,
-              originator: 'desktop.bsvb.tech'
+              originator: adminOriginator
             });
 
             await client.init(messageBoxUrl);

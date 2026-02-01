@@ -82,8 +82,8 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
   const [description, setDescription] = useState('Protocol description not found.')
   const [imageError, setImageError] = useState(false)
   const [documentationURL, setDocumentationURL] = useState('https://docs.bsvblockchain.org')
-  const { managers, settings } = useContext(WalletContext)
-  const registrant = new RegistryClient(managers.permissionsManager)
+  const { managers, settings, adminOriginator } = useContext(WalletContext)
+  const registrant = new RegistryClient(managers.permissionsManager, undefined, adminOriginator)
 
   useEffect(() => {
     const cacheKey = `protocolInfo_${protocolID}_${securityLevel}`

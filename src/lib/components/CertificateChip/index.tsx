@@ -68,7 +68,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
   onClick,
   history
 }) => {
-  const { managers, settings, activeProfile } = useContext(WalletContext)
+  const { managers, settings, activeProfile, adminOriginator } = useContext(WalletContext)
 
   // Definition-driven state
   const [certname, setCertName] = useState<string>('Unknown Cert')
@@ -87,7 +87,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
     ;(async () => {
       try {
         if (!managers?.walletManager) return
-        const registrant = new RegistryClient(managers.walletManager)
+        const registrant = new RegistryClient(managers.walletManager, undefined, adminOriginator)
         const trusted = settings?.trustSettings?.trustedCertifiers || []    
         const registryOperators: string[] = settings.trustSettings.trustedCertifiers.map(
           (x: any) => x.identityKey

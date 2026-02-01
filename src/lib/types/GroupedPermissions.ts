@@ -29,6 +29,22 @@ export interface GroupedPermissions {
   certificateAccess?: CertificateAccess[];
 }
 
+export interface CounterpartyPermissions {
+  description?: string;
+  protocols: Array<{
+    protocolID: [number, string];
+    description: string;
+  }>;
+}
+
+export interface CounterpartyPermissionRequest {
+  requestID: string;
+  originator: string;
+  counterparty: string;
+  counterpartyLabel?: string;
+  permissions: CounterpartyPermissions;
+}
+
 export interface GroupPermissionRequest {
   requestID: string;
   originator: string;

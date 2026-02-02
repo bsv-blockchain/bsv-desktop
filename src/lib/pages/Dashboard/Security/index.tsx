@@ -76,7 +76,7 @@ const Security: React.FC = () => {
 
   const selectionLabel =
     revealType === 'mnemonic' ? 'your recovery phrase' :
-    revealType === 'hex' ? 'your hex key' : 'your recovery phrase and hex key'
+    revealType === 'hex' ? 'your private key' : 'your recovery phrase and private key'
 
   const loadStoredKeys = () => {
     const { keyHex, mnemonic } = reconcileStoredKeyMaterial()
@@ -152,7 +152,7 @@ const Security: React.FC = () => {
             Export the key material saved during sign-in. Only reveal this information when you are sure nobody else can see your screen.
           </Typography>
           <Alert severity="warning" sx={{ mb: 3 }}>
-            Anyone with these words or your hex key can move your funds and impersonate you. Keep them offline and out of sight.
+            Anyone with these words or your private key can move your funds and impersonate you. Keep them offline and out of sight.
           </Alert>
           <Stack spacing={2} direction={{ xs: 'column', sm: 'row' }}>
             <Button
@@ -169,7 +169,7 @@ const Security: React.FC = () => {
               onClick={() => handleReveal('hex')}
               sx={{ textTransform: 'none', flex: 1 }}
             >
-              Reveal hex key
+              Reveal private key
             </Button>
             <Button
               variant="contained"
@@ -244,7 +244,7 @@ const Security: React.FC = () => {
                 {revealType !== 'mnemonic' && (
                   <Box>
                     <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                      Hex key
+                      Private key
                     </Typography>
                     {hasHex ? (
                       <Box
@@ -260,7 +260,7 @@ const Security: React.FC = () => {
                       </Box>
                     ) : (
                       <Typography variant="body2" color="textSecondary">
-                        No hex key saved on this device.
+                        No private key saved on this device.
                       </Typography>
                     )}
                   </Box>

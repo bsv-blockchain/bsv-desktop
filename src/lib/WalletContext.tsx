@@ -97,11 +97,11 @@ export const createDisabledPrivilegedManager = () =>
   })
 
 interface ManagerState {
-  walletManager?: any;
+  walletManager?: WalletAuthenticationManager;
   permissionsManager?: WalletPermissionsManager;
   settingsManager?: WalletSettingsManager;
-  wallet?: any;
-  storageManager?: WalletStorageManager | any;
+  wallet?: WalletInterface;
+  storageManager?: WalletStorageManager;
 }
 
 type ConfigStatus = 'editing' | 'configured' | 'initial'
@@ -1297,7 +1297,11 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
 
       if (counterpartyPermissionCallback) {
-        ;(permissionsManager as any).bindCallback('onCounterpartyPermissionRequested', counterpartyPermissionCallback as any);
+        try {
+          ;(permissionsManager as any).bindCallback('onCounterpartyPermissionRequested', counterpartyPermissionCallback as any);
+        } catch (e) {
+          console.warn('[buildWallet] onCounterpartyPermissionRequested callback not supported by WalletPermissionsManager:', e);
+        }
       }
 
       // ---- Proxy grouped-permission grant/deny so we can release the gate automatically ----
@@ -1659,9 +1663,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
             (async () => {
               try {
                 console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
-                const wallet = new WalletClient(walletManager, adminOriginator);
                 const client = new PeerPayClient({
-                  walletClient: wallet,
+                  walletClient: managers.permissionsManager,
                   messageBoxHost: messageBoxUrl,
                   enableLogging: true,
                   originator: adminOriginator
@@ -1919,12 +1922,11 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
       // Create PeerPayClient without auto-anointing
       // User must explicitly anoint the host via the UI
-      if (managers?.walletManager) {
+      if (managers?.permissionsManager) {
         try {
           console.log('[updateMessageBoxUrl] Initializing PeerPayClient...');
-          const wallet = new WalletClient(managers.walletManager, adminOriginator);
           const client = new PeerPayClient({
-            walletClient: wallet,
+            walletClient: managers.permissionsManager,
             messageBoxHost: trimmedUrl,
             enableLogging: true,
             originator: adminOriginator
@@ -2132,10 +2134,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (messageBoxUrl && useMessageBox) {
         (async () => {
           try {
-            console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
-            const wallet = new WalletClient(managers.walletManager, adminOriginator);
+            console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');q
             const client = new PeerPayClient({
-              walletClient: wallet,
+              walletClient: managers.permissionsManager,
               messageBoxHost: messageBoxUrl,
               enableLogging: true,
               originator: adminOriginator

@@ -477,7 +477,7 @@ export default function PeerPayRoute() {
     anointCurrentHost,
     anointmentLoading
   } = useContext(WalletContext)
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
+  const wallet = managers?.walletManager || null
 
   const [payments, setPayments] = useState<IncomingPayment[]>([])
   const [loading, setLoading] = useState(false)

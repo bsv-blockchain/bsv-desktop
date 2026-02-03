@@ -72,7 +72,7 @@ export default function Payments() {
   const [daysOffset, setDaysOffset] = useState<number>(0)
   const [derivationPrefix, setDerivationPrefix] = useState<string>(Utils.toBase64(Utils.toArray(getCurrentDate(0), 'utf8')))
   const derivationSuffix = Utils.toBase64(Utils.toArray('legacy', 'utf8'))
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, adminOriginator) : null
+  const wallet = managers?.permissionsManager || null
 
   if (!wallet) {
     return <></>
@@ -97,7 +97,7 @@ export default function Payments() {
       keyID: derivationPrefix + ' ' + derivationSuffix, // date rounded to nearest day ISO format with "legacy" suffix
       counterparty: 'anyone',
       forSelf: true,
-    })
+    }, adminOriginator)
     console.log({ keyID: derivationPrefix + ' ' + derivationSuffix, counterparty: 'anyone', forSelf: true })
     return PublicKey.fromString(publicKey).toAddress(network === 'mainnet' ? 'mainnet' : 'testnet')
   }

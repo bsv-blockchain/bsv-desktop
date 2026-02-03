@@ -45,7 +45,7 @@ const CertificateAccess: React.FC = () => {
   const { certType: encodedCertType } = useParams<{ certType: string }>();
   const certType = decodeURIComponent(encodedCertType);
 
-  const { managers, settings } = useContext(WalletContext);
+  const { managers, settings, adminOriginator } = useContext(WalletContext);
 
   const [copied, setCopied] = useState<{ [key: string]: boolean }>({ id: false });
   const [certDefinition, setCertDefinition] = useState<CertificateDefinition | null>(null);
@@ -59,7 +59,7 @@ const CertificateAccess: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const registrant = new RegistryClient(managers.walletManager)
+        const registrant = new RegistryClient(managers.walletManager, undefined, adminOriginator)
         const results = await registrant.resolve('certificate', {
           type: certType,
           registryOperators

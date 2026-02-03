@@ -59,7 +59,7 @@ const getCurrentDate = (daysOffset: number) => {
 }
 
 export default function Payments() {
-  const { managers, network } = useContext(WalletContext)
+  const { managers, network, adminOriginator } = useContext(WalletContext)
   const [paymentAddress, setPaymentAddress] = useState<string | null>(null)
   const [balance, setBalance] = useState<number>(-1)
   const [recipientAddress, setRecipientAddress] = useState<string>('')
@@ -72,7 +72,7 @@ export default function Payments() {
   const [daysOffset, setDaysOffset] = useState<number>(0)
   const [derivationPrefix, setDerivationPrefix] = useState<string>(Utils.toBase64(Utils.toArray(getCurrentDate(0), 'utf8')))
   const derivationSuffix = Utils.toBase64(Utils.toArray('legacy', 'utf8'))
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
+  const wallet = managers?.permissionsManager || null
 
   if (!wallet) {
     return <></>
@@ -97,7 +97,7 @@ export default function Payments() {
       keyID: derivationPrefix + ' ' + derivationSuffix, // date rounded to nearest day ISO format with "legacy" suffix
       counterparty: 'anyone',
       forSelf: true,
-    })
+    }, adminOriginator)
     console.log({ keyID: derivationPrefix + ' ' + derivationSuffix, counterparty: 'anyone', forSelf: true })
     return PublicKey.fromString(publicKey).toAddress(network === 'mainnet' ? 'mainnet' : 'testnet')
   }
@@ -124,7 +124,7 @@ export default function Payments() {
         labelQueryMode: 'all',
         includeOutputs: true,
         limit: 1000,
-      })
+      }, adminOriginator)
 
       const internalizedSet = new Set<string>()
 
@@ -188,7 +188,7 @@ export default function Payments() {
         },
       ],
       labels: ['legacy', 'outbound'],
-    })
+    }, adminOriginator)
     return txid
   }
 
@@ -252,7 +252,7 @@ export default function Payments() {
         keyID: derivationPrefix + ' ' + derivationSuffix,
         counterparty: new PrivateKey(1).toPublicKey().toString(),
         forSelf: true,
-      })
+      }, adminOriginator)
       const derivedAddress = PublicKey.fromString(derivedPubKey).toAddress(network === 'mainnet' ? 'mainnet' : 'testnet')
       console.log('Address verification:', {
         paymentAddress,
@@ -311,7 +311,7 @@ export default function Payments() {
             }))
           })
           console.log('paymentRemittance senderIdentityKey:', t.outputs[0].paymentRemittance?.senderIdentityKey)
-          const response = await wallet.internalizeAction(t)
+          const response = await wallet.internalizeAction(t, adminOriginator)
           console.log('Internalize response:', response)
           if (response?.accepted) {
             toast.success('Payment accepted')
@@ -337,7 +337,7 @@ export default function Payments() {
       console.error(e)
       // Abort in case something goes wrong
       if (reference) {
-        await wallet.abortAction({ reference })
+        await wallet.abortAction({ reference }, adminOriginator)
       }
       const message = `Import failed: ${e.message || 'unknown error'}`
       toast.error(message)
@@ -357,7 +357,7 @@ export default function Payments() {
         includeOutputLockingScripts: true,
         includeOutputs: true,
         limit: 10,
-      })
+      }, adminOriginator)
 
       setTransactions((txs) => {
         const set = new Set(txs.map((tx) => tx.txid))

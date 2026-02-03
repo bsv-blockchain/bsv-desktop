@@ -74,6 +74,8 @@ export interface UserContextValue {
     setSpendingAuthorizationModalOpen: Dispatch<SetStateAction<boolean>>;
     groupPermissionModalOpen: boolean;
     setGroupPermissionModalOpen: Dispatch<SetStateAction<boolean>>;
+    counterpartyPermissionModalOpen: boolean;
+    setCounterpartyPermissionModalOpen: Dispatch<SetStateAction<boolean>>;
     pageLoaded: boolean;
     setPageLoaded: Dispatch<SetStateAction<boolean>>;
     manualUpdateInfo: UpdateInfo | null;
@@ -99,6 +101,7 @@ export const UserContextProvider: React.FC<UserContextProps> = ({
     const [protocolAccessModalOpen, setProtocolAccessModalOpen] = useState(false)
     const [spendingAuthorizationModalOpen, setSpendingAuthorizationModalOpen] = useState(false)
     const [groupPermissionModalOpen, setGroupPermissionModalOpen] = useState(false)
+    const [counterpartyPermissionModalOpen, setCounterpartyPermissionModalOpen] = useState(false)
     const [pageLoaded, setPageLoaded] = useState(false)
     const [manualUpdateInfo, setManualUpdateInfo] = useState<UpdateInfo | null>(null)
 
@@ -121,9 +124,11 @@ export const UserContextProvider: React.FC<UserContextProps> = ({
         setSpendingAuthorizationModalOpen,
         groupPermissionModalOpen,
         setGroupPermissionModalOpen,
+        counterpartyPermissionModalOpen,
+        setCounterpartyPermissionModalOpen,
         pageLoaded,
         setPageLoaded
-    }), [appVersion, appName, basketAccessModalOpen, certificateAccessModalOpen, protocolAccessModalOpen, spendingAuthorizationModalOpen, groupPermissionModalOpen, pageLoaded, manualUpdateInfo]);
+    }), [appVersion, appName, basketAccessModalOpen, certificateAccessModalOpen, protocolAccessModalOpen, spendingAuthorizationModalOpen, groupPermissionModalOpen, counterpartyPermissionModalOpen, pageLoaded, manualUpdateInfo]);
 
     return (
         <UserContext.Provider value={userContext}>

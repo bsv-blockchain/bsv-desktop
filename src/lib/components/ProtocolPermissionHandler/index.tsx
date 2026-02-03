@@ -44,7 +44,19 @@ const ProtocolPermissionHandler = () => {
   // Handle denying the top request in the queue
   const handleDeny = () => {
     if (protocolRequests.length > 0) {
-      managers.permissionsManager?.denyPermission(protocolRequests[0].requestID)
+      const { requestID, originator, protocolID, protocolSecurityLevel, counterparty } = protocolRequests[0]
+      const p = managers.permissionsManager?.denyPermission(requestID)
+      p?.finally(() => {
+        window.dispatchEvent(new CustomEvent('protocol-permissions-changed', {
+          detail: {
+            op: 'deny',
+            originator,
+            protocolID,
+            protocolSecurityLevel,
+            counterparty
+          }
+        }))
+      })
     }
     advanceProtocolQueue()
   }
@@ -52,8 +64,18 @@ const ProtocolPermissionHandler = () => {
   // Handle granting the top request in the queue
   const handleGrant = () => {
     if (protocolRequests.length > 0) {
-      managers.permissionsManager?.grantPermission({
-        requestID: protocolRequests[0].requestID
+      const { requestID, originator, protocolID, protocolSecurityLevel, counterparty } = protocolRequests[0]
+      const p = managers.permissionsManager?.grantPermission({ requestID })
+      p?.finally(() => {
+        window.dispatchEvent(new CustomEvent('protocol-permissions-changed', {
+          detail: {
+            op: 'grant',
+            originator,
+            protocolID,
+            protocolSecurityLevel,
+            counterparty
+          }
+        }))
       })
     }
     advanceProtocolQueue()

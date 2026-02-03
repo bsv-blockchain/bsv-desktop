@@ -1,6 +1,5 @@
 // src/routes/PeerPayRoute.tsx
 import React, { useCallback, useEffect, useMemo, useState, useContext } from 'react'
-import { useHistory } from 'react-router'
 import {
   Alert,
   Avatar,
@@ -29,7 +28,7 @@ import {
 } from '@mui/material'
 import InputAdornment from '@mui/material/InputAdornment'
 import { IncomingPayment } from '@bsv/message-box-client'
-import { Utils, WalletClient, Script, PublicKey, WalletInterface } from '@bsv/sdk'
+import { Utils, Script, PublicKey, WalletInterface } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
 import { toast } from 'react-toastify'
 import { CurrencyConverter } from '@bsv/amountinator'
@@ -45,7 +44,7 @@ type PaymentFormProps = {
   wallet: WalletInterface
 }
 function PaymentForm({ wallet, onSent }: PaymentFormProps) {
-  const {managers, messageBoxUrl, activeProfile, peerPayClient, loginType} = useContext(WalletContext)
+  const {managers, activeProfile, peerPayClient, loginType, adminOriginator } = useContext(WalletContext)
   const isDirectKey = loginType === 'direct-key'
   const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState<number>(0)
@@ -59,7 +58,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
 
   // Identity search hook for "Send to Anyone" tab
   const identitySearch = useIdentitySearch({
-    originator: 'desktop.bsvb.tech',
+    originator: adminOriginator,
     wallet,
     onIdentitySelected: (identity) => {
       if (identity) {
@@ -475,9 +474,10 @@ export default function PeerPayRoute() {
     peerPayClient,
     isHostAnointed,
     anointCurrentHost,
-    anointmentLoading
+    anointmentLoading,
+    adminOriginator
   } = useContext(WalletContext)
-  const wallet = managers?.walletManager ? new WalletClient(managers.walletManager, 'desktop.bsvb.tech') : null
+  const wallet = managers?.permissionsManager || null
 
   const [payments, setPayments] = useState<IncomingPayment[]>([])
   const [loading, setLoading] = useState(false)
@@ -511,7 +511,7 @@ export default function PeerPayRoute() {
         includeOutputLockingScripts: true,
         includeOutputs: true,
         limit: 100,
-      })
+      }, adminOriginator)
 
       console.log({ response })
 

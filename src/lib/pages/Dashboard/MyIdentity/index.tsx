@@ -17,7 +17,8 @@ const useStyles = makeStyles((style as any), {
 })
 
 const MyIdentity = () => {
-  const { managers, network, adminOriginator, activeProfile } = useContext(WalletContext)
+  const { managers, network, adminOriginator, activeProfile, loginType } = useContext(WalletContext)
+  const isDirectKey = loginType === 'direct-key'
 
   const [search, setSearch] = useState('')
   const [addPopularSigniaCertifiersModalOpen, setAddPopularSigniaCertifiersModalOpen] = useState(false)
@@ -37,12 +38,13 @@ const MyIdentity = () => {
 
   useEffect(() => {
     if (typeof adminOriginator === 'string') {
-      if(!activeProfile)
+      if(!isDirectKey && !activeProfile)
       {
         return
       }
-      console.log("AP", activeProfile.id)
-      const cacheKey = `provenCertificates_${activeProfile.id}`
+      const profileId = activeProfile?.id ?? 'direct-key'
+      console.log("AP", profileId)
+      const cacheKey = `provenCertificates_${profileId}`
 
       const getProvenCertificates = async () => {
         // Attempt to load the proven certificates from cache
@@ -102,7 +104,7 @@ const MyIdentity = () => {
 
       setIdentityKey()
     }
-  }, [setCertificates, setPrimaryIdentityKey, adminOriginator, activeProfile])
+  }, [setCertificates, setPrimaryIdentityKey, adminOriginator, activeProfile, isDirectKey])
 
   const handleRevealPrivilegedKey = async () => {
     const { publicKey } = await managers.permissionsManager.getPublicKey({
@@ -173,43 +175,47 @@ const MyIdentity = () => {
             </IconButton>
           </Box>
 
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-            <b>Privileged Identity Key:</b>
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            {privilegedIdentityKey === '...' ? (
-              <Button
-                variant="outlined"
-                startIcon={<EyeCon />}
-                onClick={handleRevealPrivilegedKey}
-                size="small"
-                sx={{ mr: 1 }}
-              >
-                Reveal Key
-              </Button>
-            ) : (
-              <>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontFamily: 'monospace',
-                    bgcolor: 'action.hover',
-                    py: 1,
-                    px: 2,
-                    borderRadius: 1,
-                    flexGrow: 1,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis'
-                  }}
-                >
-                  {privilegedIdentityKey}
-                </Typography>
-                <IconButton size='small' onClick={() => handleCopy(privilegedIdentityKey, 'privileged')} disabled={copied.privileged} sx={{ ml: 1 }}>
-                  {copied.privileged ? <CheckIcon /> : <ContentCopyIcon fontSize='small' />}
-                </IconButton>
-              </>
-            )}
-          </Box>
+          {!isDirectKey && (
+            <>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
+                <b>Privileged Identity Key:</b>
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                {privilegedIdentityKey === '...' ? (
+                  <Button
+                    variant="outlined"
+                    startIcon={<EyeCon />}
+                    onClick={handleRevealPrivilegedKey}
+                    size="small"
+                    sx={{ mr: 1 }}
+                  >
+                    Reveal Key
+                  </Button>
+                ) : (
+                  <>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontFamily: 'monospace',
+                        bgcolor: 'action.hover',
+                        py: 1,
+                        px: 2,
+                        borderRadius: 1,
+                        flexGrow: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}
+                    >
+                      {privilegedIdentityKey}
+                    </Typography>
+                    <IconButton size='small' onClick={() => handleCopy(privilegedIdentityKey, 'privileged')} disabled={copied.privileged} sx={{ ml: 1 }}>
+                      {copied.privileged ? <CheckIcon /> : <ContentCopyIcon fontSize='small' />}
+                    </IconButton>
+                  </>
+                )}
+              </Box>
+            </>
+          )}
         </Box>
       </Paper>
 

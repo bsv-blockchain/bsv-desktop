@@ -44,7 +44,7 @@ import Profile from '../components/Profile.js'
 import React, { useState, useContext, useEffect, useCallback } from 'react'
 import { toast } from 'react-toastify'
 import { useHistory } from 'react-router'
-import { WalletContext } from '../WalletContext.js'
+import { WalletContext, LoginType } from '../WalletContext.js'
 import { UserContext } from '../UserContext.js'
 import { useBreakpoint } from '../utils/useBreakpoints.js'
 import { Utils, PushDrop, LockingScript, Transaction } from '@bsv/sdk'
@@ -75,7 +75,8 @@ interface MenuProps {
 export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
   const history = useHistory()
   const breakpoints = useBreakpoint()
-  const { logout, managers, activeProfile, setActiveProfile, saveEnhancedSnapshot } = useContext(WalletContext)
+  const { logout, managers, activeProfile, setActiveProfile, saveEnhancedSnapshot, loginType } = useContext(WalletContext)
+  const isDirectKey = loginType === 'direct-key'
   const { appName, appVersion } = useContext(UserContext)
 
   // Profile management state
@@ -403,115 +404,119 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
 
         <Divider sx={{ mb: 2 }} />
 
-        {/* Profile Management Section */}
-        <List component="nav" sx={{ mb: 1 }}>
-          <ListItemButton onClick={() => setProfilesOpen(!profilesOpen)} sx={menuItemStyle(false)}>
-            <ListItemIcon sx={{ minWidth: 40 }}>
-              <PersonIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography variant="body1">
-                  Profiles
-                </Typography>
-              }
-              secondary={
-                !profilesOpen && profiles.length > 0
-                  ? `Active: ${profiles.find(p => p.active)?.name || 'Default'}`
-                  : undefined
-              }
-            />
-            {profilesOpen ? <ExpandLess /> : <ExpandMore />}
-          </ListItemButton>
+        {/* Profile Management Section - hidden in direct-key mode */}
+        {!isDirectKey && (
+          <>
+            <List component="nav" sx={{ mb: 1 }}>
+              <ListItemButton onClick={() => setProfilesOpen(!profilesOpen)} sx={menuItemStyle(false)}>
+                <ListItemIcon sx={{ minWidth: 40 }}>
+                  <PersonIcon />
+                </ListItemIcon>
+                <ListItemText
+                  primary={
+                    <Typography variant="body1">
+                      Profiles
+                    </Typography>
+                  }
+                  secondary={
+                    !profilesOpen && profiles.length > 0
+                      ? `Active: ${profiles.find(p => p.active)?.name || 'Default'}`
+                      : undefined
+                  }
+                />
+                {profilesOpen ? <ExpandLess /> : <ExpandMore />}
+              </ListItemButton>
 
-          {/* Profile loading indicator */}
-          {profilesLoading && (
-            <LinearProgress
-              sx={{
-                height: 2,
-                mt: -0.5,
-                mb: 0.5,
-                borderRadius: 1,
-                mx: 1
-              }}
-            />
-          )}
+              {/* Profile loading indicator */}
+              {profilesLoading && (
+                <LinearProgress
+                  sx={{
+                    height: 2,
+                    mt: -0.5,
+                    mb: 0.5,
+                    borderRadius: 1,
+                    mx: 1
+                  }}
+                />
+              )}
 
-          <Collapse in={profilesOpen} timeout="auto" unmountOnExit>
-            <Box sx={{ p: 1 }}>
-              <Grid container spacing={1} sx={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-                {profiles.map((profile) => (
-                  <Grid item xs={12} key={formatProfileId(profile.id)}>
-                    <Card
-                      variant={profile.active ? 'outlined' : 'elevation'}
-                      onClick={!profile.active ? () => handleSwitchProfile(profile.id) : undefined}
-                      sx={{
-                        borderColor: profile.active ? 'primary.main' : undefined,
-                        backgroundColor: profile.active ? alpha('#1976d2', 0.08) : undefined,
-                        position: 'relative',
-                        width: '100%',
-                        maxWidth: '100%',
-                        overflow: 'hidden',
-                        cursor: profile.active ? 'default' : 'pointer',
-                        '&:hover': {
-                          boxShadow: profile.active ? 1 : 3,
-                          backgroundColor: profile.active ? alpha('#1976d2', 0.08) : alpha('#1976d2', 0.04)
-                        }
-                      }}
-                    >
-                      <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                        <Box display="flex" justifyContent="space-between" alignItems="center">
-                          <Typography variant="subtitle2" sx={{ fontWeight: profile.active ? 'bold' : 'normal' }}>
-                            {profile.name}
-                          </Typography>
-                          {profile.active && <Chip size="small" label="Active" color="primary" sx={{ height: 20, fontSize: '0.7rem' }} />}
-                        </Box>
-                        <Box display="flex" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" color="textSecondary">
-                            Identity Key: {(profile?.identityKey?.slice(0, 10))}
-                          </Typography>
-                          {!profile.active && !profile.id.every(x => x === 0) && (
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation() // Prevent card click from triggering
-                                confirmDeleteProfile(profile)
-                              }}
-                              sx={{
-                                color: 'white',
-                                p: 0.5,
-                                '&:hover': {
-                                  backgroundColor: alpha('#1976d2', 0.1)
-                                }
-                              }}
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          )}
-                        </Box>
-                      </CardContent>
-                    </Card>
+              <Collapse in={profilesOpen} timeout="auto" unmountOnExit>
+                <Box sx={{ p: 1 }}>
+                  <Grid container spacing={1} sx={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+                    {profiles.map((profile) => (
+                      <Grid item xs={12} key={formatProfileId(profile.id)}>
+                        <Card
+                          variant={profile.active ? 'outlined' : 'elevation'}
+                          onClick={!profile.active ? () => handleSwitchProfile(profile.id) : undefined}
+                          sx={{
+                            borderColor: profile.active ? 'primary.main' : undefined,
+                            backgroundColor: profile.active ? alpha('#1976d2', 0.08) : undefined,
+                            position: 'relative',
+                            width: '100%',
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            cursor: profile.active ? 'default' : 'pointer',
+                            '&:hover': {
+                              boxShadow: profile.active ? 1 : 3,
+                              backgroundColor: profile.active ? alpha('#1976d2', 0.08) : alpha('#1976d2', 0.04)
+                            }
+                          }}
+                        >
+                          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                            <Box display="flex" justifyContent="space-between" alignItems="center">
+                              <Typography variant="subtitle2" sx={{ fontWeight: profile.active ? 'bold' : 'normal' }}>
+                                {profile.name}
+                              </Typography>
+                              {profile.active && <Chip size="small" label="Active" color="primary" sx={{ height: 20, fontSize: '0.7rem' }} />}
+                            </Box>
+                            <Box display="flex" justifyContent="space-between" alignItems="center">
+                              <Typography variant="caption" color="textSecondary">
+                                Identity Key: {(profile?.identityKey?.slice(0, 10))}
+                              </Typography>
+                              {!profile.active && !profile.id.every(x => x === 0) && (
+                                <IconButton
+                                  size="small"
+                                  onClick={(e) => {
+                                    e.stopPropagation() // Prevent card click from triggering
+                                    confirmDeleteProfile(profile)
+                                  }}
+                                  sx={{
+                                    color: 'white',
+                                    p: 0.5,
+                                    '&:hover': {
+                                      backgroundColor: alpha('#1976d2', 0.1)
+                                    }
+                                  }}
+                                >
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              )}
+                            </Box>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    ))}
+                    <Grid item xs={12}>
+                      <Button
+                        fullWidth
+                        variant="outlined"
+                        color="primary"
+                        startIcon={<AddIcon />}
+                        onClick={() => setCreateProfileOpen(true)}
+                        size="small"
+                        sx={{ mt: 1, justifyContent: 'start' }}
+                      >
+                        New Profile
+                      </Button>
+                    </Grid>
                   </Grid>
-                ))}
-                <Grid item xs={12}>
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    color="primary"
-                    startIcon={<AddIcon />}
-                    onClick={() => setCreateProfileOpen(true)}
-                    size="small"
-                    sx={{ mt: 1, justifyContent: 'start' }}
-                  >
-                    New Profile
-                  </Button>
-                </Grid>
-              </Grid>
-            </Box>
-          </Collapse>
-        </List>
+                </Box>
+              </Collapse>
+            </List>
 
-        <Divider sx={{ mb: 2 }} />
+            <Divider sx={{ mb: 2 }} />
+          </>
+        )}
 
         <List component="nav" sx={{ mb: 2 }}>
           <ListItemButton

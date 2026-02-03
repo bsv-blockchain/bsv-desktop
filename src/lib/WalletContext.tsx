@@ -2134,7 +2134,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (messageBoxUrl && useMessageBox) {
         (async () => {
           try {
-            console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');q
+            console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
             const client = new PeerPayClient({
               walletClient: managers.permissionsManager,
               messageBoxHost: messageBoxUrl,

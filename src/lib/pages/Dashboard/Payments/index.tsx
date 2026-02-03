@@ -45,7 +45,8 @@ type PaymentFormProps = {
   wallet: WalletInterface
 }
 function PaymentForm({ wallet, onSent }: PaymentFormProps) {
-  const {managers, messageBoxUrl, activeProfile, peerPayClient} = useContext(WalletContext)
+  const {managers, messageBoxUrl, activeProfile, peerPayClient, loginType} = useContext(WalletContext)
+  const isDirectKey = loginType === 'direct-key'
   const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState<number>(0)
   const [sending, setSending] = useState(false)
@@ -105,10 +106,11 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
   }, [])
 
   useEffect(() => {
+    if (isDirectKey) return // No profiles in direct-key mode
     let alive = true
       ; (async () => {
         try {
-          if (!managers?.walletManager) return
+          if (!managers?.walletManager || !managers.walletManager.listProfiles) return
           const list: WalletProfile[] = await managers.walletManager.listProfiles()
           if (!alive) return
           const cloned = list.map(p => ({
@@ -124,7 +126,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
         }
       })()
     return () => { alive = false }
-  }, [managers])
+  }, [managers, isDirectKey])
 
   const canSend = recipient.trim().length > 0 && amount > 0 && !sending
 
@@ -167,15 +169,17 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
         Create New Payment
       </Typography>
       <Stack spacing={2}>
-        <Tabs value={tabValue} onChange={(e, newValue) => {
-          setTabValue(newValue)
-          setRecipient('')
-        }}>
-          <Tab label="Pay Someone" />
-          <Tab label="Internal Transfer" />
-        </Tabs>
+        {!isDirectKey && (
+          <Tabs value={tabValue} onChange={(e, newValue) => {
+            setTabValue(newValue)
+            setRecipient('')
+          }}>
+            <Tab label="Pay Someone" />
+            <Tab label="Internal Transfer" />
+          </Tabs>
+        )}
 
-        {tabValue === 0 ? (
+        {(tabValue === 0 || isDirectKey) ? (
           <>
             <Autocomplete
               options={identitySearch.identities}

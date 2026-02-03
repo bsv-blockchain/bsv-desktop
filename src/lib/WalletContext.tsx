@@ -14,6 +14,7 @@ import {
   DevConsoleInteractor,
   WABClient,
   PermissionRequest,
+  SimpleWalletManager,
 } from '@bsv/wallet-toolbox-client'
 import { StorageElectronIPC } from './StorageElectronIPC'
 import {
@@ -87,9 +88,15 @@ export const DEFAULT_PERMISSIONS_CONFIG: PermissionsConfig = {
 // Context Types
 // -----
 
+export type LoginType = 'wab' | 'direct-key' | 'mnemonic-advanced'
+
+export const createDisabledPrivilegedManager = () =>
+  new PrivilegedKeyManager(async () => {
+    throw new Error('Privileged operations are not available in direct-key mode')
+  })
 
 interface ManagerState {
-  walletManager?: WalletAuthenticationManager;
+  walletManager?: any;
   permissionsManager?: WalletPermissionsManager;
   settingsManager?: WalletSettingsManager;
   wallet?: any;
@@ -127,6 +134,8 @@ export interface WalletContextValue {
   setWalletFunder: (funder: (presentationKey: number[], wallet: WalletInterface, adminOriginator: string) => Promise<void>) => void
   setUseWab: (use: boolean) => void
   useWab: boolean
+  loginType: LoginType
+  setLoginType: (type: LoginType) => void
   advanceGroupQueue: () => void
   recentApps: any[]
   finalizeConfig: (wabConfig: WABConfig) => boolean
@@ -184,6 +193,8 @@ export const WalletContext = createContext<WalletContextValue>({
   setWalletFunder: () => { },
   setUseWab: () => { },
   useWab: true,
+  loginType: 'wab',
+  setLoginType: () => { },
   advanceGroupQueue: () => { },
   recentApps: [],
   finalizeConfig: () => false,
@@ -279,6 +290,7 @@ export interface WABConfig {
   network: 'main' | 'test';
   storageUrl: string;
   messageBoxUrl: string;
+  loginType?: LoginType;
   useWab?: boolean;
   useRemoteStorage?: boolean;
   useMessageBox?: boolean;
@@ -314,7 +326,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [walletFunder, setWalletFunder] = useState<
     (presentationKey: number[], wallet: WalletInterface, adminOriginator: string) => Promise<void>
   >()
-  const [useWab, setUseWab] = useState<boolean>(DEFAULT_USE_WAB)
+  const [loginType, setLoginType] = useState<LoginType>(DEFAULT_USE_WAB ? 'wab' : 'mnemonic-advanced')
+  const useWab = loginType === 'wab'
+  const setUseWab = (use: boolean) => setLoginType(use ? 'wab' : 'mnemonic-advanced')
   const [useRemoteStorage, setUseRemoteStorage] = useState<boolean>(false)
   const [useMessageBox, setUseMessageBox] = useState<boolean>(false)
   const [groupPermissionRequests, setGroupPermissionRequests] = useState<GroupPermissionRequest[]>([])
@@ -872,9 +886,10 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
   // For new users: mark configuration complete when WalletConfig is submitted.
   const finalizeConfig = (wabConfig: WABConfig) => {
-    const { wabUrl, wabInfo, method, network, storageUrl, useWab: useWabSetting, messageBoxUrl, useRemoteStorage, useMessageBox } = wabConfig
+    const { wabUrl, wabInfo, method, network, storageUrl, useWab: useWabSetting, loginType: loginTypeSetting, messageBoxUrl, useRemoteStorage, useMessageBox } = wabConfig
+    const effectiveLoginType = loginTypeSetting || (useWabSetting !== false ? 'wab' : 'mnemonic-advanced')
     try {
-      if (useWabSetting !== false) {
+      if (effectiveLoginType === 'wab') {
         if (!wabUrl) {
           toast.error("WAB Server URL is required");
           return;
@@ -906,7 +921,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       const trimmedStorageUrl = (storageUrl || '').replace(/\/+$/, '');
       const trimmedMessageBoxUrl = (messageBoxUrl || '').replace(/\/+$/, '');
 
-      setUseWab(useWabSetting !== false)
+      setLoginType(effectiveLoginType)
       setWabUrl(trimmedWabUrl)
       setWabInfo(wabInfo)
       setSelectedAuthMethod(method)
@@ -1117,6 +1132,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     const config = {
       network: selectedNetwork,
       useWab,
+      loginType,
       wabUrl,
       authMethod: selectedAuthMethod,
       useRemoteStorage,
@@ -1160,7 +1176,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     selectedStorageUrl,
     messageBoxUrl,
     selectedAuthMethod,
-    useWab,
+    loginType,
     useRemoteStorage,
     useMessageBox,
     backupStorageUrls
@@ -1259,7 +1275,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
           setSelectedStorageUrl(config.storageUrl || '');
           setMessageBoxUrl(config.messageBoxUrl || '');
           setSelectedAuthMethod(config.authMethod || '');
-          setUseWab(config.useWab !== undefined ? config.useWab : DEFAULT_USE_WAB);
+          // Restore loginType, with backward compat for old snapshots that only have useWab
+          if (config.loginType) {
+            setLoginType(config.loginType);
+          } else {
+            setLoginType(config.useWab !== false ? 'wab' : 'mnemonic-advanced');
+          }
           // Infer useRemoteStorage from storage URL if not explicitly set in snapshot
           const inferredUseRemoteStorage = config.useRemoteStorage !== undefined
             ? config.useRemoteStorage
@@ -1293,9 +1314,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     console.log('[WalletManager Init] managers.walletManager exists:', !!managers.walletManager);
     console.log('[WalletManager Init] localStorage.snap exists:', !!localStorage.snap);
 
+    const directKeyMode = loginType === 'direct-key'
     if (
-      passwordRetriever &&
-      recoveryKeySaver &&
+      (directKeyMode || (passwordRetriever && recoveryKeySaver)) &&
       configStatus !== 'editing' && // either user configured or snapshot exists
       !managers.walletManager // build only once
     ) {
@@ -1317,8 +1338,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
           });
 
           let walletManager: any;
-          console.log('[WalletManager Init] useWab:', useWab);
-          if (useWab) {
+          console.log('[WalletManager Init] loginType:', loginType);
+          if (loginType === 'wab') {
             console.log('[WalletManager Init] Creating WalletAuthenticationManager...');
             const wabClient = new WABClient(wabUrl);
             let phoneInteractor
@@ -1335,6 +1356,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
               passwordRetriever,
               wabClient,
               phoneInteractor
+            );
+          } else if (loginType === 'direct-key') {
+            console.log('[WalletManager Init] Creating SimpleWalletManager (direct-key mode)...');
+            walletManager = new SimpleWalletManager(
+              adminOriginator,
+              buildWallet
             );
           } else {
             console.log('[WalletManager Init] Creating CWIStyleWalletManager...');
@@ -1417,7 +1444,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     walletFunder,
     messageBoxUrl,
     useMessageBox,
-    useWab,
+    loginType,
     buildWallet,
     loadWalletSnapshot,
     adminOriginator,
@@ -1825,11 +1852,14 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   // Automatically set active profile when wallet manager becomes available
   useEffect(() => {
     if (managers?.walletManager?.authenticated) {
-      const profiles = managers.walletManager.listProfiles()
-      const profileToSet = profiles.find((p: any) => p.active) || profiles[0]
-      if (profileToSet?.id) {
-        console.log('PROFILE IS NOW BEING SET!', profileToSet)
-        setActiveProfile(profileToSet)
+      // Profiles are only available for WAB/CWIStyle managers, not SimpleWalletManager
+      if (loginType !== 'direct-key' && managers.walletManager.listProfiles) {
+        const profiles = managers.walletManager.listProfiles()
+        const profileToSet = profiles.find((p: any) => p.active) || profiles[0]
+        if (profileToSet?.id) {
+          console.log('PROFILE IS NOW BEING SET!', profileToSet)
+          setActiveProfile(profileToSet)
+        }
       }
 
       // Create PeerPayClient if messageBoxUrl is configured (without auto-anointing)
@@ -2043,6 +2073,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     setWalletFunder,
     setUseWab,
     useWab,
+    loginType,
+    setLoginType,
     recentApps,
     finalizeConfig,
     setConfigStatus,
@@ -2093,6 +2125,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     setWalletFunder,
     setUseWab,
     useWab,
+    loginType,
+    setLoginType,
     recentApps,
     finalizeConfig,
     setConfigStatus,

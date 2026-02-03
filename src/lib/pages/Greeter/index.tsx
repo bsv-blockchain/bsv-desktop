@@ -4,7 +4,6 @@ import {
   Button,
   TextField,
   CircularProgress,
-  Divider,
   InputAdornment,
   IconButton,
   Paper,
@@ -21,6 +20,8 @@ import {
   DialogActions,
   Alert,
   AlertTitle,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material'
 import {
   SettingsPhone as PhoneIcon,
@@ -38,12 +39,13 @@ import PhoneEntry from '../../components/PhoneEntry.js'
 import AppLogo from '../../components/AppLogo.js'
 import { toast } from 'react-toastify'
 import { saveMnemonic } from '../../../electronFunctions.js'
-import { WalletContext } from '../../WalletContext.js'
+import { WalletContext, createDisabledPrivilegedManager } from '../../WalletContext.js'
 import { UserContext } from '../../UserContext.js'
 import PageLoading from '../../components/PageLoading.js'
-import { Utils, Mnemonic, HD } from '@bsv/sdk'
+import { Utils, Mnemonic, HD, PrivateKey } from '@bsv/sdk'
 import { Link as RouterLink } from 'react-router-dom'
 import WalletConfig from '../../components/WalletConfig.js'
+import { deriveKeyMaterialFromMnemonic, persistKeyMaterial } from '../../utils/keyMaterial.js'
 
 // Helper functions for the Stepper will be defined inside the component
 
@@ -66,7 +68,7 @@ const PhoneForm = ({ phone, setPhone, loading, handleSubmitPhone, phoneFieldRef 
         type='submit'
         disabled={loading || !phone || phone.length < 10}
         fullWidth
-        sx={{ 
+        sx={{
           mt: 2,
           borderRadius: theme.shape.borderRadius,
           textTransform: 'none',
@@ -101,8 +103,8 @@ const CodeForm = ({ code, setCode, loading, handleSubmitCode, handleResendCode, 
               ),
             }
           }}
-          sx={{ 
-            mb: 2   
+          sx={{
+            mb: 2
           }}
         />
         <Button
@@ -110,7 +112,7 @@ const CodeForm = ({ code, setCode, loading, handleSubmitCode, handleResendCode, 
           type='submit'
           disabled={loading || code.length !== 6}
           fullWidth
-          sx={{ 
+          sx={{
             mt: 2,
             borderRadius: theme.shape.borderRadius,
             textTransform: 'none',
@@ -138,14 +140,14 @@ const CodeForm = ({ code, setCode, loading, handleSubmitCode, handleResendCode, 
 // Presentation key form component (using mnemonic)
 const PresentationKeyForm = ({ mnemonic, setMnemonic, loading, handleSubmitMnemonic, mnemonicFieldRef, onGenerateRandom, isLocked }) => {
   const theme = useTheme();
-  
+
   const handleCopy = () => {
     if (mnemonic) {
       navigator.clipboard.writeText(mnemonic)
       toast.success('Mnemonic copied to clipboard')
     }
   }
-  
+
   return (
     <form onSubmit={handleSubmitMnemonic}>
       <TextField
@@ -159,7 +161,7 @@ const PresentationKeyForm = ({ mnemonic, setMnemonic, loading, handleSubmitMnemo
         disabled={loading || isLocked}
         placeholder="Enter recovery phrase"
         slotProps={{
-          input: { 
+          input: {
             ref: mnemonicFieldRef,
             endAdornment: mnemonic && (
               <InputAdornment position="end">
@@ -239,7 +241,7 @@ const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPasswo
             ),
           }
         }}
-        sx={{ 
+        sx={{
           mb: 2
         }}
       />
@@ -268,7 +270,7 @@ const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPasswo
               ),
             }
           }}
-          sx={{ 
+          sx={{
             mb: 2
           }}
         />
@@ -292,14 +294,136 @@ const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPasswo
   );
 };
 
+// Direct key form component for SimpleWalletManager login
+const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemonic, onGenerateRandomHex }) => {
+  const theme = useTheme();
+  const [keyMode, setKeyMode] = useState<'mnemonic' | 'hex'>('mnemonic')
+  const [keyInput, setKeyInput] = useState('')
+  const [isLocked, setIsLocked] = useState(false)
+
+  const handleCopy = () => {
+    if (keyInput) {
+      navigator.clipboard.writeText(keyInput)
+      toast.success(`${keyMode === 'mnemonic' ? 'Mnemonic' : 'Private key'} copied to clipboard`)
+    }
+  }
+
+  const handleGenerate = async () => {
+    if (keyMode === 'mnemonic') {
+      const result = await onGenerateRandomMnemonic()
+      if (result) {
+        setKeyInput(result)
+        setIsLocked(true)
+      }
+    } else {
+      const result = onGenerateRandomHex()
+      if (result) {
+        setKeyInput(result)
+        setIsLocked(true)
+      }
+    }
+  }
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    handleSubmitDirectKey(keyInput, keyMode)
+  }
+
+  return (
+    <form onSubmit={onSubmit}>
+      <ToggleButtonGroup
+        value={keyMode}
+        exclusive
+        onChange={(_, val) => { if (val) { setKeyMode(val); setKeyInput(''); setIsLocked(false) } }}
+        size="small"
+        fullWidth
+        sx={{ mb: 2 }}
+      >
+        <ToggleButton value="mnemonic" sx={{ textTransform: 'none' }}>
+          Mnemonic
+        </ToggleButton>
+        <ToggleButton value="hex" sx={{ textTransform: 'none' }}>
+          Private Key (Hex)
+        </ToggleButton>
+      </ToggleButtonGroup>
+
+      <TextField
+        label={keyMode === 'mnemonic' ? 'Mnemonic phrase' : 'Private key (hex)'}
+        value={keyInput}
+        onChange={(e) => setKeyInput(e.target.value)}
+        variant="outlined"
+        fullWidth
+        multiline={keyMode === 'mnemonic'}
+        rows={keyMode === 'mnemonic' ? 3 : 1}
+        disabled={loading || isLocked}
+        placeholder={keyMode === 'mnemonic' ? 'Enter your mnemonic phrase' : 'Enter 64-character hex key'}
+        slotProps={{
+          input: {
+            endAdornment: keyInput && (
+              <InputAdornment position="end">
+                <IconButton
+                  onClick={handleCopy}
+                  edge="end"
+                  size="small"
+                  sx={keyMode === 'mnemonic' ? { alignSelf: 'flex-start', mt: 1 } : undefined}
+                >
+                  <CopyIcon />
+                </IconButton>
+              </InputAdornment>
+            )
+          }
+        }}
+        sx={{ mb: 2 }}
+      />
+
+      {!isLocked && (
+        <Button
+          variant='outlined'
+          onClick={handleGenerate}
+          disabled={loading}
+          fullWidth
+          startIcon={<RandomIcon />}
+          sx={{
+            borderRadius: theme.shape.borderRadius,
+            textTransform: 'none',
+            py: 1.2,
+            mb: 2
+          }}
+        >
+          {keyMode === 'mnemonic' ? 'Generate Random Mnemonic' : 'Generate Random Key'}
+        </Button>
+      )}
+
+      <Button
+        variant='contained'
+        type='submit'
+        disabled={loading || !keyInput}
+        fullWidth
+        sx={{
+          borderRadius: theme.shape.borderRadius,
+          textTransform: 'none',
+          py: 1.2
+        }}
+      >
+        {loading ? <CircularProgress size={24} /> : 'Login'}
+      </Button>
+    </form>
+  );
+};
+
 // Main Greeter component with reduced complexity
 const Greeter: React.FC<any> = ({ history }) => {
-  const { managers, configStatus, useWab, saveEnhancedSnapshot, initializingBackendServices } = useContext(WalletContext)
+  const { managers, configStatus, useWab, loginType, saveEnhancedSnapshot, initializingBackendServices } = useContext(WalletContext)
   const { appVersion, appName, pageLoaded } = useContext(UserContext)
   const theme = useTheme()
 
-  const viewToStepIndex = useWab ? { phone: 0, code: 1, password: 2 } : { presentation: 0, password: 1 }
-  const steps = useWab
+  const viewToStepIndex = loginType === 'wab'
+    ? { phone: 0, code: 1, password: 2 }
+    : loginType === 'direct-key'
+    ? { directkey: 0 }
+    : { presentation: 0, password: 1 }
+
+  const steps = loginType === 'wab'
     ? [
         {
           label: 'Phone Number',
@@ -317,6 +441,14 @@ const Greeter: React.FC<any> = ({ history }) => {
           description: 'Enter your password'
         }
       ]
+    : loginType === 'direct-key'
+    ? [
+        {
+          label: 'Private Key',
+          icon: <KeyIcon />,
+          description: 'Enter your private key or mnemonic'
+        }
+      ]
     : [
         {
           label: 'Presentation Key',
@@ -330,7 +462,13 @@ const Greeter: React.FC<any> = ({ history }) => {
         }
       ]
 
-  const [step, setStep] = useState(useWab ? 'phone' : 'presentation')
+  const getInitialStep = () => {
+    if (loginType === 'wab') return 'phone'
+    if (loginType === 'direct-key') return 'directkey'
+    return 'presentation'
+  }
+
+  const [step, setStep] = useState(getInitialStep())
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
   const [mnemonic, setMnemonic] = useState('')
@@ -350,8 +488,8 @@ const Greeter: React.FC<any> = ({ history }) => {
   const walletManager = managers?.walletManager
 
   useEffect(() => {
-    setStep(useWab ? 'phone' : 'presentation')
-  }, [useWab])
+    setStep(getInitialStep())
+  }, [loginType])
 
   // Step 1: The user enters a phone number, we call manager.startAuth(...)
   const handleSubmitPhone = useCallback(async (e: React.FormEvent) => {
@@ -362,7 +500,7 @@ const Greeter: React.FC<any> = ({ history }) => {
     }
     try {
       setLoading(true)
-      await walletManager?.startAuth({ phoneNumber: phone })
+      await (walletManager as any).startAuth({ phoneNumber: phone })
       setStep('code')
       toast.success('A code has been sent to your phone.')
       // Move focus to code field
@@ -386,9 +524,9 @@ const Greeter: React.FC<any> = ({ history }) => {
     }
     try {
       setLoading(true)
-      await walletManager.completeAuth({ phoneNumber: phone, otp: code })
+      await (walletManager as any).completeAuth({ phoneNumber: phone, otp: code })
 
-      if (walletManager.authenticationFlow === 'new-user') {
+      if ((walletManager as any).authenticationFlow === 'new-user') {
         setAccountStatus('new-user')
       } else {
         setAccountStatus('existing-user')
@@ -411,7 +549,7 @@ const Greeter: React.FC<any> = ({ history }) => {
     if (!walletManager) return
     try {
       setLoading(true)
-      await walletManager.startAuth({ phoneNumber: phone })
+      await (walletManager as any).startAuth({ phoneNumber: phone })
       toast.success('A new code has been sent to your phone.')
     } catch (e: any) {
       console.error(e)
@@ -429,7 +567,7 @@ const Greeter: React.FC<any> = ({ history }) => {
       const randomMnemonic = Mnemonic.fromRandom(256)
       const mnemonicStr = randomMnemonic.toString()
       setMnemonic(mnemonicStr)
-      
+
       // Save mnemonic to file
       const result = await saveMnemonic(mnemonicStr)
       if (result.success) {
@@ -439,9 +577,25 @@ const Greeter: React.FC<any> = ({ history }) => {
       } else {
         toast.error(`Failed to save mnemonic: ${result.error}`)
       }
+      return mnemonicStr
     } catch (err: any) {
       console.error(err)
       toast.error('Failed to generate random mnemonic')
+      return null
+    }
+  }, [])
+
+  // Generate random hex key for direct-key mode
+  const handleGenerateRandomHex = useCallback(() => {
+    try {
+      const randomKey = PrivateKey.fromRandom()
+      const hexStr = randomKey.toHex()
+      toast.success('Random private key generated')
+      return hexStr
+    } catch (err: any) {
+      console.error(err)
+      toast.error('Failed to generate random key')
+      return null
     }
   }, [])
 
@@ -454,16 +608,16 @@ const Greeter: React.FC<any> = ({ history }) => {
     }
     try {
       setLoading(true)
-      
+
       // Derive presentation key from mnemonic using HD path m/0'/0/0
       const mnemonicObj = Mnemonic.fromString(mnemonic.trim())
       const seed = mnemonicObj.toSeed()
       const hdKey = HD.fromSeed(seed)
       const derivedKey = hdKey.derive("m/0'/0/0")
       const presentationKey = derivedKey.privKey.toArray()
-      
-      await walletManager.providePresentationKey(presentationKey)
-      if (walletManager.authenticationFlow === 'new-user') {
+
+      await (walletManager as any).providePresentationKey(presentationKey)
+      if ((walletManager as any).authenticationFlow === 'new-user') {
         setAccountStatus('new-user')
       } else {
         setAccountStatus('existing-user')
@@ -496,7 +650,7 @@ const Greeter: React.FC<any> = ({ history }) => {
 
     setLoading(true)
     try {
-      await walletManager.providePassword(password)
+      await (walletManager as any).providePassword(password)
       if (walletManager.authenticated) {
         // Save snapshot to local storage
         localStorage.snap = saveEnhancedSnapshot()
@@ -512,6 +666,54 @@ const Greeter: React.FC<any> = ({ history }) => {
       setLoading(false)
     }
   }, [walletManager, password, confirmPassword, saveEnhancedSnapshot])
+
+  // Direct key login: provide primary key + disabled privileged manager, no password
+  const handleSubmitDirectKey = useCallback(async (keyInput: string, keyMode: 'mnemonic' | 'hex') => {
+    if (!walletManager) {
+      toast.error('Wallet Manager not ready yet.')
+      return
+    }
+    try {
+      setLoading(true)
+
+      let keyBytes: number[]
+      let keyHex: string
+      let mnemonic: string | undefined
+      if (keyMode === 'mnemonic') {
+        const derived = deriveKeyMaterialFromMnemonic(keyInput)
+        keyBytes = derived.keyBytes
+        keyHex = derived.keyHex
+        mnemonic = derived.mnemonic
+      } else {
+        keyBytes = Utils.toArray(keyInput.trim(), 'hex')
+        keyHex = keyInput.trim()
+      }
+
+      if (keyBytes.length !== 32) {
+        throw new Error(`Key must be exactly 32 bytes (64 hex characters), but got ${keyBytes.length} bytes. Make sure you are entering a private key, not a public key.`)
+      }
+
+      // Persist key material so the Security page can reveal it later
+      persistKeyMaterial(keyHex, mnemonic)
+
+      // SimpleWalletManager flow: provide primary key then disabled privileged manager
+      await (walletManager as any).providePrimaryKey(keyBytes)
+      await (walletManager as any).providePrivilegedKeyManager(createDisabledPrivilegedManager())
+
+      if (walletManager.authenticated) {
+        localStorage.snap = saveEnhancedSnapshot()
+        toast.success('Authenticated successfully!')
+        history.push('/dashboard/apps')
+      } else {
+        throw new Error('Authentication failed')
+      }
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err.message || 'Failed to login with direct key')
+    } finally {
+      setLoading(false)
+    }
+  }, [walletManager, saveEnhancedSnapshot])
 
   if (!pageLoaded) {
     return <PageLoading />
@@ -582,48 +784,37 @@ const Greeter: React.FC<any> = ({ history }) => {
       >
         <Header />
         <WalletConfig />
-        
+
         {/* Authentication Stepper - replaces Accordions for clearer progression */}
         {configStatus === 'configured' && (
           <Stepper activeStep={viewToStepIndex[step]} orientation="vertical">
-          {steps.map((step, index) => (
-            <Step key={step.label}>
-              <StepLabel 
-                icon={step.icon}
+          {steps.map((stepDef, index) => (
+            <Step key={stepDef.label}>
+              <StepLabel
+                icon={stepDef.icon}
                 optional={
                   <Typography variant="caption" color="text.secondary">
-                    {step.description}
+                    {stepDef.description}
                   </Typography>
                 }
               >
                 <Typography variant="body2" fontWeight={500}>
-                  {step.label}
+                  {stepDef.label}
                 </Typography>
               </StepLabel>
               <StepContent>
-                {index === 0 && (
-                  useWab ? (
-                    <PhoneForm
-                      phone={phone}
-                      setPhone={setPhone}
-                      loading={loading}
-                      handleSubmitPhone={handleSubmitPhone}
-                      phoneFieldRef={phoneFieldRef}
-                    />
-                  ) : (
-                    <PresentationKeyForm
-                      mnemonic={mnemonic}
-                      setMnemonic={setMnemonic}
-                      loading={loading}
-                      handleSubmitMnemonic={handleSubmitMnemonic}
-                      mnemonicFieldRef={mnemonicFieldRef}
-                      onGenerateRandom={handleGenerateRandomMnemonic}
-                      isLocked={mnemonicLocked}
-                    />
-                  )
+                {/* WAB flow: Phone -> Code -> Password */}
+                {loginType === 'wab' && index === 0 && (
+                  <PhoneForm
+                    phone={phone}
+                    setPhone={setPhone}
+                    loading={loading}
+                    handleSubmitPhone={handleSubmitPhone}
+                    phoneFieldRef={phoneFieldRef}
+                  />
                 )}
 
-                {useWab && index === 1 && (
+                {loginType === 'wab' && index === 1 && (
                   <CodeForm
                     code={code}
                     setCode={setCode}
@@ -634,7 +825,45 @@ const Greeter: React.FC<any> = ({ history }) => {
                   />
                 )}
 
-                {(useWab ? index === 2 : index === 1) && (
+                {loginType === 'wab' && index === 2 && (
+                  <PasswordForm
+                    password={password}
+                    setPassword={setPassword}
+                    confirmPassword={confirmPassword}
+                    setConfirmPassword={setConfirmPassword}
+                    showPassword={showPassword}
+                    setShowPassword={setShowPassword}
+                    loading={loading}
+                    handleSubmitPassword={handleSubmitPassword}
+                    accountStatus={accountStatus}
+                    passwordFieldRef={passwordFieldRef}
+                  />
+                )}
+
+                {/* Direct key flow: single step */}
+                {loginType === 'direct-key' && index === 0 && (
+                  <DirectKeyForm
+                    loading={loading}
+                    handleSubmitDirectKey={handleSubmitDirectKey}
+                    onGenerateRandomMnemonic={handleGenerateRandomMnemonic}
+                    onGenerateRandomHex={handleGenerateRandomHex}
+                  />
+                )}
+
+                {/* Mnemonic-advanced flow: Presentation Key -> Password */}
+                {loginType === 'mnemonic-advanced' && index === 0 && (
+                  <PresentationKeyForm
+                    mnemonic={mnemonic}
+                    setMnemonic={setMnemonic}
+                    loading={loading}
+                    handleSubmitMnemonic={handleSubmitMnemonic}
+                    mnemonicFieldRef={mnemonicFieldRef}
+                    onGenerateRandom={handleGenerateRandomMnemonic}
+                    isLocked={mnemonicLocked}
+                  />
+                )}
+
+                {loginType === 'mnemonic-advanced' && index === 1 && (
                   <PasswordForm
                     password={password}
                     setPassword={setPassword}
@@ -672,7 +901,7 @@ const Greeter: React.FC<any> = ({ history }) => {
           variant='caption'
           color='textSecondary'
           align='center'
-          sx={{ 
+          sx={{
             display: 'block',
             px: 5,
             mt: 3,
@@ -716,7 +945,7 @@ const Greeter: React.FC<any> = ({ history }) => {
             <AlertTitle>Important: Save This Mnemonic</AlertTitle>
             Your mnemonic is the ONLY way to recover your presentation key. Store it in a safe place indefinitely.
           </Alert>
-          
+
           <Paper
             elevation={0}
             sx={{

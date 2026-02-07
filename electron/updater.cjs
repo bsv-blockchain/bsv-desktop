@@ -14,11 +14,16 @@ autoUpdater.logger.transports.file.level = 'info';
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false; // Set to false to avoid conflict with manual quitAndInstall()
 
-// Disable differential downloads on Windows to avoid checksum mismatch errors
-// This forces full downloads which are more reliable
+// Platform-specific update configuration
 if (process.platform === 'win32') {
-  log.info('Disabling differential downloads on Windows');
+  // Windows: Force full downloads to avoid checksum mismatch errors
+  // Differential downloads on Windows are known to be unreliable
+  log.info('[Windows] Disabling differential downloads and web installers - forcing full downloads');
   autoUpdater.disableDifferentialDownload = true;
+  autoUpdater.disableWebInstaller = true;
+} else {
+  // macOS and Linux can use differential downloads safely
+  log.info(`[${process.platform}] Using default update configuration`);
 }
 
 // Track update state
@@ -41,6 +46,7 @@ function initAutoUpdater(mainWindow) {
   // Update available
   autoUpdater.on('update-available', (info) => {
     log.info('Update available:', info);
+    log.info(`Platform: ${process.platform}, Differential downloads: ${!autoUpdater.disableDifferentialDownload}, Web installers: ${!autoUpdater.disableWebInstaller}`);
 
     // Get current version from package.json
     const { version: currentVersion } = require('../package.json');
@@ -112,6 +118,7 @@ function initAutoUpdater(mainWindow) {
 
 // Download update
 function downloadUpdate() {
+  log.info(`[${process.platform}] Starting update download - Differential: ${!autoUpdater.disableDifferentialDownload}, WebInstaller: ${!autoUpdater.disableWebInstaller}`);
   return autoUpdater.downloadUpdate();
 }
 

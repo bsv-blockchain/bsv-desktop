@@ -278,6 +278,33 @@ ipcMain.handle('save-mnemonic', async (_event, mnemonic: string) => {
   }
 });
 
+// Save private key to ~/.bsv-desktop/
+ipcMain.handle('save-private-key', async (_event, privateKey: string) => {
+  try {
+    const homeDir = app.getPath('home');
+    const bsvDir = path.join(homeDir, '.bsv-desktop');
+
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(bsvDir)) {
+      fs.mkdirSync(bsvDir, { recursive: true });
+    }
+
+    const timestamp = Date.now();
+    const fileName = `privatekey${timestamp}.txt`;
+    const filePath = path.join(bsvDir, fileName);
+
+    fs.writeFileSync(filePath, privateKey, 'utf-8');
+
+    // Set file permissions to read-only (0o400 = owner read only)
+    fs.chmodSync(filePath, 0o400);
+
+    return { success: true, path: filePath };
+  } catch (error) {
+    console.error('Save private key failed:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
 // Proxy fetch for manifest.json files
 ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
   try {

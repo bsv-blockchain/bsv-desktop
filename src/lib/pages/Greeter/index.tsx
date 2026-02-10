@@ -38,7 +38,7 @@ import {
 import PhoneEntry from '../../components/PhoneEntry.js'
 import AppLogo from '../../components/AppLogo.js'
 import { toast } from 'react-toastify'
-import { saveMnemonic } from '../../../electronFunctions.js'
+import { saveMnemonic, savePrivateKey } from '../../../electronFunctions.js'
 import { WalletContext, createDisabledPrivilegedManager } from '../../WalletContext.js'
 import { UserContext } from '../../UserContext.js'
 import PageLoading from '../../components/PageLoading.js'
@@ -316,7 +316,7 @@ const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemoni
         setIsLocked(true)
       }
     } else {
-      const result = onGenerateRandomHex()
+      const result = await onGenerateRandomHex()
       if (result) {
         setKeyInput(result)
         setIsLocked(true)
@@ -586,11 +586,18 @@ const Greeter: React.FC<any> = ({ history }) => {
   }, [])
 
   // Generate random hex key for direct-key mode
-  const handleGenerateRandomHex = useCallback(() => {
+  const handleGenerateRandomHex = useCallback(async () => {
     try {
       const randomKey = PrivateKey.fromRandom()
       const hexStr = randomKey.toHex()
-      toast.success('Random private key generated')
+
+      // Save private key to file
+      const result = await savePrivateKey(hexStr)
+      if (result.success) {
+        toast.success(`Private key saved to ${result.path}`)
+      } else {
+        toast.error(`Failed to save private key: ${result.error}`)
+      }
       return hexStr
     } catch (err: any) {
       console.error(err)

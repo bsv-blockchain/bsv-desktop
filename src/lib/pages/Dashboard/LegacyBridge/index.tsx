@@ -21,7 +21,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import { QRCodeSVG } from 'qrcode.react'
-import { PublicKey, P2PKH, Beef, Utils, Script, WalletClient, WalletProtocol, InternalizeActionArgs, InternalizeOutput, PrivateKey } from '@bsv/sdk'
+import { PublicKey, P2PKH, Beef, Utils, Script, WalletClient, WalletProtocol, InternalizeActionArgs, InternalizeOutput, PrivateKey, AtomicBEEF } from '@bsv/sdk'
 import getBeefForTxid from '../../../utils/getBeefForTxid'
 import { wocFetch } from '../../../utils/RateLimitedFetch'
 import { toast } from 'react-toastify'
@@ -169,7 +169,7 @@ export default function Payments() {
   }
 
   // Send BSV to recipient address
-  const sendBSV = async (to: string, amount: number): Promise<string | undefined> => {
+  const sendBSV = async (to: string, amount: number): Promise<{ txid: string; tx?: AtomicBEEF } | undefined> => {
     if (!wallet) {
       throw new Error('Wallet not initialized')
     }
@@ -181,7 +181,7 @@ export default function Payments() {
     }
 
     const lockingScript = new P2PKH().lock(to).toHex()
-    const { txid } = await wallet.createAction({
+    const { txid, tx } = await wallet.createAction({
       description: 'Send BSV to address',
       outputs: [
         {
@@ -192,7 +192,7 @@ export default function Payments() {
       ],
       labels: ['legacy', 'outbound'],
     }, adminOriginator)
-    return txid
+    return { txid, tx }
   }
 
   // Import funds from payment address into wallet
@@ -435,21 +435,32 @@ export default function Payments() {
 
     setIsSending(true)
     try {
-      const txid = await sendBSV(recipientAddress, amt)
-      if (txid) {
-        toast.success(`Successfully sent ${amt} BSV to ${recipientAddress}`)
+      const result = await sendBSV(recipientAddress, amt)
+      if (result) {
+        let displayAmount = amt
+        if (sweepMax && result.tx) {
+          try {
+            const beef = Beef.fromBinary(result.tx)
+            const transaction = beef.findAtomicTransaction(result.txid)
+            displayAmount = transaction.outputs[0].satoshis / 100000000
+          } catch (e) {
+            console.error('Failed to parse tx for actual amount:', e)
+          }
+        }
+        toast.success(`Successfully sent ${displayAmount} BSV to ${recipientAddress}`)
 
         // Record the transaction locally
         setTransactions((prev) => [
           ...prev,
           {
-            txid,
+            txid: result.txid,
             to: recipientAddress,
-            amount: amt,
+            amount: displayAmount,
           },
         ])
         setRecipientAddress('')
         setAmount('')
+        if (sweepMax) setSweepMax(false)
       }
     } catch (error: any) {
       toast.error(`Error sending BSV: ${error.message || 'unknown error'}`)

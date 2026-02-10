@@ -25,7 +25,7 @@
     "@bsv/amountinator": "^0.2.12",
     "@bsv/identity-react": "^1.1.12",
     "@bsv/message-box-client": "^2.0.0",
-    "@bsv/sdk": "^2.0.1",
+    "@bsv/sdk": "^2.0.2",
     "@bsv/uhrp-react": "^1.0.5",
     "@bsv/wallet-toolbox": "^2.0.5",
     "@bsv/wallet-toolbox-client": "^2.0.5",

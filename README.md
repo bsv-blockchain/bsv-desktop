@@ -50,6 +50,20 @@ Application entry point that uses the UI library:
 - Node.js 18+ and npm
 - Git
 
+#### Linux-Specific Requirements
+
+BSV Desktop supports both **Wayland** and **X11** display servers on Linux. The application automatically detects and uses the appropriate display server:
+
+- **Wayland**: Automatically detected and used when available
+- **X11**: Used as fallback when Wayland is unavailable or fails to initialize
+- **Manual Override**: Set environment variables to force X11 if needed:
+  ```bash
+  export GDK_BACKEND=x11
+  ./BSV-Desktop-*.AppImage
+  ```
+
+The application includes GPU sandbox disabling for better compatibility with AppImages and containerized environments.
+
 ### Installation
 
 ```bash

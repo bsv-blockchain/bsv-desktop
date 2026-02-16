@@ -27,7 +27,7 @@ import {
   CachedKeyDeriver,
   WalletClient,
 } from '@bsv/sdk'
-import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox'
+import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 import { PeerPayClient, AdvertisementToken } from '@bsv/message-box-client'
 import { toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'

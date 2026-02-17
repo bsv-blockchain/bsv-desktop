@@ -86,6 +86,9 @@
       "dist-electron/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
+    ],
     "publish": {
       "provider": "github",
       "owner": "bsv-blockchain",

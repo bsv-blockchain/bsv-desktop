@@ -74,7 +74,7 @@ class StorageManager {
     // Create knex instance via CommonJS wrapper
     const knexFactory = getCreateKnex();
     const db = knexFactory({
-      client: 'sqlite3',
+      client: 'better-sqlite3',
       connection: {
         filename: dbPath
       },
@@ -82,7 +82,8 @@ class StorageManager {
       pool: {
         afterCreate: (conn: any, cb: any) => {
           // Enable WAL mode for better concurrent access
-          conn.run('PRAGMA journal_mode = WAL;', cb);
+          conn.pragma('journal_mode = WAL');
+          cb(null, conn);
         }
       }
     });

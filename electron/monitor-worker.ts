@@ -57,7 +57,7 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     // Create knex instance with WAL mode
     const knexFactory = getCreateKnex();
     const db = knexFactory({
-      client: 'sqlite3',
+      client: 'better-sqlite3',
       connection: {
         filename: dbPath
       },
@@ -65,7 +65,8 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
       pool: {
         afterCreate: (conn: any, cb: any) => {
           // Enable WAL mode for concurrent access
-          conn.run('PRAGMA journal_mode = WAL;', cb);
+          conn.pragma('journal_mode = WAL');
+          cb(null, conn);
         }
       }
     });

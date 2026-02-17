@@ -20,6 +20,7 @@ import AuthRedirector from './navigation/AuthRedirector'
 import ThemedToastContainer from './components/ThemedToastContainer'
 import { WalletInterface } from '@bsv/sdk'
 import { AppThemeProvider } from './components/Theme'
+import type { PermissionModuleDefinition } from './permissionModules/types'
 
 // Define queries for responsive design
 const queries = {
@@ -49,12 +50,13 @@ interface UserInterfaceProps {
   nativeHandlers?: NativeHandlers;
   appVersion?: string;
   appName?: string;
+  permissionModules?: PermissionModuleDefinition[];
 }
 
-const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHandlers, appVersion, appName }) => {
+const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHandlers, appVersion, appName, permissionModules }) => {
   return (
     <UserContextProvider nativeHandlers={nativeHandlers} appVersion={appVersion} appName={appName}>
-      <WalletContextProvider onWalletReady={onWalletReady}>
+      <WalletContextProvider onWalletReady={onWalletReady} permissionModules={permissionModules}>
         <AppThemeProvider>
           <ExchangeRateContextProvider>
             <Router>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, createContext, useMemo, useCallback, useContext, useRef } from 'react'
+import { useMediaQuery } from '@mui/material'
 import {
   Wallet,
   WalletPermissionsManager,
@@ -26,7 +27,7 @@ import {
   CachedKeyDeriver,
   WalletClient,
 } from '@bsv/sdk'
-import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox/src/WalletSettingsManager'
+import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 import { PeerPayClient, AdvertisementToken } from '@bsv/message-box-client'
 import { toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
@@ -36,6 +37,8 @@ import { CounterpartyPermissionRequest, GroupPermissionRequest, GroupedPermissio
 import { updateRecentApp } from './pages/Dashboard/Apps/getApps'
 import { RequestInterceptorWallet } from './RequestInterceptorWallet'
 import { WalletProfile } from './types/WalletProfile'
+import type { PermissionModuleDefinition, PermissionPromptHandler } from './permissionModules/types'
+import { buildPermissionModuleRegistry } from './permissionModules/registry'
 
 // -----
 // Permission Configuration Types
@@ -84,6 +87,10 @@ export const DEFAULT_PERMISSIONS_CONFIG: PermissionsConfig = {
   seekProtocolPermissionsForSigning: true,
   seekSpendingPermissions: true,
 };
+
+const PermissionPromptHost: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
+  <>{children}</>
+)
 
 // -----
 // Context Types
@@ -306,11 +313,13 @@ export interface WABConfig {
 interface WalletContextProps {
   children?: React.ReactNode;
   onWalletReady: (wallet: WalletInterface) => Promise<(() => void) | undefined>;
+  permissionModules?: PermissionModuleDefinition[];
 }
 
 export const WalletContextProvider: React.FC<WalletContextProps> = ({
   children,
-  onWalletReady
+  onWalletReady,
+  permissionModules = []
 }) => {
   const [managers, setManagers] = useState<ManagerState>({});
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -321,6 +330,65 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [backupStorageUrls, setBackupStorageUrls] = useState<string[]>([])
 
   const { isFocused, onFocusRequested, onFocusRelinquished, setBasketAccessModalOpen, setCertificateAccessModalOpen, setProtocolAccessModalOpen, setSpendingAuthorizationModalOpen, setGroupPermissionModalOpen, setCounterpartyPermissionModalOpen } = useContext(UserContext);
+
+  const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)')
+  const tokenPromptPaletteMode = useMemo<import('@mui/material').PaletteMode>(() => {
+    const pref = settings?.theme?.mode ?? 'system'
+    if (pref === 'system') {
+      return prefersDarkMode ? 'dark' : 'light'
+    }
+    return pref === 'dark' ? 'dark' : 'light'
+  }, [settings?.theme?.mode, prefersDarkMode])
+
+  const permissionModuleRegistryState = useMemo(
+    () => buildPermissionModuleRegistry(permissionModules),
+    [permissionModules]
+  )
+
+  const {
+    registry: permissionModuleRegistry,
+    getPermissionModuleById,
+    normalizeEnabledPermissionModules
+  } = permissionModuleRegistryState
+
+  const [enabledPermissionModules, setEnabledPermissionModules] = useState<string[]>(() =>
+    normalizeEnabledPermissionModules()
+  )
+
+  const updateEnabledPermissionModules = useCallback((modules: string[]) => {
+    const normalized = normalizeEnabledPermissionModules(modules)
+    setEnabledPermissionModules(normalized)
+    try {
+      localStorage.setItem('enabledPermissionModules', JSON.stringify(normalized))
+    } catch (error) {
+      console.warn('Failed to persist enabled permission modules:', error)
+    }
+  }, [normalizeEnabledPermissionModules])
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('enabledPermissionModules')
+      if (stored) {
+        updateEnabledPermissionModules(JSON.parse(stored))
+      }
+    } catch (error) {
+      console.warn('Failed to load enabled permission modules:', error)
+    }
+  }, [updateEnabledPermissionModules])
+
+  useEffect(() => {
+    setEnabledPermissionModules(prev => normalizeEnabledPermissionModules(prev))
+  }, [normalizeEnabledPermissionModules])
+
+  const permissionPromptHandlersRef = useRef<Map<string, PermissionPromptHandler>>(new Map())
+
+  const registerPermissionPromptHandler = useCallback((id: string, handler: PermissionPromptHandler) => {
+    permissionPromptHandlersRef.current.set(id, handler)
+  }, [])
+
+  const unregisterPermissionPromptHandler = useCallback((id: string) => {
+    permissionPromptHandlersRef.current.delete(id)
+  }, [])
 
   // Track if we were originally focused
   const [wasOriginallyFocused, setWasOriginallyFocused] = useState(false)
@@ -1173,6 +1241,63 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     }
   }
 
+  const createPermissionsManager = useCallback((wallet: WalletInterface) => {
+    const permissionModulesMap = enabledPermissionModules.reduce<Record<string, any>>((acc, moduleId) => {
+      const descriptor = getPermissionModuleById(moduleId)
+      if (!descriptor) return acc
+
+      acc[moduleId] = descriptor.createModule({
+        wallet,
+        promptHandler: permissionPromptHandlersRef.current.get(moduleId)
+      })
+      return acc
+    }, {})
+
+    const configWithModules = {
+      ...permissionsConfig,
+      permissionModules: permissionModulesMap
+    }
+
+    const permissionsManager = new WalletPermissionsManager(wallet, adminOriginator, configWithModules as any)
+
+    if (protocolPermissionCallback) {
+      permissionsManager.bindCallback('onProtocolPermissionRequested', protocolPermissionCallback)
+    }
+    if (basketAccessCallback) {
+      permissionsManager.bindCallback('onBasketAccessRequested', basketAccessCallback)
+    }
+    if (spendingAuthorizationCallback) {
+      permissionsManager.bindCallback('onSpendingAuthorizationRequested', spendingAuthorizationCallback)
+    }
+    if (certificateAccessCallback) {
+      permissionsManager.bindCallback('onCertificateAccessRequested', certificateAccessCallback)
+    }
+    if (groupPermissionCallback) {
+      permissionsManager.bindCallback('onGroupedPermissionRequested', groupPermissionCallback)
+    }
+
+    if (counterpartyPermissionCallback) {
+      try {
+        ; (permissionsManager as any).bindCallback('onCounterpartyPermissionRequested', counterpartyPermissionCallback as any)
+      } catch (e) {
+        console.warn('[createPermissionsManager] onCounterpartyPermissionRequested callback not supported by WalletPermissionsManager:', e)
+      }
+    }
+
+    return permissionsManager
+  }, [
+    adminOriginator,
+    basketAccessCallback,
+    certificateAccessCallback,
+    counterpartyPermissionCallback,
+    enabledPermissionModules,
+    getPermissionModuleById,
+    groupPermissionCallback,
+    permissionsConfig,
+    protocolPermissionCallback,
+    spendingAuthorizationCallback
+  ])
+
   // Build wallet function
   const buildWallet = useCallback(async (
     primaryKey: number[],
@@ -1274,35 +1399,9 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
 
       console.log('[buildWallet] Setting up permissions manager...');
-      // Setup permissions with provided callbacks.
-      const permissionsManager = new WalletPermissionsManager(wallet, adminOriginator, permissionsConfig);
+      const permissionsManager = createPermissionsManager(wallet)
 
       permissionsManagerRef.current = permissionsManager;
-
-      if (protocolPermissionCallback) {
-        permissionsManager.bindCallback('onProtocolPermissionRequested', protocolPermissionCallback);
-      }
-      if (basketAccessCallback) {
-        permissionsManager.bindCallback('onBasketAccessRequested', basketAccessCallback);
-      }
-      if (spendingAuthorizationCallback) {
-        permissionsManager.bindCallback('onSpendingAuthorizationRequested', spendingAuthorizationCallback);
-      }
-      if (certificateAccessCallback) {
-        permissionsManager.bindCallback('onCertificateAccessRequested', certificateAccessCallback);
-      }
-
-      if (groupPermissionCallback) {
-        permissionsManager.bindCallback('onGroupedPermissionRequested', groupPermissionCallback);
-      }
-
-      if (counterpartyPermissionCallback) {
-        try {
-          ;(permissionsManager as any).bindCallback('onCounterpartyPermissionRequested', counterpartyPermissionCallback as any);
-        } catch (e) {
-          console.warn('[buildWallet] onCounterpartyPermissionRequested callback not supported by WalletPermissionsManager:', e);
-        }
-      }
 
       // ---- Proxy grouped-permission grant/deny so we can release the gate automatically ----
       const originalGrantGrouped = (permissionsManager as any).grantGroupedPermission?.bind(permissionsManager);
@@ -1311,7 +1410,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (originalGrantGrouped) {
         (permissionsManager as any).grantGroupedPermission = async (requestID: string, granted: any) => {
           const res = await originalGrantGrouped(requestID, granted);
-          try { await releaseDeferredAfterGroup(decisionFromGranted(granted)); } catch {}
+          try { await releaseDeferredAfterGroup(decisionFromGranted(granted)); } catch { }
           const key = groupRequestCooldownKeyByIdRef.current.get(requestID)
           if (key) {
             startGroupCooldown(key)
@@ -1323,7 +1422,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (originalDenyGrouped) {
         (permissionsManager as any).denyGroupedPermission = async (requestID: string) => {
           const res = await originalDenyGrouped(requestID);
-          try { await releaseDeferredAfterGroup(null); } catch {}
+          try { await releaseDeferredAfterGroup(null); } catch { }
           const key = groupRequestCooldownKeyByIdRef.current.get(requestID)
           if (key) {
             startGroupCooldown(key)
@@ -1336,7 +1435,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (originalDismissGrouped) {
         (permissionsManager as any).dismissGroupedPermission = async (requestID: string) => {
           const res = await originalDismissGrouped(requestID);
-          try { await releaseDeferredAfterGroup(null); } catch {}
+          try { await releaseDeferredAfterGroup(null); } catch { }
           const key = groupRequestCooldownKeyByIdRef.current.get(requestID)
           if (key) {
             startGroupCooldown(key)
@@ -1369,11 +1468,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     selectedNetwork,
     selectedStorageUrl,
     adminOriginator,
-    protocolPermissionCallback,
-    basketAccessCallback,
-    spendingAuthorizationCallback,
-    certificateAccessCallback,
-    groupPermissionCallback,
+    createPermissionsManager,
     useRemoteStorage,
     backupStorageUrls
   ]);
@@ -2240,7 +2335,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       }
     }
   }, [managers?.walletManager?.authenticated, managers?.walletManager, activeProfile?.id, onWalletReady])
-  
+
   // Pop the first request from the basket queue, close if empty, relinquish focus if needed
   const advanceBasketQueue = () => {
     setBasketRequests(prev => {
@@ -2317,16 +2412,16 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     const cooldownKey = getGroupCooldownKey(current.originator, current.permissions)
     if (!isGroupCooldownActive(cooldownKey)) return
 
-    ;(async () => {
-      try {
-        await (managers.permissionsManager as any)?.dismissGroupedPermission?.(current.requestID)
-      } catch (error) {
-        console.debug('Failed to dismiss grouped permission during cooldown:', error)
-      } finally {
-        groupRequestCooldownKeyByIdRef.current.delete(current.requestID)
-        advanceGroupQueue()
-      }
-    })()
+      ; (async () => {
+        try {
+          await (managers.permissionsManager as any)?.dismissGroupedPermission?.(current.requestID)
+        } catch (error) {
+          console.debug('Failed to dismiss grouped permission during cooldown:', error)
+        } finally {
+          groupRequestCooldownKeyByIdRef.current.delete(current.requestID)
+          advanceGroupQueue()
+        }
+      })()
   }, [advanceGroupQueue, getGroupCooldownKey, groupPermissionRequests, isGroupCooldownActive, managers.permissionsManager])
 
   // Update permissions configuration and save to localStorage
@@ -2461,6 +2556,27 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   return (
     <WalletContext.Provider value={contextValue}>
       {children}
+      <PermissionPromptHost>
+        {permissionModuleRegistry.map(module => {
+          if (!enabledPermissionModules.includes(module.id) || !module.Prompt) {
+            return null
+          }
+
+          const Prompt = module.Prompt
+          return (
+            <Prompt
+              key={module.id}
+              id={module.id}
+              paletteMode={tokenPromptPaletteMode}
+              isFocused={isFocused}
+              onFocusRequested={onFocusRequested}
+              onFocusRelinquished={onFocusRelinquished}
+              onRegister={registerPermissionPromptHandler}
+              onUnregister={unregisterPermissionPromptHandler}
+            />
+          )
+        })}
+      </PermissionPromptHost>
     </WalletContext.Provider>
   )
 }

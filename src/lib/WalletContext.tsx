@@ -25,7 +25,6 @@ import {
   LookupResolver,
   WalletInterface,
   CachedKeyDeriver,
-  WalletClient,
 } from '@bsv/sdk'
 import { DEFAULT_SETTINGS, WalletSettings, WalletSettingsManager } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 import { PeerPayClient, AdvertisementToken } from '@bsv/message-box-client'
@@ -1744,6 +1743,22 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
           console.log('[WalletManager Init] About to load snapshot...');
           await loadWalletSnapshot(walletManager);
           console.log('[WalletManager Init] Snapshot loading completed');
+
+          // For returning direct-key users, auto-provide the stored key to authenticate
+          if (directKeyMode && localStorage.snap && localStorage.getItem('primaryKeyHex')) {
+            const storedHex = localStorage.getItem('primaryKeyHex')!.trim()
+            if (storedHex) {
+              try {
+                console.log('[WalletManager Init] Auto-providing stored key for direct-key mode...');
+                const keyBytes = Utils.toArray(storedHex, 'hex')
+                await (walletManager as any).providePrimaryKey(keyBytes)
+                await (walletManager as any).providePrivilegedKeyManager(createDisabledPrivilegedManager())
+                console.log('[WalletManager Init] Direct-key auto-authenticated:', walletManager.authenticated);
+              } catch (err) {
+                console.warn('[WalletManager Init] Auto-key provision failed, user will need to re-enter key:', err);
+              }
+            }
+          }
 
           // Set managers state after snapshot is loaded
           console.log('[WalletManager Init] Setting walletManager in state...');

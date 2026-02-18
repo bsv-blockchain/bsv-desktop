@@ -6,6 +6,9 @@
   "type": "module",
   "author": "BSV Association <support@bsvassociation.org>",
   "license": "Apache-2.0",
+  "overrides": {
+    "ajv": "^8.18.0"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
@@ -22,7 +25,7 @@
     "test": "echo 'No tests'"
   },
   "dependencies": {
-    "@bsv/amountinator": "^0.2.12",
+    "@bsv/amountinator": "^2.0.0",
     "@bsv/btms": "^1.0.0",
     "@bsv/btms-permission-module": "^1.0.1",
     "@bsv/btms-permission-module-ui": "^1.0.0",

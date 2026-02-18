@@ -2230,8 +2230,28 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   // Automatically set active profile when wallet manager becomes available
   useEffect(() => {
     if (managers?.walletManager?.authenticated) {
-      // Profiles are only available for WAB/CWIStyle managers, not SimpleWalletManager
-      if (loginType !== 'direct-key' && managers.walletManager.listProfiles) {
+      if (loginType === 'direct-key') {
+        // For direct-key mode, SimpleWalletManager has no listProfiles.
+        // Derive the identity key from the stored primary key to create a synthetic profile.
+        const storedHex = localStorage.getItem('primaryKeyHex')
+        if (storedHex) {
+          try {
+            const keyDeriver = new CachedKeyDeriver(new PrivateKey(Utils.toArray(storedHex.trim(), 'hex')))
+            const identityKey = keyDeriver.identityKey
+            const syntheticProfile: WalletProfile = {
+              id: Utils.toArray(identityKey, 'hex'),
+              name: 'Default',
+              createdAt: null,
+              active: true,
+              identityKey
+            }
+            setActiveProfile(syntheticProfile)
+          } catch (err) {
+            console.error('[WalletContext] Failed to create synthetic profile for direct-key mode:', err)
+          }
+        }
+      } else if (managers.walletManager.listProfiles) {
+        // Profiles are available for WAB/CWIStyle managers
         const profiles = managers.walletManager.listProfiles()
         const profileToSet = profiles.find((p: any) => p.active) || profiles[0]
         if (profileToSet?.id) {

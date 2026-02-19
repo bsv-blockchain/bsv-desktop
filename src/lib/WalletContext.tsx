@@ -67,23 +67,23 @@ export interface PermissionsConfig {
 
 export const DEFAULT_PERMISSIONS_CONFIG: PermissionsConfig = {
   differentiatePrivilegedOperations: true,
-  seekBasketInsertionPermissions: true,
-  seekBasketListingPermissions: true,
-  seekBasketRemovalPermissions: true,
-  seekCertificateAcquisitionPermissions: true,
-  seekCertificateDisclosurePermissions: true,
-  seekCertificateRelinquishmentPermissions: true,
-  seekCertificateListingPermissions: true,
+  seekBasketInsertionPermissions: false,
+  seekBasketListingPermissions: false,
+  seekBasketRemovalPermissions: false,
+  seekCertificateAcquisitionPermissions: false,
+  seekCertificateDisclosurePermissions: false,
+  seekCertificateRelinquishmentPermissions: false,
+  seekCertificateListingPermissions: false,
   seekGroupedPermission: true,
-  seekPermissionsForIdentityKeyRevelation: true,
-  seekPermissionsForIdentityResolution: true,
-  seekPermissionsForKeyLinkageRevelation: true,
-  seekPermissionsForPublicKeyRevelation: true,
-  seekPermissionWhenApplyingActionLabels: true,
-  seekPermissionWhenListingActionsByLabel: true,
-  seekProtocolPermissionsForEncrypting: true,
+  seekPermissionsForIdentityKeyRevelation: false,
+  seekPermissionsForIdentityResolution: false,
+  seekPermissionsForKeyLinkageRevelation: false,
+  seekPermissionsForPublicKeyRevelation: false,
+  seekPermissionWhenApplyingActionLabels: false,
+  seekPermissionWhenListingActionsByLabel: false,
+  seekProtocolPermissionsForEncrypting: false,
   seekProtocolPermissionsForHMAC: false,
-  seekProtocolPermissionsForSigning: true,
+  seekProtocolPermissionsForSigning: false,
   seekSpendingPermissions: true,
 };
 
@@ -421,14 +421,6 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (stored) {
         const parsed = JSON.parse(stored);
         const merged = { ...DEFAULT_PERMISSIONS_CONFIG, ...parsed };
-        merged.seekBasketInsertionPermissions = true
-        merged.seekBasketListingPermissions = true
-        merged.seekBasketRemovalPermissions = true
-        merged.seekCertificateAcquisitionPermissions = true
-        merged.seekCertificateDisclosurePermissions = true
-        merged.seekCertificateRelinquishmentPermissions = true
-        merged.seekCertificateListingPermissions = true
-        merged.seekSpendingPermissions = true
         setPermissionsConfig(merged);
       }
     } catch (e) {

@@ -2,126 +2,366 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  />
-  <title>BSV Desktop - BSV Blockchain Wallet</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSV Desktop - Your Keys, Your Identity, Your Desktop</title>
+  <meta name="description" content="BSV Desktop is a free, open source BSV Blockchain wallet for Windows, macOS, and Linux with built-in identity, micropayments, and an app catalog." />
+  <meta name="keywords" content="BSV, blockchain, wallet, desktop, Windows, macOS, Linux, identity, payments, Web3, self-custodial, open source" />
 
   <!-- Open Graph -->
-  <meta property="og:title" content="BSV Desktop: BSV Blockchain Wallet" />
-  <meta
-    property="og:description"
-    content="BSV Desktop is an open source BSV Blockchain wallet that provides a secure and accessible way to manage your BSV assets and identity."
-  />
+  <meta property="og:title" content="BSV Desktop - Your Keys, Your Identity, Your Desktop" />
+  <meta property="og:description" content="A free desktop wallet with cryptographic identity, micropayments, and a full app catalog. Own your keys. Own your data." />
   <meta property="og:image" content="https://bsv.bsvb.tech/og.png" />
   <meta property="og:url" content="https://bsv.bsvb.tech" />
-  <meta property="og:type" content="software" />
+  <meta property="og:type" content="website" />
   <meta property="og:site_name" content="BSV Desktop" />
   <meta property="og:locale" content="en_US" />
 
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image" />
+  <meta property="twitter:title" content="BSV Desktop - Your Keys, Your Identity, Your Desktop" />
+  <meta property="twitter:description" content="A free desktop wallet with cryptographic identity, micropayments, and a full app catalog. Own your keys. Own your data." />
+  <meta property="twitter:image" content="https://bsv.bsvb.tech/og.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet" />
+
   <style>
-    :root{
-      --color-background:#0e0f1c;
-      --color-background-gradient:linear-gradient(90deg,#101323 0%,#1a1633 100%);
-      --color-surface:#1c1d2f;
-      --color-surface-alt:#25263a;
-      --color-text-primary:#ffffff;
-      --color-text-secondary:#b0b2c3;
-      --color-accent-purple:#a86efc;
-      --color-accent-blue:#3ebdf2;
-      --color-accent-indigo:#646cff;
-      --color-icon-blue:#36b3e1;
-      --color-icon-purple:#7d6eff;
-      --color-icon-teal:#50c4ba;
-      --color-button-gradient-start:#646cff;
-      --color-button-gradient-end:#a86efc;
-      --color-border:#2d2e41
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      color: #e4e4e7;
+      background: #09090b;
+      min-height: 100vh;
     }
-    *{box-sizing:border-box}
-    body{
-      font-family:Helvetica,Arial,sans-serif;
-      margin:0;padding:0;line-height:1.6;
-      color:var(--color-text-primary);
-      background:var(--color-background-gradient);
-      min-height:100vh
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
     }
-    .container{max-width:1280px;margin:0 auto;padding:2rem;text-align:center}
-    .header-container{margin:7rem 0;position:relative;display:inline-block}
-    .header-container h2{font-weight:lighter;margin-top:-20px;color:rgba(255,255,255,.7)}
-    .alpha-tag{
-      position:absolute;top:45px;right:-35px;color:#fff;font-size:.7rem;font-weight:bold;
-      padding:2px 6px;border-radius:4px;letter-spacing:1px
+
+    /* ---- Hero ---- */
+    .hero {
+      padding: 100px 0 80px;
+      position: relative;
+      overflow: hidden;
     }
-    h1{
-      font-size:3.5rem;margin-bottom:1rem;
-      background:linear-gradient(135deg,var(--color-accent-indigo),var(--color-accent-purple));
-      -webkit-background-clip:text;background-clip:text;color:transparent;
-      text-shadow:0 0 15px rgba(230,226,241,.2)
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 50% 50% at 50% 40%, rgba(33, 150, 243, 0.07) 0%, transparent 70%);
+      pointer-events: none;
     }
-    .description{font-size:1.4rem;color:var(--color-text-primary);margin-bottom:2.5rem;opacity:.9}
-    .download-btn{
-      display:inline-block;background:linear-gradient(135deg,var(--color-button-gradient-start),var(--color-button-gradient-end));
-      color:#fff;padding:1rem 2rem;text-decoration:none;border-radius:8px;font-weight:bold;transition:all .3s;border:none;
-      box-shadow:0 4px 20px rgba(110,70,229,.3)
+
+    .hero .container {
+      position: relative;
+      z-index: 1;
+      text-align: center;
     }
-    .download-btn:hover{transform:translateY(-2px);box-shadow:0 6px 25px rgba(110,70,229,.4)}
-    .platform-options{margin-top:2.5rem;color:var(--color-text-primary)}
-    .platform-btn{
-      display:inline-block;background:rgba(100,108,255,.1);border:1px solid rgba(100,108,255,.3);color:var(--color-text-primary);
-      padding:.5rem 1.5rem;margin:.5rem;text-decoration:none;border-radius:6px;transition:all .3s
+
+    .hero-icon {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      margin-bottom: 2.5rem;
     }
-    .platform-btn:hover{background:rgba(100,108,255,.2);border-color:rgba(100,108,255,.5);transform:translateY(-1px)}
-    .features-section{
-      margin:3rem auto;max-width:1280px;background:var(--color-surface);padding:2rem;border-radius:10px;border:1px solid var(--color-border)
+
+    .icon-glow {
+      position: absolute;
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(33, 150, 243, 0.18) 0%, transparent 70%);
+      filter: blur(35px);
+      pointer-events: none;
     }
-    .features-section h2{text-align:center;font-size:2rem;margin-bottom:2rem;color:var(--color-text-primary)}
-    .features-section p{text-align:center;margin-bottom:2.5rem;max-width:800px;margin-left:auto;margin-right:auto}
-    .features-section b{
-      background:linear-gradient(135deg,var(--color-accent-indigo),var(--color-accent-purple));
-      -webkit-background-clip:text;background-clip:text;color:transparent
+
+    .hero-svg {
+      width: 180px;
+      height: 180px;
+      color: #2196F3;
+      animation: icon-spin 90s linear infinite;
+      filter: drop-shadow(0 0 18px rgba(33, 150, 243, 0.3));
     }
-    .features-container{display:flex;flex-wrap:wrap;justify-content:center;gap:2rem;margin:0 auto}
-    .feature-item{
-      width:320px;margin-bottom:2rem;background:var(--color-surface-alt);padding:1.5rem;border-radius:8px;border:1px solid var(--color-border);
-      transition:transform .3s ease,box-shadow .3s ease
+
+    @keyframes icon-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
-    .feature-item:hover{transform:translateY(-5px);box-shadow:0 10px 20px rgba(0,0,0,.2)}
-    .feature-item h3{font-size:1.4rem;margin-bottom:.5rem;color:#fff;display:inline-block}
-    .feature-item p{color:var(--color-text-secondary);line-height:1.6;text-align:left;margin-bottom:0}
-    .screenshot-section{
-      display:flex;align-items:center;margin:3rem auto;max-width:1280px;background:var(--color-surface-alt);border-radius:10px;overflow:hidden;
-      border:1px solid var(--color-border);flex-direction:row
+
+    @media (prefers-reduced-motion: reduce) {
+      .hero-svg { animation: none; }
     }
-    .screenshot-container{display:flex;flex-wrap:wrap;padding:2rem;gap:2rem}
-    @media (max-width:960px){
-      .screenshot-section{flex-direction:column}
-      .screenshot-container{flex-direction:column}
-      .alpha-tag{top:25px;right:-5px}
-      h1{font-size:2.5rem}
-      .header-container h2{font-size:1rem}
+
+    .hero h1 {
+      font-size: clamp(2.5rem, 5vw, 3.5rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #fff;
+      margin-bottom: 0.75rem;
+      line-height: 1.15;
     }
-    .screenshot-content{flex:1;padding:1rem}
-    .screenshot-content h2{font-size:1.8rem;margin-bottom:1rem;color:#fff;text-align:left}
-    .screenshot-content h2 b{
-      background:linear-gradient(135deg,var(--color-accent-indigo),var(--color-accent-purple));
-      -webkit-background-clip:text;background-clip:text;color:transparent
+
+    .hero-subtitle {
+      font-size: 1.35rem;
+      color: rgba(255, 255, 255, 0.6);
+      font-weight: 300;
+      margin-bottom: 2.5rem;
     }
-    .screenshot-content p{margin-bottom:1.5rem;line-height:1.6;color:var(--color-text-secondary);text-align:left}
-    .feature-list{list-style:none;padding:0;margin:0;text-align:left}
-    .feature-list li{margin-bottom:.8rem;padding-left:1.5rem;position:relative;line-height:1.4;color:var(--color-text-secondary)}
-    .feature-list li:before{content:"✓";position:absolute;left:0;color:var(--color-accent-purple);font-weight:bold}
-    .screenshot-image{flex:1;text-align:center;padding:1rem}
-    .screenshot-image img{max-width:100%;border-radius:8px;box-shadow:0 5px 20px rgba(0,0,0,.3);border:1px solid var(--color-border)}
-    .release-notes{margin-top:1.5rem;font-size:.9rem;opacity:.8;color:var(--color-text-secondary)}
-    .release-notes a{color:var(--color-accent-purple);text-decoration:none}
-    .release-notes a:hover{text-decoration:underline}
-    .footer-section{margin-top:5rem;padding:3rem 0;background:var(--color-surface);border-top:1px solid var(--color-border);text-align:center}
-    .footer-links{display:flex;justify-content:center;gap:2rem;margin-bottom:2rem;flex-wrap:wrap}
-    .footer-link{color:var(--color-text-secondary);text-decoration:none;display:flex;align-items:center;gap:.5rem;transition:color .2s;padding:.5rem 1rem;border-radius:4px}
-    .footer-link:hover{color:var(--color-accent-purple);background:rgba(168,110,252,.1)}
-    .footer-link svg{width:20px;height:20px}
-    .footer-copyright{color:var(--color-text-secondary);font-size:.9rem;opacity:.7}
+
+    /* ---- Download Buttons ---- */
+    .download-btn {
+      display: inline-block;
+      background: #2196F3;
+      color: #fff;
+      padding: 0.9rem 2.2rem;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1.05rem;
+      transition: all 0.25s ease;
+      border: none;
+      box-shadow: 0 4px 20px rgba(33, 150, 243, 0.25);
+    }
+
+    .download-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 28px rgba(33, 150, 243, 0.35);
+      background: #1e88e5;
+    }
+
+    .platform-options {
+      margin-top: 1.5rem;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .platform-options p {
+      margin-bottom: 0.75rem;
+      font-size: 0.95rem;
+    }
+
+    .platform-btn {
+      display: inline-block;
+      background: rgba(33, 150, 243, 0.08);
+      border: 1px solid rgba(33, 150, 243, 0.2);
+      color: #64b5f6;
+      padding: 0.5rem 1.4rem;
+      margin: 0.35rem;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      transition: all 0.25s ease;
+    }
+
+    .platform-btn:hover {
+      background: rgba(33, 150, 243, 0.15);
+      border-color: rgba(33, 150, 243, 0.4);
+      transform: translateY(-1px);
+    }
+
+    .release-notes {
+      margin-top: 1.25rem;
+      font-size: 0.85rem;
+      color: rgba(255, 255, 255, 0.35);
+    }
+
+    .release-notes a {
+      color: #64b5f6;
+      text-decoration: none;
+    }
+
+    .release-notes a:hover { text-decoration: underline; }
+
+    .mobile-link {
+      margin-top: 2rem;
+      text-align: center;
+    }
+
+    /* ---- Features ---- */
+    .features {
+      padding: 80px 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .features h2 {
+      font-size: 2.2rem;
+      font-weight: 600;
+      color: #fff;
+      text-align: center;
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.015em;
+    }
+
+    .features-subtitle {
+      text-align: center;
+      color: rgba(255, 255, 255, 0.45);
+      font-size: 1.1rem;
+      max-width: 550px;
+      margin: 0 auto 3.5rem;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    .feature-card {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 32px 24px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      transition: border-color 0.3s ease, background 0.3s ease;
+    }
+
+    .feature-card:hover {
+      border-color: rgba(33, 150, 243, 0.25);
+      background: rgba(33, 150, 243, 0.04);
+    }
+
+    .feature-card h3 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #fafafa;
+      margin-bottom: 0.6rem;
+    }
+
+    .feature-card p {
+      color: rgba(255, 255, 255, 0.5);
+      line-height: 1.7;
+      font-size: 0.95rem;
+      margin: 0;
+    }
+
+    /* ---- Screenshot Section ---- */
+    .showcase {
+      padding: 80px 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .showcase-inner {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 50px;
+      align-items: center;
+    }
+
+    .showcase-text h2 {
+      font-size: 2rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 1rem;
+      letter-spacing: -0.015em;
+      text-align: left;
+    }
+
+    .showcase-text p {
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 1.75rem;
+      line-height: 1.75;
+      font-size: 1rem;
+    }
+
+    .spec-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .spec-list li {
+      padding: 0.5rem 0;
+      padding-left: 1.5rem;
+      position: relative;
+      color: rgba(255, 255, 255, 0.55);
+      line-height: 1.5;
+      font-size: 0.95rem;
+    }
+
+    .spec-list li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.85rem;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #2196F3;
+    }
+
+    .showcase-image img {
+      width: 100%;
+      border-radius: 12px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    /* ---- Footer ---- */
+    .footer {
+      padding: 3rem 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      text-align: center;
+    }
+
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .footer-link {
+      color: rgba(255, 255, 255, 0.4);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.9rem;
+      transition: color 0.25s ease;
+      padding: 0.4rem 0.8rem;
+      border-radius: 4px;
+    }
+
+    .footer-link:hover {
+      color: #64b5f6;
+    }
+
+    .footer-link svg { width: 18px; height: 18px; }
+
+    .footer-copyright {
+      color: rgba(255, 255, 255, 0.2);
+      font-size: 0.85rem;
+    }
+
+    /* ---- Responsive ---- */
+    @media (max-width: 768px) {
+      .hero { padding: 70px 0 50px; }
+      .hero-svg { width: 140px; height: 140px; }
+      .icon-glow { width: 150px; height: 150px; }
+      .hero h1 { font-size: 2.2rem; }
+      .hero-subtitle { font-size: 1.1rem; }
+      .features-grid { grid-template-columns: 1fr; }
+      .showcase-inner {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+      }
+      .showcase-text h2 { text-align: center; }
+      .showcase-text p { text-align: center; }
+      .showcase-image { order: -1; }
+    }
+
+    @media (max-width: 480px) {
+      .hero h1 { font-size: 1.8rem; }
+      .hero-subtitle { font-size: 1rem; }
+      .feature-card { padding: 24px 18px; }
+    }
   </style>
 
   <!-- Mobile Redirect: iOS/Android (incl. iPadOS that spoofs MacIntel) -->
@@ -144,67 +384,86 @@
 </head>
 
 <body>
-  <div class="container">
-    <div class="header-container">
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-icon">
+        <div class="icon-glow"></div>
+        <svg class="hero-svg" width="450" height="450" viewBox="0 0 450 450" xmlns="http://www.w3.org/2000/svg" aria-label="BSV Desktop network icon">
+          <line x1="405" y1="225" x2="352.279" y2="352.279" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="405" y1="225" x2="225" y2="405" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="405" y1="225" x2="97.721" y2="352.279" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="405" y1="225" x2="97.721" y2="97.721" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="405" y1="225" x2="225" y2="45" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="405" y1="225" x2="352.279" y2="97.721" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="352.279" y1="352.279" x2="225" y2="405" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="352.279" y1="352.279" x2="97.721" y2="352.279" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="352.279" y1="352.279" x2="45" y2="225" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="352.279" y1="352.279" x2="97.721" y2="97.721" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="352.279" y1="352.279" x2="225" y2="45" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="352.279" y1="352.279" x2="352.279" y2="97.721" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="225" y1="405" x2="97.721" y2="352.279" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="225" y1="405" x2="45" y2="225" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="225" y1="405" x2="97.721" y2="97.721" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="225" y1="405" x2="352.279" y2="97.721" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="97.721" y1="352.279" x2="45" y2="225" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="97.721" y1="352.279" x2="97.721" y2="97.721" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="97.721" y1="352.279" x2="225" y2="45" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="97.721" y1="352.279" x2="352.279" y2="97.721" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="45" y1="225" x2="97.721" y2="97.721" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="45" y1="225" x2="225" y2="45" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="45" y1="225" x2="352.279" y2="97.721" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="97.721" y1="97.721" x2="225" y2="45" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="97.721" y1="97.721" x2="352.279" y2="97.721" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/><line x1="225" y1="45" x2="352.279" y2="97.721" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5"/>
+          <circle cx="405" cy="225" r="6" fill="currentColor"/><circle cx="352.279" cy="352.279" r="6" fill="currentColor"/><circle cx="225" cy="405" r="6" fill="currentColor"/><circle cx="97.721" cy="352.279" r="6" fill="currentColor"/><circle cx="45" cy="225" r="6" fill="currentColor"/><circle cx="97.721" cy="97.721" r="6" fill="currentColor"/><circle cx="225" cy="45" r="6" fill="currentColor"/><circle cx="352.279" cy="97.721" r="6" fill="currentColor"/>
+        </svg>
+      </div>
+
       <h1>BSV Desktop</h1>
-      <h2>Secure BSV Blockchain Wallet</h2>
-    </div>
+      <p class="hero-subtitle">Wallet. Identity. App catalog. All on your machine.</p>
 
-    <div id="download-section">
-      <!-- Download UI injected by JavaScript -->
-    </div>
+      <div id="download-section">
+        <!-- Download UI injected by JavaScript -->
+      </div>
 
-    <div style="margin-top: 1.5rem; text-align: center;">
-      <a href="https://mobile.bsvb.tech" class="platform-btn" rel="noopener noreferrer">Mobile Version</a>
+      <div class="mobile-link">
+        <a href="https://mobile.bsvb.tech" class="platform-btn">Mobile Version</a>
+      </div>
     </div>
+  </section>
 
-    <div class="features-section">
-      <h2><b>Powerful</b> Features</h2>
-      <p>BSV Desktop provides all the tools you need to interact with the BSV Blockchain efficiently.</p>
-      <div class="features-container">
-        <div class="feature-item">
-          <h3>Vendor <b>Interoperable</b></h3>
-          <p>Implements the BRC-100 Wallet Interface. Configure with any Wallet Authentication Backend and Storage Infrastructure.</p>
+  <!-- Features -->
+  <section class="features">
+    <div class="container">
+      <h2>Three Things No Other Wallet Does</h2>
+      <p class="features-subtitle">Self-custodial keys, cryptographic identity, and a live app catalog in one download.</p>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <h3>Works With Any BRC-100 App</h3>
+          <p>Full implementation of the open wallet standard. Connect to any compliant application out of the box — no plugins, no vendor lock-in.</p>
         </div>
-        <div class="feature-item">
-          <h3><b>Secure</b> Management</h3>
-          <p>Linked key derivation, robust cryptographic signatures, secure encryption, and strict access permissions safeguard your keys.</p>
+        <div class="feature-card">
+          <h3>Your Keys, Your Machine</h3>
+          <p>Self-custodial from the first launch. Wallet keys stay on your device, protected by AES-256-GCM encryption and strict access permissions.</p>
         </div>
-        <div class="feature-item">
-          <h3><b>Decentralized</b> Identity</h3>
-          <p>Leverage cryptographic identity certificates for selective data revelation. Manage identity securely and privately without centralized liabilities.</p>
+        <div class="feature-card">
+          <h3>Prove Who You Are, Nothing More</h3>
+          <p>Cryptographic identity certificates let you share exactly what an app needs. Verify your age without revealing your birthday.</p>
         </div>
       </div>
     </div>
+  </section>
 
-    <div class="screenshot-section">
-      <div class="screenshot-container">
-        <div class="screenshot-content">
-          <h2>Unleash the <b>BSV Blockchain</b></h2>
-          <p>BSV Desktop combines powerful features with a user-friendly interface, allowing both beginners and experts to take full advantage of BSV Blockchain technology.</p>
-          <ul class="feature-list">
-            <li>Action oriented design with transparent controls and rich metadata</li>
-            <li>Robust AES-256-GCM Encryption and ECDSA Signatures</li>
-            <li>Identity &amp; Certificate Manager for selective data revelation</li>
-            <li>SPV Scalability using BEEF Transaction data standards</li>
-            <li>Auditable Proofs &amp; Key Linkages for enhanced privacy</li>
-            <li>Flexible Asset &amp; Key Permissions through named baskets</li>
+  <!-- Screenshot / Showcase -->
+  <section class="showcase">
+    <div class="container">
+      <div class="showcase-inner">
+        <div class="showcase-text">
+          <h2>Built for Builders and Users Alike</h2>
+          <p>BSV Desktop puts the full power of the BSV Blockchain in a native app. Browse the app catalog, manage multiple profiles, and send payments — all from one interface.</p>
+          <ul class="spec-list">
+            <li>Full BRC-100 Wallet Interface — all 28 methods</li>
+            <li>AES-256-GCM encryption and ECDSA signatures</li>
+            <li>Selective data revelation through identity certificates</li>
+            <li>SPV-native with BEEF transaction format</li>
+            <li>Auditable key linkage proofs for privacy and accountability</li>
+            <li>Named baskets for fine-grained output and permission control</li>
           </ul>
         </div>
-        <div class="screenshot-image">
-          <img src="screen.jpg" alt="BSV Desktop Screenshot" />
+        <div class="showcase-image">
+          <img src="screen.jpg" alt="BSV Desktop showing the App Catalog with sidebar navigation" />
         </div>
       </div>
     </div>
+  </section>
 
-    <div class="footer-section">
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
       <div class="footer-links">
         <a href="https://github.com/bsv-blockchain/bsv-desktop/releases" class="footer-link" rel="noopener noreferrer">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
           </svg>
-          Previous Releases
+          Releases
         </a>
         <a href="https://bsvblockchain.org" class="footer-link" rel="noopener noreferrer">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -217,16 +476,14 @@
         </a>
         <a href="https://x.com/bsvblockchain" class="footer-link" rel="noopener noreferrer">
           <svg width="1200" height="1227" viewBox="0 0 1200 1227" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <path d="M714.163 519.284L1160.89 0H1055.03L667.137 450.887L357.328 0H0L468.492 681.821L0 1226.37H105.866L515.491 750.218L842.672 1226.37H1200L714.137 519.284H714.163ZM569.165 687.828L521.697 619.934L144.011 79.6944H306.615L611.412 515.685L658.88 583.579L1055.08 1150.3H892.476L569.165 687.854V687.828Z" fill="white"/>
+            <path d="M714.163 519.284L1160.89 0H1055.03L667.137 450.887L357.328 0H0L468.492 681.821L0 1226.37H105.866L515.491 750.218L842.672 1226.37H1200L714.137 519.284H714.163ZM569.165 687.828L521.697 619.934L144.011 79.6944H306.615L611.412 515.685L658.88 583.579L1055.08 1150.3H892.476L569.165 687.854V687.828Z" fill="currentColor"/>
           </svg>
           @bsvblockchain
         </a>
       </div>
-      <p class="footer-copyright">
-        &copy; 2025 BSV Association
-      </p>
+      <p class="footer-copyright">&copy; 2026 BSV Association</p>
     </div>
-  </div>
+  </footer>
 
   <script>
     "use strict";
@@ -279,7 +536,7 @@
           return { platform: "macos-x64", confidence: isSafari ? "low" : "high" };
         }
 
-        // Couldn’t be certain.
+        // Couldn't be certain.
         return { platform: null, confidence: "low" };
       }
 
@@ -431,9 +688,9 @@
         return;
       }
 
-      // If we’re very confident about the platform, present a big primary button.
+      // If we're very confident about the platform, present a big primary button.
       // If detection is low-confidence (e.g., Safari says "Intel" on M-series),
-      // don’t guess—show selection buttons instead (fixes Intel being mislabeled as Apple Silicon).
+      // don't guess—show selection buttons instead (fixes Intel being mislabeled as Apple Silicon).
       if (platform && confidence === "high" && assetsMap[platform]) {
         const main = assetsMap[platform];
         const others = allPlatforms.filter(p => p !== platform).map(p => buildPlatformButton(assetsMap[p], getPlatformDisplay(p))).join("");
@@ -452,7 +709,7 @@
         `;
       } else {
         // Low confidence or unknown: show a neutral selector.
-        // Special-case Mac: if the user is on macOS and we’re unsure, headline it as “Select your Mac build”.
+        // Special-case Mac: if the user is on macOS and we're unsure, headline it as "Select your Mac build".
         const ua = navigator.userAgent || "";
         const isMac = /macintosh|mac os x/i.test(ua);
 

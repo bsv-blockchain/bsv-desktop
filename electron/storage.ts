@@ -18,7 +18,7 @@ import { createRequire } from 'module';
 import { fork, ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 import { StorageKnex, KnexMigrations, Services, Monitor, WalletStorageManager, ChaintracksServiceClient } from '@bsv/wallet-toolbox';
-import { patchListCertificates } from './optimized-queries';
+import { patchListCertificates } from './optimized-queries.js';
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);

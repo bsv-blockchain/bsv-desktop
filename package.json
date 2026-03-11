@@ -19,7 +19,8 @@
     "package:win": "electron-builder --win",
     "package:linux": "electron-builder --linux",
     "lint:ci": "echo 'No linting'",
-    "test": "echo 'No tests'"
+    "test": "echo 'No tests'",
+    "test:perf": "vitest run --config vitest.config.electron.ts"
   },
   "dependencies": {
     "@bsv/amountinator": "^2.0.0",
@@ -73,7 +74,8 @@
     "electron-builder": "^26.0.12",
     "typescript": "~5.6.2",
     "vite": "^6.3.6",
-    "vite-plugin-electron": "^0.29.0"
+    "vite-plugin-electron": "^0.29.0",
+    "vitest": "^3.0.0"
   },
   "build": {
     "appId": "com.bsvblockchain.bsvdesktop",

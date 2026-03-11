@@ -365,7 +365,7 @@ const WalletConfig: React.FC = () => {
                       </Typography>
                     </FormLabel>
                     <Typography variant="body2" gutterBottom sx={{ mt: 1, mb: 2 }}>
-                      Use a message box provider for receiving messages while offline.
+                      Use a message box provider for receiving messages while offline. You can set a URL now and anoint the host later from Settings once you have funds.
                     </Typography>
                     <RadioGroup
                       value={useMessageBox.toString()}
@@ -402,7 +402,7 @@ const WalletConfig: React.FC = () => {
                         onChange={(e) => setMessageBoxUrl(e.target.value)}
                         margin="normal"
                         size="small"
-                        required
+                        helperText="You can leave this blank and configure it later in Settings."
                       />
                     </Box>
                   )}
@@ -416,8 +416,7 @@ const WalletConfig: React.FC = () => {
                   onClick={applyWalletConfig}
                   disabled={
                     (loginType === 'wab' && (!wabInfo || !method || !wabUrl)) ||
-                    (useRemoteStorage && !storageUrl) ||
-                    (useMessageBox && !messageBoxUrl)
+                    (useRemoteStorage && !storageUrl)
                   }
                 >
                   Apply Configuration

@@ -1201,10 +1201,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         return;
       }
 
-      if (useMessageBox && !messageBoxUrl) {
-        toast.error("Message Box URL is required when Message Box is enabled");
-        return;
-      }
+      // messageBoxUrl is optional even when useMessageBox is true;
+      // the user can supply it later and anoint from Settings once they have funds.
 
       // Trim trailing slashes from URLs
       const trimmedWabUrl = (wabUrl || '').replace(/\/+$/, '');

@@ -127,9 +127,9 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
 
             {/* Anointment Status and Actions */}
             {!isHostAnointed && (
-              <Alert severity="info" sx={{ mt: 1 }}>
+              <Alert severity="warning" sx={{ mt: 1 }}>
                 <Typography variant="body2" sx={{ mb: 1 }}>
-                  This host is not yet anointed. Anointing broadcasts your identity to the overlay network so others can send you payments and messages.
+                  Host not yet anointed. Once you have funds, anoint this host to broadcast your identity to the overlay network so others can send you payments and messages.
                 </Typography>
                 <Button
                   variant="contained"
@@ -240,7 +240,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
             autoFocus
           />
           <Alert severity="info" sx={{ mt: 2 }}>
-            After saving, you will need to anoint the host to enable receiving payments and messages.
+            After saving, you can anoint the host from Settings whenever you are ready. Anointing requires a small on-chain transaction, so make sure you have funds first.
           </Alert>
         </DialogContent>
         <DialogActions>

@@ -385,6 +385,24 @@ const WalletDiagnosis = () => {
     )
   }, [confirm, closeConfirmation, getWallet, getWalletClass, addLog])
 
+  // --- Reset Change Parameters ---
+  const resetChangeParams = useCallback(async () => {
+    try {
+      setLoading(true)
+      addLog('Resetting wallet change parameters to defaults (count=144, satoshis=32)...')
+      const walletClass = getWalletClass()
+      await walletClass.setWalletChangeParams(144, 32)
+      addLog('Change parameters reset successfully')
+      toast.success('Wallet change parameters reset to defaults')
+    } catch (e: any) {
+      const msg = e?.message || String(e)
+      addLog(`Failed to reset change parameters: ${msg}`)
+      toast.error(`Failed to reset change parameters: ${msg}`)
+    } finally {
+      setLoading(false)
+    }
+  }, [getWalletClass, addLog])
+
   const getStatusColor = (status: string): 'error' | 'warning' | 'info' | 'default' => {
     switch (status) {
       case 'failed': return 'error'
@@ -668,14 +686,28 @@ const WalletDiagnosis = () => {
           <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
             One-click cleanup of all stuck (unsigned + unprocessed) and nosend transactions.
           </Typography>
-          <Button
-            variant="contained"
-            color="error"
-            onClick={runCleanup}
-            disabled={loading}
-          >
-            {loading ? 'Cleaning...' : 'Run Cleanup'}
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={runCleanup}
+              disabled={loading}
+            >
+              {loading ? 'Cleaning...' : 'Run Cleanup'}
+            </Button>
+            <Button
+              variant="outlined"
+              color="warning"
+              onClick={resetChangeParams}
+              disabled={loading}
+            >
+              Reset Change Parameters
+            </Button>
+          </Box>
+          <Typography variant="body2" color="textSecondary" sx={{ mt: 1, fontStyle: 'italic' }}>
+            "Reset Change Parameters" fixes the "changeInitialSatoshis must be at least 1" error by
+            restoring default change output settings (count: 144, value: 32 sats).
+          </Typography>
         </Box>
 
         <Divider sx={{ my: 3 }} />

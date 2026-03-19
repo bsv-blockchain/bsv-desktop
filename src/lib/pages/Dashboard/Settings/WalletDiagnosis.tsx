@@ -385,6 +385,47 @@ const WalletDiagnosis = () => {
     )
   }, [confirm, closeConfirmation, getWallet, getWalletClass, addLog])
 
+  // --- Review Spendable Outputs (deep chain sync) ---
+  const [reviewResults, setReviewResults] = useState<{ total: number, invalid: number } | null>(null)
+
+  const reviewSpendableOutputs = useCallback((release: boolean) => {
+    const action = release
+      ? 'review all spendable outputs and release (mark unspendable) any that are no longer valid UTXOs on-chain'
+      : 'review all spendable outputs against the blockchain to find invalid ones'
+    confirm(
+      release ? 'Review & Release Invalid Outputs' : 'Review Spendable Outputs',
+      `This will ${action}. ${release ? 'This cannot be undone. ' : ''}Continue?`,
+      async () => {
+        closeConfirmation()
+        setLoading(true)
+        addLog(`Reviewing spendable outputs (all=true, release=${release})...`)
+        try {
+          const walletClass = getWalletClass()
+          const result = await walletClass.reviewSpendableOutputs(true, release)
+          const invalidCount = result.totalOutputs
+          setReviewResults({ total: invalidCount, invalid: invalidCount })
+          if (invalidCount === 0) {
+            addLog('All spendable outputs verified successfully — no invalid outputs found')
+            toast.success('All outputs are valid!')
+          } else {
+            addLog(`Found ${invalidCount} invalid output(s)${release ? ' — marked as unspendable' : ''}`)
+            toast[release ? 'success' : 'warning'](
+              release
+                ? `Released ${invalidCount} invalid output(s)`
+                : `Found ${invalidCount} invalid output(s) — use "Review & Release" to fix`
+            )
+          }
+        } catch (e: any) {
+          const msg = e?.message || String(e)
+          addLog(`Review failed: ${msg}`)
+          toast.error(`Review failed: ${msg}`)
+        } finally {
+          setLoading(false)
+        }
+      }
+    )
+  }, [confirm, closeConfirmation, getWalletClass, addLog])
+
   // --- Reset Change Parameters ---
   const resetChangeParams = useCallback(async () => {
     try {
@@ -675,6 +716,45 @@ const WalletDiagnosis = () => {
             <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
               Click "Scan Outputs" to inspect wallet outputs in the default basket.
             </Typography>
+          )}
+        </Box>
+
+        <Divider sx={{ my: 3 }} />
+
+        {/* --- Review Spendable Outputs --- */}
+        <Box>
+          <Typography variant="h6" sx={{ mb: 1 }}>Review Spendable Outputs</Typography>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            Verify all spendable outputs against the blockchain. Identifies outputs your wallet considers spendable
+            but that are no longer valid UTXOs on-chain (e.g. spent elsewhere, double-spent, or from orphaned blocks).
+          </Typography>
+
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+            <Button
+              variant="outlined"
+              onClick={() => reviewSpendableOutputs(false)}
+              disabled={loading}
+              size="small"
+            >
+              Scan Only
+            </Button>
+            <Button
+              variant="contained"
+              color="warning"
+              onClick={() => reviewSpendableOutputs(true)}
+              disabled={loading}
+              size="small"
+            >
+              Review & Release Invalid
+            </Button>
+          </Box>
+
+          {reviewResults && (
+            <Alert severity={reviewResults.invalid > 0 ? 'warning' : 'success'} sx={{ mb: 1 }}>
+              {reviewResults.invalid === 0
+                ? 'All spendable outputs are valid on-chain.'
+                : `${reviewResults.invalid} invalid output(s) found${reviewResults.invalid > 0 ? '.' : ''}`}
+            </Alert>
           )}
         </Box>
 

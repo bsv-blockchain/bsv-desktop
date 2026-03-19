@@ -1762,9 +1762,14 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
           if (messageBoxUrl && useMessageBox) {
             (async () => {
               try {
+                const walletForPeerPay = permissionsManagerRef.current || managers.permissionsManager;
+                if (!walletForPeerPay) {
+                  console.warn('[WalletContext] Cannot create PeerPayClient: permissionsManager not yet available');
+                  return;
+                }
                 console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
                 const client = new PeerPayClient({
-                  walletClient: managers.permissionsManager,
+                  walletClient: walletForPeerPay,
                   messageBoxHost: messageBoxUrl,
                   enableLogging: true,
                   originator: adminOriginator
@@ -2022,11 +2027,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
       // Create PeerPayClient without auto-anointing
       // User must explicitly anoint the host via the UI
-      if (managers?.permissionsManager) {
+      const walletForPeerPay = permissionsManagerRef.current || managers?.permissionsManager;
+      if (walletForPeerPay) {
         try {
           console.log('[updateMessageBoxUrl] Initializing PeerPayClient...');
           const client = new PeerPayClient({
-            walletClient: managers.permissionsManager,
+            walletClient: walletForPeerPay,
             messageBoxHost: trimmedUrl,
             enableLogging: true,
             originator: adminOriginator
@@ -2254,9 +2260,14 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (messageBoxUrl && useMessageBox) {
         (async () => {
           try {
+            const walletForPeerPay = permissionsManagerRef.current || managers.permissionsManager;
+            if (!walletForPeerPay) {
+              console.warn('[WalletContext] Cannot create PeerPayClient: permissionsManager not yet available');
+              return;
+            }
             console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
             const client = new PeerPayClient({
-              walletClient: managers.permissionsManager,
+              walletClient: walletForPeerPay,
               messageBoxHost: messageBoxUrl,
               enableLogging: true,
               originator: adminOriginator

@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.9] - 2026-03-18
+
+### Features
+- **Wallet Diagnosis tool**: New expandable section in Settings for diagnosing and repairing wallet state issues. Includes quick scan, failed/stuck transaction management, output validation, data cleanup, and change parameter reset.
+
+### Bug Fixes
+- **PeerPayClient createHmac error**: Fixed race condition where `PeerPayClient` was initialized with a stale `managers.permissionsManager` reference (undefined) due to async React state propagation. Now uses `permissionsManagerRef.current` which is set synchronously.
+- **changeInitialSatoshis validation error**: Added "Reset Change Parameters" tool that restores the default basket's `minimumDesiredUTXOValue` via `Wallet.setWalletChangeParams(144, 32)`, fixing transaction failures on wallets with corrupted remote storage configuration.
+
 ## [2.0.0] - 2026-02-10
 
 ### Breaking Changes

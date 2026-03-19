@@ -6,10 +6,7 @@ import {
 } from '@mui/material'
 import { toast } from 'react-toastify'
 import { WalletContext } from '../../../WalletContext.js'
-import {
-  ListActionsArgs, ListActionsResult, ListOutputsResult,
-  AbortActionArgs, RelinquishOutputArgs,
-} from '@bsv/sdk'
+import type { ListActionsArgs, ListOutputsResult } from '@bsv/sdk'
 import { Wallet } from '@bsv/wallet-toolbox-client'
 
 interface DiagnosisResults {
@@ -56,13 +53,16 @@ const WalletDiagnosis = () => {
 
   const getWallet = useCallback(() => {
     const wallet = managers.wallet
-    if (!wallet) throw new Error('Wallet not available')
+    if (!wallet) throw new Error('Wallet not available. Please ensure you are logged in.')
     return wallet
-  }, [managers])
+  }, [managers.wallet])
 
   const getWalletClass = useCallback((): Wallet => {
     const wallet = getWallet()
-    return wallet as unknown as Wallet
+    if (!(wallet instanceof Wallet)) {
+      throw new Error('Advanced wallet diagnosis is not available in this mode. Some features require direct wallet access.')
+    }
+    return wallet
   }, [getWallet])
 
   const confirm = useCallback((title: string, message: string, onConfirm: () => void) => {
@@ -79,15 +79,41 @@ const WalletDiagnosis = () => {
     addLog('Starting wallet diagnosis...')
     try {
       const wallet = getWallet()
-      const baseArgs: ListActionsArgs = { labels: [], limit: 1, offset: 0 }
 
-      // Query each status
-      const [failedRes, unsignedRes, unprocessedRes, nosendRes] = await Promise.all([
-        wallet.listActions({ ...baseArgs, includeStatuses: ['failed'] }).catch(() => ({ totalActions: 0 })),
-        wallet.listActions({ ...baseArgs, includeStatuses: ['unsigned'] }).catch(() => ({ totalActions: 0 })),
-        wallet.listActions({ ...baseArgs, includeStatuses: ['unprocessed'] }).catch(() => ({ totalActions: 0 })),
-        wallet.listActions({ ...baseArgs, includeStatuses: ['nosend'] }).catch(() => ({ totalActions: 0 })),
-      ]) as ListActionsResult[]
+      // List all actions and count by status client-side
+      let failedCount = 0
+      let unsignedCount = 0
+      let unprocessedCount = 0
+      let nosendCount = 0
+
+      try {
+        const allActions = await wallet.listActions({
+          labels: [],
+          limit: 10000,
+          offset: 0,
+        })
+        for (const action of allActions.actions) {
+          if (action.status === 'failed') failedCount++
+          else if (action.status === 'unsigned') unsignedCount++
+          else if (action.status === 'unprocessed') unprocessedCount++
+          else if (action.status === 'nosend') nosendCount++
+        }
+      } catch (e: any) {
+        addLog(`Warning: Could not list actions - ${e?.message || String(e)}`)
+      }
+
+      // Also try Wallet class methods for more accurate counts
+      try {
+        const walletClass = getWalletClass()
+        const failedRes = await walletClass.listFailedActions({ labels: [], limit: 1, offset: 0 })
+        failedCount = failedRes.totalActions
+      } catch { /* use client-side count */ }
+
+      try {
+        const walletClass = getWalletClass()
+        const nosendRes = await walletClass.listNoSendActions({ labels: [], limit: 1, offset: 0 })
+        nosendCount = nosendRes.totalActions
+      } catch { /* use client-side count */ }
 
       // Query outputs
       let totalOutputs = 0
@@ -106,10 +132,10 @@ const WalletDiagnosis = () => {
       }
 
       const results: DiagnosisResults = {
-        failedCount: failedRes.totalActions,
-        unsignedCount: unsignedRes.totalActions,
-        unprocessedCount: unprocessedRes.totalActions,
-        nosendCount: nosendRes.totalActions,
+        failedCount,
+        unsignedCount,
+        unprocessedCount,
+        nosendCount,
         totalOutputs,
         spendableOutputs,
       }
@@ -125,7 +151,7 @@ const WalletDiagnosis = () => {
     } finally {
       setLoading(false)
     }
-  }, [getWallet, addLog])
+  }, [getWallet, getWalletClass, addLog])
 
   // --- Load Failed & Stuck Transactions ---
   const loadProblematicActions = useCallback(async () => {
@@ -133,15 +159,19 @@ const WalletDiagnosis = () => {
     addLog('Loading problematic transactions...')
     try {
       const wallet = getWallet()
-      const baseArgs: ListActionsArgs = { labels: [], limit: 100, offset: 0 }
-      const statuses: string[] = ['failed', 'unsigned', 'unprocessed', 'nosend']
+      const problematicStatuses = ['failed', 'unsigned', 'unprocessed', 'nosend']
 
       const results = await wallet.listActions({
-        ...baseArgs,
-        includeStatuses: statuses as any
-      }) as ListActionsResult
+        labels: [],
+        limit: 1000,
+        offset: 0,
+      })
 
-      const items: ActionItem[] = (results.actions || []).map(a => ({
+      const filteredActions = (results.actions || []).filter(
+        a => problematicStatuses.includes(a.status || '')
+      )
+
+      const items: ActionItem[] = filteredActions.map(a => ({
         txid: a.txid || 'unknown',
         description: a.description || 'No description',
         status: a.status || 'unknown',
@@ -171,7 +201,7 @@ const WalletDiagnosis = () => {
         addLog(`Aborting stuck transaction ${txid.substring(0, 16)}...`)
         try {
           const wallet = getWallet()
-          await wallet.abortAction({ reference: txid } as AbortActionArgs)
+          await wallet.abortAction({ reference: txid })
           addLog(`Successfully aborted transaction ${txid.substring(0, 16)}...`)
           toast.success('Transaction aborted')
           setActions(prev => prev.filter(a => a.txid !== txid))
@@ -276,7 +306,7 @@ const WalletDiagnosis = () => {
         addLog(`Relinquishing output ${outpoint.substring(0, 20)}...`)
         try {
           const wallet = getWallet()
-          await wallet.relinquishOutput({ basket: 'default', output: outpoint } as RelinquishOutputArgs)
+          await wallet.relinquishOutput({ basket: 'default', output: outpoint })
           addLog(`Successfully relinquished output ${outpoint.substring(0, 20)}...`)
           toast.success('Output relinquished')
           if (outputs) {
@@ -310,17 +340,20 @@ const WalletDiagnosis = () => {
           const wallet = getWallet()
 
           // Abort stuck transactions (unsigned + unprocessed)
-          const baseArgs: ListActionsArgs = { labels: [], limit: 100, offset: 0 }
           const stuckRes = await wallet.listActions({
-            ...baseArgs,
-            includeStatuses: ['unsigned', 'unprocessed'] as any,
-          }) as ListActionsResult
+            labels: [],
+            limit: 1000,
+            offset: 0,
+          })
+          const stuckTxs = (stuckRes.actions || []).filter(
+            a => a.status === 'unsigned' || a.status === 'unprocessed'
+          )
 
           let abortedCount = 0
-          for (const action of (stuckRes.actions || [])) {
+          for (const action of stuckTxs) {
             if (action.txid) {
               try {
-                await wallet.abortAction({ reference: action.txid } as AbortActionArgs)
+                await wallet.abortAction({ reference: action.txid })
                 abortedCount++
               } catch (e: any) {
                 addLog(`Warning: Could not abort ${action.txid?.substring(0, 16)}... - ${e?.message || String(e)}`)
@@ -332,7 +365,7 @@ const WalletDiagnosis = () => {
           // Abort nosend actions
           try {
             const walletClass = getWalletClass()
-            const nosendRes = await walletClass.listNoSendActions(baseArgs, true)
+            const nosendRes = await walletClass.listNoSendActions({ labels: [], limit: 1000, offset: 0 }, true)
             addLog(`Aborted ${nosendRes.totalActions || 0} nosend action(s)`)
           } catch (e: any) {
             addLog(`Warning: Could not abort nosend actions - ${e?.message || String(e)}`)
@@ -445,24 +478,28 @@ const WalletDiagnosis = () => {
             >
               Load Transactions
             </Button>
-            <Button
-              variant="outlined"
-              color="warning"
-              onClick={attemptRecovery}
-              disabled={loading}
-              size="small"
-            >
-              Attempt Recovery (Failed)
-            </Button>
-            <Button
-              variant="outlined"
-              color="error"
-              onClick={abortNosendActions}
-              disabled={loading}
-              size="small"
-            >
-              Abort All NoSend
-            </Button>
+            {actions.some(a => a.status === 'failed') && (
+              <Button
+                variant="outlined"
+                color="warning"
+                onClick={attemptRecovery}
+                disabled={loading}
+                size="small"
+              >
+                Attempt Recovery ({actions.filter(a => a.status === 'failed').length} Failed)
+              </Button>
+            )}
+            {actions.some(a => a.status === 'nosend') && (
+              <Button
+                variant="outlined"
+                color="error"
+                onClick={abortNosendActions}
+                disabled={loading}
+                size="small"
+              >
+                Abort All NoSend ({actions.filter(a => a.status === 'nosend').length})
+              </Button>
+            )}
           </Box>
 
           {actions.length > 0 && (

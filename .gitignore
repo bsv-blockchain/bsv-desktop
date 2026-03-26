@@ -22,4 +22,7 @@ release
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
+*.sw?a
+
+.claude/
+openspec/

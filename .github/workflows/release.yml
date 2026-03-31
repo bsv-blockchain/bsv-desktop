@@ -164,7 +164,7 @@ jobs:
 
       - name: Code signing with Software Trust Manager
         if: matrix.platform == 'windows-2022'
-        uses: digicert/ssm-code-signing@v1.1.0
+        uses: digicert/ssm-code-signing@v1.2.1
         env:
           FORCE_DOWNLOAD_TOOLS: 'true'
 

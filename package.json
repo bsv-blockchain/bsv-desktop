@@ -137,7 +137,7 @@
       "verifyUpdateCodeSignature": false,
       "artifactName": "${productName}-Setup-${version}.${ext}",
       "signtoolOptions": {
-        "sign": "./customSign.js"
+        "sign": "./customSign.cjs"
       }
     },
     "nsis": {

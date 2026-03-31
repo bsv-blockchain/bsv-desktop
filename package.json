@@ -136,7 +136,9 @@
       "icon": "build/icon.ico",
       "verifyUpdateCodeSignature": false,
       "artifactName": "${productName}-Setup-${version}.${ext}",
-      "sign": "./customSign.js"
+      "signtoolOptions": {
+        "sign": "./customSign.js"
+      }
     },
     "nsis": {
       "oneClick": false,

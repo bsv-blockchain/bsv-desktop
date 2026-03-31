@@ -191,12 +191,29 @@ jobs:
           npm run build
           npx electron-builder --win --publish never
 
+      - name: Add signtool to PATH
+        if: matrix.platform == 'windows-2022'
+        shell: pwsh
+        run: |
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Sort-Object -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { throw "signtool.exe not found" }
+          $dir = Split-Path $signtool
+          Write-Host "Adding signtool dir to PATH: $dir"
+          echo $dir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Verify DigiCert certificate access
+        if: matrix.platform == 'windows-2022'
+        shell: cmd
+        run: |
+          smctl keypair ls
+
       - name: Sign Windows executables with DigiCert (KSP)
         if: matrix.platform == 'windows-2022'
         shell: cmd
         run: |
           for %%f in ("release\*.exe") do (
-            smctl sign --fingerprint %SM_FINGERPRINT% --input "%%f"
+            echo Signing %%f ...
+            smctl sign --fingerprint %SM_FINGERPRINT% --input "%%f" --verbose
           )
 
       - name: Verify Windows Signatures
@@ -207,7 +224,7 @@ jobs:
           if (-not $signtool) { throw "signtool.exe not found. Ensure Windows 10 SDK is installed on the runner." }
           $files = Get-ChildItem -Path release\ -Filter *.exe | Select-Object -ExpandProperty FullName
           foreach ($file in $files) {
-            & $signtool verify /pa "$file"
+            signtool verify /pa "$file"
           }
 
       - name: Upload Windows Artifacts

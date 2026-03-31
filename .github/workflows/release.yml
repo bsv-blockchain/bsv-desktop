@@ -17,8 +17,8 @@ jobs:
             args: '--mac'
           - platform: 'ubuntu-22.04'
             args: '--linux'
-          - platform: 'windows-2022'
-            args: '--win'
+#          - platform: 'windows-2022'
+#            args: '--win'
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4

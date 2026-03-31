@@ -146,61 +146,35 @@ jobs:
             release/SHA256SUMS.asc
 
       # === Windows Build and Signing ===
-      - name: Set up certificate
+      - name: Set up DigiCert client certificate
         if: matrix.platform == 'windows-2022'
         run: |
           echo "${{ secrets.DIGICERT_CLIENT_AUTH_CERT }}" | base64 --decode > /d/Certificate_pkcs12.p12
         shell: bash
 
-      - name: Set DigiCert environment variables
+      - name: Setup DigiCert Software Trust Manager
         if: matrix.platform == 'windows-2022'
-        run: |
-          echo "SM_HOST=${{ secrets.DIGICERT_HOST }}" >> "$GITHUB_ENV"
-          echo "SM_API_KEY=${{ secrets.DIGICERT_KEY_LOCKER_API_KEY }}" >> "$GITHUB_ENV"
-          echo "SM_FINGERPRINT=${{ secrets.DIGICERT_CODE_SIGNING_SHA1_HASH }}" >> "$GITHUB_ENV"
-          echo "SM_CLIENT_CERT_FILE=D:\\Certificate_pkcs12.p12" >> "$GITHUB_ENV"
-          echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.DIGICERT_CLIENT_AUTH_PASS }}" >> "$GITHUB_ENV"
-        shell: bash
-
-      - name: Code signing with Software Trust Manager
-        if: matrix.platform == 'windows-2022'
-        uses: digicert/ssm-code-signing@v1.2.1
+        uses: digicert/code-signing-software-trust-action@v1
+        with:
+          simple-signing-mode: true
         env:
-          FORCE_DOWNLOAD_TOOLS: 'true'
-
-      - name: DigiCert tools healthcheck
-        if: matrix.platform == 'windows-2022'
-        shell: cmd
-        run: |
-          smctl healthcheck
-
-      - name: Sync KeyLocker certificate to Windows store (KSP)
-        if: matrix.platform == 'windows-2022'
-        shell: cmd
-        run: |
-          smctl windows certsync
-          certutil.exe -csp "DigiCert Software Trust Manager KSP" -key -user
-          echo --- Certificates in user My store ---
-          certutil.exe -store -user My
+          SM_HOST: ${{ secrets.DIGICERT_HOST }}
+          SM_API_KEY: ${{ secrets.DIGICERT_KEY_LOCKER_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.DIGICERT_CLIENT_AUTH_PASS }}
 
       - name: build and sign Electron app (Windows)
         if: matrix.platform == 'windows-2022'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SM_HOST: ${{ secrets.DIGICERT_HOST }}
+          SM_API_KEY: ${{ secrets.DIGICERT_KEY_LOCKER_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.DIGICERT_CLIENT_AUTH_PASS }}
+          SM_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
         run: |
           npm run build
           npx electron-builder --win --publish never
-
-      - name: Verify Windows Signatures
-        if: matrix.platform == 'windows-2022'
-        shell: pwsh
-        run: |
-          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $signtool) { throw "signtool.exe not found. Ensure Windows 10 SDK is installed on the runner." }
-          $files = Get-ChildItem -Path release\ -Filter *.exe | Select-Object -ExpandProperty FullName
-          foreach ($file in $files) {
-            & $signtool verify /pa "$file"
-          }
 
       - name: Upload Windows Artifacts
         if: matrix.platform == 'windows-2022'

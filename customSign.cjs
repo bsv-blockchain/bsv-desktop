@@ -11,7 +11,7 @@ exports.default = async function (configuration) {
 
   console.log(`Signing: ${configuration.path}`);
   execSync(
-    `signtool.exe sign /sha1 "${fingerprint}" /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 /debug "${configuration.path}"`,
+    `smctl sign --fingerprint "${fingerprint}" --input "${configuration.path}" --verbose`,
     { stdio: 'inherit' }
   );
 };

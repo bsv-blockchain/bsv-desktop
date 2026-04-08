@@ -115,7 +115,6 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
   })
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [receivingId, setReceivingId] = useState<string | null>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Reload outgoing requests when identity changes (profile switch / re-login).
   useEffect(() => {
@@ -147,11 +146,16 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
     setCurrencySymbol(currencyConverter.getCurrencySymbol())
   }, [])
 
-  // Poll for responses every 15 seconds when there are pending or paid (unreceived) requests
+  // Keep a ref to outgoing so pollResponses doesn't depend on it (avoids re-render loops).
+  const outgoingRef = useRef(outgoing)
+  useEffect(() => { outgoingRef.current = outgoing }, [outgoing])
+
+  // Poll for responses when there are pending or paid (unreceived) requests.
   const pollResponses = useCallback(async () => {
     if (!peerPayClient || !messageBoxUrl) return
-    const hasPending = outgoing.some(r => r.status === 'pending' && r.expiresAt > Date.now())
-    const hasPaidUnreceived = outgoing.some(r => r.status === 'paid' && !r.incomingPayment)
+    const current = outgoingRef.current
+    const hasPending = current.some(r => r.status === 'pending' && r.expiresAt > Date.now())
+    const hasPaidUnreceived = current.some(r => r.status === 'paid' && !r.incomingPayment)
     if (!hasPending && !hasPaidUnreceived) return
     try {
       const responses: PaymentRequestResponse[] = await peerPayClient.listPaymentRequestResponses(messageBoxUrl)
@@ -196,7 +200,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
     } catch {
       // Silently ignore poll errors
     }
-  }, [peerPayClient, messageBoxUrl, outgoing])
+  }, [peerPayClient, messageBoxUrl])
 
   // Mark expired requests
   useEffect(() => {
@@ -212,33 +216,25 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
     return () => clearInterval(tick)
   }, [])
 
-  // Set up polling: immediate check on mount + interval when there are actionable requests.
+  // Immediate poll once on mount if there are actionable requests.
+  const hasMountPolled = useRef(false)
   useEffect(() => {
-    const needsPoll = outgoing.some(r =>
+    if (hasMountPolled.current) return
+    const current = outgoingRef.current
+    const needsPoll = current.some(r =>
       r.status === 'pending' || (r.status === 'paid' && !r.incomingPayment)
     )
-
-    if (needsPoll) {
-      // Immediate poll on mount / when status changes
+    if (needsPoll && peerPayClient && messageBoxUrl) {
+      hasMountPolled.current = true
       pollResponses()
+    }
+  }, [peerPayClient, messageBoxUrl, pollResponses])
 
-      // Then continue polling every 15 seconds
-      if (!pollRef.current) {
-        pollRef.current = setInterval(pollResponses, 15_000)
-      }
-    } else {
-      if (pollRef.current) {
-        clearInterval(pollRef.current)
-        pollRef.current = null
-      }
-    }
-    return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current)
-        pollRef.current = null
-      }
-    }
-  }, [outgoing, pollResponses])
+  // Set up 15-second polling interval (stable — doesn't re-create on outgoing changes).
+  useEffect(() => {
+    const id = setInterval(pollResponses, 15_000)
+    return () => clearInterval(id)
+  }, [pollResponses])
 
   const handleAmountChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/[^0-9.]/g, '')

@@ -89,7 +89,12 @@ function statusColor(status: OutgoingRequest['status']): 'success' | 'info' | 'e
 /* ------------------------------------------------------------------ */
 
 export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
-  const { managers, adminOriginator, peerPayClient, messageBoxUrl } = useContext(WalletContext)
+  const { managers, adminOriginator, peerPayClient, messageBoxUrl, activeProfile } = useContext(WalletContext)
+
+  // Storage key scoped to the current user's identity to prevent cross-account overwrites.
+  const storageKey = activeProfile?.identityKey
+    ? `payReq_outgoing_${activeProfile.identityKey}`
+    : 'payReq_outgoing'
 
   // Form state
   const [recipient, setRecipient] = useState('')
@@ -101,10 +106,10 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
   const [sending, setSending] = useState(false)
   const [currencySymbol, setCurrencySymbol] = useState('$')
 
-  // Outgoing tracker — persisted to localStorage so requests survive tab switches
+  // Outgoing tracker — persisted to localStorage (keyed by identity) so requests survive tab switches
   const [outgoing, setOutgoing] = useState<OutgoingRequest[]>(() => {
     try {
-      const saved = localStorage.getItem('payReq_outgoing')
+      const saved = localStorage.getItem(storageKey)
       return saved ? JSON.parse(saved) : []
     } catch { return [] }
   })
@@ -112,12 +117,20 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
   const [receivingId, setReceivingId] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Reload outgoing requests when identity changes (profile switch / re-login).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(storageKey)
+      setOutgoing(saved ? JSON.parse(saved) : [])
+    } catch { setOutgoing([]) }
+  }, [storageKey])
+
   // Persist outgoing requests to localStorage on every change.
   // Exclude incomingPayment (contains transaction data too large for localStorage).
   useEffect(() => {
     const serializable = outgoing.map(({ incomingPayment, ...rest }) => rest)
-    localStorage.setItem('payReq_outgoing', JSON.stringify(serializable))
-  }, [outgoing])
+    localStorage.setItem(storageKey, JSON.stringify(serializable))
+  }, [outgoing, storageKey])
 
   const currencyConverter = new CurrencyConverter(undefined, managers?.settingsManager as any)
 

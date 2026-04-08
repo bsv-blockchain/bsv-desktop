@@ -477,9 +477,11 @@ export default function PeerPayRoute() {
     isHostAnointed,
     anointCurrentHost,
     anointmentLoading,
-    adminOriginator
+    adminOriginator,
+    activeProfile
   } = useContext(WalletContext)
   const wallet = managers?.permissionsManager || null
+  const idSuffix = activeProfile?.identityKey ? `_${activeProfile.identityKey}` : ''
 
   const [payments, setPayments] = useState<IncomingPayment[]>([])
   const [incomingRequests, setIncomingRequests] = useState<IncomingPaymentRequest[]>([])
@@ -508,8 +510,8 @@ export default function PeerPayRoute() {
   const fetchRequests = useCallback(async () => {
     try {
       if (!peerPayClient || !messageBoxUrl) return
-      const min = parseInt(localStorage.getItem('payReq_minAmount') ?? '1000', 10)
-      const max = parseInt(localStorage.getItem('payReq_maxAmount') ?? '10000000', 10)
+      const min = parseInt(localStorage.getItem(`payReq_minAmount${idSuffix}`) ?? '1000', 10)
+      const max = parseInt(localStorage.getItem(`payReq_maxAmount${idSuffix}`) ?? '10000000', 10)
       const list = await peerPayClient.listIncomingPaymentRequests(messageBoxUrl, {
         minAmount: isNaN(min) ? 1000 : min,
         maxAmount: isNaN(max) ? 10000000 : max
@@ -518,7 +520,7 @@ export default function PeerPayRoute() {
     } catch (e) {
       setSnack({ open: true, msg: (e as Error)?.message ?? 'Failed to load requests', severity: 'error' })
     }
-  }, [peerPayClient, messageBoxUrl])
+  }, [peerPayClient, messageBoxUrl, idSuffix])
 
   const getPastTransactions = async () => {
     if (!wallet) return

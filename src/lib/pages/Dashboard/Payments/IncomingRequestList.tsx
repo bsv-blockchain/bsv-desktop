@@ -68,7 +68,14 @@ type LoadingMap = Record<string, boolean>
 /* ------------------------------------------------------------------ */
 
 export default function IncomingRequestList({ requests, onRefresh, wallet }: Props) {
-  const { peerPayClient, messageBoxUrl, adminOriginator } = useContext(WalletContext)
+  const { peerPayClient, messageBoxUrl, adminOriginator, activeProfile } = useContext(WalletContext)
+
+  // Storage keys scoped to the current user's identity to prevent cross-account overwrites.
+  const idSuffix = activeProfile?.identityKey ? `_${activeProfile.identityKey}` : ''
+  const whitelistKey = `payReq_whitelist${idSuffix}`
+  const minAmountKey = `payReq_minAmount${idSuffix}`
+  const maxAmountKey = `payReq_maxAmount${idSuffix}`
+  const whitelistEnabledKey = `payReq_whitelistEnabled${idSuffix}`
 
   // Per-card state
   const [payAmounts, setPayAmounts] = useState<Record<string, string>>({})
@@ -80,22 +87,22 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [permissions, setPermissions] = useState<string[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem('payReq_whitelist') ?? '[]')
+      return JSON.parse(localStorage.getItem(whitelistKey) ?? '[]')
     } catch { return [] }
   })
   const [whitelistKeyInput, setWhitelistKeyInput] = useState('')
   const [allowError, setAllowError] = useState('')
   const [minAmount, setMinAmount] = useState(() =>
-    localStorage.getItem('payReq_minAmount') ?? '1000'
+    localStorage.getItem(minAmountKey) ?? '1000'
   )
   const [maxAmount, setMaxAmount] = useState(() =>
-    localStorage.getItem('payReq_maxAmount') ?? '10000000'
+    localStorage.getItem(maxAmountKey) ?? '10000000'
   )
   const [limitsSaved, setLimitsSaved] = useState(false)
 
   // Whitelist toggle (on/off)
   const [whitelistEnabled, setWhitelistEnabled] = useState(() =>
-    localStorage.getItem('payReq_whitelistEnabled') !== 'false'
+    localStorage.getItem(whitelistEnabledKey) !== 'false'
   )
 
   // Identity search for whitelist
@@ -116,8 +123,8 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
   /** Persist the whitelist to localStorage. */
   const saveWhitelist = useCallback((list: string[]) => {
     setPermissions(list)
-    localStorage.setItem('payReq_whitelist', JSON.stringify(list))
-  }, [])
+    localStorage.setItem(whitelistKey, JSON.stringify(list))
+  }, [whitelistKey])
 
   const handleToggleSettings = () => {
     setSettingsOpen(prev => !prev)
@@ -125,7 +132,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
 
   const handleToggleWhitelist = (enabled: boolean) => {
     setWhitelistEnabled(enabled)
-    localStorage.setItem('payReq_whitelistEnabled', String(enabled))
+    localStorage.setItem(whitelistEnabledKey, String(enabled))
   }
 
   const handleAllow = async () => {
@@ -166,8 +173,8 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
   }
 
   const saveLimits = () => {
-    localStorage.setItem('payReq_minAmount', minAmount)
-    localStorage.setItem('payReq_maxAmount', maxAmount)
+    localStorage.setItem(minAmountKey, minAmount)
+    localStorage.setItem(maxAmountKey, maxAmount)
     setLimitsSaved(true)
     setTimeout(() => setLimitsSaved(false), 2000)
     toast.success('Amount limits saved')

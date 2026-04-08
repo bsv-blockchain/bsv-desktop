@@ -497,9 +497,10 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
       {/* ---- Outgoing tracker ---- */}
       {outgoing.length > 0 && (
         <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
-          <Typography variant="h6" sx={{ mb: 1 }}>
-            Sent Requests
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+            <Typography variant="h6">Sent Requests</Typography>
+            <Button size="small" onClick={pollResponses}>Refresh</Button>
+          </Box>
           <Stack spacing={1.5}>
             {outgoing.map(req => (
               <Paper

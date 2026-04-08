@@ -101,11 +101,23 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
   const [sending, setSending] = useState(false)
   const [currencySymbol, setCurrencySymbol] = useState('$')
 
-  // Outgoing tracker
-  const [outgoing, setOutgoing] = useState<OutgoingRequest[]>([])
+  // Outgoing tracker — persisted to localStorage so requests survive tab switches
+  const [outgoing, setOutgoing] = useState<OutgoingRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem('payReq_outgoing')
+      return saved ? JSON.parse(saved) : []
+    } catch { return [] }
+  })
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [receivingId, setReceivingId] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Persist outgoing requests to localStorage on every change.
+  // Exclude incomingPayment (contains transaction data too large for localStorage).
+  useEffect(() => {
+    const serializable = outgoing.map(({ incomingPayment, ...rest }) => rest)
+    localStorage.setItem('payReq_outgoing', JSON.stringify(serializable))
+  }, [outgoing])
 
   const currencyConverter = new CurrencyConverter(undefined, managers?.settingsManager as any)
 

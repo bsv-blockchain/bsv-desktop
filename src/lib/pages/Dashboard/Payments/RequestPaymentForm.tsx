@@ -111,20 +111,29 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [receivingId, setReceivingId] = useState<string | null>(null)
 
+  // Guard: the SAVE effect must not run until the LOAD effect has completed at least once.
+  // This prevents the initial empty state from overwriting persisted data in localStorage.
+  const hasLoadedRef = useRef(false)
+
   // Load outgoing requests from localStorage when identity becomes available or changes.
   useEffect(() => {
     if (!storageKey) return
+    hasLoadedRef.current = false
     try {
-      const saved = localStorage.getItem(storageKey)
-      setOutgoing(saved ? JSON.parse(saved) : [])
-    } catch { setOutgoing([]) }
+      const raw = localStorage.getItem(storageKey)
+      const parsed = raw ? JSON.parse(raw) : []
+      setOutgoing(parsed)
+    } catch {
+      setOutgoing([])
+    }
+    hasLoadedRef.current = true
   }, [storageKey])
 
   // Persist outgoing requests to localStorage on every change.
   // Only persist when we have a valid storage key (identity loaded).
   // Exclude incomingPayment (contains transaction data too large for localStorage).
   useEffect(() => {
-    if (!storageKey) return
+    if (!storageKey || !hasLoadedRef.current) return
     const serializable = outgoing.map(({ incomingPayment, ...rest }) => rest)
     localStorage.setItem(storageKey, JSON.stringify(serializable))
   }, [outgoing, storageKey])

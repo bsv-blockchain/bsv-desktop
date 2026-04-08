@@ -599,8 +599,7 @@ export default function PeerPayRoute() {
             if (v === 2) fetchRequests()
             if (v === 3) fetchPayments()
           }}
-          variant="scrollable"
-          scrollButtons="auto"
+          variant="fullWidth"
           sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
         >
           <Tab label="Send Payment" />

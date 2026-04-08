@@ -1,7 +1,8 @@
 // src/lib/pages/Dashboard/Payments/IncomingRequestList.tsx
-import React, { useCallback, useContext, useState } from 'react'
+import React, { useCallback, useContext, useEffect, useState } from 'react'
 import {
   Alert,
+  Autocomplete,
   Avatar,
   Box,
   Button,
@@ -9,19 +10,22 @@ import {
   CircularProgress,
   Collapse,
   Divider,
+  IconButton,
   List,
   ListItem,
-  ListItemSecondaryAction,
   ListItemText,
   Paper,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from '@mui/material'
-import { WalletInterface } from '@bsv/sdk'
+import DeleteIcon from '@mui/icons-material/Delete'
+import { PublicKey, WalletInterface } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
 import { IncomingPaymentRequest } from '@bsv/message-box-client'
 import { toast } from 'react-toastify'
+import { useIdentitySearch } from '@bsv/identity-react'
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                              */
@@ -63,8 +67,8 @@ type LoadingMap = Record<string, boolean>
 /* Component                                                            */
 /* ------------------------------------------------------------------ */
 
-export default function IncomingRequestList({ requests, onRefresh }: Props) {
-  const { peerPayClient, messageBoxUrl } = useContext(WalletContext)
+export default function IncomingRequestList({ requests, onRefresh, wallet }: Props) {
+  const { peerPayClient, messageBoxUrl, adminOriginator } = useContext(WalletContext)
 
   // Per-card state
   const [payAmounts, setPayAmounts] = useState<Record<string, string>>({})
@@ -77,7 +81,7 @@ export default function IncomingRequestList({ requests, onRefresh }: Props) {
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [permissions, setPermissions] = useState<Array<{ identityKey: string; allowed: boolean }>>([])
-  const [newAllowKey, setNewAllowKey] = useState('')
+  const [whitelistKeyInput, setWhitelistKeyInput] = useState('')
   const [allowError, setAllowError] = useState('')
   const [minAmount, setMinAmount] = useState(() =>
     localStorage.getItem('payReq_minAmount') ?? '1000'
@@ -86,6 +90,22 @@ export default function IncomingRequestList({ requests, onRefresh }: Props) {
     localStorage.getItem('payReq_maxAmount') ?? '10000000'
   )
   const [limitsSaved, setLimitsSaved] = useState(false)
+
+  // Whitelist toggle (on/off)
+  const [whitelistEnabled, setWhitelistEnabled] = useState(() =>
+    localStorage.getItem('payReq_whitelistEnabled') !== 'false'
+  )
+
+  // Identity search for whitelist
+  const whitelistIdentitySearch = useIdentitySearch({
+    originator: adminOriginator,
+    wallet,
+    onIdentitySelected: (identity) => {
+      if (identity) {
+        setWhitelistKeyInput(identity.identityKey)
+      }
+    }
+  })
 
   /* ---------------------------------------------------------------- */
   /* Settings helpers                                                  */
@@ -113,14 +133,20 @@ export default function IncomingRequestList({ requests, onRefresh }: Props) {
     }
   }
 
+  const handleToggleWhitelist = (enabled: boolean) => {
+    setWhitelistEnabled(enabled)
+    localStorage.setItem('payReq_whitelistEnabled', String(enabled))
+  }
+
   const handleAllow = async () => {
-    const key = newAllowKey.trim()
+    const key = whitelistKeyInput.trim()
     if (!key) { setAllowError('Identity key is required'); return }
     if (!peerPayClient) return
     setAllowError('')
     try {
       await peerPayClient.allowPaymentRequestsFrom({ identityKey: key })
-      setNewAllowKey('')
+      setWhitelistKeyInput('')
+      whitelistIdentitySearch.handleSelect(null, null)
       await loadPermissions()
       toast.success('Identity allowed')
     } catch (e) {
@@ -222,55 +248,160 @@ export default function IncomingRequestList({ requests, onRefresh }: Props) {
 
           {!settingsLoading && settingsLoaded && (
             <Stack spacing={2}>
-              {/* Whitelist management */}
-              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                Whitelist Management
-              </Typography>
-              <Stack direction="row" spacing={1} alignItems="flex-start">
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Paste Identity Key to Allow"
-                  value={newAllowKey}
-                  onChange={(e) => { setNewAllowKey(e.target.value); setAllowError('') }}
-                  error={!!allowError}
-                  helperText={allowError}
-                />
-                <Button variant="contained" onClick={handleAllow} sx={{ whiteSpace: 'nowrap', mt: 0.25 }}>
-                  Allow
-                </Button>
-              </Stack>
+              {/* Whitelist toggle */}
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                    Identity Whitelist
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    When enabled, only whitelisted identities can send you requests
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Chip
+                    size="small"
+                    label={whitelistEnabled ? 'ON' : 'OFF'}
+                    color={whitelistEnabled ? 'success' : 'default'}
+                    sx={{ fontWeight: 600, minWidth: 44 }}
+                  />
+                  <Switch
+                    checked={whitelistEnabled}
+                    onChange={(e) => handleToggleWhitelist(e.target.checked)}
+                  />
+                </Stack>
+              </Box>
 
-              {permissions.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No whitelisted identities yet.
-                </Typography>
-              ) : (
-                <List dense disablePadding>
-                  {permissions.filter(p => p.allowed).map(p => (
-                    <ListItem key={p.identityKey} disableGutters>
-                      <ListItemText
-                        primary={
-                          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                            {truncateKey(p.identityKey, 24)}
-                          </Typography>
-                        }
+              {/* Whitelist management — only shown when enabled */}
+              <Collapse in={whitelistEnabled}>
+                <Stack spacing={2}>
+                  {/* Identity search for adding */}
+                  <Autocomplete
+                    options={whitelistIdentitySearch.identities}
+                    loading={whitelistIdentitySearch.isLoading}
+                    inputValue={whitelistIdentitySearch.inputValue}
+                    value={whitelistIdentitySearch.selectedIdentity}
+                    onInputChange={whitelistIdentitySearch.handleInputChange}
+                    onChange={(event, value) => {
+                      whitelistIdentitySearch.handleSelect(event, value as any)
+                      if (value && typeof value !== 'string') {
+                        setWhitelistKeyInput(value.identityKey)
+                      } else {
+                        setWhitelistKeyInput('')
+                      }
+                    }}
+                    getOptionLabel={(option) =>
+                      typeof option === 'string' ? option : option.name || option.identityKey.slice(0, 16)
+                    }
+                    isOptionEqualToValue={(option, value) => {
+                      if (typeof option === 'string' || typeof value === 'string') return false
+                      return option.identityKey === value.identityKey
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        size="small"
+                        label="Search for identity to whitelist"
+                        placeholder="Search by name or email..."
                       />
-                      <ListItemSecondaryAction>
-                        <Button
-                          size="small"
-                          color="error"
-                          variant="outlined"
-                          onClick={() => handleBlock(p.identityKey)}
-                          sx={{ fontSize: '0.72rem', py: 0.25 }}
+                    )}
+                    renderOption={(props, option) => {
+                      if (typeof option === 'string') return null
+                      const { key, ...otherProps } = props
+                      return (
+                        <li key={key + option.identityKey} {...otherProps}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: '0.75rem' }}>
+                              {getInitials(option.identityKey)}
+                            </Avatar>
+                            <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                              <Typography variant="body2" fontWeight={500}>{option.name || 'Unknown'}</Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                                {option.identityKey.slice(0, 20)}...
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </li>
+                      )
+                    }}
+                    noOptionsText={whitelistIdentitySearch.inputValue ? 'No identities found' : 'Start typing to search'}
+                    fullWidth
+                    size="small"
+                  />
+
+                  {/* Direct key input fallback */}
+                  <Stack direction="row" spacing={1} alignItems="flex-start">
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label={whitelistIdentitySearch.selectedIdentity ? 'Selected Identity Key' : 'Or paste identity key'}
+                      value={whitelistKeyInput}
+                      onChange={(e) => {
+                        const val = e.target.value.trim()
+                        setWhitelistKeyInput(val)
+                        setAllowError('')
+                        if (!val) return
+                        try {
+                          PublicKey.fromString(val)
+                          whitelistIdentitySearch.handleSelect(null, null)
+                        } catch {
+                          // Not a valid key yet — allow typing
+                        }
+                      }}
+                      disabled={!!whitelistIdentitySearch.selectedIdentity}
+                      error={!!allowError}
+                      helperText={allowError}
+                    />
+                    <Button
+                      variant="contained"
+                      onClick={handleAllow}
+                      disabled={!whitelistKeyInput.trim()}
+                      sx={{ whiteSpace: 'nowrap', mt: 0.25 }}
+                    >
+                      Allow
+                    </Button>
+                  </Stack>
+
+                  {/* Whitelisted identities list */}
+                  {permissions.filter(p => p.allowed).length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      No whitelisted identities yet. Add identities above to receive payment requests.
+                    </Typography>
+                  ) : (
+                    <List dense disablePadding>
+                      {permissions.filter(p => p.allowed).map(p => (
+                        <ListItem
+                          key={p.identityKey}
+                          disableGutters
+                          secondaryAction={
+                            <IconButton
+                              edge="end"
+                              size="small"
+                              onClick={() => handleBlock(p.identityKey)}
+                              color="error"
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          }
                         >
-                          Remove
-                        </Button>
-                      </ListItemSecondaryAction>
-                    </ListItem>
-                  ))}
-                </List>
-              )}
+                          <ListItemText
+                            primary={
+                              <Typography variant="body2" fontWeight={500}>
+                                {truncateKey(p.identityKey, 24)}
+                              </Typography>
+                            }
+                            secondary={
+                              <Typography variant="caption" sx={{ fontFamily: 'monospace' }} color="text.secondary">
+                                {p.identityKey}
+                              </Typography>
+                            }
+                          />
+                        </ListItem>
+                      ))}
+                    </List>
+                  )}
+                </Stack>
+              </Collapse>
 
               <Divider />
 
@@ -285,7 +416,6 @@ export default function IncomingRequestList({ requests, onRefresh }: Props) {
                   type="number"
                   value={minAmount}
                   onChange={(e) => setMinAmount(e.target.value)}
-                  inputProps={{ min: 0 }}
                   fullWidth
                 />
                 <TextField
@@ -294,7 +424,6 @@ export default function IncomingRequestList({ requests, onRefresh }: Props) {
                   type="number"
                   value={maxAmount}
                   onChange={(e) => setMaxAmount(e.target.value)}
-                  inputProps={{ min: 0 }}
                   fullWidth
                 />
                 <Button

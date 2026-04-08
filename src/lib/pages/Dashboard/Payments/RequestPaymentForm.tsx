@@ -212,10 +212,17 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
     return () => clearInterval(tick)
   }, [])
 
-  // Set up polling interval when pending requests exist
+  // Set up polling: immediate check on mount + interval when there are actionable requests.
   useEffect(() => {
-    const hasPending = outgoing.some(r => r.status === 'pending')
-    if (hasPending) {
+    const needsPoll = outgoing.some(r =>
+      r.status === 'pending' || (r.status === 'paid' && !r.incomingPayment)
+    )
+
+    if (needsPoll) {
+      // Immediate poll on mount / when status changes
+      pollResponses()
+
+      // Then continue polling every 15 seconds
       if (!pollRef.current) {
         pollRef.current = setInterval(pollResponses, 15_000)
       }

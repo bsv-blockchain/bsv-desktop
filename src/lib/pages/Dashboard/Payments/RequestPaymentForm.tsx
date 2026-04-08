@@ -92,9 +92,9 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
   const { managers, adminOriginator, peerPayClient, messageBoxUrl, activeProfile } = useContext(WalletContext)
 
   // Storage key scoped to the current user's identity to prevent cross-account overwrites.
-  const storageKey = activeProfile?.identityKey
-    ? `payReq_outgoing_${activeProfile.identityKey}`
-    : 'payReq_outgoing'
+  // Null until identity is available — prevents saving/loading with the wrong key.
+  const identityKey = activeProfile?.identityKey
+  const storageKey = identityKey ? `payReq_outgoing_${identityKey}` : null
 
   // Form state
   const [recipient, setRecipient] = useState('')
@@ -106,18 +106,14 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
   const [sending, setSending] = useState(false)
   const [currencySymbol, setCurrencySymbol] = useState('$')
 
-  // Outgoing tracker — persisted to localStorage (keyed by identity) so requests survive tab switches
-  const [outgoing, setOutgoing] = useState<OutgoingRequest[]>(() => {
-    try {
-      const saved = localStorage.getItem(storageKey)
-      return saved ? JSON.parse(saved) : []
-    } catch { return [] }
-  })
+  // Outgoing tracker — starts empty, loaded from localStorage once identity is known.
+  const [outgoing, setOutgoing] = useState<OutgoingRequest[]>([])
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [receivingId, setReceivingId] = useState<string | null>(null)
 
-  // Reload outgoing requests when identity changes (profile switch / re-login).
+  // Load outgoing requests from localStorage when identity becomes available or changes.
   useEffect(() => {
+    if (!storageKey) return
     try {
       const saved = localStorage.getItem(storageKey)
       setOutgoing(saved ? JSON.parse(saved) : [])
@@ -125,8 +121,10 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
   }, [storageKey])
 
   // Persist outgoing requests to localStorage on every change.
+  // Only persist when we have a valid storage key (identity loaded).
   // Exclude incomingPayment (contains transaction data too large for localStorage).
   useEffect(() => {
+    if (!storageKey) return
     const serializable = outgoing.map(({ incomingPayment, ...rest }) => rest)
     localStorage.setItem(storageKey, JSON.stringify(serializable))
   }, [outgoing, storageKey])

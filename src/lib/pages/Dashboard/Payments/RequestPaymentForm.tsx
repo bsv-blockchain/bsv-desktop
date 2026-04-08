@@ -256,8 +256,8 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
       identitySearch.handleSelect(null, null)
       onRequestSent?.()
     } catch (e) {
-      toast.error('Failed to send payment request')
-      alert((e as Error)?.message ?? 'Failed to send payment request')
+      const msg = (e as Error)?.message ?? 'Failed to send payment request'
+      toast.error(msg)
     } finally {
       setSending(false)
     }

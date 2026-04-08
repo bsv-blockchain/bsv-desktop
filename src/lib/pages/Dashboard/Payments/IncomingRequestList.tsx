@@ -78,9 +78,11 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
 
   // Settings panel
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsLoaded, setSettingsLoaded] = useState(false)
-  const [settingsLoading, setSettingsLoading] = useState(false)
-  const [permissions, setPermissions] = useState<Array<{ identityKey: string; allowed: boolean }>>([])
+  const [permissions, setPermissions] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('payReq_whitelist') ?? '[]')
+    } catch { return [] }
+  })
   const [whitelistKeyInput, setWhitelistKeyInput] = useState('')
   const [allowError, setAllowError] = useState('')
   const [minAmount, setMinAmount] = useState(() =>
@@ -111,26 +113,14 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
   /* Settings helpers                                                  */
   /* ---------------------------------------------------------------- */
 
-  const loadPermissions = useCallback(async () => {
-    if (!peerPayClient) return
-    setSettingsLoading(true)
-    try {
-      const list = await peerPayClient.listPaymentRequestPermissions()
-      setPermissions(list)
-      setSettingsLoaded(true)
-    } catch (e) {
-      toast.error((e as Error)?.message ?? 'Failed to load permissions')
-    } finally {
-      setSettingsLoading(false)
-    }
-  }, [peerPayClient])
+  /** Persist the whitelist to localStorage. */
+  const saveWhitelist = useCallback((list: string[]) => {
+    setPermissions(list)
+    localStorage.setItem('payReq_whitelist', JSON.stringify(list))
+  }, [])
 
-  const handleToggleSettings = async () => {
-    const next = !settingsOpen
-    setSettingsOpen(next)
-    if (next && !settingsLoaded) {
-      await loadPermissions()
-    }
+  const handleToggleSettings = () => {
+    setSettingsOpen(prev => !prev)
   }
 
   const handleToggleWhitelist = (enabled: boolean) => {
@@ -141,28 +131,38 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
   const handleAllow = async () => {
     const key = whitelistKeyInput.trim()
     if (!key) { setAllowError('Identity key is required'); return }
-    if (!peerPayClient) return
+    if (permissions.includes(key)) { setAllowError('Identity already whitelisted'); return }
     setAllowError('')
-    try {
-      await peerPayClient.allowPaymentRequestsFrom({ identityKey: key })
-      setWhitelistKeyInput('')
-      whitelistIdentitySearch.handleSelect(null, null)
-      await loadPermissions()
-      toast.success('Identity allowed')
-    } catch (e) {
-      setAllowError((e as Error)?.message ?? 'Failed to allow identity')
+
+    // Best-effort server-side permission set (may not persist on all servers).
+    if (peerPayClient) {
+      try {
+        await peerPayClient.allowPaymentRequestsFrom({ identityKey: key })
+      } catch (e) {
+        console.warn('[IncomingRequestList] Server-side allow failed (non-blocking):', e)
+      }
     }
+
+    // Authoritative: persist in localStorage.
+    saveWhitelist([...permissions, key])
+    setWhitelistKeyInput('')
+    whitelistIdentitySearch.handleSelect(null, null)
+    toast.success('Identity whitelisted')
   }
 
   const handleBlock = async (identityKey: string) => {
-    if (!peerPayClient) return
-    try {
-      await peerPayClient.blockPaymentRequestsFrom({ identityKey })
-      setPermissions(prev => prev.filter(p => p.identityKey !== identityKey))
-      toast.success('Identity removed from whitelist')
-    } catch (e) {
-      toast.error((e as Error)?.message ?? 'Failed to block identity')
+    // Best-effort server-side block.
+    if (peerPayClient) {
+      try {
+        await peerPayClient.blockPaymentRequestsFrom({ identityKey })
+      } catch (e) {
+        console.warn('[IncomingRequestList] Server-side block failed (non-blocking):', e)
+      }
     }
+
+    // Authoritative: remove from localStorage.
+    saveWhitelist(permissions.filter(k => k !== identityKey))
+    toast.success('Identity removed from whitelist')
   }
 
   const saveLimits = () => {
@@ -240,14 +240,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
         <Collapse in={settingsOpen} timeout="auto" unmountOnExit>
           <Divider sx={{ my: 2 }} />
 
-          {settingsLoading && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-              <CircularProgress size={24} />
-            </Box>
-          )}
-
-          {!settingsLoading && settingsLoaded && (
-            <Stack spacing={2}>
+          <Stack spacing={2}>
               {/* Whitelist toggle */}
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Box>
@@ -363,21 +356,21 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                   </Stack>
 
                   {/* Whitelisted identities list */}
-                  {permissions.filter(p => p.allowed).length === 0 ? (
+                  {permissions.length === 0 ? (
                     <Typography variant="body2" color="text.secondary">
                       No whitelisted identities yet. Add identities above to receive payment requests.
                     </Typography>
                   ) : (
                     <List dense disablePadding>
-                      {permissions.filter(p => p.allowed).map(p => (
+                      {permissions.map(key => (
                         <ListItem
-                          key={p.identityKey}
+                          key={key}
                           disableGutters
                           secondaryAction={
                             <IconButton
                               edge="end"
                               size="small"
-                              onClick={() => handleBlock(p.identityKey)}
+                              onClick={() => handleBlock(key)}
                               color="error"
                             >
                               <DeleteIcon fontSize="small" />
@@ -387,12 +380,12 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                           <ListItemText
                             primary={
                               <Typography variant="body2" fontWeight={500}>
-                                {truncateKey(p.identityKey, 24)}
+                                {truncateKey(key, 24)}
                               </Typography>
                             }
                             secondary={
                               <Typography variant="caption" sx={{ fontFamily: 'monospace' }} color="text.secondary">
-                                {p.identityKey}
+                                {key}
                               </Typography>
                             }
                           />
@@ -435,7 +428,6 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                 </Button>
               </Stack>
             </Stack>
-          )}
         </Collapse>
       </Paper>
 

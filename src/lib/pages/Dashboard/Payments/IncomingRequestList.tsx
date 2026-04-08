@@ -78,7 +78,6 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
   const whitelistEnabledKey = `payReq_whitelistEnabled${idSuffix}`
 
   // Per-card state
-  const [payAmounts, setPayAmounts] = useState<Record<string, string>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [paying, setPaying] = useState<LoadingMap>({})
   const [declining, setDeclining] = useState<LoadingMap>({})
@@ -190,11 +189,9 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
     const id = req.messageId
     setPaying(prev => ({ ...prev, [id]: true }))
     try {
-      const rawAmt = payAmounts[id]
-      const overrideAmount = rawAmt ? parseInt(rawAmt, 10) : undefined
       const note = notes[id] || undefined
       await peerPayClient.fulfillPaymentRequest(
-        { request: req, amount: overrideAmount, note },
+        { request: req, note },
         messageBoxUrl || undefined
       )
       window.dispatchEvent(new CustomEvent('balance-changed'))
@@ -515,19 +512,6 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
 
                 {!isExpired && (
                   <>
-                    {/* Inline amount override */}
-                    <TextField
-                      size="small"
-                      label="Amount to Pay (sats)"
-                      placeholder={String(req.amount)}
-                      value={payAmounts[id] ?? ''}
-                      onChange={(e) => setPayAmounts(prev => ({ ...prev, [id]: e.target.value.replace(/[^0-9]/g, '') }))}
-                      type="number"
-                      inputProps={{ min: 1 }}
-                      helperText="Leave blank to pay requested amount"
-                      disabled={isBusy}
-                    />
-
                     {/* Optional note */}
                     <TextField
                       size="small"

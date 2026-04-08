@@ -31,6 +31,7 @@ import { PaymentRequestResponse, IncomingPayment } from '@bsv/message-box-client
 
 export type OutgoingRequest = {
   requestId: string
+  requestProof: string
   recipient: string
   recipientLabel: string
   amount: number
@@ -262,7 +263,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
     try {
       setSending(true)
       const expiresAt = Date.now() + expiryMs
-      const { requestId } = await peerPayClient.requestPayment(
+      const { requestId, requestProof } = await peerPayClient.requestPayment(
         { recipient: recipient.trim(), amount, description: description.trim(), expiresAt },
         messageBoxUrl || undefined
       )
@@ -274,6 +275,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
       updateOutgoing(prev => [
         {
           requestId,
+          requestProof,
           recipient: recipient.trim(),
           recipientLabel: label,
           amount,
@@ -304,7 +306,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
     try {
       setCancellingId(req.requestId)
       await peerPayClient.cancelPaymentRequest(
-        { recipient: req.recipient, requestId: req.requestId },
+        { recipient: req.recipient, requestId: req.requestId, requestProof: req.requestProof },
         messageBoxUrl || undefined
       )
       updateOutgoing(prev =>

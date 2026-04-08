@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.0.9] - 2026-04-08
+## [2.1.0] - 2026-04-08
 
 ### Features
 - **Request Payment**: Users can now request Bitcoin payments from other identities via the Payments page

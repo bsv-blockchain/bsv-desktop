@@ -106,37 +106,38 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
   const [sending, setSending] = useState(false)
   const [currencySymbol, setCurrencySymbol] = useState('$')
 
-  // Outgoing tracker — starts empty, loaded from localStorage once identity is known.
+  // Outgoing tracker — loaded from localStorage once identity is known.
   const [outgoing, setOutgoing] = useState<OutgoingRequest[]>([])
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [receivingId, setReceivingId] = useState<string | null>(null)
 
-  // Guard: the SAVE effect must not run until the LOAD effect has completed at least once.
-  // This prevents the initial empty state from overwriting persisted data in localStorage.
-  const hasLoadedRef = useRef(false)
-
   // Load outgoing requests from localStorage when identity becomes available or changes.
   useEffect(() => {
     if (!storageKey) return
-    hasLoadedRef.current = false
     try {
       const raw = localStorage.getItem(storageKey)
-      const parsed = raw ? JSON.parse(raw) : []
-      setOutgoing(parsed)
+      setOutgoing(raw ? JSON.parse(raw) : [])
     } catch {
       setOutgoing([])
     }
-    hasLoadedRef.current = true
   }, [storageKey])
 
-  // Persist outgoing requests to localStorage on every change.
-  // Only persist when we have a valid storage key (identity loaded).
-  // Exclude incomingPayment (contains transaction data too large for localStorage).
-  useEffect(() => {
-    if (!storageKey || !hasLoadedRef.current) return
-    const serializable = outgoing.map(({ incomingPayment, ...rest }) => rest)
-    localStorage.setItem(storageKey, JSON.stringify(serializable))
-  }, [outgoing, storageKey])
+  /**
+   * Persist-aware setter for outgoing requests.
+   * Writes to localStorage immediately when called, avoiding the
+   * race condition where a useEffect-based save overwrites data
+   * before the load effect's setOutgoing takes effect.
+   */
+  const updateOutgoing = useCallback((updater: OutgoingRequest[] | ((prev: OutgoingRequest[]) => OutgoingRequest[])) => {
+    setOutgoing(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      if (storageKey) {
+        const serializable = next.map(({ incomingPayment, ...rest }) => rest)
+        localStorage.setItem(storageKey, JSON.stringify(serializable))
+      }
+      return next
+    })
+  }, [storageKey])
 
   const currencyConverter = new CurrencyConverter(undefined, managers?.settingsManager as any)
 
@@ -173,7 +174,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
         incomingPayments = await peerPayClient.listIncomingPayments(messageBoxUrl)
       }
 
-      setOutgoing(prev => prev.map(req => {
+      updateOutgoing(prev => prev.map(req => {
         // Don't update already received requests
         if (req.status === 'received') return req
 
@@ -212,7 +213,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
   // Mark expired requests
   useEffect(() => {
     const tick = setInterval(() => {
-      setOutgoing(prev =>
+      updateOutgoing(prev =>
         prev.map(r =>
           r.status === 'pending' && r.expiresAt < Date.now()
             ? { ...r, status: 'expired' }
@@ -270,7 +271,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
           ? (identitySearch.selectedIdentity as IdentityOption).name ||
             (identitySearch.selectedIdentity as IdentityOption).identityKey.slice(0, 14)
           : recipient.slice(0, 14)
-      setOutgoing(prev => [
+      updateOutgoing(prev => [
         {
           requestId,
           recipient: recipient.trim(),
@@ -306,7 +307,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
         { recipient: req.recipient, requestId: req.requestId },
         messageBoxUrl || undefined
       )
-      setOutgoing(prev =>
+      updateOutgoing(prev =>
         prev.map(r => r.requestId === req.requestId ? { ...r, status: 'cancelled' } : r)
       )
       toast.success('Request cancelled')
@@ -323,7 +324,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
     try {
       setReceivingId(req.requestId)
       await peerPayClient.acceptPayment(req.incomingPayment)
-      setOutgoing(prev =>
+      updateOutgoing(prev =>
         prev.map(r => r.requestId === req.requestId ? { ...r, status: 'received' as const } : r)
       )
       window.dispatchEvent(new CustomEvent('balance-changed'))

@@ -23,7 +23,7 @@ import { CurrencyConverter } from '@bsv/amountinator'
 import { toast } from 'react-toastify'
 import useAsyncEffect from 'use-async-effect'
 import { useIdentitySearch } from '@bsv/identity-react'
-import { PaymentRequestResponse } from '@bsv/message-box-client'
+import { PaymentRequestResponse, IncomingPayment } from '@bsv/message-box-client'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                                */
@@ -36,9 +36,11 @@ export type OutgoingRequest = {
   amount: number
   description: string
   expiresAt: number
-  status: 'pending' | 'paid' | 'declined' | 'expired' | 'cancelled'
+  status: 'pending' | 'paid' | 'declined' | 'expired' | 'cancelled' | 'received'
   amountPaid?: number
   note?: string
+  /** The incoming payment associated with a fulfilled request, used for accepting funds. */
+  incomingPayment?: IncomingPayment
 }
 
 type Props = {
@@ -76,6 +78,7 @@ function statusColor(status: OutgoingRequest['status']): 'success' | 'info' | 'e
   switch (status) {
     case 'pending': return 'success'
     case 'paid': return 'info'
+    case 'received': return 'success'
     case 'declined': return 'error'
     default: return 'default'
   }
@@ -101,6 +104,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
   // Outgoing tracker
   const [outgoing, setOutgoing] = useState<OutgoingRequest[]>([])
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [receivingId, setReceivingId] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const currencyConverter = new CurrencyConverter(undefined, managers?.settingsManager as any)
@@ -118,21 +122,49 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
     setCurrencySymbol(currencyConverter.getCurrencySymbol())
   }, [])
 
-  // Poll for responses every 15 seconds when there are pending requests
+  // Poll for responses every 15 seconds when there are pending or paid (unreceived) requests
   const pollResponses = useCallback(async () => {
     if (!peerPayClient || !messageBoxUrl) return
     const hasPending = outgoing.some(r => r.status === 'pending' && r.expiresAt > Date.now())
-    if (!hasPending) return
+    const hasPaidUnreceived = outgoing.some(r => r.status === 'paid' && !r.incomingPayment)
+    if (!hasPending && !hasPaidUnreceived) return
     try {
       const responses: PaymentRequestResponse[] = await peerPayClient.listPaymentRequestResponses(messageBoxUrl)
-      if (responses.length === 0) return
+
+      // Also fetch incoming payments to match with fulfilled requests
+      let incomingPayments: IncomingPayment[] = []
+      if (responses.some(r => r.status === 'paid') || hasPaidUnreceived) {
+        incomingPayments = await peerPayClient.listIncomingPayments(messageBoxUrl)
+      }
+
       setOutgoing(prev => prev.map(req => {
+        // Don't update already received requests
+        if (req.status === 'received') return req
+
         const match = responses.find(r => r.requestId === req.requestId)
-        if (!match) return req
+        if (!match) {
+          // Try to find incoming payment for already-paid requests missing their payment ref
+          if (req.status === 'paid' && !req.incomingPayment) {
+            const payment = incomingPayments.find(p => p.sender === req.recipient)
+            if (payment) return { ...req, incomingPayment: payment }
+          }
+          return req
+        }
+
+        if (match.status === 'paid') {
+          // Find the matching incoming payment from this sender
+          const payment = incomingPayments.find(p => p.sender === req.recipient)
+          return {
+            ...req,
+            status: 'paid' as const,
+            amountPaid: match.amountPaid,
+            note: match.note,
+            incomingPayment: payment,
+          }
+        }
         return {
           ...req,
-          status: match.status === 'paid' ? 'paid' : 'declined',
-          amountPaid: match.amountPaid,
+          status: 'declined' as const,
           note: match.note,
         }
       }))
@@ -247,6 +279,24 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
       toast.error((e as Error)?.message ?? 'Failed to cancel request')
     } finally {
       setCancellingId(null)
+    }
+  }
+
+  /** Accept/internalize the payment associated with a fulfilled request. */
+  const handleReceive = async (req: OutgoingRequest) => {
+    if (!peerPayClient || !req.incomingPayment) return
+    try {
+      setReceivingId(req.requestId)
+      await peerPayClient.acceptPayment(req.incomingPayment)
+      setOutgoing(prev =>
+        prev.map(r => r.requestId === req.requestId ? { ...r, status: 'received' as const } : r)
+      )
+      window.dispatchEvent(new CustomEvent('balance-changed'))
+      toast.success('Payment received!')
+    } catch (e) {
+      toast.error((e as Error)?.message ?? 'Failed to receive payment')
+    } finally {
+      setReceivingId(null)
     }
   }
 
@@ -435,15 +485,17 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
                     <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
                       {req.description}
                     </Typography>
-                    {req.note && (
-                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', fontStyle: 'italic' }}>
-                        Note: {req.note}
-                      </Typography>
-                    )}
                     {req.status === 'paid' && req.amountPaid != null && (
-                      <Typography variant="body2" color="info.main" sx={{ fontSize: '0.8rem' }}>
+                      <Typography variant="body2" color="info.main" sx={{ fontWeight: 600, fontSize: '0.85rem' }}>
                         Paid: {req.amountPaid.toLocaleString()} sats
                       </Typography>
+                    )}
+                    {req.note && (
+                      <Box sx={{ borderLeft: '3px solid', borderColor: 'divider', pl: 1.5, py: 0.5, mt: 0.5, bgcolor: 'action.hover', borderRadius: '0 4px 4px 0' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                          "{req.note}"
+                        </Typography>
+                      </Box>
                     )}
                   </Box>
                   <Stack alignItems="flex-end" spacing={0.5} sx={{ flexShrink: 0 }}>
@@ -463,6 +515,24 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
                       >
                         {cancellingId === req.requestId ? <CircularProgress size={12} /> : 'Cancel'}
                       </Button>
+                    )}
+                    {req.status === 'paid' && req.incomingPayment && (
+                      <Button
+                        size="small"
+                        variant="contained"
+                        color="success"
+                        disabled={receivingId === req.requestId}
+                        onClick={() => handleReceive(req)}
+                        startIcon={receivingId === req.requestId ? <CircularProgress size={12} sx={{ color: 'inherit' }} /> : null}
+                        sx={{ fontSize: '0.72rem', py: 0.25, minWidth: 64 }}
+                      >
+                        {receivingId === req.requestId ? 'Receiving…' : 'Receive'}
+                      </Button>
+                    )}
+                    {req.status === 'paid' && !req.incomingPayment && (
+                      <Typography variant="caption" color="text.secondary">
+                        Waiting for payment…
+                      </Typography>
                     )}
                   </Stack>
                 </Box>

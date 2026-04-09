@@ -190,23 +190,24 @@ jobs:
           if (-not (Test-Path "D:\Certificate_pkcs12.p12")) { throw "Client cert file missing at D:\Certificate_pkcs12.p12" }
 
           smctl --version
-          smctl health --verbose
 
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
           if (-not $signtool) { throw "signtool.exe not found" }
+
+          # List available smctl keypairs for diagnostics
+          smctl keypair ls 2>&1 | Write-Host
 
           $targets = Get-ChildItem -Path "release" -Recurse -Include *.exe | Select-Object -ExpandProperty FullName
           if (-not $targets) { throw "No .exe files found under release/ to sign." }
 
           foreach ($file in $targets) {
             Write-Host "Signing: $file"
-            smctl sign `
-              --verbose `
-              --fingerprint "$env:SM_FINGERPRINT" `
-              --input "$file" `
-              --timestamp-url "http://timestamp.digicert.com" `
-              --hash "sha256"
+            smctl sign --fingerprint "$env:SM_FINGERPRINT" --input "$file"
             if ($LASTEXITCODE -ne 0) { throw "smctl sign failed for $file (exit $LASTEXITCODE)" }
+
+            # Add RFC 3161 timestamp
+            & $signtool timestamp /tr http://timestamp.digicert.com /td sha256 "$file"
+            if ($LASTEXITCODE -ne 0) { Write-Warning "Timestamping failed for $file (non-fatal)" }
 
             & $signtool verify /pa "$file"
             if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $file" }

@@ -48,6 +48,20 @@ jobs:
           SM_CLIENT_CERT_FILE: ${{ env.SM_CLIENT_CERT_FILE }}
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.DIGICERT_CLIENT_AUTH_PASS }}
 
+      - name: Sync certificate to Windows store (KSP)
+        shell: pwsh
+        run: |
+          Write-Host "=== Looking for smksp_cert_sync.exe ==="
+          $sync = Get-ChildItem -Path $env:RUNNER_TOOL_CACHE, "$env:LOCALAPPDATA\Temp\smtools-windows-x64" -Filter "smksp_cert_sync.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($sync) {
+            Write-Host "Found: $($sync.FullName)"
+            & $sync.FullName
+          } else {
+            Write-Host "smksp_cert_sync.exe not found, trying smctl windows certsync..."
+            smctl windows certsync
+          }
+          certutil.exe -csp "DigiCert Software Trust Manager KSP" -key -user
+
       - name: smctl diagnostics
         shell: pwsh
         env:

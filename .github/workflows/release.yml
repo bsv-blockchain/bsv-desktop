@@ -147,41 +147,21 @@ jobs:
             release/SHA256SUMS.asc
 
       # === Windows Build and Signing ===
-      - name: Set up certificate
+      - name: Decode DigiCert client certificate
         if: matrix.platform == 'windows-2022'
-        run: |
-          echo "${{ secrets.DIGICERT_CLIENT_AUTH_CERT }}" | base64 --decode > /d/Certificate_pkcs12.p12
         shell: bash
-
-      - name: Set DigiCert environment variables
-        if: matrix.platform == 'windows-2022'
         run: |
-          echo "SM_HOST=${{ secrets.DIGICERT_HOST }}" >> "$GITHUB_ENV"
-          echo "SM_API_KEY=${{ secrets.DIGICERT_KEY_LOCKER_API_KEY }}" >> "$GITHUB_ENV"
-          echo "SM_FINGERPRINT=${{ secrets.DIGICERT_CODE_SIGNING_SHA1_HASH }}" >> "$GITHUB_ENV"
-          echo "SM_CLIENT_CERT_FILE=D:\\Certificate_pkcs12.p12" >> "$GITHUB_ENV"
-          echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.DIGICERT_CLIENT_AUTH_PASS }}" >> "$GITHUB_ENV"
-        shell: bash
+          echo "${{ secrets.DIGICERT_CLIENT_AUTH_CERT }}" | base64 --decode > "${RUNNER_TEMP}/sm_client_cert.p12"
+          echo "SM_CLIENT_CERT_FILE=${RUNNER_TEMP}/sm_client_cert.p12" >> "$GITHUB_ENV"
 
-      - name: Code signing with Software Trust Manager
+      - name: Setup DigiCert Software Trust Manager
         if: matrix.platform == 'windows-2022'
-        uses: digicert/ssm-code-signing@v1.2.0
+        uses: digicert/code-signing-software-trust-action@v1
         env:
-          FORCE_DOWNLOAD_TOOLS: 'true'
-
-      - name: DigiCert tools healthcheck
-        if: matrix.platform == 'windows-2022'
-        shell: cmd
-        run: |
-          smctl version
-          smctl healthcheck
-
-      - name: Sync KeyLocker certificate to Windows store (KSP)
-        if: matrix.platform == 'windows-2022'
-        shell: cmd
-        run: |
-          "%LOCALAPPDATA%\Temp\smtools-windows-x64\smksp_cert_sync.exe"
-          certutil.exe -csp "DigiCert Software Trust Manager KSP" -key -user
+          SM_HOST: ${{ secrets.DIGICERT_HOST }}
+          SM_API_KEY: ${{ secrets.DIGICERT_KEY_LOCKER_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ env.SM_CLIENT_CERT_FILE }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.DIGICERT_CLIENT_AUTH_PASS }}
 
       - name: build Electron app (Windows)
         if: matrix.platform == 'windows-2022'
@@ -192,29 +172,32 @@ jobs:
           npm run build
           npx electron-builder --win --publish never
 
-      - name: Sign Windows executables with DigiCert (KSP)
-        if: matrix.platform == 'windows-2022'
-        shell: cmd
-        run: |
-          setlocal enabledelayedexpansion
-          for /r "release" %%f in (*.exe) do (
-            echo Signing "%%f"
-            smctl sign --fingerprint "%SM_FINGERPRINT%" --input "%%f"
-            if errorlevel 1 (
-              echo Signing failed for "%%f"
-              exit /b 1
-            )
-          )
-
-      - name: Verify Windows Signatures
+      - name: Sign and verify Windows executables with DigiCert
         if: matrix.platform == 'windows-2022'
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $signtool) { throw "signtool.exe not found. Ensure Windows 10 SDK is installed on the runner." }
-          $files = Get-ChildItem -Recurse -Path release\ -Include *.exe | Select-Object -ExpandProperty FullName
-          foreach ($file in $files) {
+          if (-not $signtool) { throw "signtool.exe not found." }
+
+          $targets = Get-ChildItem -Path "release" -Recurse -Include *.exe | Select-Object -ExpandProperty FullName
+          if (-not $targets) { throw "No .exe files found under release/" }
+
+          foreach ($file in $targets) {
+            Write-Host "--- Signing: $file ---"
+            $output = & smctl sign --fingerprint "${{ secrets.DIGICERT_CODE_SIGNING_SHA1_HASH }}" --input "$file" 2>&1
+            Write-Host $output
+
+            if ($output -match "FAILED") {
+              throw "smctl sign reported FAILED for $file"
+            }
+
+            Write-Host "--- Verifying: $file ---"
             & $signtool verify /pa "$file"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Signature verification failed for $file"
+            }
           }
 
       - name: Upload Windows Artifacts

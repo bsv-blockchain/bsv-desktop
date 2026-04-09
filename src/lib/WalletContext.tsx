@@ -1350,16 +1350,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         console.log('[buildWallet] Remote storage added to WalletStorageManager');
       }
 
-      // Get all stores and set the first one (primary) as active
-      const stores = storageManager.getStores();
-      if (stores && stores.length > 0) {
-        const activeStoreKey = stores[0].storageIdentityKey;
-        console.log('[buildWallet] Setting active storage:', activeStoreKey);
-        await storageManager.setActive(activeStoreKey);
-        console.log('[buildWallet] Active storage configured');
-      }
-
-      // Add backup storage providers if configured
+      // Add backup storage providers if configured (BEFORE setActive so
+      // setActive can resolve any conflicting activeStorage values)
       if (backupStorageUrls && backupStorageUrls.length > 0) {
         console.log('[buildWallet] Adding BACKUP storage providers:', backupStorageUrls.length);
         for (const backupUrl of backupStorageUrls) {
@@ -1385,6 +1377,17 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
             toast.error(`Failed to connect to backup storage ${backupUrl}: ${error.message}`);
           }
         }
+      }
+
+      // Set the primary store as active AFTER all backups are added.
+      // setActive resolves any conflicting activeStorage values between
+      // stores and calls makeAvailable() to refresh the state.
+      const stores = storageManager.getStores();
+      if (stores && stores.length > 0) {
+        const activeStoreKey = stores[0].storageIdentityKey;
+        console.log('[buildWallet] Setting active storage:', activeStoreKey);
+        await storageManager.setActive(activeStoreKey);
+        console.log('[buildWallet] Active storage configured');
       }
 
       console.log('[buildWallet] Setting up permissions manager...');
@@ -1762,9 +1765,14 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
           if (messageBoxUrl && useMessageBox) {
             (async () => {
               try {
+                const walletForPeerPay = permissionsManagerRef.current || managers.permissionsManager;
+                if (!walletForPeerPay) {
+                  console.warn('[WalletContext] Cannot create PeerPayClient: permissionsManager not yet available');
+                  return;
+                }
                 console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
                 const client = new PeerPayClient({
-                  walletClient: managers.permissionsManager,
+                  walletClient: walletForPeerPay,
                   messageBoxHost: messageBoxUrl,
                   enableLogging: true,
                   originator: adminOriginator
@@ -2022,11 +2030,12 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
       // Create PeerPayClient without auto-anointing
       // User must explicitly anoint the host via the UI
-      if (managers?.permissionsManager) {
+      const walletForPeerPay = permissionsManagerRef.current || managers?.permissionsManager;
+      if (walletForPeerPay) {
         try {
           console.log('[updateMessageBoxUrl] Initializing PeerPayClient...');
           const client = new PeerPayClient({
-            walletClient: managers.permissionsManager,
+            walletClient: walletForPeerPay,
             messageBoxHost: trimmedUrl,
             enableLogging: true,
             originator: adminOriginator
@@ -2254,9 +2263,14 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (messageBoxUrl && useMessageBox) {
         (async () => {
           try {
+            const walletForPeerPay = permissionsManagerRef.current || managers.permissionsManager;
+            if (!walletForPeerPay) {
+              console.warn('[WalletContext] Cannot create PeerPayClient: permissionsManager not yet available');
+              return;
+            }
             console.log('[WalletContext] Wallet authenticated, initializing PeerPayClient...');
             const client = new PeerPayClient({
-              walletClient: managers.permissionsManager,
+              walletClient: walletForPeerPay,
               messageBoxHost: messageBoxUrl,
               enableLogging: true,
               originator: adminOriginator

@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.1.0] - 2026-04-08
+
+### Features
+- **Request Payment**: Users can now request Bitcoin payments from other identities via the Payments page
+  - New "Request Payment" tab with recipient search, amount, description, and configurable expiry
+  - New "Incoming Requests" tab showing payment request cards with Pay/Decline actions
+  - Editable payment amount — payer can modify the amount before fulfilling
+  - Optional notes on payments and declines
+  - Outgoing request tracker with live status updates (Pending/Paid/Declined/Expired/Cancelled)
+  - Cancel pending outgoing requests
+- **Request Security Settings** (in Incoming Requests tab):
+  - Identity whitelist with on/off toggle — only whitelisted identities can send requests when enabled
+  - Identity search integration for adding to whitelist
+  - Configurable min/max amount limits to filter dust and oversized requests
+- Payments page reorganized into 4 full-width tabs: Send Payment, Request Payment, Incoming Requests, Pending Payments
+
+### Dependencies
+- `@bsv/message-box-client` ^2.0.6 (requires >=2.0.7 with payment request methods once published)
 ## [2.0.9] - 2026-03-18
 
 ### Features

@@ -2209,10 +2209,24 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   }, [peerPayClient, checkAnointmentStatus]);
 
   const logout = useCallback(() => {
+    // Preserve payment request data across logout (keyed by identity).
+    const preservedKeys: Record<string, string> = {}
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('payReq_')) {
+        preservedKeys[key] = localStorage.getItem(key) ?? ''
+      }
+    }
+
     // Clear localStorage to prevent auto-login
     localStorage.clear();
     if (localStorage.snap) {
       localStorage.removeItem('snap');
+    }
+
+    // Restore preserved payment request data
+    for (const [key, value] of Object.entries(preservedKeys)) {
+      localStorage.setItem(key, value)
     }
 
     // Reset manager state

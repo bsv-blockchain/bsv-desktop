@@ -27,7 +27,9 @@ import {
   Link
 } from '@mui/material'
 import InputAdornment from '@mui/material/InputAdornment'
-import { IncomingPayment } from '@bsv/message-box-client'
+import { IncomingPayment, IncomingPaymentRequest } from '@bsv/message-box-client'
+import RequestPaymentForm from './RequestPaymentForm'
+import IncomingRequestList from './IncomingRequestList'
 import { Utils, Script, PublicKey, WalletInterface } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
 import { toast } from 'react-toastify'
@@ -475,11 +477,15 @@ export default function PeerPayRoute() {
     isHostAnointed,
     anointCurrentHost,
     anointmentLoading,
-    adminOriginator
+    adminOriginator,
+    activeProfile
   } = useContext(WalletContext)
   const wallet = managers?.permissionsManager || null
+  const idSuffix = activeProfile?.identityKey ? `_${activeProfile.identityKey}` : ''
 
   const [payments, setPayments] = useState<IncomingPayment[]>([])
+  const [incomingRequests, setIncomingRequests] = useState<IncomingPaymentRequest[]>([])
+  const [activeTab, setActiveTab] = useState(0)
   const [loading, setLoading] = useState(false)
   const [transactions, setTransactions] = useState([])
   const [snack, setSnack] = useState<{ open: boolean; msg: string; severity: 'success' | 'info' | 'warning' | 'error' }>({
@@ -500,6 +506,21 @@ export default function PeerPayRoute() {
       setLoading(false)
     }
   }, [peerPayClient, messageBoxUrl])
+
+  const fetchRequests = useCallback(async () => {
+    try {
+      if (!peerPayClient || !messageBoxUrl) return
+      const min = parseInt(localStorage.getItem(`payReq_minAmount${idSuffix}`) ?? '1000', 10)
+      const max = parseInt(localStorage.getItem(`payReq_maxAmount${idSuffix}`) ?? '10000000', 10)
+      const list = await peerPayClient.listIncomingPaymentRequests(messageBoxUrl, {
+        minAmount: isNaN(min) ? 1000 : min,
+        maxAmount: isNaN(max) ? 10000000 : max
+      })
+      setIncomingRequests(list)
+    } catch (e) {
+      setSnack({ open: true, msg: (e as Error)?.message ?? 'Failed to load requests', severity: 'error' })
+    }
+  }, [peerPayClient, messageBoxUrl, idSuffix])
 
   const getPastTransactions = async () => {
     if (!wallet) return
@@ -567,65 +588,107 @@ export default function PeerPayRoute() {
           Payments
         </Typography>
 
-        <Stack spacing={2}>
-          {!isHostAnointed && (
-            <Alert severity="info">
-              Your message box host is not yet anointed. You can send payments, but others cannot find you to send payments to you until you anoint the host in Settings.
-            </Alert>
-          )}
+        {!isHostAnointed && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Your message box host is not yet anointed. You can send payments, but others cannot find you to send payments to you until you anoint the host in Settings.
+          </Alert>
+        )}
 
-          <PaymentForm
-            onSent={fetchPayments}
+        <Tabs
+          value={activeTab}
+          onChange={(_, v) => {
+            setActiveTab(v)
+            if (v === 2) fetchRequests()
+            if (v === 3) fetchPayments()
+          }}
+          variant="fullWidth"
+          sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+        >
+          <Tab label="Send Payment" />
+          <Tab label="Request Payment" />
+          <Tab label="Incoming Requests" />
+          <Tab label="Pending Payments" />
+        </Tabs>
+
+        {/* Tab 0: Send Payment */}
+        {activeTab === 0 && (
+          <Stack spacing={2}>
+            <PaymentForm
+              onSent={fetchPayments}
+              wallet={wallet}
+            />
+
+            {loading && <LinearProgress />}
+
+            {/* Transaction History Section */}
+            <Paper elevation={2} sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 500 }}>
+                Transaction History
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+
+              <Button variant="outlined" onClick={getPastTransactions} fullWidth sx={{ mb: 2 }}>
+                Refresh Transactions
+              </Button>
+
+              {transactions.length === 0 ? (
+                <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
+                  No transactions yet...
+                </Typography>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {transactions.map((tx, index) => (
+                    <Card key={index} variant="outlined">
+                      <CardContent>
+                        <Typography variant="body2" color="textSecondary">
+                          <strong>TXID:</strong>{' '}
+                          <Link
+                            href={`https://whatsonchain.com/tx/${tx.txid}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {tx.txid}
+                          </Link>
+                        </Typography>
+                        <Typography variant="body2" color="textSecondary">
+                          <strong>To:</strong> {tx.to || 'N/A'}
+                        </Typography>
+                        <Typography variant="body2" color="textSecondary">
+                          <strong>Amount:</strong> {tx.amount || 'N/A'} BSV
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </Box>
+              )}
+            </Paper>
+          </Stack>
+        )}
+
+        {/* Tab 1: Request Payment */}
+        {activeTab === 1 && (
+          <RequestPaymentForm
+            wallet={wallet}
+            onRequestSent={fetchPayments}
+          />
+        )}
+
+        {/* Tab 2: Incoming Requests */}
+        {activeTab === 2 && (
+          <IncomingRequestList
+            requests={incomingRequests}
+            onRefresh={fetchRequests}
             wallet={wallet}
           />
+        )}
 
-          {loading && <LinearProgress />}
-
-          <PaymentList payments={payments} onRefresh={fetchPayments} />
-
-          {/* Transaction History Section */}
-          <Paper elevation={2} sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom sx={{ fontWeight: 500 }}>
-              Transaction History
-            </Typography>
-            <Divider sx={{ mb: 2 }} />
-
-            <Button variant="outlined" onClick={getPastTransactions} fullWidth sx={{ mb: 2 }}>
-              Refresh Transactions
-            </Button>
-
-            {transactions.length === 0 ? (
-              <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-                No transactions yet...
-              </Typography>
-            ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {transactions.map((tx, index) => (
-                  <Card key={index} variant="outlined">
-                    <CardContent>
-                      <Typography variant="body2" color="textSecondary">
-                        <strong>TXID:</strong>{' '}
-                        <Link
-                          href={`https://whatsonchain.com/tx/${tx.txid}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {tx.txid}
-                        </Link>
-                      </Typography>
-                      <Typography variant="body2" color="textSecondary">
-                        <strong>To:</strong> {tx.to || 'N/A'}
-                      </Typography>
-                      <Typography variant="body2" color="textSecondary">
-                        <strong>Amount:</strong> {tx.amount || 'N/A'} BSV
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                ))}
-              </Box>
-            )}
-          </Paper>
-        </Stack>
+        {/* Tab 3: Pending Payments */}
+        {activeTab === 3 && (
+          <Stack spacing={2}>
+            {loading && <LinearProgress />}
+            <PaymentList payments={payments} onRefresh={fetchPayments} />
+          </Stack>
+        )}
 
         <Snackbar
           open={snack.open}

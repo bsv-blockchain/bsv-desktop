@@ -12,6 +12,7 @@ dist
 dist-electron
 release
 *.local
+docs/superpowers
 
 # Editor directories and files
 .vscode/*
@@ -22,6 +23,8 @@ release
 *.ntvs*
 *.njsproj
 *.sln
+*.sw?
+
 *.sw?a
 
 .claude/

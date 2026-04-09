@@ -29,6 +29,7 @@ import ComputerIcon from '@mui/icons-material/Computer'
 import { UserContext } from '../../../UserContext.js'
 import PageLoading from '../../../components/PageLoading.js'
 import MessageBoxConfig from '../../../components/MessageBoxConfig/index.tsx'
+import WalletDiagnosis from './WalletDiagnosis.tsx'
 const useStyles = makeStyles((theme: Theme) => ({
   root: {
     padding: theme.spacing(3),
@@ -762,6 +763,8 @@ const Settings = () => {
           {updateCheckLoading ? 'Checking for Updates...' : 'Check for Updates'}
         </Button>
       </Paper>
+
+      <WalletDiagnosis />
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>

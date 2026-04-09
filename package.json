@@ -1,6 +1,6 @@
 {
   "name": "bsv-desktop-electron",
-  "version": "2.0.9",
+  "version": "2.1.0",
   "description": "BSV Desktop Wallet - Electron Edition",
   "main": "dist-electron/main.js",
   "type": "module",
@@ -28,7 +28,7 @@
     "@bsv/btms-permission-module": "^1.0.1",
     "@bsv/btms-permission-module-ui": "^1.0.0",
     "@bsv/identity-react": "^1.1.14",
-    "@bsv/message-box-client": "^2.0.4",
+    "@bsv/message-box-client": "^2.0.6",
     "@bsv/sdk": "^2.0.7",
     "@bsv/uhrp-react": "^1.0.6",
     "@bsv/wallet-toolbox": "^2.1.5",

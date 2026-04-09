@@ -150,7 +150,8 @@
     "linux": {
       "target": [
         "AppImage",
-        "deb"
+        "deb",
+        "rpm"
       ],
       "category": "Finance",
       "icon": "build/icon.png"

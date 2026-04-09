@@ -39,7 +39,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y librsvg2-dev
+          sudo apt-get install -y librsvg2-dev rpm
 
       - name: setup node
         uses: actions/setup-node@v4
@@ -126,7 +126,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           cd release
-          sha256sum *.AppImage *.deb > SHA256SUMS 2>/dev/null || true
+          sha256sum *.AppImage *.deb *.rpm > SHA256SUMS 2>/dev/null || true
           if [ -f SHA256SUMS ]; then
             gpg --detach-sign --armor SHA256SUMS
           fi
@@ -140,6 +140,7 @@ jobs:
             release/*.AppImage
             release/*.AppImage.asc
             release/*.deb
+            release/*.rpm
             release/*.yml
             release/SHA256SUMS
             release/SHA256SUMS.asc
@@ -171,7 +172,6 @@ jobs:
         if: matrix.platform == 'windows-2022'
         shell: cmd
         run: |
-          smctl version
           smctl healthcheck
 
       - name: Sync KeyLocker certificate to Windows store (KSP)
@@ -180,6 +180,8 @@ jobs:
         run: |
           "%LOCALAPPDATA%\Temp\smtools-windows-x64\smksp_cert_sync.exe"
           certutil.exe -csp "DigiCert Software Trust Manager KSP" -key -user
+          echo --- Certificates in user My store ---
+          certutil.exe -store -user My
 
       - name: build Electron app (Windows)
         if: matrix.platform == 'windows-2022'
@@ -190,21 +192,13 @@ jobs:
           npm run build
           npx electron-builder --win --publish never
 
-      - name: Sign Windows executables with DigiCert (KSP)
-        if: matrix.platform == 'windows-2022'
-        shell: cmd
-        run: |
-          for /r "release" %%f in (*.exe) do (
-            smctl sign --fingerprint %SM_FINGERPRINT% --input "%%f"
-          )
-
       - name: Verify Windows Signatures
         if: matrix.platform == 'windows-2022'
         shell: pwsh
         run: |
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
           if (-not $signtool) { throw "signtool.exe not found. Ensure Windows 10 SDK is installed on the runner." }
-          $files = Get-ChildItem -Recurse -Path release\ -Include *.exe | Select-Object -ExpandProperty FullName
+          $files = Get-ChildItem -Path release\ -Filter *.exe | Select-Object -ExpandProperty FullName
           foreach ($file in $files) {
             & $signtool verify /pa "$file"
           }

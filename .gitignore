@@ -25,3 +25,7 @@ docs/superpowers
 *.sln
 *.sw?
 
+*.sw?a
+
+.claude/
+openspec/

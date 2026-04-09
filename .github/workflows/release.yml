@@ -185,11 +185,31 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+
+          if (-not $env:SM_FINGERPRINT) { throw "SM_FINGERPRINT is not set" }
+          if (-not (Test-Path "D:\Certificate_pkcs12.p12")) { throw "Client cert file missing at D:\Certificate_pkcs12.p12" }
+
+          smctl --version
+          smctl health --verbose
+
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { throw "signtool.exe not found" }
+
           $targets = Get-ChildItem -Path "release" -Recurse -Include *.exe | Select-Object -ExpandProperty FullName
           if (-not $targets) { throw "No .exe files found under release/ to sign." }
+
           foreach ($file in $targets) {
             Write-Host "Signing: $file"
-            smctl sign --fingerprint $env:SM_FINGERPRINT --input "$file"
+            smctl sign `
+              --verbose `
+              --fingerprint "$env:SM_FINGERPRINT" `
+              --input "$file" `
+              --timestamp-url "http://timestamp.digicert.com" `
+              --hash "sha256"
+            if ($LASTEXITCODE -ne 0) { throw "smctl sign failed for $file (exit $LASTEXITCODE)" }
+
+            & $signtool verify /pa "$file"
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $file" }
           }
 
       - name: Verify Windows Signatures

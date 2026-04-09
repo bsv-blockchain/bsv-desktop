@@ -1,3 +1,6 @@
+# DigiCert credentials
+.env.digicert
+
 # Logs
 logs
 *.log

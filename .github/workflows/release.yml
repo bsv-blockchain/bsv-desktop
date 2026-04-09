@@ -192,6 +192,14 @@ jobs:
           npm run build
           npx electron-builder --win --publish never
 
+      - name: Sign Windows executables with DigiCert (KSP)
+        if: matrix.platform == 'windows-2022'
+        shell: cmd
+        run: |
+          for /r "release" %%f in (*.exe) do (
+            smctl sign --fingerprint %SM_FINGERPRINT% --input "%%f"
+          )
+
       - name: Verify Windows Signatures
         if: matrix.platform == 'windows-2022'
         shell: pwsh

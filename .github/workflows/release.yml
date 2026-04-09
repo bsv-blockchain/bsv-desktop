@@ -165,7 +165,7 @@ jobs:
 
       - name: Code signing with Software Trust Manager
         if: matrix.platform == 'windows-2022'
-        uses: digicert/ssm-code-signing@v1.1.0
+        uses: digicert/ssm-code-signing@v1.2.0
         env:
           FORCE_DOWNLOAD_TOOLS: 'true'
 
@@ -196,8 +196,14 @@ jobs:
         if: matrix.platform == 'windows-2022'
         shell: cmd
         run: |
+          setlocal enabledelayedexpansion
           for /r "release" %%f in (*.exe) do (
-            smctl sign --fingerprint %SM_FINGERPRINT% --input "%%f"
+            echo Signing "%%f"
+            smctl sign --fingerprint "%SM_FINGERPRINT%" --input "%%f"
+            if errorlevel 1 (
+              echo Signing failed for "%%f"
+              exit /b 1
+            )
           )
 
       - name: Verify Windows Signatures

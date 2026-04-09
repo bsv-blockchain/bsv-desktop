@@ -169,58 +169,44 @@ jobs:
         env:
           FORCE_DOWNLOAD_TOOLS: 'true'
 
+      - name: DigiCert tools healthcheck
+        if: matrix.platform == 'windows-2022'
+        shell: cmd
+        run: |
+          smctl version
+          smctl healthcheck
+
+      - name: Sync KeyLocker certificate to Windows store (KSP)
+        if: matrix.platform == 'windows-2022'
+        shell: cmd
+        run: |
+          "%LOCALAPPDATA%\Temp\smtools-windows-x64\smksp_cert_sync.exe"
+          certutil.exe -csp "DigiCert Software Trust Manager KSP" -key -user
+
       - name: build Electron app (Windows)
         if: matrix.platform == 'windows-2022'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          CSC_LINK: ""
-          CSC_KEY_PASSWORD: ""
         run: |
           npm run build
           npx electron-builder --win --publish never
 
-      - name: Sign Windows executables with DigiCert (KeyLocker)
+      - name: Sign Windows executables with DigiCert (KSP)
         if: matrix.platform == 'windows-2022'
-        shell: pwsh
+        shell: cmd
         run: |
-          $ErrorActionPreference = "Stop"
-
-          if (-not $env:SM_FINGERPRINT) { throw "SM_FINGERPRINT is not set" }
-          if (-not (Test-Path "D:\Certificate_pkcs12.p12")) { throw "Client cert file missing at D:\Certificate_pkcs12.p12" }
-
-          smctl --version
-
-          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $signtool) { throw "signtool.exe not found" }
-
-          # List available smctl keypairs for diagnostics
-          smctl keypair ls 2>&1 | Write-Host
-
-          $targets = Get-ChildItem -Path "release" -Recurse -Include *.exe | Select-Object -ExpandProperty FullName
-          if (-not $targets) { throw "No .exe files found under release/ to sign." }
-
-          foreach ($file in $targets) {
-            Write-Host "Signing: $file"
-            smctl sign --fingerprint "$env:SM_FINGERPRINT" --input "$file"
-            if ($LASTEXITCODE -ne 0) { throw "smctl sign failed for $file (exit $LASTEXITCODE)" }
-
-            # Add RFC 3161 timestamp
-            & $signtool timestamp /tr http://timestamp.digicert.com /td sha256 "$file"
-            if ($LASTEXITCODE -ne 0) { Write-Warning "Timestamping failed for $file (non-fatal)" }
-
-            & $signtool verify /pa "$file"
-            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $file" }
-          }
+          for /r "release" %%f in (*.exe) do (
+            smctl sign --fingerprint %SM_FINGERPRINT% --input "%%f"
+          )
 
       - name: Verify Windows Signatures
         if: matrix.platform == 'windows-2022'
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
           if (-not $signtool) { throw "signtool.exe not found. Ensure Windows 10 SDK is installed on the runner." }
-          $files = Get-ChildItem -Path release\ -Recurse -Include *.exe | Select-Object -ExpandProperty FullName
+          $files = Get-ChildItem -Recurse -Path release\ -Include *.exe | Select-Object -ExpandProperty FullName
           foreach ($file in $files) {
             & $signtool verify /pa "$file"
           }

@@ -18,11 +18,18 @@ import { toast } from 'react-toastify';
 import { DEFAULT_CHAIN } from '../config';
 import { WalletContext, WABConfig, LoginType } from '../WalletContext';
 
-const WalletConfig: React.FC = () => {
+interface WalletConfigProps {
+  /** When true, the config panel starts expanded and immediately enters editing mode. */
+  autoExpand?: boolean
+  /** When true, the Wallet Login Type radio group is hidden (login type is controlled externally). */
+  hideLoginType?: boolean
+}
+
+const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLoginType = false }) => {
   const { managers, finalizeConfig, setConfigStatus, loginType: contextLoginType } = useContext(WalletContext)
 
   // Wallet configuration state
-  const [showWalletConfig, setShowWalletConfig] = useState(false)
+  const [showWalletConfig, setShowWalletConfig] = useState(autoExpand)
   const [wabUrl, setWabUrl] = useState<string>('')
   const [messageBoxUrl, setMessageBoxUrl] = useState<string>('')
   const [wabInfo, setWabInfo] = useState<{
@@ -48,6 +55,14 @@ const WalletConfig: React.FC = () => {
       fetchWalletConfig()
     }
   }, [])
+
+  // When autoExpand is true, enter editing mode on mount
+  useEffect(() => {
+    if (autoExpand) {
+      setConfigStatus('editing')
+      layAwayCurrentConfig()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync loginType with context when component mounts
   useEffect(() => {
@@ -208,99 +223,105 @@ const WalletConfig: React.FC = () => {
                   </Box>
                 </Box>
 
-                <Divider sx={{ my: 3 }} />
+                {!hideLoginType && (
+                  <>
+                    <Divider sx={{ my: 3 }} />
 
-                {/* Wallet Login Type Section */}
-                <Box sx={{ mb: 3 }}>
-                  <FormControl component="fieldset">
-                    <FormLabel component="legend">
-                      <Typography variant="body2" gutterBottom sx={{ fontWeight: 'bold' }}>
-                        Wallet Login Type
-                      </Typography>
-                    </FormLabel>
-                    <Typography variant="body2" gutterBottom sx={{ mt: 1, mb: 2 }}>
-                      Choose how you want to authenticate and manage your wallet keys.
-                    </Typography>
-                    <RadioGroup
-                      value={loginType}
-                      onChange={(e) => setLoginType(e.target.value as LoginType)}
-                    >
-                      <FormControlLabel
-                        value="wab"
-                        control={<Radio size="small" />}
-                        label={
-                          <Typography variant="body2">
-                            I prefer to use WAB
+                    {/* Wallet Login Type Section */}
+                    <Box sx={{ mb: 3 }}>
+                      <FormControl component="fieldset">
+                        <FormLabel component="legend">
+                          <Typography variant="body2" gutterBottom sx={{ fontWeight: 'bold' }}>
+                            Wallet Login Type
                           </Typography>
-                        }
-                      />
-                      <FormControlLabel
-                        value="direct-key"
-                        control={<Radio size="small" />}
-                        label={
-                          <Typography variant="body2">
-                            I prefer to manage my private key directly
-                          </Typography>
-                        }
-                      />
-                      <FormControlLabel
-                        value="mnemonic-advanced"
-                        control={<Radio size="small" />}
-                        label={
-                          <Typography variant="body2">
-                            I prefer to use a mnemonic presentation key (advanced)
-                          </Typography>
-                        }
-                      />
-                    </RadioGroup>
-                  </FormControl>
-
-                  {loginType === 'wab' && (
-                    <Box sx={{ mt: 2, ml: 3, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
-                      <TextField
-                        label="WAB URL"
-                        fullWidth
-                        variant="outlined"
-                        value={wabUrl}
-                        onChange={(e) => setWabUrl(e.target.value)}
-                        margin="normal"
-                        size="small"
-                      />
-                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1, mb: 2 }}>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          onClick={fetchWalletConfig}
-                          disabled={isLoadingConfig}
+                        </FormLabel>
+                        <Typography variant="body2" gutterBottom sx={{ mt: 1, mb: 2 }}>
+                          Choose how you want to authenticate and manage your wallet keys.
+                        </Typography>
+                        <RadioGroup
+                          value={loginType}
+                          onChange={(e) => setLoginType(e.target.value as LoginType)}
                         >
-                          Refresh Info
-                        </Button>
-                      </Box>
-                      {wabInfo && wabInfo.supportedAuthMethods && wabInfo.supportedAuthMethods.length > 0 && (
-                        <Box sx={{ mt: 2 }}>
-                          <Typography variant="body2" gutterBottom>
-                            Service which will be used to verify your phone number:
-                          </Typography>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                            {wabInfo.supportedAuthMethods.map((methodOption) => (
-                              <Button
-                                key={methodOption}
-                                variant={method === methodOption ? "contained" : "outlined"}
-                                size="small"
-                                onClick={() => setMethod(methodOption)}
-                                sx={{ textTransform: 'none' }}
-                              >
-                                {methodOption}
-                              </Button>
-                            ))}
+                          <FormControlLabel
+                            value="wab"
+                            control={<Radio size="small" />}
+                            label={
+                              <Typography variant="body2">
+                                I prefer to use WAB
+                              </Typography>
+                            }
+                          />
+                          <FormControlLabel
+                            value="direct-key"
+                            control={<Radio size="small" />}
+                            label={
+                              <Typography variant="body2">
+                                I prefer to manage my private key directly
+                              </Typography>
+                            }
+                          />
+                          <FormControlLabel
+                            value="mnemonic-advanced"
+                            control={<Radio size="small" />}
+                            label={
+                              <Typography variant="body2">
+                                I prefer to use a mnemonic presentation key (advanced)
+                              </Typography>
+                            }
+                          />
+                        </RadioGroup>
+                      </FormControl>
+
+                      {loginType === 'wab' && (
+                        <Box sx={{ mt: 2, ml: 3, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                          <TextField
+                            label="WAB URL"
+                            fullWidth
+                            variant="outlined"
+                            value={wabUrl}
+                            onChange={(e) => setWabUrl(e.target.value)}
+                            margin="normal"
+                            size="small"
+                          />
+                          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1, mb: 2 }}>
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              onClick={fetchWalletConfig}
+                              disabled={isLoadingConfig}
+                            >
+                              Refresh Info
+                            </Button>
                           </Box>
+                          {wabInfo && wabInfo.supportedAuthMethods && wabInfo.supportedAuthMethods.length > 0 && (
+                            <Box sx={{ mt: 2 }}>
+                              <Typography variant="body2" gutterBottom>
+                                Service which will be used to verify your phone number:
+                              </Typography>
+                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                {wabInfo.supportedAuthMethods.map((methodOption) => (
+                                  <Button
+                                    key={methodOption}
+                                    variant={method === methodOption ? "contained" : "outlined"}
+                                    size="small"
+                                    onClick={() => setMethod(methodOption)}
+                                    sx={{ textTransform: 'none' }}
+                                  >
+                                    {methodOption}
+                                  </Button>
+                                ))}
+                              </Box>
+                            </Box>
+                          )}
                         </Box>
                       )}
                     </Box>
-                  )}
-                </Box>
 
-                <Divider sx={{ my: 3 }} />
+                    <Divider sx={{ my: 3 }} />
+                  </>
+                )}
+
+                {hideLoginType && <Divider sx={{ my: 3 }} />}
 
                 {/* Remote Storage Configuration Section */}
                 <Box sx={{ mb: 3 }}>

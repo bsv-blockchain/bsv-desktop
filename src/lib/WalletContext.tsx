@@ -404,7 +404,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const [walletFunder, setWalletFunder] = useState<
     (presentationKey: number[], wallet: WalletInterface, adminOriginator: string) => Promise<void>
   >()
-  const [loginType, setLoginType] = useState<LoginType>(DEFAULT_USE_WAB ? 'wab' : 'mnemonic-advanced')
+  const [loginType, setLoginType] = useState<LoginType>(DEFAULT_USE_WAB ? 'wab' : 'direct-key')
   const useWab = loginType === 'wab'
   const setUseWab = (use: boolean) => setLoginType(use ? 'wab' : 'mnemonic-advanced')
   const [useRemoteStorage, setUseRemoteStorage] = useState<boolean>(false)

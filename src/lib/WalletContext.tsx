@@ -392,6 +392,10 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   // Track if we were originally focused
   const [wasOriginallyFocused, setWasOriginallyFocused] = useState(false)
 
+  // Track whether the counterparty queue has ever been non-empty, so the
+  // empty-queue useEffect below doesn't fire spuriously on mount
+  const hadCounterpartyRequestRef = useRef(false)
+
   // Separate request queues for basket and certificate access
   const [basketRequests, setBasketRequests] = useState<BasketAccessRequest[]>([])
   const [certificateRequests, setCertificateRequests] = useState<CertificateAccessRequest[]>([])
@@ -644,7 +648,11 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   }
 
   useEffect(() => {
-    if (counterpartyPermissionRequests.length === 0) {
+    if (counterpartyPermissionRequests.length > 0) {
+      hadCounterpartyRequestRef.current = true
+    } else if (hadCounterpartyRequestRef.current) {
+      // Only relinquish focus when transitioning from non-empty → empty,
+      // never on initial mount (which would fire with prevBundleId = null)
       setCounterpartyPermissionModalOpen(false)
       if (!wasOriginallyFocused) {
         onFocusRelinquished()

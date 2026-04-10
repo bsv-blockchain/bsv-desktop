@@ -137,6 +137,9 @@ ipcMain.handle('is-focused', () => {
   return mainWindow?.isFocused() ?? false;
 });
 
+// The app's own bundle ID — used to avoid capturing ourselves as prevBundleId
+const OWN_BUNDLE_ID = 'com.bsvblockchain.bsvdesktop';
+
 // Request focus - platform-specific implementations
 ipcMain.handle('request-focus', async () => {
   if (!mainWindow) return;
@@ -148,11 +151,15 @@ ipcMain.handle('request-focus', async () => {
     const execPromise = util.promisify(exec);
 
     try {
-      // Capture currently focused app
+      // Capture currently focused app before we steal focus
       const { stdout } = await execPromise(
         'osascript -e \'tell application "System Events" to get the bundle identifier of the first process whose frontmost is true\''
       );
-      prevBundleId = stdout.trim();
+      const captured = stdout.trim();
+      // Don't record ourselves — can happen if focus is called while already active
+      if (captured && captured !== OWN_BUNDLE_ID) {
+        prevBundleId = captured;
+      }
     } catch (error) {
       console.error('Failed to capture previous bundle ID:', error);
     }
@@ -201,15 +208,24 @@ ipcMain.handle('relinquish-focus', async () => {
 
   if (process.platform === 'darwin') {
     // macOS: try to restore previous app
-    if (prevBundleId && prevBundleId !== 'com.apple.finder') {
+    if (prevBundleId && prevBundleId !== 'com.apple.finder' && prevBundleId !== OWN_BUNDLE_ID) {
+      const util = await import('util');
       const { exec } = await import('child_process');
+      const execPromise = util.promisify(exec);
+      const target = prevBundleId;
+      prevBundleId = null;
       try {
-        exec(`osascript -e 'tell application id "${prevBundleId}" to activate'`);
+        // Blur our window first so macOS doesn't fight the activation
+        mainWindow.blur();
+        // Note: 'tell application id "..." to activate' is ignored by macOS 26
+        // when called from a subprocess. 'set frontmost' via System Events works.
+        await execPromise(`osascript -e 'tell application "System Events" to set frontmost of (first process whose bundle identifier is "${target}") to true'`);
       } catch (error) {
         console.error('Failed to restore previous app:', error);
       }
     }
-    prevBundleId = null;
+    // Don't clear prevBundleId on a no-op relinquish — a spurious call (e.g.
+    // from an empty queue on mount) must not wipe a valid stored value.
   } else {
     // Windows/Linux: minimize the window
     mainWindow.minimize();

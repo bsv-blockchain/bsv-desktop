@@ -1677,7 +1677,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     const directKeyMode = loginType === 'direct-key'
     if (
       (directKeyMode || (passwordRetriever && recoveryKeySaver)) &&
-      configStatus !== 'editing' && // either user configured or snapshot exists
+      configStatus === 'configured' && // must be explicitly configured (not 'initial' or 'editing')
       !managers.walletManager && // build only once
       !walletManagerInitInFlightRef.current
     ) {

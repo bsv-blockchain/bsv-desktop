@@ -522,6 +522,7 @@ const Greeter: React.FC<any> = ({ history }) => {
   // Go back to the choose screen
   const handleBack = useCallback(() => {
     setEntryMode('choose')
+    setShowConfig(false)
   }, [])
 
   useEffect(() => {
@@ -809,11 +810,13 @@ const Greeter: React.FC<any> = ({ history }) => {
   // Show simplified non-interactive version when initializing backend services
   if (initializingBackendServices) {
     return (
-    <Container maxWidth="sm" sx={{ height: '100vh', overflowY: 'auto', py: 3 }}>
-        <Paper elevation={4} sx={{ p: 4, borderRadius: 2, bgcolor: 'background.paper', boxShadow: theme.shadows[3] }}>
+    <Container maxWidth="sm" sx={{ height: '100vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ my: 'auto', py: 3, width: '100%' }}>
+        <Paper elevation={4} sx={{ p: 3, borderRadius: 2, bgcolor: 'background.paper', boxShadow: theme.shadows[3] }}>
           {header}
         </Paper>
-      </Container>
+      </Box>
+    </Container>
     )
   }
 
@@ -935,7 +938,7 @@ const Greeter: React.FC<any> = ({ history }) => {
       variant='caption'
       color='textSecondary'
       align='center'
-      sx={{ display: 'block', px: 5, mt: 1, mb: 0, fontSize: '0.75rem', opacity: 0.7 }}
+      sx={{ display: 'block', px: 5, mt: 3, mb: 0, fontSize: '0.75rem', opacity: 0.7 }}
     >
       By using this software, you acknowledge that you have read, understood and accepted the terms of the{' '}
       <RouterLink to='/privacy' style={{ color: theme.palette.primary.main, textDecoration: 'none' }}>
@@ -1037,7 +1040,6 @@ const Greeter: React.FC<any> = ({ history }) => {
                 Login
               </Button>
             </Box>
-            {accountRecoveryLink}
           </>
         )}
 
@@ -1058,7 +1060,6 @@ const Greeter: React.FC<any> = ({ history }) => {
             <WalletConfig hideLoginType open={showConfig} onToggle={() => setShowConfig(s => !s)} />
             {/* Direct key stepper — shown once config is finalized */}
             {!showConfig && configStatus === 'configured' && authStepper}
-            {!showConfig && accountRecoveryLink}
           </>
         )}
 

@@ -11,9 +11,12 @@ import {
   FormControlLabel,
   Radio,
   FormControl,
-  FormLabel
+  FormLabel,
+  IconButton,
+  Tooltip
 } from '@mui/material';
 import SettingsIcon from '@mui/icons-material/Settings';
+import CloseIcon from '@mui/icons-material/Close';
 import { toast } from 'react-toastify';
 import { DEFAULT_CHAIN } from '../config';
 import { WalletContext, WABConfig, LoginType } from '../WalletContext';
@@ -23,13 +26,19 @@ interface WalletConfigProps {
   autoExpand?: boolean
   /** When true, the Wallet Login Type radio group is hidden (login type is controlled externally). */
   hideLoginType?: boolean
+  /** Controlled open state — when provided the component hides its own toggle button. */
+  open?: boolean
+  /** Called when the component would toggle itself — used with `open` for external control. */
+  onToggle?: () => void
 }
 
-const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLoginType = false }) => {
+const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLoginType = false, open, onToggle }) => {
   const { managers, finalizeConfig, setConfigStatus, loginType: contextLoginType } = useContext(WalletContext)
 
   // Wallet configuration state
   const [showWalletConfig, setShowWalletConfig] = useState(autoExpand)
+  const isControlled = open !== undefined
+  const configVisible = isControlled ? open : showWalletConfig
   const [wabUrl, setWabUrl] = useState<string>('')
   const [messageBoxUrl, setMessageBoxUrl] = useState<string>('')
   const [wabInfo, setWabInfo] = useState<{
@@ -161,39 +170,47 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
   }, [backupConfig, finalizeConfig])
 
   const toggle = () => {
-    setShowWalletConfig(s => {
-      if (s) {
-        // we're closing the dialogue
+    if (isControlled) {
+      // Side-effects only; parent owns open state
+      if (open) {
         setConfigStatus('configured')
         resetCurrentConfig()
       } else {
-        // we're opening the dialogue to edit so don't autobuild anything
         setConfigStatus('editing')
         layAwayCurrentConfig()
       }
-      return !s
-    })
+      onToggle?.()
+    } else {
+      setShowWalletConfig(s => {
+        if (s) {
+          setConfigStatus('configured')
+          resetCurrentConfig()
+        } else {
+          setConfigStatus('editing')
+          layAwayCurrentConfig()
+        }
+        return !s
+      })
+    }
   }
 
-  return <Box sx={{ mb: 3 }}>
+  return <Box sx={{ mb: configVisible ? 2 : 0 }}>
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mb: 2 }}>
-        <Button
-          startIcon={<SettingsIcon />}
-          onClick={toggle}
-          variant={showWalletConfig ? "text" : "contained"}
-          color={showWalletConfig ? "secondary" : "primary"}
-          size={showWalletConfig ? "small" : "medium"}
-        >
-          {showWalletConfig ? 'Hide Configuration' : 'Configure Wallet'}
-        </Button>
-      </Box>
+      {!isControlled && (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mb: 1 }}>
+          <Tooltip title={configVisible ? 'Hide configuration' : 'Configure wallet'} placement="left">
+            <IconButton onClick={toggle} size="small" color={configVisible ? 'secondary' : 'default'}>
+              {configVisible ? <CloseIcon fontSize="small" /> : <SettingsIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+        </Box>
+      )}
       {isLoadingConfig ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
           <CircularProgress size={24} />
         </Box>
       ) : (
-            <Collapse in={showWalletConfig}>
+            <Collapse in={configVisible}>
               <Typography variant="h4" color="primary">
                 Configuration
               </Typography>

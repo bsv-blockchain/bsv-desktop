@@ -20,6 +20,7 @@ import {
   DialogActions,
   Alert,
   AlertTitle,
+  Tooltip,
 } from '@mui/material'
 import {
   SettingsPhone as PhoneIcon,
@@ -35,6 +36,8 @@ import {
   AccountBalanceWallet as WalletIcon,
   Login as LoginIcon,
   ArrowBack as ArrowBackIcon,
+  Settings as SettingsIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material'
 import PhoneEntry from '../../components/PhoneEntry.js'
 import AppLogo from '../../components/AppLogo.js'
@@ -354,7 +357,7 @@ const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemoni
             )
           }
         }}
-        sx={{ mb: 2 }}
+        sx={{ mb: 1.5 }}
       />
 
       {!isLocked && !hideGenerate && (
@@ -367,8 +370,8 @@ const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemoni
           sx={{
             borderRadius: theme.shape.borderRadius,
             textTransform: 'none',
-            py: 1.2,
-            mb: 2
+            py: 1,
+            mb: 1.5
           }}
         >
           Create New Key
@@ -383,7 +386,7 @@ const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemoni
         sx={{
           borderRadius: theme.shape.borderRadius,
           textTransform: 'none',
-          py: 1.2
+          py: 1
         }}
       >
         {loading ? <CircularProgress size={24} /> : 'Login'}
@@ -472,6 +475,8 @@ const Greeter: React.FC<any> = ({ history }) => {
   // (AuthStepper is an inline component; internal state resets on every Greeter re-render)
   const [directKeyInput, setDirectKeyInput] = useState('')
   const [directKeyLocked, setDirectKeyLocked] = useState(false)
+
+  const [showConfig, setShowConfig] = useState(false)
 
   const phoneFieldRef = useRef(null)
   const codeFieldRef = useRef(null)
@@ -804,7 +809,7 @@ const Greeter: React.FC<any> = ({ history }) => {
   // Show simplified non-interactive version when initializing backend services
   if (initializingBackendServices) {
     return (
-      <Container maxWidth="sm" sx={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+    <Container maxWidth="sm" sx={{ height: '100vh', overflowY: 'auto', py: 3 }}>
         <Paper elevation={4} sx={{ p: 4, borderRadius: 2, bgcolor: 'background.paper', boxShadow: theme.shadows[3] }}>
           {header}
         </Paper>
@@ -910,7 +915,7 @@ const Greeter: React.FC<any> = ({ history }) => {
   )
 
   const accountRecoveryLink = (
-    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4, mb: 2 }}>
+    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, mb: 1 }}>
       <RouterLink to='/recovery' style={{ textDecoration: 'none', pointerEvents: configStatus !== 'configured' ? 'none' : 'auto' }}>
         <Button
           variant="text"
@@ -930,7 +935,7 @@ const Greeter: React.FC<any> = ({ history }) => {
       variant='caption'
       color='textSecondary'
       align='center'
-      sx={{ display: 'block', px: 5, mt: 3, mb: 1, fontSize: '0.75rem', opacity: 0.7 }}
+      sx={{ display: 'block', px: 5, mt: 1, mb: 0, fontSize: '0.75rem', opacity: 0.7 }}
     >
       By using this software, you acknowledge that you have read, understood and accepted the terms of the{' '}
       <RouterLink to='/privacy' style={{ color: theme.palette.primary.main, textDecoration: 'none' }}>
@@ -1001,12 +1006,13 @@ const Greeter: React.FC<any> = ({ history }) => {
   )
 
   return (
-    <Container maxWidth="sm" sx={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+    <Container maxWidth="sm" sx={{ height: '100vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ my: 'auto', py: 3, width: '100%' }}>
       <Paper
         elevation={4}
-        sx={{ p: 4, borderRadius: 2, bgcolor: 'background.paper', boxShadow: theme.shadows[3] }}
+        sx={{ p: 3, borderRadius: 2, bgcolor: 'background.paper', boxShadow: theme.shadows[3] }}
       >
-        {header}
+        {entryMode === 'choose' && header}
 
         {/* ===== CHOOSE MODE: Initial screen with Create Wallet / Login buttons ===== */}
         {entryMode === 'choose' && (
@@ -1017,7 +1023,7 @@ const Greeter: React.FC<any> = ({ history }) => {
                 size="large"
                 startIcon={<WalletIcon />}
                 onClick={handleCreateWallet}
-                sx={{ textTransform: 'none', py: 1.5, fontSize: '1rem' }}
+                sx={{ textTransform: 'none', py: 1, fontSize: '1rem' }}
               >
                 Create Wallet
               </Button>
@@ -1026,7 +1032,7 @@ const Greeter: React.FC<any> = ({ history }) => {
                 size="large"
                 startIcon={<LoginIcon />}
                 onClick={handleLogin}
-                sx={{ textTransform: 'none', py: 1.5, fontSize: '1rem' }}
+                sx={{ textTransform: 'none', py: 1, fontSize: '1rem' }}
               >
                 Login
               </Button>
@@ -1038,35 +1044,46 @@ const Greeter: React.FC<any> = ({ history }) => {
         {/* ===== CREATE MODE: Direct-key flow with optional advanced config ===== */}
         {entryMode === 'create' && (
           <>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
               <Button size="small" startIcon={<ArrowBackIcon />} onClick={handleBack} sx={{ textTransform: 'none' }}>
                 Back
               </Button>
+              <Tooltip title={showConfig ? 'Hide configuration' : 'Configure wallet'} placement="left">
+                <IconButton size="small" onClick={() => setShowConfig(s => !s)} color={showConfig ? 'secondary' : 'default'}>
+                  {showConfig ? <CloseIcon fontSize="small" /> : <SettingsIcon fontSize="small" />}
+                </IconButton>
+              </Tooltip>
             </Box>
             {/* Advanced config for power users (network, storage, message box — no login type) */}
-            <WalletConfig hideLoginType />
+            <WalletConfig hideLoginType open={showConfig} onToggle={() => setShowConfig(s => !s)} />
             {/* Direct key stepper — shown once config is finalized */}
-            {configStatus === 'configured' && authStepper}
-            {accountRecoveryLink}
+            {!showConfig && configStatus === 'configured' && authStepper}
+            {!showConfig && accountRecoveryLink}
           </>
         )}
 
         {/* ===== LOGIN MODE: Stepper shown immediately, config panel available but collapsed ===== */}
         {entryMode === 'login' && (
           <>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
               <Button size="small" startIcon={<ArrowBackIcon />} onClick={handleBack} sx={{ textTransform: 'none' }}>
                 Back
               </Button>
+              <Tooltip title={showConfig ? 'Hide configuration' : 'Configure wallet'} placement="left">
+                <IconButton size="small" onClick={() => setShowConfig(s => !s)} color={showConfig ? 'secondary' : 'default'}>
+                  {showConfig ? <CloseIcon fontSize="small" /> : <SettingsIcon fontSize="small" />}
+                </IconButton>
+              </Tooltip>
             </Box>
-            <WalletConfig />
-            {configStatus === 'configured' && authStepper}
-            {accountRecoveryLink}
+            <WalletConfig open={showConfig} onToggle={() => setShowConfig(s => !s)} />
+            {!showConfig && configStatus === 'configured' && authStepper}
+            {!showConfig && accountRecoveryLink}
           </>
         )}
 
         {legalFooter}
       </Paper>
+      </Box>
 
       {mnemonicDialog}
     </Container>

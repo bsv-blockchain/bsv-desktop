@@ -20,8 +20,6 @@ import {
   DialogActions,
   Alert,
   AlertTitle,
-  ToggleButtonGroup,
-  ToggleButton,
 } from '@mui/material'
 import {
   SettingsPhone as PhoneIcon,
@@ -300,65 +298,46 @@ const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPasswo
 
 // Direct key form component for SimpleWalletManager login
 // keyInput, keyMode, isLocked are lifted to the parent to survive re-renders
-const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemonic, onGenerateRandomHex, hideGenerate = false, keyInput, setKeyInput, keyMode, setKeyMode, isLocked, setIsLocked }) => {
+const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemonic, hideGenerate = false, keyInput, setKeyInput, isLocked, setIsLocked }) => {
   const theme = useTheme();
+
+  // Detect whether the input looks like a raw hex private key (exactly 64 hex chars)
+  const isHexKey = (val: string) => /^[0-9a-fA-F]{64}$/.test(val.trim())
 
   const handleCopy = () => {
     if (keyInput) {
       navigator.clipboard.writeText(keyInput)
-      toast.success(`${keyMode === 'mnemonic' ? 'Mnemonic' : 'Private key'} copied to clipboard`)
+      toast.success(`${isHexKey(keyInput) ? 'Private key' : 'Mnemonic'} copied to clipboard`)
     }
   }
 
   const handleGenerate = async () => {
-    if (keyMode === 'mnemonic') {
-      const result = await onGenerateRandomMnemonic()
-      if (result) {
-        setKeyInput(result)
-        setIsLocked(true)
-      }
-    } else {
-      const result = await onGenerateRandomHex()
-      if (result) {
-        setKeyInput(result)
-        setIsLocked(true)
-      }
+    const result = await onGenerateRandomMnemonic()
+    if (result) {
+      setKeyInput(result)
+      setIsLocked(true)
     }
   }
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    handleSubmitDirectKey(keyInput, keyMode)
+    handleSubmitDirectKey(keyInput)
   }
+
+  const looksLikeHex = isHexKey(keyInput)
 
   return (
     <form onSubmit={onSubmit}>
-      <ToggleButtonGroup
-        value={keyMode}
-        exclusive
-        onChange={(_, val) => { if (val) { setKeyMode(val); setKeyInput(''); setIsLocked(false) } }}
-        size="small"
-        fullWidth
-        sx={{ mb: 2 }}
-      >
-        <ToggleButton value="mnemonic" sx={{ textTransform: 'none' }}>
-          Mnemonic
-        </ToggleButton>
-        <ToggleButton value="hex" sx={{ textTransform: 'none' }}>
-          Private Key (Hex)
-        </ToggleButton>
-      </ToggleButtonGroup>
-
       <TextField
-        label={keyMode === 'mnemonic' ? 'Mnemonic phrase' : 'Private key (hex)'}
+        label="Primary Key"
         value={keyInput}
         onChange={(e) => setKeyInput(e.target.value)}
         variant="outlined"
         fullWidth
-        multiline={keyMode === 'mnemonic'}
-        rows={keyMode === 'mnemonic' ? 3 : 1}
+        multiline={!looksLikeHex}
+        rows={!looksLikeHex ? 3 : 1}
         disabled={loading || isLocked}
-        placeholder={keyMode === 'mnemonic' ? 'Enter your mnemonic phrase' : 'Enter 64-character hex key'}
+        placeholder="Enter mnemonic phrase or private key (hex)"
         slotProps={{
           input: {
             endAdornment: keyInput && (
@@ -367,7 +346,7 @@ const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemoni
                   onClick={handleCopy}
                   edge="end"
                   size="small"
-                  sx={keyMode === 'mnemonic' ? { alignSelf: 'flex-start', mt: 1 } : undefined}
+                  sx={!looksLikeHex ? { alignSelf: 'flex-start', mt: 1 } : undefined}
                 >
                   <CopyIcon />
                 </IconButton>
@@ -392,7 +371,7 @@ const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemoni
             mb: 2
           }}
         >
-          {keyMode === 'mnemonic' ? 'Generate Random Mnemonic' : 'Generate Random Key'}
+          Create New Key
         </Button>
       )}
 
@@ -453,9 +432,9 @@ const Greeter: React.FC<any> = ({ history }) => {
     : loginType === 'direct-key'
     ? [
         {
-          label: 'Private Key',
+          label: 'Privately Managed Key',
           icon: <KeyIcon />,
-          description: 'Enter your private key or mnemonic'
+          description: ''
         }
       ]
     : [
@@ -492,7 +471,6 @@ const Greeter: React.FC<any> = ({ history }) => {
   // DirectKeyForm state lifted to Greeter level to survive re-renders
   // (AuthStepper is an inline component; internal state resets on every Greeter re-render)
   const [directKeyInput, setDirectKeyInput] = useState('')
-  const [directKeyMode, setDirectKeyMode] = useState<'mnemonic' | 'hex'>('mnemonic')
   const [directKeyLocked, setDirectKeyLocked] = useState(false)
 
   const phoneFieldRef = useRef(null)
@@ -738,7 +716,8 @@ const Greeter: React.FC<any> = ({ history }) => {
   }, [walletManager, password, confirmPassword, saveEnhancedSnapshot])
 
   // Direct key login: provide primary key + disabled privileged manager, no password
-  const handleSubmitDirectKey = useCallback(async (keyInput: string, keyMode: 'mnemonic' | 'hex') => {
+  // Auto-detects input type: 64-char hex string = raw private key, otherwise treated as mnemonic
+  const handleSubmitDirectKey = useCallback(async (keyInput: string) => {
     if (!walletManager) {
       toast.error('Wallet Manager not ready yet.')
       return
@@ -746,17 +725,20 @@ const Greeter: React.FC<any> = ({ history }) => {
     try {
       setLoading(true)
 
+      const trimmed = keyInput.trim()
+      const isHexKey = /^[0-9a-fA-F]{64}$/.test(trimmed)
+
       let keyBytes: number[]
       let keyHex: string
       let mnemonic: string | undefined
-      if (keyMode === 'mnemonic') {
-        const derived = deriveKeyMaterialFromMnemonic(keyInput)
+      if (isHexKey) {
+        keyBytes = Utils.toArray(trimmed, 'hex')
+        keyHex = trimmed
+      } else {
+        const derived = deriveKeyMaterialFromMnemonic(trimmed)
         keyBytes = derived.keyBytes
         keyHex = derived.keyHex
         mnemonic = derived.mnemonic
-      } else {
-        keyBytes = Utils.toArray(keyInput.trim(), 'hex')
-        keyHex = keyInput.trim()
       }
 
       if (keyBytes.length !== 32) {
@@ -836,11 +818,11 @@ const Greeter: React.FC<any> = ({ history }) => {
         <Step key={stepDef.label}>
           <StepLabel
             icon={stepDef.icon}
-            optional={
+            optional={stepDef.description ? (
               <Typography variant="caption" color="text.secondary">
                 {stepDef.description}
               </Typography>
-            }
+            ) : undefined}
           >
             <Typography variant="body2" fontWeight={500}>
               {stepDef.label}
@@ -887,12 +869,9 @@ const Greeter: React.FC<any> = ({ history }) => {
                 loading={loading}
                 handleSubmitDirectKey={handleSubmitDirectKey}
                 onGenerateRandomMnemonic={handleGenerateRandomMnemonic}
-                onGenerateRandomHex={handleGenerateRandomHex}
                 hideGenerate={entryMode === 'login'}
                 keyInput={directKeyInput}
                 setKeyInput={setDirectKeyInput}
-                keyMode={directKeyMode}
-                setKeyMode={setDirectKeyMode}
                 isLocked={directKeyLocked}
                 setIsLocked={setDirectKeyLocked}
               />

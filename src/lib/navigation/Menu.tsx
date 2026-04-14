@@ -13,6 +13,9 @@ import {
 } from '@mui/icons-material'
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
+import GridViewIcon from '@mui/icons-material/GridView'
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong'
+import QrCodeIcon from '@mui/icons-material/QrCode'
 import {
   List,
   ListItemButton,
@@ -520,12 +523,32 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
 
         <List component="nav" sx={{ mb: 2 }}>
           <ListItemButton
+            onClick={() => navigation.push('/dashboard/app-catalog')}
+            selected={history.location.pathname === '/dashboard/app-catalog'}
+            sx={menuItemStyle(history.location.pathname === '/dashboard/app-catalog')}
+          >
+            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/app-catalog' ? 'primary.main' : 'inherit' }}>
+              <GridViewIcon />
+            </ListItemIcon>
+            <ListItemText
+              primary={
+                <Typography
+                  variant="body1"
+                  fontWeight={history.location.pathname === '/dashboard/app-catalog' ? 600 : 400}
+                >
+                  Apps
+                </Typography>
+              }
+            />
+          </ListItemButton>
+
+          <ListItemButton
             onClick={() => navigation.push('/dashboard/apps')}
             selected={history.location.pathname === '/dashboard/apps'}
             sx={menuItemStyle(history.location.pathname === '/dashboard/apps')}
           >
             <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/apps' ? 'primary.main' : 'inherit' }}>
-              <BrowseIcon />
+              <ReceiptLongIcon />
             </ListItemIcon>
             <ListItemText
               primary={
@@ -533,7 +556,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   variant="body1"
                   fontWeight={history.location.pathname === '/dashboard/apps' ? 600 : 400}
                 >
-                  Apps
+                  Transactions
                 </Typography>
               }
             />
@@ -645,7 +668,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
             sx={menuItemStyle(history.location.pathname === '/dashboard/legacybridge')}
           >
             <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/legacybridge' ? 'primary.main' : 'inherit' }}>
-              <PaymentsIcon />
+              <QrCodeIcon />
             </ListItemIcon>
             <ListItemText
               primary={

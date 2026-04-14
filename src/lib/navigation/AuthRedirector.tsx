@@ -15,7 +15,7 @@ export default function AuthRedirector() {
         if (
             managers?.walletManager?.authenticated && snapshotLoaded
         ) {
-            history.push('/dashboard/apps')
+            history.push('/dashboard/app-catalog')
         }
         setPageLoaded(true)
     }, [managers?.walletManager?.authenticated, snapshotLoaded, history])

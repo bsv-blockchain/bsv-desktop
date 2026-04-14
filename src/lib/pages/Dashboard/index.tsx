@@ -1,6 +1,6 @@
-import { useState, useContext, useRef } from 'react';
+import { useState, useContext, useRef, useEffect } from 'react';
 import { useBreakpoint } from '../../utils/useBreakpoints';
-import { Switch, Route, Redirect } from 'react-router-dom';
+import { Switch, Route, Redirect, useHistory } from 'react-router-dom';
 import style from '../../navigation/style';
 import { makeStyles } from '@mui/styles';
 import {
@@ -39,8 +39,28 @@ const useStyles = makeStyles(style, {
  */
 export default function Dashboard() {
   const { pageLoaded } = useContext(UserContext);
-  const { activeProfile } = useContext(WalletContext)
+  const { activeProfile, managers, adminOriginator } = useContext(WalletContext)
+  const history = useHistory();
   const breakpoints = useBreakpoint();
+
+  // On first load, redirect to Onboarding if the wallet has zero balance
+  useEffect(() => {
+    const checkBalance = async () => {
+      if (!managers?.permissionsManager) return;
+      try {
+        const result = await managers.permissionsManager.listOutputs(
+          { basket: 'default', limit: 1 },
+          adminOriginator
+        ) as { totalOutputs: number };
+        if (result.totalOutputs === 0) {
+          history.push('/dashboard/legacybridge');
+        }
+      } catch {
+        // silently ignore — don't block the user
+      }
+    };
+    checkBalance();
+  }, []);
   const classes = useStyles({ breakpoints });
   const menuRef = useRef(null);
   const [menuOpen, setMenuOpen] = useState(true);

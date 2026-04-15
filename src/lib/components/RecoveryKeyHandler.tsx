@@ -1,4 +1,5 @@
 import { useState, useEffect, FC, useContext } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   DialogContent,
   DialogContentText,
@@ -23,6 +24,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { toast } from 'react-toastify'
 
 const RecoveryKeyHandler: FC = () => {
+  const { t } = useTranslation()
   const { managers, setRecoveryKeySaver } = useContext(WalletContext)
   const [open, setOpen] = useState(false)
   const [recoveryKey, setRecoveryKey] = useState<string>('')
@@ -78,7 +80,7 @@ const RecoveryKeyHandler: FC = () => {
       // Create and configure a download link
       const link = document.createElement('a')
       link.href = url
-      link.download = 'Metanet Recovery Key.txt'
+      link.download = t('recovery_key_file_name') + '.txt'
       
       // Append to document, trigger click, and cleanup
       document.body.appendChild(link)
@@ -86,10 +88,10 @@ const RecoveryKeyHandler: FC = () => {
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
       
-      toast.success('Recovery key downloaded successfully')
+      toast.success(t('recovery_key_download_success'))
     } catch (error) {
       console.error('Download error:', error)
-      toast.error('Failed to download recovery key')
+      toast.error(t('recovery_key_download_error'))
     }
   }
 
@@ -99,12 +101,12 @@ const RecoveryKeyHandler: FC = () => {
   return (
     <CustomDialog
       open={open}
-      title='Secure Access Backup and Recovery'
+      title={t('recovery_key_dialog_title')}
     >
       <DialogContent>
         {!affirmative1 && <>
           <DialogContentText variant='body1' sx={{ mt: 3, mb: 1, color: theme.palette.getContrastText(theme.palette.background.default) }}>
-            Save Your Recovery Key Now:
+            {t('recovery_key_save_instruction')}
           </DialogContentText>
           <Grid container spacing={2} width='100%'>
             <Stack sx={{ my: 3 }} direction="row" alignItems="center" justifyContent="space-between">
@@ -131,11 +133,11 @@ const RecoveryKeyHandler: FC = () => {
               fullWidth
               sx={{ p: 2 }}
             >
-              Save as a File
+              {t('recovery_key_file_button')}
             </Button>
           </Grid>
           <Box my={3}>
-            <DialogContentText>Take a screenshot, email it to yourself, print it out and put it in a safe, or save it to secure cloud storage.</DialogContentText>
+            <DialogContentText>{t('recovery_key_backup_instructions')}</DialogContentText>
           </Box>
         </>}
         <DialogContentText sx={{ color: theme.palette.getContrastText(theme.palette.background.default) }}>
@@ -144,20 +146,20 @@ const RecoveryKeyHandler: FC = () => {
               checked={affirmative1}
               onChange={() => setAffirmative1(x => !x)}
             />}
-            label={'I have saved my recovery key in a secure location'}
+            label={t('recovery_key_affirmative_1')}
             labelPlacement="start"
             sx={{ m: 0, p: 0 }}
           />
         </DialogContentText>
         {affirmative1 && <>
           <DialogContentText variant='body1' sx={{ mt: 3, mb: 1 }}>
-            Any 2 of 3 factors are required to access your data:
+            {t('recovery_key_factors_text')}
           </DialogContentText>
           <DialogContentText sx={{ mb: 3, textAlign: 'center', fontWeight: 'bold', color: theme.palette.getContrastText(theme.palette.background.default) }}>
-            Presentation Key, Password Key, Recovery Key
+            {t('recovery_key_factors_types')}
           </DialogContentText>
           <DialogContentText variant='body1' sx={{ mt: 3, mb: 1 }}>
-            When you lose your phone or mnemonic or forget your password, you must use the other factors to re-establish secure control. This is a perfectly normal and unavoidable fact of life. However -
+            {t('recovery_key_loss_warning_text')}
           </DialogContentText>
           <DialogContentText>
             <Typography
@@ -174,7 +176,7 @@ const RecoveryKeyHandler: FC = () => {
                 borderRadius: 1
               }}
             >
-              Loss of more than one factor will result in TOTAL LOSS of access to all assets, encrypted data, and certificates.
+              {t('recovery_key_loss_risk')}
             </Typography>
           </DialogContentText>
           <DialogContentText sx={{ color: theme.palette.getContrastText(theme.palette.background.default) }}>
@@ -183,7 +185,7 @@ const RecoveryKeyHandler: FC = () => {
                 checked={affirmative3}
                 onChange={() => setAffirmative3(x => !x)}
               />}
-              label={'I will immediately recover lost factors using the other two'}
+              label={t('recovery_key_affirmative_3')}
               labelPlacement="start"
               sx={{ m: 0, p: 0 }}
             />
@@ -194,7 +196,7 @@ const RecoveryKeyHandler: FC = () => {
                 checked={affirmative2}
                 onChange={() => setAffirmative2(x => !x)}
               />}
-              label={'I am solely responsible for maintaining access to my own data'}
+              label={t('recovery_key_affirmative_2')}
               labelPlacement="start"
               sx={{ m: 0, p: 0 }}
             />
@@ -206,7 +208,7 @@ const RecoveryKeyHandler: FC = () => {
           onClick={onAbandon}
           variant='text'
         >
-          Abandon
+          {t('recovery_key_abandon_button')}
         </Button>
         <Button
           onClick={onKeySaved}
@@ -215,7 +217,7 @@ const RecoveryKeyHandler: FC = () => {
           variant='contained'
           disabled={(!affirmative1) || (!affirmative2) || (!affirmative3)}
         >
-          Securely Saved
+          {t('recovery_key_saved_button')}
         </Button>
       </DialogActions>
     </CustomDialog>

@@ -1,6 +1,8 @@
 import { Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Button } from '@mui/material'
+import { useTranslation } from 'react-i18next'
 
 const NavigationConfirmModal = ({ open, onConfirm, onCancel, children, loading }) => {
+  const { t } = useTranslation()
   return (
     <Dialog
       open={open}
@@ -13,7 +15,7 @@ const NavigationConfirmModal = ({ open, onConfirm, onCancel, children, loading }
       aria-describedby="alert-dialog-description"
       disableEscapeKeyDown={true}
     >
-      <DialogTitle id="alert-dialog-title">{"Unsaved Changes"}</DialogTitle>
+      <DialogTitle id="alert-dialog-title">{t('trust_dialog_unsaved_title')}</DialogTitle>
       <DialogContent>
         <DialogContentText id="alert-dialog-description">
           {children || 'You have unsaved changes. Do you want to save them before leaving?'}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { DialogActions, DialogContent, Button, DialogContentText, TextField, InputAdornment, IconButton } from '@mui/material'
 import CustomDialog from './CustomDialog'
 import { UserContext, UserContextValue } from '../UserContext'
@@ -7,6 +8,7 @@ import { toast } from 'react-toastify';
 import { WalletContext } from '../WalletContext'
 
 const PasswordHandler: React.FC = () => {
+  const { t } = useTranslation()
   const {
     onFocusRequested,
     onFocusRelinquished,
@@ -58,7 +60,7 @@ const PasswordHandler: React.FC = () => {
         await onFocusRelinquished()
       }
     } else {
-      toast.error('Incorrect password')
+      toast.error(t('password_incorrect_error'))
     }
   }
 
@@ -77,7 +79,7 @@ const PasswordHandler: React.FC = () => {
         reject(new Error('User has closed password dialog'))
         setOpen(false)
       }}
-      title='Enter Password'
+      title={t('password_dialog_title')}
     >
       <form onSubmit={handleSubmit}>
         <DialogContent>
@@ -86,7 +88,7 @@ const PasswordHandler: React.FC = () => {
           </DialogContentText>
           <br />
           <TextField
-            label='Password'
+            label={t('password_input_label')}
             autoFocus
             fullWidth
             type={showPassword ? 'text' : 'password'}
@@ -95,7 +97,7 @@ const PasswordHandler: React.FC = () => {
               endAdornment: (
                 <InputAdornment position='end'>
                   <IconButton
-                    aria-label='toggle password visibility'
+                    aria-label={t('password_toggle_aria_label')}
                     onClick={() => setShowPassword(!showPassword)}
                     edge='end'
                     style={{ color: 'inherit' }}
@@ -112,13 +114,13 @@ const PasswordHandler: React.FC = () => {
             color='primary'
             onClick={handleAbort}
           >
-            Cancel
+            {t('password_cancel_button')}
           </Button>
           <Button
             color='primary'
             type='submit'
           >
-            OK
+            {t('password_ok_button')}
           </Button>
         </DialogActions>
       </form>

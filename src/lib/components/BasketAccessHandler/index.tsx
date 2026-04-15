@@ -1,4 +1,5 @@
 import { useContext } from 'react'
+import { useTranslation } from 'react-i18next'
 import { DialogContent, DialogActions, Button, Typography, Divider, Box, Stack, Tooltip } from '@mui/material'
 import CustomDialog from '../CustomDialog'
 import AppChip from '../AppChip/index'
@@ -10,6 +11,7 @@ import { UserContext } from '../../UserContext'
 
 
 const BasketAccessHandler = () => {
+    const { t } = useTranslation()
     const { basketRequests, advanceBasketQueue, managers } = useContext(WalletContext)
     const { basketAccessModalOpen } = useContext(UserContext)
 
@@ -38,7 +40,7 @@ const BasketAccessHandler = () => {
     return (
         <CustomDialog
             open={basketAccessModalOpen}
-            title={renewal ? 'Basket Access Renewal' : 'Basket Access Request'}
+            title={renewal ? t('basket_access_renewal_title') : t('basket_access_request_title')}
             onClose={handleDeny} // If the user closes via the X, treat as "deny"
             icon={<ShoppingBasketIcon fontSize="medium" />}
         >
@@ -65,7 +67,7 @@ const BasketAccessHandler = () => {
                                 height: '3em', width: '100%'
                             }}>
                                 <Typography variant="body1" fontWeight="bold">
-                                    Reason:
+                                    {t('basket_access_reason_label')}
                                 </Typography>
                                 <Stack px={3}>
                                     <Typography variant="body1">
@@ -79,7 +81,7 @@ const BasketAccessHandler = () => {
             </DialogContent>
 
             {/* Visual signature */}
-            <Tooltip title="Unique visual signature for this request" placement="top">
+            <Tooltip title={t('basket_access_visual_signature_tooltip')} placement="top">
                 <Box sx={{ mb: 3, py: 0.5, background: deterministicColor(JSON.stringify(basketRequests[0])) }} />
             </Tooltip>
 
@@ -89,14 +91,14 @@ const BasketAccessHandler = () => {
                     variant="outlined"
                     color="inherit"
                 >
-                    Deny
+                    {t('basket_access_deny_button')}
                 </Button>
-                <Button 
+                <Button
                     onClick={handleGrant}
                     variant="contained"
                     color="primary"
                 >
-                    Grant Access
+                    {t('basket_access_grant_button')}
                 </Button>
             </DialogActions>
         </CustomDialog>

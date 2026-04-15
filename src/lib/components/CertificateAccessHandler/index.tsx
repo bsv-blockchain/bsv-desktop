@@ -1,4 +1,5 @@
 import { useContext, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { DialogContent, DialogActions, Button, Typography, Divider, Box, Stack, Tooltip, CircularProgress } from '@mui/material'
 import CustomDialog from '../CustomDialog'
 import AppChip from '../AppChip'
@@ -21,6 +22,7 @@ type CertificateAccessRequest = {
 }
 
 const CertificateAccessHandler = () => {
+  const { t } = useTranslation()
   const { certificateRequests, advanceCertificateQueue, managers } = useContext(WalletContext)
   const { certificateAccessModalOpen } = useContext(UserContext)
 
@@ -61,7 +63,7 @@ const CertificateAccessHandler = () => {
   return (
     <CustomDialog
       open={certificateAccessModalOpen}
-      title={renewal ? 'Certificate Access Renewal' : 'Certificate Access Request'}
+      title={renewal ? t('certificate_access_renewal_title') : t('certificate_access_request_title')}
       onClose={handleDeny}
       icon={<VerifiedUserIcon fontSize="medium" />}
     >
@@ -85,7 +87,7 @@ const CertificateAccessHandler = () => {
                 justifyContent="space-between"
                 sx={{ height: '3em', width: '100%' }}
               >
-                <Typography variant="body1" fontWeight="bold">Reason:</Typography>
+                <Typography variant="body1" fontWeight="bold">{t('certificate_access_reason_label')}</Typography>
                 <Stack px={3}>
                   <Typography variant="body1">{description}</Typography>
                 </Stack>
@@ -95,17 +97,17 @@ const CertificateAccessHandler = () => {
         </Stack>
       </DialogContent>
 
-      <Tooltip title="Unique visual signature for this request" placement="top">
+      <Tooltip title={t('certificate_access_visual_signature_tooltip')} placement="top">
         <Box sx={{ mb: 3, py: 0.5, background: deterministicColor(JSON.stringify(certificateRequests[0])) }} />
       </Tooltip>
 
       <DialogActions sx={{ justifyContent: 'space-between' }}>
         <Button onClick={handleDeny} variant="outlined" color="inherit" disabled={granting || denying}>
-          Deny
+          {t('certificate_access_deny_button')}
         </Button>
 
         <Button onClick={handleGrant} variant="contained" color="primary" disabled={granting || denying}>
-          {granting ? <CircularProgress size={18} /> : 'Grant Access'}
+          {granting ? <CircularProgress size={18} /> : t('certificate_access_grant_button')}
         </Button>
       </DialogActions>
     </CustomDialog>

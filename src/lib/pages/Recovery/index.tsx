@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import style from './style'
 import { makeStyles } from '@mui/styles'
 import {
@@ -13,15 +14,16 @@ const useStyles = makeStyles(style as any, {
 })
 
 const Recovery: React.FC<any> = ({ history }) => {
+  const { t } = useTranslation()
   const classes = useStyles()
   return (
     <div className={classes.content_wrap}>
       <div className={classes.panel_body}>
         <Typography variant='h2' paragraph fontFamily='Helvetica' fontSize='2em'>
-          Account Recovery
+          {t('recovery_page_title')}
         </Typography>
         <Typography variant='body1' paragraph>
-          Choose what you need to recover:
+          {t('recovery_page_description')}
         </Typography>
         <List style={{ marginTop: '1rem', marginBottom: '1rem' }}>
           <ListItem disablePadding>
@@ -30,8 +32,8 @@ const Recovery: React.FC<any> = ({ history }) => {
                 <KeyIcon />
               </ListItemIcon>
               <ListItemText
-                primary="Presentation Key (Lost access to WAB or mnemonic)"
-                secondary="Use your password and recovery key to regain access"
+                primary={t('recovery_option_presentation_key_title')}
+                secondary={t('recovery_option_presentation_key_desc')}
               />
             </ListItemButton>
           </ListItem>
@@ -41,8 +43,8 @@ const Recovery: React.FC<any> = ({ history }) => {
                 <LockIcon />
               </ListItemIcon>
               <ListItemText
-                primary="Password (Forgotten)"
-                secondary="Use your presentation key (mnemonic or WAB) and recovery key"
+                primary={t('recovery_option_password_title')}
+                secondary={t('recovery_option_password_desc')}
               />
             </ListItemButton>
           </ListItem>
@@ -52,7 +54,7 @@ const Recovery: React.FC<any> = ({ history }) => {
           onClick={() => history.go(-1)}
           style={{ marginTop: '1rem' }}
         >
-          Go Back
+          {t('recovery_button_go_back')}
         </Button>
       </div>
     </div>

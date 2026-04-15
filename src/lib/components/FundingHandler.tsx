@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react'
+import { useTranslation } from 'react-i18next'
 import { DialogContent, DialogActions, Button, Typography, TextField, Box, IconButton, Tooltip, Tabs, Tab } from '@mui/material'
 import CustomDialog from './CustomDialog'
 import { WalletContext } from '../WalletContext'
@@ -27,6 +28,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ children, value, index }) => {
 }
 
 const FundingHandler: React.FC = () => {
+  const { t } = useTranslation()
   const { setWalletFunder, network } = useContext(WalletContext)
   const [open, setOpen] = useState(false)
   const [identityKey, setIdentityKey] = useState('')
@@ -69,7 +71,7 @@ const FundingHandler: React.FC = () => {
     try {
       const payment = JSON.parse(paymentTX)
       await wallet.internalizeAction(payment, adminOriginator)
-      toast.success('Wallet funded successfully!')
+      toast.success(t('funding_success'))
       handleFundingComplete()
     } catch (e: any) {
       toast.error(e.message)
@@ -95,11 +97,11 @@ const FundingHandler: React.FC = () => {
 
 
   return (
-    <CustomDialog open={open} onClose={handleClose} title="Fund Your Wallet" maxWidth="md" fullWidth>
+    <CustomDialog open={open} onClose={handleClose} title={t('funding_dialog_title')} maxWidth="md" fullWidth>
       <DialogContent>
-        <Tabs value={tabValue} onChange={handleTabChange} aria-label="funding method tabs" sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tab label="Simple Payment" id="funding-tab-0" aria-controls="funding-tabpanel-0" />
-          <Tab label="Advanced (JSON)" id="funding-tab-1" aria-controls="funding-tabpanel-1" />
+        <Tabs value={tabValue} onChange={handleTabChange} aria-label={t('funding_aria_label')} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tab label={t('funding_tab_simple')} id="funding-tab-0" aria-controls="funding-tabpanel-0" />
+          <Tab label={t('funding_tab_advanced')} id="funding-tab-1" aria-controls="funding-tabpanel-1" />
         </Tabs>
 
         <TabPanel value={tabValue} index={0}>
@@ -115,19 +117,19 @@ const FundingHandler: React.FC = () => {
 
         <TabPanel value={tabValue} index={1}>
           <Typography variant="body1" sx={{ mb: 2 }}>
-            Your wallet identity key:
+            {t('funding_identity_key_label')}
           </Typography>
           <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', bgcolor: 'background.paper', p: 1, borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
             <Typography variant="body2" sx={{ flexGrow: 1, userSelect: 'all', wordBreak: 'break-all', fontFamily: 'monospace' }}>
               {identityKey}
             </Typography>
-            <Tooltip title="Copy to clipboard">
+            <Tooltip title={t('funding_copy_tooltip')}>
               <IconButton
                 size="small"
                 onClick={() => {
                   navigator.clipboard.writeText(identityKey)
-                    .then(() => toast.success('Identity key copied to clipboard'))
-                    .catch(err => toast.error('Failed to copy: ' + err.message))
+                    .then(() => toast.success(t('funding_copy_success')))
+                    .catch(err => toast.error(t('funding_copy_error', { error: err.message })))
                 }}
               >
                 <ContentCopyIcon fontSize="small" />
@@ -135,8 +137,8 @@ const FundingHandler: React.FC = () => {
             </Tooltip>
           </Box>
           <TextField
-            label="Funding Transaction (JSON)"
-            placeholder="Paste your internalizable transaction JSON here (Can export from WUI)."
+            label={t('funding_json_label')}
+            placeholder={t('funding_json_placeholder')}
             multiline
             fullWidth
             rows={8}
@@ -162,7 +164,7 @@ const FundingHandler: React.FC = () => {
           />
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
             <Button variant="contained" onClick={handleFunded} disabled={!paymentTX}>
-              Fund Wallet
+              {t('funding_button')}
             </Button>
           </Box>
         </TabPanel>

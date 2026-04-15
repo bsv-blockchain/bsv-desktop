@@ -1,6 +1,7 @@
 /* eslint-disable indent */
 /* eslint-disable react/prop-types */
 import { useState, useContext, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Typography, IconButton, Box, Paper, Button } from '@mui/material'
 import Grid2 from '@mui/material/Grid2'
 import { makeStyles } from '@mui/styles'
@@ -17,6 +18,7 @@ const useStyles = makeStyles((style as any), {
 })
 
 const MyIdentity = () => {
+  const { t } = useTranslation()
   const { managers, network, adminOriginator, activeProfile, loginType } = useContext(WalletContext)
   const isDirectKey = loginType === 'direct-key'
 
@@ -110,7 +112,7 @@ const MyIdentity = () => {
     const { publicKey } = await managers.permissionsManager.getPublicKey({
       identityKey: true,
       privileged: true,
-      privilegedReason: 'Reveal your privileged identity key alongside your everyday one.'
+      privilegedReason: t('identity_button_privileged_key_reason')
     }, adminOriginator)
     setPrivilegedIdentityKey(publicKey)
   }
@@ -141,19 +143,19 @@ const MyIdentity = () => {
   return (
     <div className={classes.root}>
       <Typography variant="h1" color="textPrimary" sx={{ mb: 2 }}>
-        {network === 'testnet' ? 'Testnet Identity' : 'Identity'}
+        {network === 'testnet' ? t('identity_page_title_testnet') : t('identity_page_title_mainnet')}
       </Typography>
       <Typography variant="body1" color="textSecondary" sx={{ mb: 4 }}>
-        Manage your identity keys and certificates.
+        {t('identity_page_description')}
       </Typography>
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
         <Typography variant="h4" sx={{ mb: 2 }}>
-          Identity Keys
+          {t('identity_section_title_keys')}
         </Typography>
         <Box sx={{ mb: 3 }}>
           <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-            <b>Everyday Identity Key:</b>
+            <b>{t('identity_label_everyday_key')}</b>
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <Typography
@@ -178,7 +180,7 @@ const MyIdentity = () => {
           {!isDirectKey && (
             <>
               <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                <b>Privileged Identity Key:</b>
+                <b>{t('identity_label_privileged_key')}</b>
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 {privilegedIdentityKey === '...' ? (
@@ -189,7 +191,7 @@ const MyIdentity = () => {
                     size="small"
                     sx={{ mr: 1 }}
                   >
-                    Reveal Key
+                    {t('identity_button_reveal_key')}
                   </Button>
                 ) : (
                   <>
@@ -221,10 +223,10 @@ const MyIdentity = () => {
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, mt: 4, bgcolor: 'background.paper' }}>
         <Typography variant="h4" sx={{ mb: 2 }}>
-          Certificates
+          {t('identity_section_title_certificates')}
         </Typography>
         <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-          As you go about your life, people and businesses you interact with can give you certificates and credentials. These verify your qualifications and help you establish trust.
+          {t('identity_section_description_certificates')}
         </Typography>
 
         <Grid2 container spacing={2} justifyContent="space-between" columns={{ xs: 1, sm: 1, md: 1, lg: 2 }}>
@@ -241,7 +243,7 @@ const MyIdentity = () => {
         {shownCertificates.length === 0 && (
           <Box sx={{ textAlign: 'center', py: 4 }}>
             <Typography color="textSecondary">
-              No certificates found. Register with identity certifiers to receive certificates.
+              {t('identity_empty_state_certificates')}
             </Typography>
           </Box>
         )}

@@ -1,5 +1,6 @@
 /* eslint-disable indent */
 import { useState, useContext, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Prompt } from 'react-router-dom'
 import { Typography, Button, Slider, TextField, LinearProgress, Snackbar, Box, Paper } from '@mui/material'
 import { makeStyles } from '@mui/styles'
@@ -19,6 +20,7 @@ const useStyles = makeStyles((style as any), {
 })
 
 const Trust = ({ history }) => {
+  const { t } = useTranslation()
   const { settings, updateSettings } = useContext(WalletContext)
 
   // These are some hard-coded defaults, if the user doesn't have any in Settings.
@@ -86,12 +88,12 @@ const Trust = ({ history }) => {
             }
           })(),
           {
-            pending: 'Saving settings...',
+            pending: t('trust_toast_saving'),
             success: {
-              render: 'Trust relationships updated!',
+              render: t('trust_toast_updated'),
               autoClose: 2000
             },
-            error: 'Failed to save settings! 🤯'
+            error: t('trust_toast_error')
           }
         )
       } else {
@@ -102,7 +104,7 @@ const Trust = ({ history }) => {
             trustedCertifiers: trustedEntities
           }
         })))
-        toast.success('Trust relationships updated!')
+        toast.success(t('trust_toast_updated'))
       }
       setSettingsNeedsUpdate(false)
     } catch (e) {
@@ -115,10 +117,10 @@ const Trust = ({ history }) => {
   return (
     <div className={classes.root}>
       <Typography variant='h1' color='textPrimary' sx={{ mb: 2 }}>
-        Trust
+        {t('trust_page_title')}
       </Typography>
       <Typography variant='body1' color='textSecondary' sx={{ mb: 2 }}>
-        Give points to show which certifiers you trust the most to confirm the identity of counterparties. More points mean a higher priority.
+        {t('trust_page_description')}
       </Typography>
 
       {settingsLoading && (
@@ -128,9 +130,9 @@ const Trust = ({ history }) => {
       )}
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
-        <Typography variant='h4' sx={{ mb: 2 }}>Trust Threshold</Typography>
+        <Typography variant='h4' sx={{ mb: 2 }}>{t('trust_section_title_threshold')}</Typography>
         <Typography variant='body1' color='textSecondary' sx={{ mb: 2 }}>
-          You've given out a total of <b>{totalTrustPoints} {totalTrustPoints === 1 ? 'point' : 'points'}</b>. Set the minimum points any counterparty must have across your trust network to be shown in any apps you use.
+          {t('trust_threshold_description', { totalTrustPoints, pointLabel: totalTrustPoints === 1 ? t('trust_point_singular') : t('trust_point_plural') })}
         </Typography>
         <Box className={classes.trust_threshold}>
           <Box className={classes.slider_label_grid}>
@@ -141,9 +143,9 @@ const Trust = ({ history }) => {
       </Paper>
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper', mt: 3 }}>
-        <Typography variant='h4' sx={{ mb: 2 }}>Certifier Network</Typography>
+        <Typography variant='h4' sx={{ mb: 2 }}>{t('trust_section_title_network')}</Typography>
         <Typography variant='body1' color='textSecondary' sx={{ mb: 3 }}>
-          People, businesses, and websites will need endorsement by these certifiers to show up in your apps. Otherwise, you'll see them as "Unknown Identity".
+          {t('trust_network_description')}
         </Typography>
 
         {/* UI Controls - Search and Add Buttons */}
@@ -151,8 +153,8 @@ const Trust = ({ history }) => {
           <TextField
             value={search}
             onChange={(e => setSearch(e.target.value))}
-            label='Search'
-            placeholder='Filter providers...'
+            label={t('trust_search_label')}
+            placeholder={t('trust_search_placeholder')}
             fullWidth
             sx={{ flex: 1 }}
             slotProps={{
@@ -168,7 +170,7 @@ const Trust = ({ history }) => {
             startIcon={<AddIcon />}
             sx={{ minWidth: '200px' }}
           >
-            Add Search Provider
+            {t('trust_button_add_provider')}
           </Button>
         </Box>
         <Box flex={1}>
@@ -205,15 +207,15 @@ const Trust = ({ history }) => {
       >
         {settingsLoading
           ? <div>
-            <Typography>Saving settings...</Typography>
+            <Typography>{t('trust_dialog_saving_message')}</Typography>
             <LinearProgress style={{ paddingTop: '1em' }} />
           </div>
-          : 'You have unsaved changes. Do you want to save them before leaving?'}
+          : t('trust_dialog_unsaved_message')}
       </NavigationConfirmModal>
 
       <Prompt
         when={settingsNeedsUpdate}
-        message="You have unsaved changes, are you sure you want to leave?"
+        message={t('trust_prompt_unsaved_warning')}
       />
 
       <AddEntityModal
@@ -229,14 +231,14 @@ const Trust = ({ history }) => {
           horizontal: 'center'
         }}
         open={settingsNeedsUpdate}
-        message='You have unsaved changes!'
+        message={t('trust_snackbar_unsaved')}
         action={
           <Button
             disabled={settingsLoading}
             color='secondary' size='small'
             onClick={handleSave}
           >
-            {settingsLoading ? 'Saving...' : 'Save'}
+            {settingsLoading ? t('trust_button_saving') : t('trust_button_save')}
           </Button>
         }
       />

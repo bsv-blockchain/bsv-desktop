@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react'
+import { useTranslation } from 'react-i18next'
 import style from './style.js'
 import {
   Accordion,
@@ -32,6 +33,7 @@ import { Utils, Mnemonic, HD, LookupResolver, Hash } from '@bsv/sdk'
 const useStyles = makeStyles(style as any, { name: 'RecoverPassword' })
 
 const RecoverPassword: React.FC<any> = ({ history }) => {
+  const { t } = useTranslation()
   const { managers, saveEnhancedSnapshot, useWab } = useContext(WalletContext)
   const classes = useStyles()
   const [accordianView, setAccordianView] = useState('auth-method')
@@ -68,7 +70,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
       setLoading(true)
       await managers.walletManager!.startAuth({ phoneNumber: phone })
       setAccordianView('code')
-      toast.success('A code has been sent to your phone.')
+      toast.success(t('recover_password_toast_code_sent'))
     } catch (e) {
       console.error(e)
       toast.error(e.message)
@@ -95,7 +97,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
     try {
       setLoading(true)
       await managers.walletManager!.startAuth({ phoneNumber: phone })
-      toast.success('A new code has been sent to your phone.')
+      toast.success(t('recover_password_toast_code_resent'))
     } catch (e) {
       console.error(e)
       toast.error(e.message)
@@ -121,7 +123,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
       setAccordianView('recovery-key-final')
     } catch (e) {
       console.error(e)
-      toast.error(e.message || 'Failed to set presentation key from mnemonic')
+      toast.error(e.message || t('recover_password_toast_error_mnemonic'))
     } finally {
       setLoading(false)
     }
@@ -154,7 +156,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
     e.preventDefault()
 
     if (password !== confirmPassword) {
-      toast.error("Passwords don't match.")
+      toast.error(t('recover_password_toast_password_mismatch'))
       return
     }
 
@@ -162,7 +164,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
       setLoading(true)
       await managers.walletManager!.changePassword(password)
       localStorage.snap = saveEnhancedSnapshot()
-      toast.success('Password changed successfully!')
+      toast.success(t('recover_password_toast_success'))
       history.push('/dashboard/apps')
     } catch (e) {
       console.error(e)
@@ -177,23 +179,23 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
       <div className={classes.content_wrap}>
         <div className={classes.panel_body}>
           <Typography paragraph>
-            You are currently logged in. You must log out in order to reset your password.
+            {t('recover_password_message_logged_in')}
           </Typography>
           <Button
             color='secondary'
             onClick={async () => {
-              if (!window.confirm('Log out?')) return
+              if (!window.confirm(t('recover_password_confirm_logout'))) return
               await managers.walletManager!.destroy()
               setAuthenticated(false)
             }}
           >
-            Log Out
+            {t('recover_password_button_log_out')}
           </Button>
           <Button
             onClick={() => history.go(-1)}
             className={classes.back_button}
           >
-            Go Back
+            {t('recover_password_button_go_back')}
           </Button>
         </div>
       </div>
@@ -203,17 +205,17 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
   return (
     <div className={classes.content_wrap}>
       <Typography variant='h2' paragraph fontFamily='Helvetica' fontSize='2em'>
-        Recover Password
+        {t('recover_password_page_title')}
       </Typography>
       <Typography variant='body2' paragraph color='textSecondary'>
-        Use your presentation key (mnemonic or WAB) and recovery key to reset your password.
+        {t('recover_password_page_description')}
       </Typography>
 
       <Accordion expanded={accordianView === 'auth-method'}>
         <AccordionSummary className={classes.panel_header}>
           <KeyIcon className={classes.expansion_icon} />
           <Typography className={classes.panel_heading}>
-            Confirm Authentication Method
+            {t('recover_password_accordion_auth_method')}
           </Typography>
           {accordianView !== 'auth-method' && (
             <CheckCircleIcon className={classes.complete_icon} />
@@ -222,15 +224,15 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
         <form onSubmit={handleConfirmAuthMethod}>
           <AccordionDetails className={classes.expansion_body}>
             <Typography variant='body2' color='textSecondary' paragraph>
-              Your wallet is configured to use {useWab ? 'WAB (Phone)' : 'Mnemonic'} authentication.
+              {useWab ? t('recover_password_auth_method_description_wab') : t('recover_password_auth_method_description_mnemonic')}
             </Typography>
             <Typography variant='body2' color='textSecondary' paragraph>
-              You'll need your {useWab ? 'phone number' : 'mnemonic phrase'} and recovery key to reset your password.
+              {useWab ? t('recover_password_auth_method_needs_wab') : t('recover_password_auth_method_needs_mnemonic')}
             </Typography>
           </AccordionDetails>
           <AccordionActions>
             <Button variant='contained' color='primary' type='submit'>
-              Next
+              {t('recover_password_button_next')}
             </Button>
           </AccordionActions>
         </form>
@@ -242,7 +244,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
             <AccordionSummary className={classes.panel_header}>
               <PhoneIcon className={classes.expansion_icon} />
               <Typography className={classes.panel_heading}>
-                Phone Number
+                {t('recover_password_accordion_phone')}
               </Typography>
               {(accordianView === 'code' || accordianView === 'recovery-key-final' || accordianView === 'new-password') && (
                 <CheckCircleIcon className={classes.complete_icon} />
@@ -257,7 +259,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
                   ? <CircularProgress />
                   : (
                     <Button variant='contained' color='primary' type='submit'>
-                      Send Code
+                      {t('recover_password_button_send_code')}
                     </Button>
                   )}
               </AccordionActions>
@@ -268,7 +270,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
             <AccordionSummary className={classes.panel_header}>
               <SMSIcon className={classes.expansion_icon} />
               <Typography className={classes.panel_heading}>
-                Enter code
+                {t('recover_password_accordion_code')}
               </Typography>
               {(accordianView === 'recovery-key-final' || accordianView === 'new-password') && (
                 <CheckCircleIcon className={classes.complete_icon} />
@@ -278,7 +280,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
               <AccordionDetails className={classes.expansion_body}>
                 <TextField
                   onChange={e => setCode(e.target.value)}
-                  label='Code'
+                  label={t('recover_password_input_label_code')}
                   fullWidth
                 />
               </AccordionDetails>
@@ -288,13 +290,13 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
                   onClick={handleResendCode}
                   disabled={loading}
                 >
-                  Resend Code
+                  {t('recover_password_button_resend_code')}
                 </Button>
                 {loading
                   ? <CircularProgress />
                   : (
                     <Button variant='contained' color='primary' type='submit'>
-                      Next
+                      {t('recover_password_button_next')}
                     </Button>
                   )}
               </AccordionActions>
@@ -308,7 +310,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
           <AccordionSummary className={classes.panel_header}>
             <KeyIcon className={classes.expansion_icon} />
             <Typography className={classes.panel_heading}>
-              Mnemonic (Presentation Key)
+              {t('recover_password_accordion_mnemonic')}
             </Typography>
             {(accordianView === 'recovery-key-final' || accordianView === 'new-password') && (
               <CheckCircleIcon className={classes.complete_icon} />
@@ -319,11 +321,11 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
               <TextField
                 value={mnemonic}
                 onChange={e => setMnemonic(e.target.value)}
-                label='Mnemonic'
+                label={t('recover_password_input_label_mnemonic')}
                 fullWidth
                 multiline
                 rows={3}
-                placeholder="Enter your 12 or 24 word recovery phrase"
+                placeholder={t('recover_password_input_placeholder_mnemonic')}
               />
             </AccordionDetails>
             <AccordionActions>
@@ -331,7 +333,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
                 ? <CircularProgress />
                 : (
                   <Button variant='contained' color='primary' type='submit'>
-                    Next
+                    {t('recover_password_button_next')}
                   </Button>
                 )}
             </AccordionActions>
@@ -343,7 +345,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
         <AccordionSummary className={classes.panel_header}>
           <KeyIcon className={classes.expansion_icon} />
           <Typography className={classes.panel_heading}>
-            Recovery Key
+            {t('recover_password_accordion_recovery_key')}
           </Typography>
           {accordianView === 'new-password' && (
             <CheckCircleIcon className={classes.complete_icon} />
@@ -354,10 +356,10 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
             <TextField
               value={recoveryKey}
               onChange={e => setRecoveryKey(e.target.value)}
-              label='Recovery Key'
+              label={t('recover_password_input_label_recovery_key')}
               fullWidth
-              helperText="Enter your recovery key to authenticate"
-              placeholder="Paste your recovery key here"
+              helperText={t('recover_password_input_helper_recovery_key')}
+              placeholder={t('recover_password_input_placeholder_recovery_key')}
             />
           </AccordionDetails>
           <AccordionActions>
@@ -365,7 +367,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
               ? <CircularProgress />
               : (
                 <Button variant='contained' color='primary' type='submit' disabled={!recoveryKey}>
-                  Authenticate
+                  {t('recover_password_button_authenticate')}
                 </Button>
               )}
           </AccordionActions>
@@ -376,7 +378,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
         <AccordionSummary className={classes.panel_header}>
           <LockIcon className={classes.expansion_icon} />
           <Typography className={classes.panel_heading}>
-            New Password
+            {t('recover_password_accordion_new_password')}
           </Typography>
         </AccordionSummary>
         <form onSubmit={handleSubmitPassword}>
@@ -384,7 +386,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
             <TextField
               margin='normal'
               onChange={e => setPassword(e.target.value)}
-              label='Password'
+              label={t('recover_password_input_label_password')}
               fullWidth
               type='password'
             />
@@ -392,7 +394,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
             <TextField
               margin='normal'
               onChange={e => setConfirmPassword(e.target.value)}
-              label='Confirm Password'
+              label={t('recover_password_input_label_confirm_password')}
               fullWidth
               type='password'
             />
@@ -402,7 +404,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
               ? <CircularProgress />
               : (
                 <Button variant='contained' color='primary' type='submit'>
-                  Finish
+                  {t('recover_password_button_finish')}
                 </Button>
               )}
           </AccordionActions>
@@ -413,7 +415,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
         onClick={() => history.go(-1)}
         className={classes.back_button}
       >
-        Go Back
+        {t('recover_password_button_go_back')}
       </Button>
     </div>
   )

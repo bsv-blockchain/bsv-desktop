@@ -1,4 +1,5 @@
 import { useContext } from 'react'
+import { useTranslation } from 'react-i18next'
 import { DialogContent, DialogActions, Button, Box, Stack, Tooltip, Avatar, Divider } from '@mui/material'
 import CustomDialog from '../CustomDialog/index'
 import { WalletContext } from '../../WalletContext'
@@ -14,30 +15,31 @@ import deterministicColor from '../../utils/deterministicColor'
 // Permission request types
 type PermissionType = 'identity' | 'protocol' | 'renewal' | 'basket';
 
-// Permission type documents
-const permissionTypeDocs = {
-  identity: {
-    title: 'Trusted Entities Access Request',
-    description: 'An app is requesting access to lookup identity information using the entities you trust.',
-    icon: <VerifiedUserIcon fontSize="medium" />
-  },
-  renewal: {
-    title: 'Protocol Access Renewal',
-    description: 'An app is requesting to renew its previous access to a protocol.',
-    icon: <CachedIcon fontSize="medium" />
-  },
-  basket: {
-    title: 'Basket Access Request',
-    description: 'An app wants to view your tokens within a specific basket.',
-    icon: <ShoppingBasketIcon fontSize="medium" />
-  },
-  protocol: {
-    title: 'Protocol Access Request',
-    icon: <CodeIcon fontSize="medium" />
-  }
-};
+// Permission type documents are built inside the component so t() is available
 
 const ProtocolPermissionHandler = () => {
+  const { t } = useTranslation()
+  const permissionTypeDocs = {
+    identity: {
+      title: t('protocol_access_identity_title'),
+      description: t('protocol_access_identity_description'),
+      icon: <VerifiedUserIcon fontSize="medium" />
+    },
+    renewal: {
+      title: 'Protocol Access Renewal',
+      description: t('protocol_access_renewal_description'),
+      icon: <CachedIcon fontSize="medium" />
+    },
+    basket: {
+      title: t('protocol_access_basket_title'),
+      description: t('protocol_access_basket_description'),
+      icon: <ShoppingBasketIcon fontSize="medium" />
+    },
+    protocol: {
+      title: t('protocol_access_request_title'),
+      icon: <CodeIcon fontSize="medium" />
+    }
+  }
   const { protocolRequests, advanceProtocolQueue, managers } = useContext(WalletContext)
   const { protocolAccessModalOpen } = useContext(UserContext)
 
@@ -143,7 +145,7 @@ const ProtocolPermissionHandler = () => {
                 width: '100%'
               }}>
                 <Box sx={{ fontWeight: 'bold' }}>
-                  Counterparty:
+                  {t('protocol_access_counterparty_label')}
                 </Box>
                 <Stack px={3}>
                   {currentPerm.counterparty}
@@ -155,7 +157,7 @@ const ProtocolPermissionHandler = () => {
       </DialogContent>
 
       {/* Visual signature */}
-      <Tooltip title="Unique visual signature for this request" placement="top">
+      <Tooltip title={t('protocol_access_visual_signature_tooltip')} placement="top">
         <Box sx={{ mb: 3, py: 0.5, background: deterministicColor(JSON.stringify(currentPerm)) }} />
       </Tooltip>
 
@@ -165,14 +167,14 @@ const ProtocolPermissionHandler = () => {
           variant="outlined"
           color="inherit"
         >
-          Deny
+          {t('protocol_access_deny_button')}
         </Button>
         <Button
           onClick={handleGrant}
           variant="contained"
           color="primary"
         >
-          Grant Access
+          {t('protocol_access_grant_button')}
         </Button>
       </DialogActions>
     </CustomDialog>

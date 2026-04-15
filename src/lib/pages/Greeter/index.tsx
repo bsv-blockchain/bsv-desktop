@@ -1,4 +1,5 @@
 import { useContext, useState, useRef, useCallback, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Typography,
   Button,
@@ -57,6 +58,7 @@ import { deriveKeyMaterialFromMnemonic, persistKeyMaterial } from '../../utils/k
 // Phone form component to reduce cognitive complexity
 const PhoneForm = ({ phone, setPhone, loading, handleSubmitPhone, phoneFieldRef }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   return (
     <form onSubmit={handleSubmitPhone}>
       <PhoneEntry
@@ -80,7 +82,7 @@ const PhoneForm = ({ phone, setPhone, loading, handleSubmitPhone, phoneFieldRef 
           py: 1.2
         }}
       >
-        {loading ? <CircularProgress size={24} /> : 'Continue'}
+        {loading ? <CircularProgress size={24} /> : t('phone_continue_button')}
       </Button>
     </form>
   );
@@ -89,11 +91,12 @@ const PhoneForm = ({ phone, setPhone, loading, handleSubmitPhone, phoneFieldRef 
 // Code verification form component
 const CodeForm = ({ code, setCode, loading, handleSubmitCode, handleResendCode, codeFieldRef }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   return (
     <>
       <form onSubmit={handleSubmitCode}>
         <TextField
-          label="6-digit code"
+          label={t('code_input_label')}
           onChange={(e) => setCode(e.target.value)}
           variant="outlined"
           fullWidth
@@ -124,7 +127,7 @@ const CodeForm = ({ code, setCode, loading, handleSubmitCode, handleResendCode, 
             py: 1.2
           }}
         >
-          {loading ? <CircularProgress size={24} /> : 'Verify Code'}
+          {loading ? <CircularProgress size={24} /> : t('code_verify_button')}
         </Button>
       </form>
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
@@ -135,7 +138,7 @@ const CodeForm = ({ code, setCode, loading, handleSubmitCode, handleResendCode, 
           color="secondary"
           sx={{ textTransform: 'none' }}
         >
-          Resend Code
+          {t('code_resend_button')}
         </Button>
       </Box>
     </>
@@ -145,18 +148,19 @@ const CodeForm = ({ code, setCode, loading, handleSubmitCode, handleResendCode, 
 // Presentation key form component (using mnemonic)
 const PresentationKeyForm = ({ mnemonic, setMnemonic, loading, handleSubmitMnemonic, mnemonicFieldRef, onGenerateRandom, isLocked, hideGenerate = false }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   const handleCopy = () => {
     if (mnemonic) {
       navigator.clipboard.writeText(mnemonic)
-      toast.success('Mnemonic copied to clipboard')
+      toast.success(t('mnemonic_copy_success'))
     }
   }
 
   return (
     <form onSubmit={handleSubmitMnemonic}>
       <TextField
-        label="Mnemonic"
+        label={t('mnemonic_input_label')}
         value={mnemonic}
         onChange={(e) => setMnemonic(e.target.value)}
         variant="outlined"
@@ -164,7 +168,7 @@ const PresentationKeyForm = ({ mnemonic, setMnemonic, loading, handleSubmitMnemo
         multiline
         rows={3}
         disabled={loading || isLocked}
-        placeholder="Enter recovery phrase"
+        placeholder={t('mnemonic_input_placeholder')}
         slotProps={{
           input: {
             ref: mnemonicFieldRef,
@@ -198,7 +202,7 @@ const PresentationKeyForm = ({ mnemonic, setMnemonic, loading, handleSubmitMnemo
             mb: 2
           }}
         >
-          Generate Random Mnemonic
+          {t('mnemonic_generate_button')}
         </Button>
       )}
       <Button
@@ -212,7 +216,7 @@ const PresentationKeyForm = ({ mnemonic, setMnemonic, loading, handleSubmitMnemo
           py: 1.2
         }}
       >
-        {loading ? <CircularProgress size={24} /> : 'Continue'}
+        {loading ? <CircularProgress size={24} /> : t('mnemonic_continue_button')}
       </Button>
     </form>
   );
@@ -221,10 +225,11 @@ const PresentationKeyForm = ({ mnemonic, setMnemonic, loading, handleSubmitMnemo
 // Password form component
 const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPassword, showPassword, setShowPassword, loading, handleSubmitPassword, accountStatus, passwordFieldRef }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
   return (
     <form onSubmit={handleSubmitPassword}>
       <TextField
-        label="Password"
+        label={t('password_input_label')}
         onChange={(e) => setPassword(e.target.value)}
         type={showPassword ? 'text' : 'password'}
         variant="outlined"
@@ -236,7 +241,7 @@ const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPasswo
             endAdornment: (
               <InputAdornment position="end">
                 <IconButton
-                  aria-label="toggle password visibility"
+                  aria-label={t('password_toggle_aria_label')}
                   onClick={() => setShowPassword(!showPassword)}
                   edge="end"
                 >
@@ -253,7 +258,7 @@ const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPasswo
 
       {accountStatus === 'new-user' && (
         <TextField
-          label="Confirm Password"
+          label={t('confirm_password_input_label')}
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           type={showPassword ? 'text' : 'password'}
@@ -265,7 +270,7 @@ const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPasswo
               endAdornment: (
                 <InputAdornment position="end">
                   <IconButton
-                    aria-label="toggle password visibility"
+                    aria-label={t('password_toggle_aria_label')}
                     onClick={() => setShowPassword(!showPassword)}
                     edge="end"
                   >
@@ -293,7 +298,7 @@ const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPasswo
           py: 1.2
         }}
       >
-        {loading ? <CircularProgress size={24} /> : (accountStatus === 'new-user' ? 'Create Account' : 'Login')}
+        {loading ? <CircularProgress size={24} /> : (accountStatus === 'new-user' ? t('password_create_account_button') : t('password_login_button'))}
       </Button>
     </form>
   );
@@ -303,6 +308,7 @@ const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPasswo
 // keyInput, keyMode, isLocked are lifted to the parent to survive re-renders
 const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemonic, hideGenerate = false, keyInput, setKeyInput, isLocked, setIsLocked }) => {
   const theme = useTheme();
+  const { t } = useTranslation();
 
   // Detect whether the input looks like a raw hex private key (exactly 64 hex chars)
   const isHexKey = (val: string) => /^[0-9a-fA-F]{64}$/.test(val.trim())
@@ -310,7 +316,7 @@ const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemoni
   const handleCopy = () => {
     if (keyInput) {
       navigator.clipboard.writeText(keyInput)
-      toast.success(`${isHexKey(keyInput) ? 'Private key' : 'Mnemonic'} copied to clipboard`)
+      toast.success(isHexKey(keyInput) ? t('private_key_copy_success') : t('mnemonic_copy_success'))
     }
   }
 
@@ -332,7 +338,7 @@ const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemoni
   return (
     <form onSubmit={onSubmit}>
       <TextField
-        label="Primary Key"
+        label={t('primary_key_input_label')}
         value={keyInput}
         onChange={(e) => setKeyInput(e.target.value)}
         variant="outlined"
@@ -340,7 +346,7 @@ const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemoni
         multiline={!looksLikeHex}
         rows={!looksLikeHex ? 3 : 1}
         disabled={loading || isLocked}
-        placeholder="Enter mnemonic phrase or private key (hex)"
+        placeholder={t('primary_key_input_placeholder')}
         slotProps={{
           input: {
             endAdornment: keyInput && (
@@ -374,7 +380,7 @@ const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemoni
             mb: 1.5
           }}
         >
-          Create New Key
+          {t('primary_key_create_button')}
         </Button>
       )}
 
@@ -389,7 +395,7 @@ const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemoni
           py: 1
         }}
       >
-        {loading ? <CircularProgress size={24} /> : 'Login'}
+        {loading ? <CircularProgress size={24} /> : t('primary_key_login_button')}
       </Button>
     </form>
   );
@@ -402,6 +408,7 @@ const Greeter: React.FC<any> = ({ history }) => {
   const { managers, configStatus, useWab, loginType, saveEnhancedSnapshot, initializingBackendServices, finalizeConfig } = useContext(WalletContext)
   const { appVersion, appName, pageLoaded } = useContext(UserContext)
   const theme = useTheme()
+  const { t } = useTranslation()
 
   // Entry mode: 'choose' shows Create Wallet / Login buttons,
   // 'create' auto-configures for direct-key and shows the key form,
@@ -419,37 +426,37 @@ const Greeter: React.FC<any> = ({ history }) => {
         {
           label: 'Phone Number',
           icon: <PhoneIcon />,
-          description: 'Enter your phone number for verification'
+          description: t('phone_entry_label')
         },
         {
           label: 'Verification Code',
           icon: <SMSIcon />,
-          description: 'Enter the code you received via SMS'
+          description: t('verification_code_label')
         },
         {
           label: 'Password',
           icon: <LockIcon />,
-          description: 'Enter your password'
+          description: t('password_step_label')
         }
       ]
     : loginType === 'direct-key'
     ? [
         {
-          label: 'Privately Managed Key',
+          label: t('privately_managed_key_label'),
           icon: <KeyIcon />,
           description: ''
         }
       ]
     : [
         {
-          label: 'Presentation Key',
+          label: t('presentation_key_label'),
           icon: <KeyIcon />,
-          description: 'Paste your presentation key'
+          description: t('presentation_key_description')
         },
         {
           label: 'Password',
           icon: <LockIcon />,
-          description: 'Enter your password'
+          description: t('password_step_label')
         }
       ]
 
@@ -533,14 +540,14 @@ const Greeter: React.FC<any> = ({ history }) => {
   const handleSubmitPhone = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!walletManager) {
-      toast.error("Wallet Manager not ready yet.")
+      toast.error(t('phone_error_wallet_not_ready'))
       return
     }
     try {
       setLoading(true)
       await (walletManager as any).startAuth({ phoneNumber: phone })
       setStep('code')
-      toast.success('A code has been sent to your phone.')
+      toast.success(t('phone_success_code_sent'))
       // Move focus to code field
       if (codeFieldRef.current) {
         codeFieldRef.current.focus()
@@ -557,7 +564,7 @@ const Greeter: React.FC<any> = ({ history }) => {
   const handleSubmitCode = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!walletManager) {
-      toast.error("Wallet Manager not ready yet.")
+      toast.error(t('code_error_wallet_not_ready'))
       return
     }
     try {
@@ -576,7 +583,7 @@ const Greeter: React.FC<any> = ({ history }) => {
       }
     } catch (err: any) {
       console.error(err)
-      toast.error(err.message || "Failed to verify code")
+      toast.error(err.message || t('code_error_failed'))
     } finally {
       setLoading(false)
     }
@@ -588,7 +595,7 @@ const Greeter: React.FC<any> = ({ history }) => {
     try {
       setLoading(true)
       await (walletManager as any).startAuth({ phoneNumber: phone })
-      toast.success('A new code has been sent to your phone.')
+      toast.success(t('resend_code_success'))
     } catch (e: any) {
       console.error(e)
       toast.error(e.message)
@@ -609,14 +616,14 @@ const Greeter: React.FC<any> = ({ history }) => {
       // Save mnemonic to file
       const result = await saveMnemonic(mnemonicStr)
       if (result.success) {
-        toast.success(`Mnemonic saved to ${result.path}`)
+        toast.success(t('mnemonic_file_save_success', { path: result.path }))
       } else {
-        toast.error(`Failed to save mnemonic: ${result.error}`)
+        toast.error(t('mnemonic_file_save_error', { error: result.error }))
       }
       return mnemonicStr
     } catch (err: any) {
       console.error(err)
-      toast.error('Failed to generate random mnemonic')
+      toast.error(t('mnemonic_generate_error'))
       return null
     }
   }, [])
@@ -641,14 +648,14 @@ const Greeter: React.FC<any> = ({ history }) => {
       // Save private key to file
       const result = await savePrivateKey(hexStr)
       if (result.success) {
-        toast.success(`Private key saved to ${result.path}`)
+        toast.success(t('private_key_generate_success', { path: result.path }))
       } else {
-        toast.error(`Failed to save private key: ${result.error}`)
+        toast.error(t('private_key_generate_error', { error: result.error }))
       }
       return hexStr
     } catch (err: any) {
       console.error(err)
-      toast.error('Failed to generate random key')
+      toast.error(t('private_key_generate_fail'))
       return null
     }
   }, [])
@@ -657,7 +664,7 @@ const Greeter: React.FC<any> = ({ history }) => {
   const handleSubmitMnemonic = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!walletManager) {
-      toast.error('Wallet Manager not ready yet.')
+      toast.error(t('mnemonic_error_wallet_not_ready'))
       return
     }
     try {
@@ -682,7 +689,7 @@ const Greeter: React.FC<any> = ({ history }) => {
       }
     } catch (err: any) {
       console.error(err)
-      toast.error(err.message || 'Failed to set presentation key from mnemonic')
+      toast.error(err.message || t('mnemonic_error_failed'))
     } finally {
       setLoading(false)
     }
@@ -692,13 +699,13 @@ const Greeter: React.FC<any> = ({ history }) => {
   const handleSubmitPassword = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!walletManager) {
-      toast.error("Wallet Manager not ready yet.")
+      toast.error(t('password_error_wallet_not_ready'))
       return
     }
 
     // If new-user, confirm password match
     if (accountStatus === 'new-user' && password !== confirmPassword) {
-      toast.error("Passwords don't match.")
+      toast.error(t('password_error_mismatch'))
       return
     }
 
@@ -708,10 +715,10 @@ const Greeter: React.FC<any> = ({ history }) => {
       if (walletManager.authenticated) {
         // Save snapshot to local storage
         localStorage.snap = saveEnhancedSnapshot()
-        toast.success("Authenticated successfully!")
+        toast.success(t('password_success_authenticated'))
         history.push('/dashboard/apps')
       } else {
-        throw new Error('Authentication failed, maybe password is incorrect?')
+        throw new Error(t('password_error_auth_failed'))
       }
     } catch (err: any) {
       console.error(err)
@@ -725,7 +732,7 @@ const Greeter: React.FC<any> = ({ history }) => {
   // Auto-detects input type: 64-char hex string = raw private key, otherwise treated as mnemonic
   const handleSubmitDirectKey = useCallback(async (keyInput: string) => {
     if (!walletManager) {
-      toast.error('Wallet Manager not ready yet.')
+      toast.error(t('direct_key_error_wallet_not_ready'))
       return
     }
     try {
@@ -748,7 +755,7 @@ const Greeter: React.FC<any> = ({ history }) => {
       }
 
       if (keyBytes.length !== 32) {
-        throw new Error(`Key must be exactly 32 bytes (64 hex characters), but got ${keyBytes.length} bytes. Make sure you are entering a private key, not a public key.`)
+        throw new Error(t('direct_key_error_invalid_length', { bytes: keyBytes.length }))
       }
 
       // Persist key material so the Security page can reveal it later
@@ -760,14 +767,14 @@ const Greeter: React.FC<any> = ({ history }) => {
 
       if (walletManager.authenticated) {
         localStorage.snap = saveEnhancedSnapshot()
-        toast.success('Authenticated successfully!')
+        toast.success(t('password_success_authenticated'))
         history.push('/dashboard/apps')
       } else {
         throw new Error('Authentication failed')
       }
     } catch (err: any) {
       console.error(err)
-      toast.error(err.message || 'Failed to login with direct key')
+      toast.error(err.message || t('password_error_direct_key'))
     } finally {
       setLoading(false)
     }
@@ -927,7 +934,7 @@ const Greeter: React.FC<any> = ({ history }) => {
           startIcon={<RestoreIcon />}
           disabled={configStatus !== 'configured'}
         >
-          Account Recovery
+          {t('account_recovery_button')}
         </Button>
       </RouterLink>
     </Box>
@@ -940,14 +947,14 @@ const Greeter: React.FC<any> = ({ history }) => {
       align='center'
       sx={{ display: 'block', px: 5, mt: 3, mb: 0, fontSize: '0.75rem', opacity: 0.7 }}
     >
-      By using this software, you acknowledge that you have read, understood and accepted the terms of the{' '}
+      {t('legal_footer_text')}{' '}
       <RouterLink to='/privacy' style={{ color: theme.palette.primary.main, textDecoration: 'none' }}>
-        Privacy
+        {t('legal_privacy_link')}
       </RouterLink> and {' '}
       <RouterLink to='/usage' style={{ color: theme.palette.primary.main, textDecoration: 'none' }}>
-        Usage
+        {t('legal_usage_link')}
       </RouterLink> {' '}
-      policies.
+      {t('legal_footer_policies')}
     </Typography>
   )
 
@@ -956,13 +963,13 @@ const Greeter: React.FC<any> = ({ history }) => {
       <DialogTitle>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <LockIcon color="warning" />
-          <Typography variant="h6">Secure Your Recovery Mnemonic</Typography>
+          <Typography variant="h6">{t('mnemonic_dialog_title')}</Typography>
         </Box>
       </DialogTitle>
       <DialogContent>
         <Alert severity="warning" sx={{ mb: 2 }}>
-          <AlertTitle>Important: Save This Mnemonic</AlertTitle>
-          Your mnemonic is the ONLY way to recover your presentation key. Store it in a safe place indefinitely.
+          <AlertTitle>{t('mnemonic_dialog_warning_title')}</AlertTitle>
+          {t('mnemonic_dialog_warning_text')}
         </Alert>
         <Paper
           elevation={0}
@@ -984,25 +991,22 @@ const Greeter: React.FC<any> = ({ history }) => {
             variant="outlined"
             size="small"
             startIcon={<CopyIcon />}
-            onClick={() => { navigator.clipboard.writeText(mnemonic); toast.success('Mnemonic copied to clipboard') }}
+            onClick={() => { navigator.clipboard.writeText(mnemonic); toast.success(t('mnemonic_copy_success')) }}
             fullWidth
           >
-            Copy to Clipboard
+            {t('mnemonic_dialog_copy_button')}
           </Button>
         </Box>
         <Alert severity="info">
-          <AlertTitle>Security Tips</AlertTitle>
-          <Typography variant="body2" component="div">
-            • Write it down on paper and store it securely<br />
-            • Never share it with anyone<br />
-            • Keep multiple backups in different locations<br />
-            • Do not store it digitally (photos, cloud, etc.)
+          <AlertTitle>{t('mnemonic_dialog_info_title')}</AlertTitle>
+          <Typography variant="body2" component="div" style={{ whiteSpace: 'pre-line' }}>
+            {t('mnemonic_dialog_security_tips')}
           </Typography>
         </Alert>
       </DialogContent>
       <DialogActions sx={{ p: 2 }}>
         <Button onClick={() => setShowMnemonicDialog(false)} variant="contained" fullWidth>
-          I Have Saved My Mnemonic Securely
+          {t('mnemonic_dialog_confirm_button')}
         </Button>
       </DialogActions>
     </Dialog>
@@ -1028,7 +1032,7 @@ const Greeter: React.FC<any> = ({ history }) => {
                 onClick={handleCreateWallet}
                 sx={{ textTransform: 'none', py: 1, fontSize: '1rem' }}
               >
-                Create Wallet
+                {t('create_wallet_button')}
               </Button>
               <Button
                 variant="outlined"
@@ -1037,7 +1041,7 @@ const Greeter: React.FC<any> = ({ history }) => {
                 onClick={handleLogin}
                 sx={{ textTransform: 'none', py: 1, fontSize: '1rem' }}
               >
-                Login
+                {t('login_button')}
               </Button>
             </Box>
           </>
@@ -1048,9 +1052,9 @@ const Greeter: React.FC<any> = ({ history }) => {
           <>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
               <Button size="small" startIcon={<ArrowBackIcon />} onClick={handleBack} sx={{ textTransform: 'none' }}>
-                Back
+                {t('back_button')}
               </Button>
-              <Tooltip title={showConfig ? 'Hide configuration' : 'Configure wallet'} placement="left">
+              <Tooltip title={showConfig ? t('config_hide_tooltip') : t('config_show_tooltip')} placement="left">
                 <IconButton size="small" onClick={() => setShowConfig(s => !s)} color={showConfig ? 'secondary' : 'default'}>
                   {showConfig ? <CloseIcon fontSize="small" /> : <SettingsIcon fontSize="small" />}
                 </IconButton>
@@ -1068,9 +1072,9 @@ const Greeter: React.FC<any> = ({ history }) => {
           <>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
               <Button size="small" startIcon={<ArrowBackIcon />} onClick={handleBack} sx={{ textTransform: 'none' }}>
-                Back
+                {t('back_button')}
               </Button>
-              <Tooltip title={showConfig ? 'Hide configuration' : 'Configure wallet'} placement="left">
+              <Tooltip title={showConfig ? t('config_hide_tooltip') : t('config_show_tooltip')} placement="left">
                 <IconButton size="small" onClick={() => setShowConfig(s => !s)} color={showConfig ? 'secondary' : 'default'}>
                   {showConfig ? <CloseIcon fontSize="small" /> : <SettingsIcon fontSize="small" />}
                 </IconButton>

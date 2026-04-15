@@ -1,4 +1,6 @@
 import { useState, useContext, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useLanguage, languageNames } from '../../../i18n/LanguageContext'
 import {
   Typography,
   LinearProgress,
@@ -74,6 +76,8 @@ const useStyles = makeStyles((theme: Theme) => ({
 
 const Settings = () => {
   const classes = useStyles()
+  const { t } = useTranslation()
+  const { currentLanguage, setCurrentLanguage, supportedLanguages } = useLanguage()
   const { settings, updateSettings, wabUrl, useRemoteStorage, useMessageBox, storageUrl, useWab, messageBoxUrl, backupStorageUrls, addBackupStorageUrl, removeBackupStorageUrl, syncBackupStorage, permissionsConfig, updatePermissionsConfig } = useContext(WalletContext)
   const { pageLoaded, setManualUpdateInfo } = useContext(UserContext)
   const [settingsLoading, setSettingsLoading] = useState(false)
@@ -139,7 +143,7 @@ const Settings = () => {
 
       setSelectedTheme(themeOption);
 
-      toast.success('Theme updated!');
+      toast.success(t('theme_updated_success'));
     } catch (e) {
       toast.error(e.message);
       setSelectedTheme(settings?.theme?.mode || 'system');
@@ -160,7 +164,7 @@ const Settings = () => {
         currency,
       });
 
-      toast.success('Currency updated!');
+      toast.success(t('currency_updated_success'));
     } catch (e) {
       toast.error(e.message);
       setSelectedCurrency(settings?.currency || 'BSV');
@@ -171,7 +175,7 @@ const Settings = () => {
 
   const handleAddBackupStorage = async (local?: boolean) => {
     if (!newBackupUrl && !local) {
-      toast.error('Please enter a backup storage URL');
+      toast.error(t('backup_error_empty_url'));
       return;
     }
 
@@ -218,11 +222,11 @@ const Settings = () => {
 
     try {
       await syncBackupStorage(progressCallback);
-      toast.success('Backup storage synced successfully!');
+      toast.success(t('sync_backup_success'));
     } catch (e: any) {
       console.error('Sync error:', e);
       setSyncError(e?.message || String(e));
-      toast.error('Failed to sync backup storage: ' + (e?.message || 'Unknown error'));
+      toast.error(t('sync_backup_error', { error: e?.message || 'Unknown error' }));
     } finally {
       setSyncComplete(true);
       setSyncLoading(false);
@@ -294,14 +298,14 @@ const Settings = () => {
           // Trigger the update dialog immediately
           setManualUpdateInfo(result.updateInfo);
         } else {
-          toast.success('You are running the latest version!');
+          toast.success(t('updates_success_latest'));
         }
       } else {
-        toast.error(`Failed to check for updates: ${result.error}`);
+        toast.error(t('updates_error_check_failed', { error: result.error }));
       }
     } catch (e: any) {
       console.error('Update check error:', e);
-      toast.error('Failed to check for updates');
+      toast.error(t('updates_error_generic'));
     } finally {
       setUpdateCheckLoading(false);
     }
@@ -392,10 +396,10 @@ const Settings = () => {
   return (
     <div className={classes.root}>
       <Typography variant="h1" color="textPrimary" sx={{ mb: 2 }}>
-        User Settings
+        {t('settings_title')}
       </Typography>
       <Typography variant="body1" color="textSecondary" sx={{ mb: 2 }}>
-        Adjust your preferences to customize your experience.
+        {t('settings_subtitle')}
       </Typography>
 
       {settingsLoading && (
@@ -406,10 +410,10 @@ const Settings = () => {
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
         <Typography variant="h4" sx={{ mb: 2 }}>
-          Default Currency
+          {t('currency_section_title')}
         </Typography>
         <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-          How would you like to see your account balance?
+          {t('currency_section_description')}
         </Typography>
 
         <Grid container spacing={2} justifyContent="center">
@@ -439,30 +443,30 @@ const Settings = () => {
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
         <Typography variant="h4" sx={{ mb: 2 }}>
-          At a Glance
+          {t('at_glance_section_title')}
         </Typography>
         <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-          Current wallet service configuration. Logout to change.
+          {t('at_glance_section_description')}
         </Typography>
 
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Box>
             <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-              Mode
+              {t('at_glance_mode_label')}
             </Typography>
             <Box sx={{ display: 'flex', gap: 1 }}>
               <Chip
-                label={useWab ? 'WAB Recovery' : 'Solo Recovery'}
+                label={useWab ? t('at_glance_wab_recovery') : t('at_glance_solo_recovery')}
                 color="primary"
                 variant="outlined"
               />
               <Chip
-                label={useRemoteStorage ? 'Remote Storage' : 'Local Storage'}
+                label={useRemoteStorage ? t('at_glance_remote_storage') : t('at_glance_local_storage')}
                 color="primary"
                 variant="outlined"
               />
               <Chip
-                label={useMessageBox ? 'Message Box Active' : 'No Message Box'}
+                label={useMessageBox ? t('at_glance_message_box_active') : t('at_glance_no_message_box')}
                 color="primary"
                 variant="outlined"
               />
@@ -472,7 +476,7 @@ const Settings = () => {
           {useWab && wabUrl && (
             <Box>
               <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                WAB Server URL
+                {t('at_glance_wab_url_label')}
               </Typography>
               <Box component="div" sx={{
                 fontFamily: 'monospace',
@@ -489,7 +493,7 @@ const Settings = () => {
           {useRemoteStorage && storageUrl && (
               <Box>
               <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                Wallet Storage URL
+                {t('at_glance_storage_url_label')}
               </Typography>
               <Box component="div" sx={{
                 fontFamily: 'monospace',
@@ -506,7 +510,7 @@ const Settings = () => {
           {useMessageBox && messageBoxUrl && (
             <Box>
               <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                Message Box Server URL
+                {t('at_glance_message_box_url_label')}
               </Typography>
               <Box component="div" sx={{
                 fontFamily: 'monospace',
@@ -524,21 +528,20 @@ const Settings = () => {
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
         <Typography variant="h4" sx={{ mb: 2 }}>
-          Backup Storage
+          {t('backup_storage_section_title')}
         </Typography>
         <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-          Add remote backup storage providers to keep your wallet data synced across multiple locations.
-          The WalletStorageManager will automatically sync new actions to all backup storage providers.
+          {t('backup_storage_section_description')}
         </Typography>
 
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {/* Active Storage (not removable) */}
           <Box>
             <Typography variant="body2" color="textSecondary">
-              Active Storage (Primary)
+              {t('backup_storage_active_label')}
             </Typography>
             <Box component="div">
-              {useRemoteStorage ? storageUrl : 'Local File ~/.bsv-desktop/wallet-<identityKey>-<chain>.db'}
+              {useRemoteStorage ? storageUrl : t('backup_storage_local_default')}
             </Box>
           </Box>
 
@@ -546,7 +549,7 @@ const Settings = () => {
           {backupStorageUrls.length > 0 && (
             <Box>
               <Typography variant="body2" color="textSecondary" sx={{ mb: 1, fontWeight: 'bold' }}>
-                Backup Storage Providers ({backupStorageUrls.length})
+                {t('backup_storage_providers_label', { count: backupStorageUrls.length })}
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 {backupStorageUrls.map((url, index) => (
@@ -566,7 +569,7 @@ const Settings = () => {
                       wordBreak: 'break-all',
                       flex: 1
                     }}>
-                      {url === 'LOCAL_STORAGE' ? 'Local Electron Storage (~/.bsv-desktop/wallet-*.db)' : url}
+                      {url === 'LOCAL_STORAGE' ? t('backup_storage_local_electron') : url}
                     </Box>
                     <Button
                       variant="outlined"
@@ -575,7 +578,7 @@ const Settings = () => {
                       onClick={() => handleRemoveBackupStorage(url)}
                       disabled={backupLoading}
                     >
-                      Remove
+                      {t('backup_storage_remove_button')}
                     </Button>
                   </Box>
                 ))}
@@ -590,7 +593,7 @@ const Settings = () => {
               onClick={() => setShowBackupDialog(true)}
               disabled={backupLoading}
             >
-              Add Backup Storage
+              {t('backup_storage_add_button')}
             </Button>
             {backupStorageUrls.length > 0 && (
               <Button
@@ -598,14 +601,14 @@ const Settings = () => {
                 onClick={handleSyncBackupStorage}
                 disabled={syncLoading || backupLoading}
               >
-                {syncLoading ? 'Syncing...' : 'Sync All Backups'}
+                {syncLoading ? t('backup_storage_sync_syncing') : t('backup_storage_sync_button')}
               </Button>
             )}
           </Box>
 
           {backupStorageUrls.length === 0 && (
             <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
-              No backup storage providers configured. Add one to enable automatic backup syncing.
+              {t('backup_storage_empty_message')}
             </Typography>
           )}
         </Box>
@@ -616,7 +619,7 @@ const Settings = () => {
       </Box>
 
       <Dialog open={showBackupDialog} onClose={() => setShowBackupDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Add Backup Storage</DialogTitle>
+        <DialogTitle>{t('backup_dialog_title')}</DialogTitle>
         <DialogContent>
           {/* Only show local storage option if remote storage is primary AND local storage not already in backups */}
           {useRemoteStorage && !backupStorageUrls.includes('LOCAL_STORAGE') && (
@@ -631,18 +634,18 @@ const Settings = () => {
                   disabled={backupLoading}
                   sx={{ mb: 2 }}
                 >
-                  Add Local Storage Backup
+                  {t('backup_dialog_local_storage_button')}
                 </Button>
               </Box>
 
-              <Divider sx={{ my: 2 }}>OR</Divider>
+              <Divider sx={{ my: 2 }}>{t('backup_dialog_divider_text')}</Divider>
             </>
           )}
 
           <TextField
             fullWidth
-            label="Remote Backup Storage URL"
-            placeholder="https://storage.example.com"
+            label={t('backup_dialog_url_label')}
+            placeholder={t('backup_dialog_url_placeholder')}
             value={newBackupUrl === 'LOCAL_STORAGE' ? '' : newBackupUrl}
             onChange={(e) => setNewBackupUrl(e.target.value)}
             disabled={backupLoading}
@@ -651,20 +654,20 @@ const Settings = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowBackupDialog(false)} disabled={backupLoading}>
-            Cancel
+            {t('backup_dialog_cancel_button')}
           </Button>
           <Button
             onClick={() => handleAddBackupStorage(false)}
             variant="contained"
             disabled={backupLoading || !newBackupUrl}
           >
-            {backupLoading ? 'Adding...' : 'Add Backup'}
+            {backupLoading ? t('backup_dialog_add_loading') : t('backup_dialog_add_button')}
           </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={showSyncProgress} onClose={() => !syncLoading && setShowSyncProgress(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Backup Sync Progress</DialogTitle>
+        <DialogTitle>{t('sync_progress_dialog_title')}</DialogTitle>
         <DialogContent>
           {syncError && (
             <Alert severity="error" sx={{ mb: 2 }}>
@@ -686,7 +689,7 @@ const Settings = () => {
           >
             {syncProgressLogs.length === 0 && !syncComplete && (
               <Typography variant="body2" color="textSecondary">
-                Initializing sync...
+                {t('sync_progress_initializing')}
               </Typography>
             )}
             {syncProgressLogs.map((log, index) => (
@@ -696,7 +699,7 @@ const Settings = () => {
             ))}
             {syncComplete && syncProgressLogs.length === 0 && !syncError && (
               <Typography variant="body2" color="success.main">
-                Sync completed successfully!
+                {t('sync_progress_complete')}
               </Typography>
             )}
           </Box>
@@ -712,17 +715,17 @@ const Settings = () => {
             disabled={syncLoading}
             variant="contained"
           >
-            {syncComplete ? 'Close' : 'Cancel'}
+            {syncComplete ? t('sync_progress_close_button') : t('sync_progress_cancel_button')}
           </Button>
         </DialogActions>
       </Dialog>
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
         <Typography variant="h4" sx={{ mb: 2 }}>
-          Choose Your Theme
+          {t('theme_section_title')}
         </Typography>
         <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-          Select a theme that's comfortable for your eyes.
+          {t('theme_section_description')}
         </Typography>
 
         <Grid container spacing={3} justifyContent="center">
@@ -739,7 +742,7 @@ const Settings = () => {
               >
                 {renderThemeIcon(themeOption)}
                 <Typography variant="body2" sx={{ mt: 1, fontWeight: selectedTheme === themeOption ? 'bold' : 'normal' }}>
-                  {themeOption.charAt(0).toUpperCase() + themeOption.slice(1)}
+                  {themeOption === 'light' ? t('theme_light') : themeOption === 'dark' ? t('theme_dark') : t('theme_system')}
                 </Typography>
               </Button>
             </Grid>
@@ -747,12 +750,34 @@ const Settings = () => {
         </Grid>
       </Paper>
 
+      {/* Language */}
+      <Box className={classes.section}>
+        <Typography variant="h6" gutterBottom>
+          {t('language_section_title')}
+        </Typography>
+        <Typography variant="body2" color="textSecondary" gutterBottom>
+          {t('language_section_description')}
+        </Typography>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+          {supportedLanguages.map((lang) => (
+            <Chip
+              key={lang}
+              label={languageNames[lang] || lang}
+              onClick={() => setCurrentLanguage(lang)}
+              variant={currentLanguage === lang ? 'filled' : 'outlined'}
+              color={currentLanguage === lang ? 'primary' : 'default'}
+              clickable
+            />
+          ))}
+        </Box>
+      </Box>
+
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
         <Typography variant="h4" sx={{ mb: 2 }}>
-          Software Updates
+          {t('updates_section_title')}
         </Typography>
         <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-          BSV Desktop automatically checks for updates on startup and every 4 hours. You can manually check for updates at any time.
+          {t('updates_section_description')}
         </Typography>
 
         <Button
@@ -760,7 +785,7 @@ const Settings = () => {
           onClick={handleCheckForUpdates}
           disabled={updateCheckLoading}
         >
-          {updateCheckLoading ? 'Checking for Updates...' : 'Check for Updates'}
+          {updateCheckLoading ? t('updates_checking_button') : t('updates_check_button')}
         </Button>
       </Paper>
 
@@ -769,24 +794,23 @@ const Settings = () => {
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography variant="h4">
-            Permissions Configuration
+            {t('permissions_section_title')}
           </Typography>
           <Button
             size="small"
             onClick={() => setPermissionsExpanded(!permissionsExpanded)}
           >
-            {permissionsExpanded ? 'Hide' : 'Show'} Advanced Settings
+            {permissionsExpanded ? t('permissions_advanced_hide') : t('permissions_advanced_show')}
           </Button>
         </Box>
 
         <Alert severity="info" sx={{ mb: 2 }}>
-          These settings control what permissions external apps need to request before accessing wallet functionality.
-          Changes require app reload to take effect.
+          {t('permissions_info_alert')}
         </Alert>
 
         <Collapse in={permissionsExpanded}>
           <Box sx={{ mt: 2 }}>
-            <Typography variant="h6" sx={{ mb: 2 }}>Protocol Permissions</Typography>
+            <Typography variant="h6" sx={{ mb: 2 }}>{t('permissions_protocol_heading')}</Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 2 }}>
               <FormControlLabel
                 control={
@@ -795,7 +819,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekProtocolPermissionsForSigning')}
                   />
                 }
-                label="Require permission for signature creation"
+                label={t('permissions_protocol_signing')}
               />
               <FormControlLabel
                 control={
@@ -804,7 +828,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekProtocolPermissionsForEncrypting')}
                   />
                 }
-                label="Require permission for encryption operations"
+                label={t('permissions_protocol_encryption')}
               />
               <FormControlLabel
                 control={
@@ -813,13 +837,13 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekProtocolPermissionsForHMAC')}
                   />
                 }
-                label="Require permission for HMAC operations"
+                label={t('permissions_protocol_hmac')}
               />
             </Box>
 
             <Divider sx={{ my: 3 }} />
 
-            <Typography variant="h6" sx={{ mb: 2 }}>Key & Identity Permissions</Typography>
+            <Typography variant="h6" sx={{ mb: 2 }}>{t('permissions_identity_heading')}</Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 2 }}>
               <FormControlLabel
                 control={
@@ -828,7 +852,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekPermissionsForPublicKeyRevelation')}
                   />
                 }
-                label="Require permission for public key revelation"
+                label={t('permissions_identity_public_key')}
               />
               <FormControlLabel
                 control={
@@ -837,7 +861,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekPermissionsForIdentityKeyRevelation')}
                   />
                 }
-                label="Require permission for identity key revelation"
+                label={t('permissions_identity_key')}
               />
               <FormControlLabel
                 control={
@@ -846,7 +870,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekPermissionsForKeyLinkageRevelation')}
                   />
                 }
-                label="Require permission for key linkage revelation"
+                label={t('permissions_identity_linkage')}
               />
               <FormControlLabel
                 control={
@@ -855,13 +879,13 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekPermissionsForIdentityResolution')}
                   />
                 }
-                label="Require permission for identity resolution"
+                label={t('permissions_identity_resolution')}
               />
             </Box>
 
             <Divider sx={{ my: 3 }} />
 
-            <Typography variant="h6" sx={{ mb: 2 }}>Basket Permissions</Typography>
+            <Typography variant="h6" sx={{ mb: 2 }}>{t('permissions_basket_heading')}</Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 2 }}>
               <FormControlLabel
                 control={
@@ -870,7 +894,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekBasketInsertionPermissions')}
                   />
                 }
-                label="Require permission for basket insertion"
+                label={t('permissions_basket_insertion')}
               />
               <FormControlLabel
                 control={
@@ -879,7 +903,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekBasketListingPermissions')}
                   />
                 }
-                label="Require permission for basket listing"
+                label={t('permissions_basket_listing')}
               />
               <FormControlLabel
                 control={
@@ -888,13 +912,13 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekBasketRemovalPermissions')}
                   />
                 }
-                label="Require permission for basket removal"
+                label={t('permissions_basket_removal')}
               />
             </Box>
 
             <Divider sx={{ my: 3 }} />
 
-            <Typography variant="h6" sx={{ mb: 2 }}>Certificate Permissions</Typography>
+            <Typography variant="h6" sx={{ mb: 2 }}>{t('permissions_certificate_heading')}</Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 2 }}>
               <FormControlLabel
                 control={
@@ -903,7 +927,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekCertificateAcquisitionPermissions')}
                   />
                 }
-                label="Require permission for certificate acquisition"
+                label={t('permissions_certificate_acquisition')}
               />
               <FormControlLabel
                 control={
@@ -912,7 +936,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekCertificateDisclosurePermissions')}
                   />
                 }
-                label="Require permission for certificate disclosure"
+                label={t('permissions_certificate_disclosure')}
               />
               <FormControlLabel
                 control={
@@ -921,7 +945,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekCertificateRelinquishmentPermissions')}
                   />
                 }
-                label="Require permission for certificate relinquishment"
+                label={t('permissions_certificate_relinquishment')}
               />
               <FormControlLabel
                 control={
@@ -930,13 +954,13 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekCertificateListingPermissions')}
                   />
                 }
-                label="Require permission for certificate listing"
+                label={t('permissions_certificate_listing')}
               />
             </Box>
 
             <Divider sx={{ my: 3 }} />
 
-            <Typography variant="h6" sx={{ mb: 2 }}>Action & Label Permissions</Typography>
+            <Typography variant="h6" sx={{ mb: 2 }}>{t('permissions_action_heading')}</Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 2 }}>
               <FormControlLabel
                 control={
@@ -945,7 +969,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekPermissionWhenApplyingActionLabels')}
                   />
                 }
-                label="Require permission when applying action labels"
+                label={t('permissions_action_label_apply')}
               />
               <FormControlLabel
                 control={
@@ -954,13 +978,13 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekPermissionWhenListingActionsByLabel')}
                   />
                 }
-                label="Require permission when listing actions by label"
+                label={t('permissions_action_label_listing')}
               />
             </Box>
 
             <Divider sx={{ my: 3 }} />
 
-            <Typography variant="h6" sx={{ mb: 2 }}>General Settings</Typography>
+            <Typography variant="h6" sx={{ mb: 2 }}>{t('permissions_general_heading')}</Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 2 }}>
               <FormControlLabel
                 control={
@@ -969,7 +993,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekGroupedPermission')}
                   />
                 }
-                label="Enable grouped permission requests (recommended)"
+                label={t('permissions_general_grouped')}
               />
               <FormControlLabel
                 control={
@@ -978,7 +1002,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('seekSpendingPermissions')}
                   />
                 }
-                label="Require permission for spending wallet funds"
+                label={t('permissions_general_spending')}
               />
               <FormControlLabel
                 control={
@@ -987,7 +1011,7 @@ const Settings = () => {
                     onChange={() => handlePermissionToggle('differentiatePrivilegedOperations')}
                   />
                 }
-                label="Differentiate privileged operations"
+                label={t('permissions_general_privileged')}
               />
             </Box>
 
@@ -996,13 +1020,13 @@ const Settings = () => {
                 variant="outlined"
                 onClick={handleResetPermissions}
               >
-                Reset Changes
+                {t('permissions_reset_button')}
               </Button>
               <Button
                 variant="contained"
                 onClick={handleSavePermissions}
               >
-                Save Permissions Configuration
+                {t('permissions_save_button')}
               </Button>
             </Box>
           </Box>

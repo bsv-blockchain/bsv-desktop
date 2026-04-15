@@ -1,4 +1,5 @@
 import React, { useContext, useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { makeStyles } from '@mui/styles'
 import { Theme } from '@mui/material/styles'
 import {
@@ -52,6 +53,7 @@ const useStyles = makeStyles((theme: Theme) => ({
 }))
 
 const Security: React.FC = () => {
+  const { t } = useTranslation()
   const classes = useStyles()
   const history = useHistory()
   const [showKeyDialog, setShowKeyDialog] = useState(false)
@@ -124,9 +126,9 @@ const Security: React.FC = () => {
     // Use the hook's returned function that we defined at the component level
     const success = await exportData({ data: recoveryKeyData, filename: 'Metanet Recovery Key.txt', type: 'text/plain' })
     if (success) {
-      toast.success('Recovery key downloaded successfully')
+      toast.success(t('security_toast_download_success'))
     } else {
-      toast.error('Failed to download recovery key')
+      toast.error(t('security_toast_download_error'))
     }
   }
 
@@ -138,21 +140,21 @@ const Security: React.FC = () => {
     return (
       <div className={classes.root}>
         <Typography variant="h1" color="textPrimary" sx={{ mb: 2 }}>
-          Security
+          {t('security_page_title')}
         </Typography>
         <Typography variant="body1" color="textSecondary" sx={{ mb: 2 }}>
-          Manage your private key material.
+          {t('security_page_description_direct_key')}
         </Typography>
 
         <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
           <Typography variant="h4" sx={{ mb: 2 }}>
-            Private Key Management
+            {t('security_section_title_private_key')}
           </Typography>
           <Typography variant="body1" color="textSecondary" sx={{ mb: 2 }}>
-            Export the key material saved during sign-in. Only reveal this information when you are sure nobody else can see your screen.
+            {t('security_private_key_description')}
           </Typography>
           <Alert severity="warning" sx={{ mb: 3 }}>
-            Anyone with these words or your private key can move your funds and impersonate you. Keep them offline and out of sight.
+            {t('security_alert_warning_private_key')}
           </Alert>
           <Stack spacing={2} direction={{ xs: 'column', sm: 'row' }}>
             <Button
@@ -161,7 +163,7 @@ const Security: React.FC = () => {
               onClick={() => handleReveal('mnemonic')}
               sx={{ textTransform: 'none', flex: 1 }}
             >
-              Reveal recovery phrase
+              {t('security_button_reveal_phrase')}
             </Button>
             <Button
               variant="outlined"
@@ -169,7 +171,7 @@ const Security: React.FC = () => {
               onClick={() => handleReveal('hex')}
               sx={{ textTransform: 'none', flex: 1 }}
             >
-              Reveal private key
+              {t('security_button_reveal_private_key')}
             </Button>
             <Button
               variant="contained"
@@ -177,7 +179,7 @@ const Security: React.FC = () => {
               onClick={() => handleReveal('both')}
               sx={{ textTransform: 'none', flex: 1 }}
             >
-              Reveal both
+              {t('security_button_reveal_both')}
             </Button>
           </Stack>
           <Button
@@ -185,11 +187,11 @@ const Security: React.FC = () => {
             size="small"
             sx={{ mt: 2, textTransform: 'none' }}
           >
-            Refresh saved keys
+            {t('security_button_refresh_keys')}
           </Button>
           {!hasMnemonic && !hasHex && (
             <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-              No keys available yet. Unlock your wallet through the greeter to save your phrase or hex key locally.
+              {t('security_no_keys_message')}
             </Typography>
           )}
         </Paper>
@@ -200,13 +202,13 @@ const Security: React.FC = () => {
           fullWidth
           maxWidth="sm"
         >
-          <DialogTitle>Keep your keys private</DialogTitle>
+          <DialogTitle>{t('security_dialog_title_keep_private')}</DialogTitle>
           <DialogContent dividers>
             <Alert severity="warning" sx={{ mb: 2 }}>
-              Make sure no one is watching your screen or recording it before you proceed.
+              {t('security_dialog_alert_warning')}
             </Alert>
             <Typography variant="body1">
-              You are about to reveal {selectionLabel}. Treat it like cash — anyone who sees it can take your funds.
+              {t('security_dialog_message_reveal', { selectionLabel })}
             </Typography>
 
             {showSecrets && (
@@ -214,7 +216,7 @@ const Security: React.FC = () => {
                 {revealType !== 'hex' && (
                   <Box>
                     <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                      Recovery phrase{phraseWordCount ? ` (${phraseWordCount} words)` : ''}
+                      {t('security_recovery_phrase_title')}{phraseWordCount ? ` (${phraseWordCount} words)` : ''}
                     </Typography>
                     {hasMnemonic ? (
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
@@ -235,7 +237,7 @@ const Security: React.FC = () => {
                       </Box>
                     ) : (
                       <Typography variant="body2" color="textSecondary">
-                        No phrase saved on this device.
+                        {t('security_recovery_phrase_no_words')}
                       </Typography>
                     )}
                   </Box>
@@ -244,7 +246,7 @@ const Security: React.FC = () => {
                 {revealType !== 'mnemonic' && (
                   <Box>
                     <Typography variant="subtitle1" sx={{ mb: 1 }}>
-                      Private key
+                      {t('security_private_key_title')}
                     </Typography>
                     {hasHex ? (
                       <Box
@@ -260,7 +262,7 @@ const Security: React.FC = () => {
                       </Box>
                     ) : (
                       <Typography variant="body2" color="textSecondary">
-                        No private key saved on this device.
+                        {t('security_private_key_no_saved')}
                       </Typography>
                     )}
                   </Box>
@@ -269,10 +271,10 @@ const Security: React.FC = () => {
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={handleCloseWarning}>Close</Button>
+            <Button onClick={handleCloseWarning}>{t('security_button_close')}</Button>
             {!showSecrets && (
               <Button variant="contained" onClick={() => setShowSecrets(true)}>
-                Reveal now
+                {t('security_button_reveal_now')}
               </Button>
             )}
           </DialogActions>
@@ -284,10 +286,10 @@ const Security: React.FC = () => {
   return (
     <div className={classes.root}>
       <Typography variant="h1" color="textPrimary" sx={{ mb: 2 }}>
-        Security
+        {t('security_page_title')}
       </Typography>
       <Typography variant="body1" color="textSecondary" sx={{ mb: 2 }}>
-        Manage your password and recovery key settings.
+        {t('security_page_description_recovery')}
       </Typography>
 
       <Paper elevation={0} className={classes.section} sx={{ p: 3, bgcolor: 'background.paper' }}>
@@ -306,11 +308,11 @@ const Security: React.FC = () => {
         fullWidth
       >
         <DialogTitle id="recovery-key-dialog-title">
-          Your Recovery Key
+          {t('security_dialog_recovery_key_title')}
         </DialogTitle>
         <DialogContent>
           <DialogContentText color="textSecondary" sx={{ mb: 2 }}>
-            Please save this key in a secure location. You will need it to recover your account if you forget your password.
+            {t('security_dialog_recovery_key_description')}
           </DialogContentText>
           <Stack sx={{ my: 3 }} direction="row" alignItems="center" justifyContent="space-between">
             <Typography className={classes.key}>
@@ -328,12 +330,12 @@ const Security: React.FC = () => {
             fullWidth
             sx={{ p: 2 }}
           >
-            Save as a File
+            {t('security_button_save_as_file')}
           </Button>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog} color="primary">
-            Close
+            {t('security_button_close')}
           </Button>
         </DialogActions>
       </Dialog>

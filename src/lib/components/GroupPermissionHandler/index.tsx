@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   DialogContent, DialogContentText, DialogActions, Button, Typography, Checkbox, FormControlLabel, CircularProgress
 } from '@mui/material'
@@ -113,6 +114,7 @@ interface GroupPermissions {
 // Each request contains requestID, originator and groupPermissions
 
 const GroupPermissionHandler = () => {
+  const { t } = useTranslation()
   const {
     groupPermissionRequests,
     advanceGroupQueue,
@@ -322,12 +324,12 @@ const GroupPermissionHandler = () => {
       onClose={handleCancel}
       maxWidth='md'
       fullWidth
-      title='Select App Permissions'
+      title={t('group_permission_dialog_title')}
     >
       <DialogContent>
         <DialogContentText>
           <br />
-          An app is requesting access to some of your information, and it wants to do some things on your behalf. Have a look through the below list of items, and select the ones you'd be okay with.
+          {t('group_permission_intro_text')}
         </DialogContentText>
         <br />
         <center>
@@ -351,22 +353,22 @@ const GroupPermissionHandler = () => {
         <br />
         {spendingAuthorization && (
           <>
-            <Typography variant='h3'>Spending Authorization</Typography>
+            <Typography variant='h3'>{t('group_spending_authorization_heading')}</Typography>
             <FormControlLabel
               control={<Checkbox
                 checked={spendingAuthorization.enabled}
                 onChange={() => setSpendingAuthorization(prev => ({ ...prev, enabled: !prev.enabled }))}
               />}
-              label={<span>Let the app spend <AmountDisplay abbreviate>{spendingAuthorization.amount}</AmountDisplay> over the next 2 months without asking.</span>}
+              label={<span>{t('group_spending_authorization_text', { amount: spendingAuthorization.amount })}</span>}
             />
             <br />
             <br />
           </>
         )}
         {protocolPermissions && protocolPermissions.length > 0 && <>
-          <Typography variant='h3'>Protocol Permissions</Typography>
+          <Typography variant='h3'>{t('group_protocol_permissions_heading')}</Typography>
           <Typography color='textSecondary' variant='caption'>
-            Protocols let apps talk in specific languages using your information.
+            {t('group_protocol_permissions_description')}
           </Typography>
           {protocolPermissions.map((x, i) => (
             <div key={i} className={classes.protocol_grid}>
@@ -383,16 +385,16 @@ const GroupPermissionHandler = () => {
                   counterparty={x.counterparty}
                 />
                 <div className={classes.protocol_inset}>
-                  <p style={{ marginBottom: '0px' }}><b>Reason:{' '}</b>{x.description}</p>
+                  <p style={{ marginBottom: '0px' }}><b>{t('group_protocol_reason_label')}</b>{x.description}</p>
                 </div>
               </div>
             </div>
           ))}
         </>}
         {certificateAccess && certificateAccess.length > 0 && <>
-          <Typography variant='h3'>Certificate Access</Typography>
+          <Typography variant='h3'>{t('group_certificate_access_heading')}</Typography>
           <Typography color='textSecondary' variant='caption'>
-            Certificates are documents issued to you by various third parties.
+            {t('group_certificate_access_description')}
           </Typography>
           {certificateAccess.map((x, i) => (
             <div key={i} className={classes.certificate_grid}>
@@ -414,16 +416,16 @@ const GroupPermissionHandler = () => {
                     <div style={{ minHeight: '0.5em' }} />
                     <div></div>
                   </div>
-                  <p style={{ marginBottom: '0px' }}><b>Reason:{' '}</b>{x.description || ''}</p>
+                  <p style={{ marginBottom: '0px' }}><b>{t('group_certificate_reason_label')}</b>{x.description || ''}</p>
                 </div>
               </div>
             </div>
           ))}
         </>}
         {basketAccess && basketAccess.length > 0 && <>
-          <Typography variant='h3'>Basket Access</Typography>
+          <Typography variant='h3'>{t('group_basket_access_heading')}</Typography>
           <Typography color='textSecondary' variant='caption'>
-            Baskets hold various tokens or "things" you own.
+            {t('group_basket_access_description')}
           </Typography>
           {basketAccess.map((x, i) => (
             <div key={i} className={classes.basket_grid}>
@@ -438,7 +440,7 @@ const GroupPermissionHandler = () => {
                   basketId={x.basket}
                 />
                 <div className={classes.basket_inset}>
-                  <p style={{ marginBottom: '0px' }}><b>Reason:{' '}</b>{x.description}</p>
+                  <p style={{ marginBottom: '0px' }}><b>{t('group_basket_reason_label')}</b>{x.description}</p>
                 </div>
               </div>
             </div>
@@ -457,7 +459,7 @@ const GroupPermissionHandler = () => {
           color='primary'
           disabled={isGranting}
         >
-          Deny All
+          {t('group_permission_deny_all_button')}
         </Button>
         <Button
           color='primary'
@@ -465,7 +467,7 @@ const GroupPermissionHandler = () => {
           disabled={isGranting}
           startIcon={isGranting ? <CircularProgress size={16} /> : undefined}
         >
-          {isGranting ? 'Granting...' : 'Grant Selected'}
+          {isGranting ? t('group_permission_granting_button') : t('group_permission_grant_selected_button')}
         </Button>
       </DialogActions>
     </CustomDialog>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react'
+import { useTranslation } from 'react-i18next'
 import style from './style.js'
 import {
   Accordion,
@@ -24,6 +25,7 @@ import { OverlayUMPTokenInteractor } from '@bsv/wallet-toolbox-client'
 const useStyles = makeStyles(style as any, { name: 'RecoverPresentationKey' })
 
 const RecoverPresentationKey: React.FC<any> = ({ history }) => {
+  const { t } = useTranslation()
   const { managers, saveEnhancedSnapshot, network } = useContext(WalletContext)
   const classes = useStyles()
   const [accordianView, setAccordianView] = useState('recovery-key')
@@ -70,7 +72,7 @@ const RecoverPresentationKey: React.FC<any> = ({ history }) => {
 
       if (managers.walletManager!.authenticated) {
         localStorage.snap = saveEnhancedSnapshot()
-        toast.success('Presentation key recovered successfully!')
+        toast.success(t('recover_key_toast_success'))
         history.push('/dashboard/apps')
       } else {
         throw new Error('Authentication failed. Please check your password.')
@@ -88,23 +90,23 @@ const RecoverPresentationKey: React.FC<any> = ({ history }) => {
       <div className={classes.content_wrap}>
         <div className={classes.panel_body}>
           <Typography paragraph>
-            You are currently logged in. You must log out in order to recover your presentation key.
+            {t('recover_key_message_logged_in')}
           </Typography>
           <Button
             color='secondary'
             onClick={async () => {
-              if (!window.confirm('Log out?')) return
+              if (!window.confirm(t('recover_key_confirm_logout'))) return
               await managers.walletManager!.destroy()
               setAuthenticated(false)
             }}
           >
-            Log Out
+            {t('recover_key_button_log_out')}
           </Button>
           <Button
             onClick={() => history.go(-1)}
             className={classes.back_button}
           >
-            Go Back
+            {t('recovery_button_go_back')}
           </Button>
         </div>
       </div>
@@ -114,10 +116,10 @@ const RecoverPresentationKey: React.FC<any> = ({ history }) => {
   return (
     <div className={classes.content_wrap}>
       <Typography variant='h2' paragraph fontFamily='Helvetica' fontSize='2em'>
-        Recover Presentation Key
+        {t('recover_key_page_title')}
       </Typography>
       <Typography variant='body2' paragraph color='textSecondary'>
-        Use your password and recovery key to regain access to your wallet.
+        {t('recover_key_page_description')}
       </Typography>
 
       <Accordion
@@ -130,7 +132,7 @@ const RecoverPresentationKey: React.FC<any> = ({ history }) => {
           <Typography
             className={classes.panel_heading}
           >
-            Recovery Key
+            {t('recover_key_accordion_recovery_key')}
           </Typography>
           {accordianView === 'password' && (
             <CheckCircleIcon className={classes.complete_icon} />
@@ -142,7 +144,7 @@ const RecoverPresentationKey: React.FC<any> = ({ history }) => {
           >
             <TextField
               onChange={e => setRecoveryKey(e.target.value)}
-              label='Recovery Key'
+              label={t('recover_key_input_label_recovery_key')}
               fullWidth
             />
           </AccordionDetails>
@@ -155,7 +157,7 @@ const RecoverPresentationKey: React.FC<any> = ({ history }) => {
                   color='primary'
                   type='submit'
                 >
-                  Next
+                  {t('recover_key_button_next')}
                 </Button>
               )}
           </AccordionActions>
@@ -172,7 +174,7 @@ const RecoverPresentationKey: React.FC<any> = ({ history }) => {
           <Typography
             className={classes.panel_heading}
           >
-            Password
+            {t('recover_key_accordion_password')}
           </Typography>
         </AccordionSummary>
         <form onSubmit={handleSubmitPassword}>
@@ -181,7 +183,7 @@ const RecoverPresentationKey: React.FC<any> = ({ history }) => {
           >
             <TextField
               onChange={e => setPassword(e.target.value)}
-              label='Password'
+              label={t('recover_key_input_label_password')}
               fullWidth
               type='password'
             />
@@ -195,7 +197,7 @@ const RecoverPresentationKey: React.FC<any> = ({ history }) => {
                   color='primary'
                   type='submit'
                 >
-                  Recover
+                  {t('recover_key_button_recover')}
                 </Button>
               )}
           </AccordionActions>
@@ -206,7 +208,7 @@ const RecoverPresentationKey: React.FC<any> = ({ history }) => {
         onClick={() => history.go(-1)}
         className={classes.back_button}
       >
-        Go Back
+        {t('recovery_button_go_back')}
       </Button>
     </div>
   )

@@ -1,4 +1,5 @@
 import { useState, useContext, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useBreakpoint } from '../../utils/useBreakpoints';
 import { Switch, Route, Redirect, useHistory } from 'react-router-dom';
 import style from '../../navigation/style';
@@ -38,6 +39,7 @@ const useStyles = makeStyles(style, {
  * Renders the Dashboard layout with routing for sub-pages.
  */
 export default function Dashboard() {
+  const { t } = useTranslation();
   const { pageLoaded } = useContext(UserContext);
   const { activeProfile, managers, adminOriginator } = useContext(WalletContext)
   const history = useHistory();
@@ -93,7 +95,7 @@ export default function Dashboard() {
               <IconButton
                 edge='start'
                 onClick={() => setMenuOpen(menuOpen => !menuOpen)}
-                aria-label='menu'
+                aria-label={t('menu_aria_label')}
                 sx={{
                   color: 'primary.main',
                   '&:hover': {
@@ -179,7 +181,7 @@ export default function Dashboard() {
                 <div className={(classes as any).full_width} style={{ padding: '1em' }}>
                   <br />
                   <br />
-                  <Typography align='center' color='textPrimary'>Use the menu to select a page</Typography>
+                  <Typography align='center' color='textPrimary'>{t('page_default_message')}</Typography>
                 </div>
               );
             }}

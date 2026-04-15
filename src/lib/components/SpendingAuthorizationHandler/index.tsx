@@ -1,4 +1,5 @@
 import { useContext, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   DialogContent,
   DialogActions,
@@ -16,6 +17,7 @@ import { UserContext } from '../../UserContext.js'
 import PaymentsIcon from '@mui/icons-material/Payments'
 
 const SpendingAuthorizationHandler: React.FC = () => {
+  const { t } = useTranslation()
   const {
     managers, spendingRequests, advanceSpendingQueue
   } = useContext(WalletContext)
@@ -52,9 +54,9 @@ const SpendingAuthorizationHandler: React.FC = () => {
   const isCreateSpendingLimit = currentPerm.description === 'Create a spending limit'
 
   const getDialogTitle = () => {
-    if (isSpendingLimitIncrease) return 'Spending Limit Increase'
-    if (isCreateSpendingLimit) return 'Set Spending Limit'
-    return !currentPerm.renewal ? 'Spending Request' : 'Spending Check-in'
+    if (isSpendingLimitIncrease) return t('spending_limit_increase_title')
+    if (isCreateSpendingLimit) return t('spending_limit_set_title')
+    return !currentPerm.renewal ? t('spending_request_title') : t('spending_checkin_title')
   }
 
   return (
@@ -75,24 +77,24 @@ const SpendingAuthorizationHandler: React.FC = () => {
           {isSpendingLimitIncrease ? (
             <Stack alignItems="center" spacing={1} py={2}>
               <Typography variant="body2" color="text.secondary">
-                This app wants to increase its spending limit to
+                {t('spending_limit_increase_text')}
               </Typography>
               <Typography variant="h3" fontWeight="bold">
                 <AmountDisplay showFiatAsInteger>{currentPerm.authorizationAmount}</AmountDisplay>
               </Typography>
-              <Typography variant="caption" color="text.secondary">/month</Typography>
+              <Typography variant="caption" color="text.secondary">{t('spending_limit_monthly_suffix')}</Typography>
             </Stack>
           ) : isCreateSpendingLimit ? (
             <Stack alignItems="center" spacing={1} py={2}>
               <Typography variant="body2" color="text.secondary">
-                Set a monthly spending limit for this app
+                {t('spending_limit_create_text')}
               </Typography>
               <Typography variant="h3" fontWeight="bold">
                 <AmountDisplay showFiatAsInteger>{currentPerm.authorizationAmount}</AmountDisplay>
               </Typography>
-              <Typography variant="caption" color="text.secondary">/month</Typography>
+              <Typography variant="caption" color="text.secondary">{t('spending_limit_monthly_suffix')}</Typography>
               <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', maxWidth: 280, textAlign: 'center' }}>
-                The app can spend up to this amount each month without asking again
+                {t('spending_limit_create_note')}
               </Typography>
             </Stack>
           ) : (
@@ -114,7 +116,7 @@ const SpendingAuthorizationHandler: React.FC = () => {
                     onClick={() => setDetailsOpen(o => !o)}
                     sx={{ color: 'text.secondary', fontSize: '0.75rem', px: 0 }}
                   >
-                    Details {detailsOpen ? '▲' : '▼'}
+                    {detailsOpen ? t('spending_details_button_collapse') : t('spending_details_button_expand')}
                   </Button>
                   <Collapse in={detailsOpen}>
                     <Stack spacing={0} sx={{ mt: 0.5, border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
@@ -154,7 +156,7 @@ const SpendingAuthorizationHandler: React.FC = () => {
           onClick={handleCancel}
           sx={{ minWidth: 120 }}
         >
-          {isSpendingLimitIncrease || isCreateSpendingLimit ? 'Cancel' : 'Deny'}
+          {isSpendingLimitIncrease || isCreateSpendingLimit ? t('spending_cancel_button') : t('spending_deny_button')}
         </Button>
 
         {isSpendingLimitIncrease ? (
@@ -165,7 +167,7 @@ const SpendingAuthorizationHandler: React.FC = () => {
             onClick={() => handleGrant({ singular: false, amount: currentPerm.authorizationAmount })}
             sx={{ minWidth: 160, backgroundColor: '#2e7d32 !important', color: '#fff !important', '&:hover': { backgroundColor: '#1b5e20 !important' } }}
           >
-            Approve Increase
+            {t('spending_approve_increase_button')}
           </Button>
         ) : isCreateSpendingLimit ? (
           <Button
@@ -175,7 +177,7 @@ const SpendingAuthorizationHandler: React.FC = () => {
             onClick={() => handleGrant({ singular: false, amount: currentPerm.authorizationAmount })}
             sx={{ minWidth: 160, backgroundColor: '#2e7d32 !important', color: '#fff !important', '&:hover': { backgroundColor: '#1b5e20 !important' } }}
           >
-            Set Limit
+            {t('spending_set_limit_button')}
           </Button>
         ) : (
           <Button
@@ -185,7 +187,7 @@ const SpendingAuthorizationHandler: React.FC = () => {
             onClick={() => handleGrant({ singular: true })}
             sx={{ minWidth: 160, backgroundColor: '#2e7d32 !important', color: '#fff !important', '&:hover': { backgroundColor: '#1b5e20 !important' } }}
           >
-            Authorize
+            {t('spending_authorize_button')}
           </Button>
         )}
       </DialogActions>

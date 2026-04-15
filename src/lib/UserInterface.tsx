@@ -1,4 +1,6 @@
 import React, { useContext } from 'react'
+import './i18n'
+import { LanguageProvider } from './i18n/LanguageContext'
 import { WalletContextProvider } from './WalletContext'
 import { HashRouter as Router, Route, Switch } from 'react-router-dom'
 import 'react-toastify/dist/ReactToastify.css'
@@ -55,6 +57,7 @@ interface UserInterfaceProps {
 
 const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHandlers, appVersion, appName, permissionModules }) => {
   return (
+    <LanguageProvider>
     <UserContextProvider nativeHandlers={nativeHandlers} appVersion={appVersion} appName={appName}>
       <WalletContextProvider onWalletReady={onWalletReady} permissionModules={permissionModules}>
         <AppThemeProvider>
@@ -87,6 +90,7 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
         </AppThemeProvider>
       </WalletContextProvider>
     </UserContextProvider>
+    </LanguageProvider>
   )
 }
 

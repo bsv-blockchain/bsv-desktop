@@ -1,4 +1,5 @@
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Box,
   Button,
@@ -22,26 +23,27 @@ const PAGE_SIZE = 30
 
 const ABORTABLE_STATUSES = new Set(['unsigned', 'nosend', 'nonfinal'])
 
-function getStatusChip(status: string) {
+function getStatusChip(status: string, t: (key: string) => string) {
   switch (status) {
     case 'completed':
     case 'unproven':
     case 'sending':
-      return <Chip size="small" label={status === 'completed' ? 'Confirmed' : status === 'unproven' ? 'Accepted' : 'Broadcasting'} color="success" />
+      return <Chip size="small" label={status === 'completed' ? t('apps_status_confirmed') : status === 'unproven' ? t('apps_status_accepted') : t('apps_status_broadcasting')} color="success" />
     case 'nosend':
-      return <Chip size="small" label="Not Sent" color="warning" />
+      return <Chip size="small" label={t('apps_status_not_sent')} color="warning" />
     case 'unsigned':
-      return <Chip size="small" label="Unsigned" color="warning" />
+      return <Chip size="small" label={t('apps_status_unsigned')} color="warning" />
     case 'nonfinal':
-      return <Chip size="small" label="Non-Final" color="warning" />
+      return <Chip size="small" label={t('apps_status_non_final')} color="warning" />
     case 'failed':
-      return <Chip size="small" label="Failed" color="error" />
+      return <Chip size="small" label={t('apps_status_failed')} color="error" />
     default:
       return <Chip size="small" label={status} />
   }
 }
 
 const Transactions: React.FC = () => {
+  const { t } = useTranslation()
   const { managers, adminOriginator, network } = useContext(WalletContext)
 
   const [actions, setActions] = useState<WalletAction[]>([])
@@ -104,9 +106,9 @@ const Transactions: React.FC = () => {
     setCopyingTxid(txid)
     try {
       await navigator.clipboard.writeText(txid)
-      toast.success('Transaction ID copied!')
+      toast.success(t('apps_toast_copy_success'))
     } catch {
-      toast.error('Failed to copy')
+      toast.error(t('apps_toast_copy_error'))
     } finally {
       setCopyingTxid(null)
     }
@@ -123,14 +125,14 @@ const Transactions: React.FC = () => {
   if (actions.length === 0) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="300px">
-        <Typography color="textSecondary">No transactions yet.</Typography>
+        <Typography color="textSecondary">{t('apps_empty_state')}</Typography>
       </Box>
     )
   }
 
   return (
     <Box sx={{ p: 2 }}>
-      <Typography variant="h5" sx={{ mb: 2 }}>Transactions</Typography>
+      <Typography variant="h5" sx={{ mb: 2 }}>{t('apps_section_title')}</Typography>
       <List disablePadding>
         {actions.map((item, index) => (
           <ListItem
@@ -144,7 +146,7 @@ const Transactions: React.FC = () => {
                   {item.description || 'Transaction'}
                 </Typography>
               }
-              secondary={getStatusChip(item.status)}
+              secondary={getStatusChip(item.status, t)}
             />
             <Box display="flex" alignItems="center" gap={1} flexShrink={0}>
               <Typography variant="body2" fontWeight={600} color={item.satoshis < 0 ? 'error' : 'textPrimary'}>
@@ -152,12 +154,12 @@ const Transactions: React.FC = () => {
               </Typography>
               {!ABORTABLE_STATUSES.has(item.status) && item.txid && (
                 <>
-                  <Tooltip title="View on WhatsOnChain">
+                  <Tooltip title={t('apps_tooltip_view_explorer')}>
                     <IconButton size="small" onClick={() => handleExplorerLink(item.txid)}>
                       <OpenInNewIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
-                  <Tooltip title="Copy transaction ID">
+                  <Tooltip title={t('apps_tooltip_copy_txid')}>
                     <IconButton
                       size="small"
                       onClick={() => handleCopyTxid(item.txid)}
@@ -176,7 +178,7 @@ const Transactions: React.FC = () => {
       {hasMore && (
         <Box display="flex" justifyContent="center" mt={2}>
           <Button variant="outlined" onClick={loadMore} disabled={loadingMore}>
-            {loadingMore ? 'Loading…' : 'Load more'}
+            {loadingMore ? t('apps_button_loading') : t('apps_button_load_more')}
           </Button>
         </Box>
       )}

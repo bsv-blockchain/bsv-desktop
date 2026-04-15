@@ -42,4 +42,6 @@ export const languageNames: Record<string, string> = {
   bn: 'বাংলা',
   ru: 'Русский',
   id: 'Bahasa Indonesia',
+  ja: '日本語',
+  pl: 'Polski',
 }

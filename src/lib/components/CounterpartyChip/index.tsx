@@ -1,4 +1,5 @@
 import { useContext, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Avatar, Chip, Divider, Stack, Typography } from '@mui/material'
 import { withRouter, RouteComponentProps } from 'react-router-dom'
 import makeStyles from '@mui/styles/makeStyles'
@@ -39,9 +40,10 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
 }) => {
   const theme = useTheme()
   const classes = useStyles()
+  const { t } = useTranslation()
   const [identity, setIdentity] = useState({
-    name: 'Unknown',
-    badgeLabel: 'Unknown',
+    name: t('counterparty_chip_unknown'),
+    badgeLabel: t('counterparty_chip_unknown'),
     abbreviatedKey: counterparty.substring(0, 10),
     badgeIconURL: 'https://bsvblockchain.org/favicon.ico',
     avatarURL: deterministicImage(counterparty)
@@ -148,7 +150,7 @@ const CounterpartyChip: React.FC<CounterpartyChipProps> = ({
                 fontSize: `${Math.max(size * 0.8, 0.8)}rem`,
                 fontWeight: '500'
               }}>
-                {counterparty === 'self' ? 'Self' : identity.name}
+                {counterparty === 'self' ? t('counterparty_chip_self') : identity.name}
               </span>
               <span style={theme.templates?.chipLabelSubtitle || {
                 fontSize: '0.7rem',

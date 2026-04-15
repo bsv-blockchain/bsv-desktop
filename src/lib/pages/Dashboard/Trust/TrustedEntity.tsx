@@ -1,5 +1,6 @@
 /* eslint-disable react/prop-types */
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Typography,
   Box,
@@ -27,6 +28,7 @@ import CustomDialog from '../../../components/CustomDialog'
 import { Certifier } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 
 const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { history: any, classes: any, setTrustedEntities: Function, entity: Certifier, trustedEntities: Certifier[] }) => {
+  const { t } = useTranslation()
   const [trust, setTrust] = useState(entity.trust)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -131,7 +133,7 @@ const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { histo
                   <Typography variant="h6" component="h3" sx={{ fontWeight: 'bold', mr: 1 }}>
                     {entity.name}
                   </Typography>
-                  <Tooltip title="Verified entity">
+                  <Tooltip title={t('trust_entity_verified_tooltip')}>
                     <VerifiedIcon color="primary" fontSize="small" />
                   </Tooltip>
                 </Box>
@@ -152,7 +154,7 @@ const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { histo
                     mb: 1
                   }}
                 >
-                  <Tooltip title="Entity Identity Key">
+                  <Tooltip title={t('trust_entity_identity_key_tooltip')}>
                     <InfoOutlinedIcon fontSize="small" color="action" sx={{ mr: 1 }} />
                   </Tooltip>
                   <Typography
@@ -166,7 +168,7 @@ const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { histo
                   >
                     {formatIdentityKey(entity.identityKey)}
                   </Typography>
-                  <Tooltip title={copied ? "Copied!" : "Copy Identity Key"}>
+                  <Tooltip title={copied ? t('trust_entity_copied_tooltip') : t('trust_entity_copy_key_tooltip')}>
                     <IconButton
                       size="small"
                       onClick={handleCopyIdentityKey}
@@ -179,7 +181,7 @@ const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { histo
 
                 {/* Trust Level Chip */}
                 <Chip
-                  label={`Trust Level: ${trust}/10`}
+                  label={t('trust_entity_trust_level', { trust, max: 10 })}
                   color={trust > 7 ? "success" : trust > 4 ? "primary" : "default"}
                   size="small"
                   sx={{ mr: 1 }}
@@ -192,7 +194,7 @@ const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { histo
                   onClick={() => setExpanded(!expanded)}
                   sx={{ textTransform: 'none' }}
                 >
-                  {expanded ? 'Less Details' : 'More Details'}
+                  {expanded ? t('trust_entity_less_details') : t('trust_entity_more_details')}
                 </Button>
               </Box>
             </Box>
@@ -203,7 +205,7 @@ const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { histo
             <Box sx={{ p: 2 }}>
               {/* Additional Entity Details */}
               <Typography variant="subtitle2" gutterBottom>
-                Full Identity Key
+                {t('trust_entity_full_identity_key')}
               </Typography>
               <Box
                 sx={{
@@ -252,10 +254,10 @@ const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { histo
         </CardContent>
       </Card>
 
-      <CustomDialog title='Delete Trust Relationship' open={deleteOpen} onClose={() => setDeleteOpen(false)}>
+      <CustomDialog title={t('trust_entity_delete_title')} open={deleteOpen} onClose={() => setDeleteOpen(false)}>
         <DialogContent>
           <DialogContentText>
-            Are you sure you want to delete this trust relationship? This action cannot be undone.
+            {t('trust_entity_delete_confirm')}
           </DialogContentText>
           <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
             <img
@@ -272,8 +274,8 @@ const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { histo
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteOpen(false)} color="primary">Cancel</Button>
-          <Button onClick={handleDelete} color="error" variant="contained">Delete</Button>
+          <Button onClick={() => setDeleteOpen(false)} color="primary">{t('trust_entity_cancel')}</Button>
+          <Button onClick={handleDelete} color="error" variant="contained">{t('trust_entity_delete')}</Button>
         </DialogActions>
       </CustomDialog>
     </>

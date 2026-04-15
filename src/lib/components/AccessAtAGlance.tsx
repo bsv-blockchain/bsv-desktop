@@ -5,6 +5,7 @@ import React, {
   useMemo,
   useState,
 } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Typography,
   Button,
@@ -60,7 +61,7 @@ const getCachedBasketAccess = (originator: string): string[] | null => {
 
     const parsedCache: BasketAccessCache = JSON.parse(cached)
     const now = Date.now()
-    
+
     // Check if cache is expired
     if (now - parsedCache.timestamp > CACHE_EXPIRY_MS) {
       localStorage.removeItem(getCacheKey(originator))
@@ -103,6 +104,8 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({
   setRefresh,
   history,
 }) => {
+  const { t } = useTranslation()
+
   /* ------------- Context / state ---------------------------------- */
   const { managers, adminOriginator } = useContext(WalletContext)
   const permissionsManager = managers.permissionsManager
@@ -160,7 +163,7 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({
     // Use setTimeout to yield control back to main thread immediately
     setTimeout(async () => {
       if (controller.signal.aborted) return
-      
+
       setIsLoadingBaskets(true)
 
       try {
@@ -177,7 +180,7 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({
           actions,
           controller.signal
         )
-        
+
         if (!controller.signal.aborted) {
           setRecentBasketAccess(filteredResults)
           // Cache the fresh data
@@ -210,7 +213,7 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({
         gutterBottom
         style={{ paddingBottom: '0.2em' }}
       >
-        Access At A Glance
+        {t('access_at_a_glance_title')}
       </Typography>
 
       {/* ---------------------- Basket + Protocol list ---------------- */}
@@ -225,7 +228,7 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({
       >
         {!isLoadingBaskets && recentBasketAccess.length !== 0 && (
           <>
-            <ListSubheader>Most Recent Basket</ListSubheader>
+            <ListSubheader>{t('access_at_a_glance_most_recent_basket')}</ListSubheader>
             {recentBasketAccess.map(basket => (
               <BasketChip key={basket} basketId={basket} clickable />
             ))}
@@ -238,7 +241,7 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({
           canRevoke={false}
           clickable
           displayCount={false}
-          listHeaderTitle="Most Recent Protocol"
+          listHeaderTitle={t('access_at_a_glance_most_recent_protocol')}
           onEmptyList={() => setProtocolIsEmpty(true)}
         />
       </List>
@@ -259,7 +262,7 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({
           type="certificate"
           canRevoke={false}
           displayCount={false}
-          listHeaderTitle="Most Recent Certificate"
+          listHeaderTitle={t('access_at_a_glance_most_recent_certificate')}
           onEmptyList={() => setCertificateIsEmpty(true)}
         />
 
@@ -274,7 +277,7 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({
               align="center"
               sx={{ pt: '5em' }}
             >
-              No recent access
+              {t('access_at_a_glance_no_recent_access')}
             </Typography>
           )}
       </Box>
@@ -290,7 +293,7 @@ const AccessAtAGlance: React.FC<AccessAtAGlanceProps> = ({
                 : 'inherit',
           }}
         >
-          Manage App
+          {t('access_at_a_glance_manage_app')}
         </Button>
       </Box>
     </div>

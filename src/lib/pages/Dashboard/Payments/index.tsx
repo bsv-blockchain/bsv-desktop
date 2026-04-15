@@ -39,6 +39,7 @@ import { WalletProfile } from '../../../types/WalletProfile'
 import { OutlinedInput, Tabs, Tab } from '@mui/material'
 import { useIdentitySearch } from '@bsv/identity-react'
 import MessageBoxConfig from '../../../components/MessageBoxConfig/index.tsx'
+import { useTranslation } from 'react-i18next'
 
 /* --------------------------- Inline: Payment Form -------------------------- */
 type PaymentFormProps = {
@@ -46,6 +47,7 @@ type PaymentFormProps = {
   wallet: WalletInterface
 }
 function PaymentForm({ wallet, onSent }: PaymentFormProps) {
+  const { t } = useTranslation()
   const {managers, activeProfile, peerPayClient, loginType, adminOriginator } = useContext(WalletContext)
   const isDirectKey = loginType === 'direct-key'
   const [recipient, setRecipient] = useState('')
@@ -141,13 +143,13 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
         amount
       })
       onSent?.()
-      toast.success('Payment Success!')
+      toast.success(t('payments_payment_success'))
       setInput('0')
       // Dispatch custom event to refresh balance
       window.dispatchEvent(new CustomEvent('balance-changed'))
     } catch (e) {
       toast.error('[PaymentForm] sendPayment error:', e as any)
-      alert((e as Error)?.message ?? 'Failed to send payment')
+      alert((e as Error)?.message ?? t('payments_failed_to_send'))
     } finally {
       setSending(false)
     }
@@ -167,7 +169,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
   return (
     <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
       <Typography variant="h6" sx={{ mb: 1 }}>
-        Create New Payment
+        {t('payments_create_new_payment')}
       </Typography>
       <Stack spacing={2}>
         {!isDirectKey && (
@@ -175,8 +177,8 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
             setTabValue(newValue)
             setRecipient('')
           }}>
-            <Tab label="Pay Someone" />
-            <Tab label="Internal Transfer" />
+            <Tab label={t('payments_tab_pay_someone')} />
+            <Tab label={t('payments_tab_internal_transfer')} />
           </Tabs>
         )}
 
@@ -210,8 +212,8 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Search for Recipient"
-                  placeholder="Search by name, email, etc."
+                  label={t('payments_search_for_recipient')}
+                  placeholder={t('payments_search_placeholder')}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -250,7 +252,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
                       )}
                       <Box sx={{ flexGrow: 1 }}>
                         <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                          {option.name || 'Unknown'}
+                          {option.name || t('payments_unknown')}
                         </Typography>
                         <Typography variant="caption" color="textSecondary" sx={{ fontFamily: 'monospace' }}>
                           {option.identityKey.slice(0, 20)}...
@@ -267,12 +269,12 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
                   </li>
                 )
               }}
-              noOptionsText={identitySearch.inputValue ? "No identities found" : "Start typing to search"}
+              noOptionsText={identitySearch.inputValue ? t('payments_no_identities_found') : t('payments_start_typing_to_search')}
               fullWidth
             />
             <TextField
               fullWidth
-              label={identitySearch.selectedIdentity ? "Selected Recipient Identity Key" : "Or Enter Recipient Public Key"}
+              label={identitySearch.selectedIdentity ? t('payments_selected_recipient_key') : t('payments_enter_recipient_public_key')}
               value={publicKeyInput}
               onChange={(e) => {
                 const val = e.target.value.trim();
@@ -292,19 +294,19 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
               }}
               disabled={!!identitySearch.selectedIdentity}
               error={Boolean(publicKeyInput && !recipient && !identitySearch.selectedIdentity)}
-              helperText={publicKeyInput && !recipient && !identitySearch.selectedIdentity ? 'Invalid public key' : ''}
+              helperText={publicKeyInput && !recipient && !identitySearch.selectedIdentity ? t('payments_invalid_public_key') : ''}
               sx={{ mt: 1 }}
             />
           </>
         ) : (
           <FormControl fullWidth>
             <Select
-              label="Destination Profile"
+              label={t('payments_destination_profile')}
               value={recipient || ''}
               displayEmpty
               onChange={(e) => setRecipient(e.target.value as string)}
               renderValue={(val) => {
-                if (!val) return 'Select a profile'
+                if (!val) return t('payments_select_a_profile')
                 const p = profiles.find(p => p.identityKey === val)
                 return p ? `${p.name} — ${p.identityKey.slice(0, 10)}` : ''
               }}
@@ -320,7 +322,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
         )}
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField
-            label="Enter Amount"
+            label={t('payments_enter_amount')}
             variant="outlined"
             value={input}
             onChange={handleAmountChange}
@@ -334,7 +336,7 @@ function PaymentForm({ wallet, onSent }: PaymentFormProps) {
 
         <Box>
           <Button variant="contained" disabled={!canSend} onClick={send}>
-            {sending ? 'Sending…' : 'Send'}
+            {sending ? t('payments_sending') : t('payments_send')}
           </Button>
         </Box>
       </Stack>
@@ -349,6 +351,7 @@ type PaymentListProps = {
 }
 
 function PaymentList({ payments, onRefresh }: PaymentListProps) {
+  const { t } = useTranslation()
   // Track loading per messageId so buttons aren't linked
   const { messageBoxUrl, useMessageBox, peerPayClient } = useContext(WalletContext)
 
@@ -398,7 +401,7 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
       window.dispatchEvent(new CustomEvent('balance-changed'))
     } catch (e) {
       toast.error('[PaymentList] acceptPayment error (final):', e as any)
-      alert((e as Error)?.message ?? 'Failed to accept payment')
+      alert((e as Error)?.message ?? t('payments_failed_to_accept'))
     } finally {
       onRefresh()
     }
@@ -411,12 +414,12 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
   return (
     <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-        <Typography variant="h6">Pending Payments</Typography>
-        <Button onClick={onRefresh}>Refresh</Button>
+        <Typography variant="h6">{t('payments_pending_payments')}</Typography>
+        <Button onClick={onRefresh}>{t('payments_refresh')}</Button>
       </Box>
 
       {payments.length === 0 ? (
-        <Typography color="text.secondary">No pending payments.</Typography>
+        <Typography color="text.secondary">{t('payments_no_pending_payments')}</Typography>
       ) : (
         <List sx={{ width: '100%' }}>
           {payments.map((p) => {
@@ -436,7 +439,7 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
                         disabled={isLoading}
                         onClick={() => accept(p)}
                       >
-                        {isLoading ? 'Receiving' : 'receive'}
+                        {isLoading ? t('payments_receiving') : t('payments_receive')}
                       </Button>
                     </Stack>
                   }
@@ -452,7 +455,7 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
                     }
                     secondary={
                       <Typography variant="body2" color="text.secondary">
-                        From: {p.sender?.slice?.(0, 14) ?? 'unknown'}…
+                        {t('payments_from')}: {p.sender?.slice?.(0, 14) ?? t('payments_unknown')}…
                       </Typography>
                     }
                   />
@@ -469,6 +472,7 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
 
 /* ------------------------------- Route View -------------------------------- */
 export default function PeerPayRoute() {
+  const { t } = useTranslation()
   const {
     messageBoxUrl,
     managers,
@@ -501,7 +505,7 @@ export default function PeerPayRoute() {
       const list = await peerPayClient.listIncomingPayments(messageBoxUrl)
       setPayments(list)
     } catch (e) {
-      setSnack({ open: true, msg: (e as Error)?.message ?? 'Failed to load payments', severity: 'error' })
+      setSnack({ open: true, msg: (e as Error)?.message ?? t('payments_failed_to_load'), severity: 'error' })
     } finally {
       setLoading(false)
     }
@@ -518,7 +522,7 @@ export default function PeerPayRoute() {
       })
       setIncomingRequests(list)
     } catch (e) {
-      setSnack({ open: true, msg: (e as Error)?.message ?? 'Failed to load requests', severity: 'error' })
+      setSnack({ open: true, msg: (e as Error)?.message ?? t('payments_failed_to_load_requests'), severity: 'error' })
     }
   }, [peerPayClient, messageBoxUrl, idSuffix])
 
@@ -570,10 +574,10 @@ export default function PeerPayRoute() {
       <Container maxWidth="sm">
         <Box sx={{ minHeight: '100vh', py: 5 }}>
           <Typography variant="h5" sx={{ mb: 2 }}>
-            Setup Required
+            {t('payments_setup_required')}
           </Typography>
           <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-            To send and receive payments with other users, enter your Message Box server URL below.
+            {t('payments_setup_description')}
           </Typography>
           <MessageBoxConfig embedded showTitle={false} />
         </Box>
@@ -585,12 +589,12 @@ export default function PeerPayRoute() {
     <Container maxWidth="sm">
       <Box sx={{ minHeight: '100vh', py: 5 }}>
         <Typography variant="h5" sx={{ mb: 2 }}>
-          Payments
+          {t('payments_title')}
         </Typography>
 
         {!isHostAnointed && (
           <Alert severity="info" sx={{ mb: 2 }}>
-            Your message box host is not yet anointed. You can send payments, but others cannot find you to send payments to you until you anoint the host in Settings.
+            {t('payments_host_not_anointed')}
           </Alert>
         )}
 
@@ -604,10 +608,10 @@ export default function PeerPayRoute() {
           variant="fullWidth"
           sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
         >
-          <Tab label="Send Payment" />
-          <Tab label="Request Payment" />
-          <Tab label="Incoming Requests" />
-          <Tab label="Pending Payments" />
+          <Tab label={t('payments_tab_send_payment')} />
+          <Tab label={t('payments_tab_request_payment')} />
+          <Tab label={t('payments_tab_incoming_requests')} />
+          <Tab label={t('payments_tab_pending_payments')} />
         </Tabs>
 
         {/* Tab 0: Send Payment */}
@@ -623,17 +627,17 @@ export default function PeerPayRoute() {
             {/* Transaction History Section */}
             <Paper elevation={2} sx={{ p: 3 }}>
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 500 }}>
-                Transaction History
+                {t('payments_transaction_history')}
               </Typography>
               <Divider sx={{ mb: 2 }} />
 
               <Button variant="outlined" onClick={getPastTransactions} fullWidth sx={{ mb: 2 }}>
-                Refresh Transactions
+                {t('payments_refresh_transactions')}
               </Button>
 
               {transactions.length === 0 ? (
                 <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-                  No transactions yet...
+                  {t('payments_no_transactions_yet')}
                 </Typography>
               ) : (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -641,7 +645,7 @@ export default function PeerPayRoute() {
                     <Card key={index} variant="outlined">
                       <CardContent>
                         <Typography variant="body2" color="textSecondary">
-                          <strong>TXID:</strong>{' '}
+                          <strong>{t('payments_txid')}:</strong>{' '}
                           <Link
                             href={`https://whatsonchain.com/tx/${tx.txid}`}
                             target="_blank"
@@ -651,10 +655,10 @@ export default function PeerPayRoute() {
                           </Link>
                         </Typography>
                         <Typography variant="body2" color="textSecondary">
-                          <strong>To:</strong> {tx.to || 'N/A'}
+                          <strong>{t('payments_to')}:</strong> {tx.to || t('payments_na')}
                         </Typography>
                         <Typography variant="body2" color="textSecondary">
-                          <strong>Amount:</strong> {tx.amount || 'N/A'} BSV
+                          <strong>{t('payments_amount')}:</strong> {tx.amount || t('payments_na')} BSV
                         </Typography>
                       </CardContent>
                     </Card>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Dialog,
   DialogTitle,
@@ -33,6 +34,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
   manualUpdateInfo,
   onDismissManualUpdate
 }) => {
+  const { t } = useTranslation();
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -100,14 +102,14 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
       console.log('Update downloaded:', info);
       setDownloading(false);
       setUpdateReady(true);
-      toast.success('Update downloaded successfully! Ready to install.');
+      toast.success(t('update_notification_downloaded_success'));
     });
 
     // Listen for errors
     window.electronAPI.updates.onUpdateError((error: string) => {
       console.error('Update error:', error);
       setDownloading(false);
-      toast.error(`Update error: ${error}`);
+      toast.error(`${t('update_notification_error_prefix')}: ${error}`);
     });
 
     return () => {
@@ -120,10 +122,10 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
       setDownloading(true);
       setUpdateAvailable(false);
       await window.electronAPI.updates.download();
-      toast.info('Downloading update...');
+      toast.info(t('update_notification_downloading'));
     } catch (error) {
       console.error('Failed to start download:', error);
-      toast.error('Failed to start download');
+      toast.error(t('update_notification_failed_to_start_download'));
       setDownloading(false);
     }
   };
@@ -133,7 +135,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
       await window.electronAPI.updates.install();
     } catch (error) {
       console.error('Failed to install update:', error);
-      toast.error('Failed to install update');
+      toast.error(t('update_notification_failed_to_install'));
     }
   };
 
@@ -149,7 +151,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
   };
 
   const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return t('update_notification_zero_bytes');
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -160,20 +162,20 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     <>
       {/* Update Available Dialog */}
       <Dialog open={updateAvailable} onClose={handleDismiss}>
-        <DialogTitle>Update Available</DialogTitle>
+        <DialogTitle>{t('update_notification_available_title')}</DialogTitle>
         <DialogContent>
           <Typography variant="body1" gutterBottom>
-            A new version of BSV Desktop is available!
+            {t('update_notification_available_body')}
           </Typography>
           {updateInfo && (
             <>
               <Typography variant="body2" color="textSecondary" gutterBottom>
-                Version: {updateInfo.version}
+                {t('update_notification_version_label')}: {updateInfo.version}
               </Typography>
               {updateInfo.releaseNotes && (
                 <Box mt={2}>
                   <Typography variant="body2" color="textSecondary">
-                    Release Notes:
+                    {t('update_notification_release_notes_label')}:
                   </Typography>
                   <Box
                     sx={{
@@ -187,7 +189,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                   >
                     <div
                       dangerouslySetInnerHTML={{
-                        __html: updateInfo.releaseNotes || 'No release notes available.'
+                        __html: updateInfo.releaseNotes || t('update_notification_no_release_notes')
                       }}
                       style={{
                         fontSize: '0.875rem',
@@ -201,25 +203,25 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
             </>
           )}
           <Typography variant="body2" color="textSecondary" style={{ marginTop: 16 }}>
-            Your data and settings will be preserved during the update.
+            {t('update_notification_data_preserved')}
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleDismiss} color="primary">
-            Later
+            {t('update_notification_later')}
           </Button>
           <Button onClick={handleDownload} color="primary" variant="contained">
-            Download Update
+            {t('update_notification_download_update')}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Downloading Dialog */}
       <Dialog open={downloading} disableEscapeKeyDown>
-        <DialogTitle>Downloading Update</DialogTitle>
+        <DialogTitle>{t('update_notification_downloading_title')}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" gutterBottom>
-            Downloading BSV Desktop {updateInfo?.version}...
+            {t('update_notification_downloading_body', { version: updateInfo?.version })}
           </Typography>
           {downloadProgress && (
             <Box mt={2}>
@@ -239,21 +241,21 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
 
       {/* Update Ready Dialog */}
       <Dialog open={updateReady} onClose={handleDismissReady}>
-        <DialogTitle>Update Ready to Install</DialogTitle>
+        <DialogTitle>{t('update_notification_ready_title')}</DialogTitle>
         <DialogContent>
           <Typography variant="body1" gutterBottom>
-            The update has been downloaded and is ready to install.
+            {t('update_notification_ready_body')}
           </Typography>
           <Typography variant="body2" color="textSecondary">
-            The application will restart to complete the installation. Your data and settings will be preserved.
+            {t('update_notification_ready_restart_note')}
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleDismissReady} color="primary">
-            Install Later
+            {t('update_notification_install_later')}
           </Button>
           <Button onClick={handleInstall} color="primary" variant="contained">
-            Install and Restart
+            {t('update_notification_install_and_restart')}
           </Button>
         </DialogActions>
       </Dialog>

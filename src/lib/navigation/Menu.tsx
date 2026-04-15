@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import {
   Apps as BrowseIcon,
   Settings as SettingsIcon,
@@ -76,6 +77,7 @@ interface MenuProps {
 
 
 export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
+  const { t } = useTranslation()
   const history = useHistory()
   const breakpoints = useBreakpoint()
   const { logout, managers, activeProfile, setActiveProfile, saveEnhancedSnapshot, loginType } = useContext(WalletContext)
@@ -418,12 +420,12 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                 <ListItemText
                   primary={
                     <Typography variant="body1">
-                      Profiles
+                      {t('menu_profiles')}
                     </Typography>
                   }
                   secondary={
                     !profilesOpen && profiles.length > 0
-                      ? `Active: ${profiles.find(p => p.active)?.name || 'Default'}`
+                      ? `${t('menu_profiles_active')}: ${profiles.find(p => p.active)?.name || t('menu_profiles_default')}`
                       : undefined
                   }
                 />
@@ -470,11 +472,11 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                               <Typography variant="subtitle2" sx={{ fontWeight: profile.active ? 'bold' : 'normal' }}>
                                 {profile.name}
                               </Typography>
-                              {profile.active && <Chip size="small" label="Active" color="primary" sx={{ height: 20, fontSize: '0.7rem' }} />}
+                              {profile.active && <Chip size="small" label={t('menu_profiles_active_chip')} color="primary" sx={{ height: 20, fontSize: '0.7rem' }} />}
                             </Box>
                             <Box display="flex" justifyContent="space-between" alignItems="center">
                               <Typography variant="caption" color="textSecondary">
-                                Identity Key: {(profile?.identityKey?.slice(0, 10))}
+                                {t('menu_profiles_identity_key')}: {(profile?.identityKey?.slice(0, 10))}
                               </Typography>
                               {!profile.active && !profile.id.every(x => x === 0) && (
                                 <IconButton
@@ -509,7 +511,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                         size="small"
                         sx={{ mt: 1, justifyContent: 'start' }}
                       >
-                        New Profile
+                        {t('menu_new_profile')}
                       </Button>
                     </Grid>
                   </Grid>
@@ -536,7 +538,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   variant="body1"
                   fontWeight={history.location.pathname === '/dashboard/app-catalog' ? 600 : 400}
                 >
-                  Apps
+                  {t('menu_apps')}
                 </Typography>
               }
             />
@@ -556,7 +558,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   variant="body1"
                   fontWeight={history.location.pathname === '/dashboard/apps' ? 600 : 400}
                 >
-                  Transactions
+                  {t('menu_transactions')}
                 </Typography>
               }
             />
@@ -576,7 +578,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   variant="body1"
                   fontWeight={history.location.pathname === '/dashboard/identity' ? 600 : 400}
                 >
-                  Identity
+                  {t('menu_identity')}
                 </Typography>
               }
             />
@@ -596,7 +598,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   variant="body1"
                   fontWeight={history.location.pathname === '/dashboard/trust' ? 600 : 400}
                 >
-                  Trust
+                  {t('menu_trust')}
                 </Typography>
               }
             />
@@ -616,7 +618,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   variant="body1"
                   fontWeight={history.location.pathname === '/dashboard/security' ? 600 : 400}
                 >
-                  Security
+                  {t('menu_security')}
                 </Typography>
               }
             />
@@ -636,7 +638,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   variant="body1"
                   fontWeight={history.location.pathname === '/dashboard/settings' ? 600 : 400}
                 >
-                  Settings
+                  {t('menu_settings')}
                 </Typography>
               }
             />
@@ -656,7 +658,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   variant="body1"
                   fontWeight={history.location.pathname === '/dashboard/payments' ? 600 : 400}
                 >
-                  Payments
+                  {t('menu_payments')}
                 </Typography>
               }
             />
@@ -676,7 +678,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   variant="body1"
                   fontWeight={history.location.pathname === '/dashboard/legacybridge' ? 600 : 400}
                 >
-                  Legacy Bridge
+                  {t('menu_legacy_bridge')}
                 </Typography>
               }
             />
@@ -698,7 +700,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
             <ListItemText
               primary={
                 <Typography variant="body1">
-                  Logout
+                  {t('menu_logout')}
                 </Typography>
               }
             />
@@ -718,7 +720,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
           >
             {appName} v{appVersion}
             <br />
-            <i>Made with love for the BSV Blockchain</i>
+            <i>{t('menu_footer_tagline')}</i>
           </Typography>
         </Box>
       </Box>
@@ -726,16 +728,16 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
 
       {/* Create Profile Dialog */}
       <Dialog open={createProfileOpen} onClose={() => setCreateProfileOpen(false)}>
-        <DialogTitle>Create New Profile</DialogTitle>
+        <DialogTitle>{t('menu_create_profile_title')}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Enter a name for the new profile. Each profile has its own set of keys and can be used for different purposes.
+            {t('menu_create_profile_description')}
           </DialogContentText>
 
           <TextField
             autoFocus
             margin="dense"
-            label="Profile Name"
+            label={t('menu_profile_name_label')}
             type="text"
             fullWidth
             value={newProfileName}
@@ -750,24 +752,24 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                 value='on'
               />
             }
-            label="Automatically fund wallet with 5000 sats?"
+            label={t('menu_auto_fund_label')}
             sx={{ mt: 1 }}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateProfileOpen(false)}>Cancel</Button>
+          <Button onClick={() => setCreateProfileOpen(false)}>{t('menu_cancel')}</Button>
           <Button
             onClick={() => handleCreateProfile()}
             color="primary"
           >
-            Create
+            {t('menu_create')}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
     <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
-      <DialogTitle>Delete Profile</DialogTitle>
+      <DialogTitle>{t('menu_delete_profile_title')}</DialogTitle>
 
       <DialogContent>
         <DialogContentText
@@ -777,10 +779,10 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
             wordBreak: 'break-word',
           }}
         >
-          <strong>Permanent deletion</strong><br />
-          This will erase <strong>all data</strong> and <strong>all satoshis</strong> for this profile.<br />
-          Are you sure you want to delete profile (<code>{profileToDelete?.name?.slice(0, 10)}</code> - <code>{profileToDelete?.identityKey?.slice(0, 10)}</code>)?<br />
-          This action cannot be undone.
+          <strong>{t('menu_delete_permanent')}</strong><br />
+          {t('menu_delete_warning')}<br />
+          {t('menu_delete_confirm', { name: profileToDelete?.name?.slice(0, 10), key: profileToDelete?.identityKey?.slice(0, 10) })}<br />
+          {t('menu_delete_undone')}
         </DialogContentText>
 
         {/* Center the checkbox + label */}
@@ -803,13 +805,13 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   variant="body1"
                   fontWeight={history.location.pathname === '/dashboard/payments' ? 600 : 400}
                 >
-                  Transfer
+                  {t('menu_transfer')}
                 </Typography>
               }
             />
           </ListItemButton>
             }
-            label="Would you like to transfer all funds to a profile?"
+            label={t('menu_transfer_funds_label')}
             sx={{ '& .MuiFormControlLabel-label': { textAlign: 'center' } }}
           />
         </Box>
@@ -817,8 +819,8 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
-        <Button onClick={handleDeleteProfile} color="error">Delete</Button>
+        <Button onClick={() => setDeleteConfirmOpen(false)}>{t('menu_cancel')}</Button>
+        <Button onClick={handleDeleteProfile} color="error">{t('menu_delete')}</Button>
       </DialogActions>
     </Dialog>
     </Drawer>

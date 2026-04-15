@@ -24,6 +24,7 @@ import { toast } from 'react-toastify'
 import useAsyncEffect from 'use-async-effect'
 import { useIdentitySearch } from '@bsv/identity-react'
 import { PaymentRequestResponse, IncomingPayment } from '@bsv/message-box-client'
+import { useTranslation } from 'react-i18next'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                                */
@@ -90,6 +91,7 @@ function statusColor(status: OutgoingRequest['status']): 'success' | 'info' | 'e
 /* ------------------------------------------------------------------ */
 
 export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
+  const { t } = useTranslation()
   const { managers, adminOriginator, peerPayClient, messageBoxUrl, activeProfile } = useContext(WalletContext)
 
   // Storage key scoped to the current user's identity to prevent cross-account overwrites.
@@ -285,7 +287,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
         },
         ...prev,
       ])
-      toast.success('Payment request sent!')
+      toast.success(t('request_payment_form_request_sent'))
       setAmountInput('')
       setAmount(0)
       setDescription('')
@@ -294,7 +296,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
       identitySearch.handleSelect(null, null)
       onRequestSent?.()
     } catch (e) {
-      const msg = (e as Error)?.message ?? 'Failed to send payment request'
+      const msg = (e as Error)?.message ?? t('request_payment_form_failed_to_send')
       toast.error(msg)
     } finally {
       setSending(false)
@@ -312,9 +314,9 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
       updateOutgoing(prev =>
         prev.map(r => r.requestId === req.requestId ? { ...r, status: 'cancelled' } : r)
       )
-      toast.success('Request cancelled')
+      toast.success(t('request_payment_form_request_cancelled'))
     } catch (e) {
-      toast.error((e as Error)?.message ?? 'Failed to cancel request')
+      toast.error((e as Error)?.message ?? t('request_payment_form_failed_to_cancel'))
     } finally {
       setCancellingId(null)
     }
@@ -330,9 +332,9 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
         prev.map(r => r.requestId === req.requestId ? { ...r, status: 'received' as const } : r)
       )
       window.dispatchEvent(new CustomEvent('balance-changed'))
-      toast.success('Payment received!')
+      toast.success(t('request_payment_form_payment_received'))
     } catch (e) {
-      toast.error((e as Error)?.message ?? 'Failed to receive payment')
+      toast.error((e as Error)?.message ?? t('request_payment_form_failed_to_receive'))
     } finally {
       setReceivingId(null)
     }
@@ -343,7 +345,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
       {/* ---- Form ---- */}
       <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
         <Typography variant="h6" sx={{ mb: 2 }}>
-          Request Payment
+          {t('request_payment_form_title')}
         </Typography>
         <Stack spacing={2}>
           {/* Recipient autocomplete */}
@@ -380,8 +382,8 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="Search for Recipient"
-                placeholder="Search by name, email, etc."
+                label={t('request_payment_form_search_for_recipient')}
+                placeholder={t('request_payment_form_search_placeholder')}
                 InputProps={{
                   ...params.InputProps,
                   endAdornment: (
@@ -408,7 +410,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
                       </Avatar>
                     )}
                     <Box sx={{ flexGrow: 1 }}>
-                      <Typography variant="body1" sx={{ fontWeight: 500 }}>{opt.name || 'Unknown'}</Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 500 }}>{opt.name || t('request_payment_form_unknown')}</Typography>
                       <Typography variant="caption" color="textSecondary" sx={{ fontFamily: 'monospace' }}>
                         {opt.identityKey.slice(0, 20)}...
                       </Typography>
@@ -418,14 +420,14 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
                 </li>
               )
             }}
-            noOptionsText={identitySearch.inputValue ? 'No identities found' : 'Start typing to search'}
+            noOptionsText={identitySearch.inputValue ? t('request_payment_form_no_identities_found') : t('request_payment_form_start_typing')}
             fullWidth
           />
 
           {/* Direct public key fallback */}
           <TextField
             fullWidth
-            label={identitySearch.selectedIdentity ? 'Selected Recipient Identity Key' : 'Or Enter Recipient Public Key'}
+            label={identitySearch.selectedIdentity ? t('request_payment_form_selected_recipient_key') : t('request_payment_form_enter_recipient_public_key')}
             value={publicKeyInput}
             onChange={(e) => {
               const val = e.target.value.trim()
@@ -444,13 +446,13 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
             }}
             disabled={!!identitySearch.selectedIdentity}
             error={Boolean(publicKeyInput && !recipient && !identitySearch.selectedIdentity)}
-            helperText={publicKeyInput && !recipient && !identitySearch.selectedIdentity ? 'Invalid public key' : ''}
+            helperText={publicKeyInput && !recipient && !identitySearch.selectedIdentity ? t('request_payment_form_invalid_public_key') : ''}
           />
 
           {/* Amount */}
           <TextField
             fullWidth
-            label="Amount to Request"
+            label={t('request_payment_form_amount_to_request')}
             value={amountInput}
             onChange={handleAmountChange}
             InputProps={{
@@ -461,8 +463,8 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
           {/* Description */}
           <TextField
             fullWidth
-            label="Description"
-            placeholder="What is this request for?"
+            label={t('request_payment_form_description')}
+            placeholder={t('request_payment_form_description_placeholder')}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             required
@@ -470,10 +472,10 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
 
           {/* Expiry */}
           <FormControl fullWidth>
-            <InputLabel id="expiry-label">Expires In</InputLabel>
+            <InputLabel id="expiry-label">{t('request_payment_form_expires_in')}</InputLabel>
             <Select
               labelId="expiry-label"
-              label="Expires In"
+              label={t('request_payment_form_expires_in')}
               value={expiryMs}
               onChange={(e) => setExpiryMs(Number(e.target.value))}
             >
@@ -490,7 +492,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
               onClick={handleSubmit}
               startIcon={sending ? <CircularProgress size={16} sx={{ color: 'inherit' }} /> : null}
             >
-              {sending ? 'Sending…' : 'Request Payment'}
+              {sending ? t('request_payment_form_sending') : t('request_payment_form_request_payment_button')}
             </Button>
           </Box>
         </Stack>
@@ -500,8 +502,8 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
       {outgoing.length > 0 && (
         <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="h6">Sent Requests</Typography>
-            <Button size="small" onClick={pollResponses}>Refresh</Button>
+            <Typography variant="h6">{t('request_payment_form_sent_requests')}</Typography>
+            <Button size="small" onClick={pollResponses}>{t('request_payment_form_refresh')}</Button>
           </Box>
           <Stack spacing={1.5}>
             {outgoing.map(req => (
@@ -516,7 +518,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
                 <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
                   <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                     <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.78rem', mb: 0.5 }} noWrap>
-                      To: {req.recipientLabel}…
+                      {t('request_payment_form_to')}: {req.recipientLabel}…
                     </Typography>
                     <Typography variant="body1" sx={{ fontWeight: 600 }}>
                       {req.amount.toLocaleString()} sats
@@ -526,7 +528,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
                     </Typography>
                     {req.status === 'paid' && req.amountPaid != null && (
                       <Typography variant="body2" color="info.main" sx={{ fontWeight: 600, fontSize: '0.85rem' }}>
-                        Paid: {req.amountPaid.toLocaleString()} sats
+                        {t('request_payment_form_paid')}: {req.amountPaid.toLocaleString()} sats
                       </Typography>
                     )}
                     {req.note && (
@@ -552,7 +554,7 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
                         onClick={() => handleCancel(req)}
                         sx={{ fontSize: '0.72rem', py: 0.25, minWidth: 64 }}
                       >
-                        {cancellingId === req.requestId ? <CircularProgress size={12} /> : 'Cancel'}
+                        {cancellingId === req.requestId ? <CircularProgress size={12} /> : t('request_payment_form_cancel')}
                       </Button>
                     )}
                     {req.status === 'paid' && req.incomingPayment && (
@@ -565,12 +567,12 @@ export default function RequestPaymentForm({ wallet, onRequestSent }: Props) {
                         startIcon={receivingId === req.requestId ? <CircularProgress size={12} sx={{ color: 'inherit' }} /> : null}
                         sx={{ fontSize: '0.72rem', py: 0.25, minWidth: 64 }}
                       >
-                        {receivingId === req.requestId ? 'Receiving…' : 'Receive'}
+                        {receivingId === req.requestId ? t('request_payment_form_receiving') : t('request_payment_form_receive')}
                       </Button>
                     )}
                     {req.status === 'paid' && !req.incomingPayment && (
                       <Typography variant="caption" color="text.secondary">
-                        Waiting for payment…
+                        {t('request_payment_form_waiting_for_payment')}
                       </Typography>
                     )}
                   </Stack>

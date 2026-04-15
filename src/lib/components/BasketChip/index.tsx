@@ -1,4 +1,5 @@
 import { useContext, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Chip, Badge, Avatar, Tooltip, Stack, Typography, Divider } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
 import { withRouter, RouteComponentProps } from 'react-router-dom'
@@ -45,6 +46,7 @@ const BasketChip: React.FC<BasketChipProps> = ({
     adminOriginator,
   } = useContext(WalletContext)
 
+  const { t } = useTranslation()
   if (typeof basketId !== 'string') {
     throw new Error('BasketChip was initialized without a valid basketId')
   }
@@ -56,7 +58,7 @@ const BasketChip: React.FC<BasketChipProps> = ({
 
   const [basketName, setBasketName] = useState(basketId)
   const [iconURL, setIconURL] = useState(generateDefaultIcon(basketId))
-  const [description, setDescription] = useState('Basket description not found.')
+  const [description, setDescription] = useState(t('basket_chip_description_not_found'))
   const [documentationURL, setDocumentationURL] = useState('https://docs.bsvblockchain.org')
 
   useEffect(() => {
@@ -121,7 +123,7 @@ const BasketChip: React.FC<BasketChipProps> = ({
         height: '3em', width: '100%',
         gap: '0.75rem' // Add a more reasonable gap between the label and chip
       }}>
-        <Typography variant="body1" fontWeight="bold">Basket:</Typography>
+        <Typography variant="body1" fontWeight="bold">{t('basket_chip_label')}:</Typography>
         <Chip
           style={theme.templates?.chip ? theme.templates.chip({ size }) : {
             height: `${size * 32}px`,
@@ -160,7 +162,7 @@ const BasketChip: React.FC<BasketChipProps> = ({
               badgeContent={
                 <Tooltip
                   arrow
-                  title='Token Basket (click to learn more about baskets)'
+                  title={t('basket_chip_badge_tooltip')}
                   onClick={e => {
                     e.stopPropagation()
                     window.open(
@@ -233,7 +235,7 @@ const BasketChip: React.FC<BasketChipProps> = ({
           <Stack sx={{
             height: '3em', width: '100%'
           }}>
-            Expires: {expires}
+            {t('basket_chip_expires')}: {expires}
           </Stack>
         </>}
     </Stack>

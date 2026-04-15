@@ -12,6 +12,7 @@ import { PermissionToken, Services } from '@bsv/wallet-toolbox-client';
 // NOTE: rely on the same exchange-rate provider used by AmountDisplay
 import { ExchangeRateContext } from './AmountDisplay/ExchangeRateContextProvider';
 import AppLogo from './AppLogo';
+import { useTranslation } from 'react-i18next';
 
 type Props = {
   app: string;
@@ -27,6 +28,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
   limit = 5,
   onEmptyList = () => { },
 }) => {
+  const { t } = useTranslation();
   const { managers, spendingRequests, settings, activeProfile } = useContext(WalletContext);
   const rates = useContext<any>(ExchangeRateContext); // { satoshisPerUSD, eurPerUSD, gbpPerUSD, ... }
 
@@ -68,9 +70,9 @@ export const SpendingAuthorizationList: FC<Props> = ({
   })();
 
   const inputPlaceholder =
-    unit.kind === 'sats' ? 'Enter limit in sats'
-    : unit.kind === 'bsv' ? 'Enter limit in BSV'
-    : `Enter limit in ${unit.code}`;
+    unit.kind === 'sats' ? t('spending_auth_list_placeholder_sats')
+    : unit.kind === 'bsv' ? t('spending_auth_list_placeholder_bsv')
+    : t('spending_auth_list_placeholder_fiat', { code: unit.code });
 
   const inputStep =
     unit.kind === 'sats' ? 1
@@ -205,7 +207,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
       await refreshAuthorizations();
       setIsEditingLimit(false);
     } catch (e: unknown) {
-      toast.error(`Failed to create spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`);
+      toast.error(`${t('spending_auth_list_create_error')}: ${e instanceof Error ? e.message : 'unknown error'}`);
     } finally {
       setBusy(b => ({ ...b, create: false, waitingForAuth: false }));
     }
@@ -221,7 +223,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
       await new Promise(res => setTimeout(res, 2000));
       await createSpendingAuthorization(limitValue);
     } catch (e: unknown) {
-      toast.error(`Failed to update spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`);
+      toast.error(`${t('spending_auth_list_update_error')}: ${e instanceof Error ? e.message : 'unknown error'}`);
     } finally {
       setBusy(b => ({ ...b, renewLimit: false }));
       setIsEditingLimit(false);
@@ -255,7 +257,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
       await refreshAuthorizations();
       setIsEditingLimit(false);
     } catch (e: unknown) {
-      toast.error(`Failed to increase spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`);
+      toast.error(`${t('spending_auth_list_increase_error')}: ${e instanceof Error ? e.message : 'unknown error'}`);
     } finally {
       setBusy(b => ({ ...b, renewLimit: false }));
     }
@@ -270,7 +272,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
       SPENDING_CACHE.delete(cacheKey);
       await refreshAuthorizations();
     } catch (e: unknown) {
-      toast.error(`Failed to revoke spending authorization: ${e instanceof Error ? e.message : 'unknown error'}`);
+      toast.error(`${t('spending_auth_list_revoke_error')}: ${e instanceof Error ? e.message : 'unknown error'}`);
     } finally {
       setBusy(b => ({ ...b, revoke: false }));
     }
@@ -299,7 +301,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
     return (
       <Box textAlign="center" pt={6}>
         <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={50} /></Box>
-        <Typography variant="body1" sx={{ mt: 2 }}>Loading spending authorizations…</Typography>
+        <Typography variant="body1" sx={{ mt: 2 }}>{t('spending_auth_list_loading')}</Typography>
       </Box>
     );
   }
@@ -308,14 +310,14 @@ export const SpendingAuthorizationList: FC<Props> = ({
     <>
       {/* revoke-confirmation dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
-        <DialogTitle>Revoke authorization?</DialogTitle>
+        <DialogTitle>{t('spending_auth_list_revoke_dialog_title')}</DialogTitle>
         <DialogContent>
-          <DialogContentText>You can re-authorise spending the next time you use this app.</DialogContentText>
+          <DialogContentText>{t('spending_auth_list_revoke_dialog_body')}</DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)} disabled={busy.revoke}>Cancel</Button>
+          <Button onClick={() => setDialogOpen(false)} disabled={busy.revoke}>{t('spending_auth_list_cancel')}</Button>
           <Button onClick={handleConfirmRevoke} disabled={busy.revoke}>
-            {busy.revoke ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Revoking…</>) : 'Revoke'}
+            {busy.revoke ? (<><CircularProgress size={16} sx={{ mr: 1 }} />{t('spending_auth_list_revoking')}</>) : t('spending_auth_list_revoke')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -326,12 +328,12 @@ export const SpendingAuthorizationList: FC<Props> = ({
           {busy.renewLimit ? (
             <Box textAlign="center" pt={6}>
               <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={50} /></Box>
-              <Typography variant="body1" sx={{ mt: 2 }}>Updating spending authorization…</Typography>
+              <Typography variant="body1" sx={{ mt: 2 }}>{t('spending_auth_list_updating')}</Typography>
             </Box>
           ) : (
             <>
               <Typography variant="h2" gutterBottom>
-                Monthly spending limit:{' '}
+                {t('spending_auth_list_monthly_limit')}{' '}
                 <AmountDisplay showFiatAsInteger>
                   {authorization.authorizedAmount}
                 </AmountDisplay>
@@ -356,9 +358,9 @@ export const SpendingAuthorizationList: FC<Props> = ({
                       setOriginalLimit('');           // so blur-without-change cancels cleanly
                     }
                   }}
-                  onBlur={() => { 
+                  onBlur={() => {
                     if (isEditingLimit && tempLimit === originalLimit) {
-                      // user didn’t type anything — cancel edit & reset
+                      // user didn't type anything — cancel edit & reset
                       setIsEditingLimit(false);
                       setTempLimit('');
                       setOriginalLimit('');
@@ -367,7 +369,9 @@ export const SpendingAuthorizationList: FC<Props> = ({
                   placeholder={
                     isEditingLimit
                       ? ''
-                      : `Enter new limit in ${unit.kind === 'sats' ? 'sats' : unit.kind === 'bsv' ? 'BSV' : unit.code}`
+                      : t('spending_auth_list_new_limit_placeholder', {
+                          unit: unit.kind === 'sats' ? 'sats' : unit.kind === 'bsv' ? 'BSV' : unit.code
+                        })
                   }
                   size="small"
                   type={isEditingLimit ? 'number' : 'text'}
@@ -399,7 +403,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                         '&:active': { boxShadow: 1 }
                       }}
                     >
-                      {busy.renewLimit ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Updating…</>) : 'Submit'}
+                      {busy.renewLimit ? (<><CircularProgress size={16} sx={{ mr: 1 }} />{t('spending_auth_list_updating_short')}</>) : t('spending_auth_list_submit')}
                     </Button>
                   )}
                 </Box>
@@ -407,7 +411,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
 
               {/* Current spending progress section */}
               <Box>
-                <Typography variant="body1" gutterBottom>Current spending</Typography>
+                <Typography variant="body1" gutterBottom>{t('spending_auth_list_current_spending')}</Typography>
                 <LinearProgress
                   variant="determinate"
                   value={Math.min(((currentSpending * -1) / authorization.authorizedAmount) * 100, 100)}
@@ -415,10 +419,10 @@ export const SpendingAuthorizationList: FC<Props> = ({
                 />
                 <Box display="flex" justifyContent="space-between" alignItems="center">
                   <Typography variant="body2" color="text.secondary">
-                    <AmountDisplay showFiatAsInteger>{currentSpending * -1}</AmountDisplay> spent
+                    <AmountDisplay showFiatAsInteger>{currentSpending * -1}</AmountDisplay> {t('spending_auth_list_spent')}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    <AmountDisplay showFiatAsInteger>{authorization.authorizedAmount}</AmountDisplay> limit
+                    <AmountDisplay showFiatAsInteger>{authorization.authorizedAmount}</AmountDisplay> {t('spending_auth_list_limit_label')}
                   </Typography>
                 </Box>
               </Box>
@@ -430,7 +434,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                   onClick={() => setDialogOpen(true)}
                   size="small"
                 >
-                  Revoke
+                  {t('spending_auth_list_revoke')}
                 </Button>
               </Box>
             </>
@@ -442,12 +446,12 @@ export const SpendingAuthorizationList: FC<Props> = ({
           {busy.waitingForAuth ? (
             <>
               <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={50} /></Box>
-              <Typography variant="body1" sx={{ mt: 2 }}>Setting up spending authorization…</Typography>
+              <Typography variant="body1" sx={{ mt: 2 }}>{t('spending_auth_list_setting_up')}</Typography>
             </>
           ) : (
             <>
-              <Typography variant="body1">This app must ask for permission before spending.</Typography>
-              <Typography variant="body1" gutterBottom sx={{ pt: 2 }}>Allow this app to spend a certain amount?</Typography>
+              <Typography variant="body1">{t('spending_auth_list_ask_permission')}</Typography>
+              <Typography variant="body1" gutterBottom sx={{ pt: 2 }}>{t('spending_auth_list_allow_spend')}</Typography>
               <Box display="flex" alignItems="center" gap={2} justifyContent="center">
                 <TextField
                   value={isEditingLimit ? tempLimit : ''}
@@ -487,7 +491,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                     disabled={busy.create || busy.waitingForAuth || !tempLimit || (unit.kind === 'fiat' && !fiatRatesReady)}
                     size="small"
                   >
-                    {busy.create ? (<><CircularProgress size={16} sx={{ mr: 1 }} />Creating…</>) : 'Submit'}
+                    {busy.create ? (<><CircularProgress size={16} sx={{ mr: 1 }} />{t('spending_auth_list_creating')}</>) : t('spending_auth_list_submit')}
                   </Button>
                 )}
               </Box>

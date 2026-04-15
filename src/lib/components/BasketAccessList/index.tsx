@@ -20,6 +20,7 @@ import AppChip from '../AppChip';
 import { formatDistance } from 'date-fns';
 import { WalletContext } from '../../WalletContext'
 import AppLogo from '../AppLogo';
+import { useTranslation } from 'react-i18next';
 // Simple in-memory cache for basket permissions
 const BASKET_CACHE = new Map<string, PermissionToken[]>();
 import { PermissionToken } from '@bsv/wallet-toolbox-client';
@@ -48,6 +49,8 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
   canRevoke = false,
   limit = 10
 }) => {
+  const { t } = useTranslation();
+
   // Validate params
   if (itemsDisplayed === 'apps' && app) {
     const e = new Error('Error in BasketAccessList: apps cannot be displayed when providing an app param! Please provide a valid basket instead.');
@@ -109,11 +112,11 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
       // cache for future
       BASKET_CACHE.set(queryKey, grants);
       if (grants.length === 0) {
-        setListHeaderTitle('No access grants found');
+        setListHeaderTitle(t('basket_access_list_no_grants_found'));
       }
     } catch (error) {
       console.error('Failed to refresh grants:', error);
-      toast.error(`Failed to load access list: ${(error as Error).message}`);
+      toast.error(`${t('basket_access_list_load_error')}: ${(error as Error).message}`);
     } finally {
       setLoading(false);
     }
@@ -164,7 +167,7 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
       <Box display="flex" justifyContent="center" alignItems="center" py={4}>
             <Box p={3} display="flex" justifyContent="center" alignItems="center"><AppLogo rotate size={50} /></Box>
             <Typography variant="body2" color="textSecondary" sx={{ ml: 2 }}>
-              Loading baskets...
+              {t('basket_access_list_loading')}
             </Typography>
           </Box>
     );
@@ -180,11 +183,11 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
         open={dialogOpen}
       >
         <DialogTitle color='textPrimary'>
-          Revoke Access?
+          {t('basket_access_list_revoke_dialog_title')}
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            You can re-authorize this access grant next time you use this app.
+            {t('basket_access_list_revoke_dialog_body')}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
@@ -193,14 +196,14 @@ const BasketAccessList: React.FC<BasketAccessListProps> = ({
             disabled={dialogLoading}
             onClick={handleDialogClose}
           >
-            Cancel
+            {t('basket_access_list_cancel')}
           </Button>
           <Button
             color='primary'
             disabled={dialogLoading}
             onClick={handleConfirm}
           >
-            {dialogLoading ? <CircularProgress size={24} color='inherit' /> : 'Revoke'}
+            {dialogLoading ? <CircularProgress size={24} color='inherit' /> : t('basket_access_list_revoke')}
           </Button>
         </DialogActions>
       </Dialog>

@@ -1,4 +1,5 @@
 import { FC } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Typography, Button, Box } from '@mui/material';
 import Action from './Action';
 import { WalletAction } from '@bsv/sdk';
@@ -27,6 +28,8 @@ const RecentActions: FC<RecentActionsProps> = ({
   setRefresh,
   allActionsShown = false,
 }) => {
+  const { t } = useTranslation();
+
   return (
     <div style={{ paddingTop: '1em' }}>
       <Typography
@@ -35,7 +38,7 @@ const RecentActions: FC<RecentActionsProps> = ({
         gutterBottom
         style={{ paddingBottom: '0.2em' }}
       >
-        Recent Actions
+        {t('recent_actions_title')}
       </Typography>
     {appActions?.length ? (
       [...appActions] // copy so we don't mutate state/props
@@ -55,7 +58,7 @@ const RecentActions: FC<RecentActionsProps> = ({
     ) : (
       !loading && (
         <Typography color="textSecondary" align="center" style={{ paddingTop: '6em' }}>
-          You haven't made any actions yet.
+          {t('recent_actions_no_actions_yet')}
         </Typography>
       )
     )}
@@ -72,7 +75,7 @@ const RecentActions: FC<RecentActionsProps> = ({
                 setRefresh(true);
               }}
             >
-              View More Actions
+              {t('recent_actions_view_more')}
             </Button>
           )}
         </center>

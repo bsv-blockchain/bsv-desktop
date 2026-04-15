@@ -26,6 +26,7 @@ import { WalletContext } from '../../../WalletContext'
 import { IncomingPaymentRequest } from '@bsv/message-box-client'
 import { toast } from 'react-toastify'
 import { useIdentitySearch } from '@bsv/identity-react'
+import { useTranslation } from 'react-i18next'
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                              */
@@ -68,6 +69,7 @@ type LoadingMap = Record<string, boolean>
 /* ------------------------------------------------------------------ */
 
 export default function IncomingRequestList({ requests, onRefresh, wallet }: Props) {
+  const { t } = useTranslation()
   const { peerPayClient, messageBoxUrl, adminOriginator, activeProfile } = useContext(WalletContext)
 
   // Storage keys scoped to the current user's identity to prevent cross-account overwrites.
@@ -136,8 +138,8 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
 
   const handleAllow = async () => {
     const key = whitelistKeyInput.trim()
-    if (!key) { setAllowError('Identity key is required'); return }
-    if (permissions.includes(key)) { setAllowError('Identity already whitelisted'); return }
+    if (!key) { setAllowError(t('incoming_request_list_identity_key_required')); return }
+    if (permissions.includes(key)) { setAllowError(t('incoming_request_list_already_whitelisted')); return }
     setAllowError('')
 
     // Best-effort server-side permission set (may not persist on all servers).
@@ -153,7 +155,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
     saveWhitelist([...permissions, key])
     setWhitelistKeyInput('')
     whitelistIdentitySearch.handleSelect(null, null)
-    toast.success('Identity whitelisted')
+    toast.success(t('incoming_request_list_identity_whitelisted'))
   }
 
   const handleBlock = async (identityKey: string) => {
@@ -168,7 +170,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
 
     // Authoritative: remove from localStorage.
     saveWhitelist(permissions.filter(k => k !== identityKey))
-    toast.success('Identity removed from whitelist')
+    toast.success(t('incoming_request_list_identity_removed'))
   }
 
   const saveLimits = () => {
@@ -176,7 +178,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
     localStorage.setItem(maxAmountKey, maxAmount)
     setLimitsSaved(true)
     setTimeout(() => setLimitsSaved(false), 2000)
-    toast.success('Amount limits saved')
+    toast.success(t('incoming_request_list_limits_saved'))
     onRefresh()
   }
 
@@ -195,10 +197,10 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
         messageBoxUrl || undefined
       )
       window.dispatchEvent(new CustomEvent('balance-changed'))
-      toast.success('Payment sent!')
+      toast.success(t('incoming_request_list_payment_sent'))
       onRefresh()
     } catch (e) {
-      toast.error((e as Error)?.message ?? 'Failed to send payment')
+      toast.error((e as Error)?.message ?? t('incoming_request_list_failed_to_send'))
     } finally {
       setPaying(prev => { const n = { ...prev }; delete n[id]; return n })
     }
@@ -214,10 +216,10 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
         { request: req, note },
         messageBoxUrl || undefined
       )
-      toast.info('Request declined')
+      toast.info(t('incoming_request_list_request_declined'))
       onRefresh()
     } catch (e) {
-      toast.error((e as Error)?.message ?? 'Failed to decline request')
+      toast.error((e as Error)?.message ?? t('incoming_request_list_failed_to_decline'))
     } finally {
       setDeclining(prev => { const n = { ...prev }; delete n[id]; return n })
     }
@@ -232,12 +234,12 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
       {/* ---- Settings panel ---- */}
       <Paper elevation={2} sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography variant="h6">Incoming Requests</Typography>
+          <Typography variant="h6">{t('incoming_request_list_title')}</Typography>
           <Stack direction="row" spacing={1} alignItems="center">
             <Button size="small" variant="outlined" onClick={handleToggleSettings}>
-              {settingsOpen ? 'Hide Settings' : 'Request Settings'}
+              {settingsOpen ? t('incoming_request_list_hide_settings') : t('incoming_request_list_request_settings')}
             </Button>
-            <Button size="small" onClick={onRefresh}>Refresh</Button>
+            <Button size="small" onClick={onRefresh}>{t('incoming_request_list_refresh')}</Button>
           </Stack>
         </Box>
 
@@ -249,16 +251,16 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Box>
                   <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                    Identity Whitelist
+                    {t('incoming_request_list_identity_whitelist')}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    When enabled, only whitelisted identities can send you requests
+                    {t('incoming_request_list_whitelist_description')}
                   </Typography>
                 </Box>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Chip
                     size="small"
-                    label={whitelistEnabled ? 'ON' : 'OFF'}
+                    label={whitelistEnabled ? t('incoming_request_list_on') : t('incoming_request_list_off')}
                     color={whitelistEnabled ? 'success' : 'default'}
                     sx={{ fontWeight: 600, minWidth: 44 }}
                   />
@@ -298,8 +300,8 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                       <TextField
                         {...params}
                         size="small"
-                        label="Search for identity to whitelist"
-                        placeholder="Search by name or email..."
+                        label={t('incoming_request_list_search_to_whitelist')}
+                        placeholder={t('incoming_request_list_search_placeholder')}
                       />
                     )}
                     renderOption={(props, option) => {
@@ -312,7 +314,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                               {getInitials(option.identityKey)}
                             </Avatar>
                             <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                              <Typography variant="body2" fontWeight={500}>{option.name || 'Unknown'}</Typography>
+                              <Typography variant="body2" fontWeight={500}>{option.name || t('incoming_request_list_unknown')}</Typography>
                               <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
                                 {option.identityKey.slice(0, 20)}...
                               </Typography>
@@ -321,7 +323,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                         </li>
                       )
                     }}
-                    noOptionsText={whitelistIdentitySearch.inputValue ? 'No identities found' : 'Start typing to search'}
+                    noOptionsText={whitelistIdentitySearch.inputValue ? t('incoming_request_list_no_identities_found') : t('incoming_request_list_start_typing')}
                     fullWidth
                     size="small"
                   />
@@ -331,7 +333,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                     <TextField
                       fullWidth
                       size="small"
-                      label={whitelistIdentitySearch.selectedIdentity ? 'Selected Identity Key' : 'Or paste identity key'}
+                      label={whitelistIdentitySearch.selectedIdentity ? t('incoming_request_list_selected_identity_key') : t('incoming_request_list_paste_identity_key')}
                       value={whitelistKeyInput}
                       onChange={(e) => {
                         const val = e.target.value.trim()
@@ -355,14 +357,14 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                       disabled={!whitelistKeyInput.trim()}
                       sx={{ whiteSpace: 'nowrap', mt: 0.25 }}
                     >
-                      Allow
+                      {t('incoming_request_list_allow')}
                     </Button>
                   </Stack>
 
                   {/* Whitelisted identities list */}
                   {permissions.length === 0 ? (
                     <Typography variant="body2" color="text.secondary">
-                      No whitelisted identities yet. Add identities above to receive payment requests.
+                      {t('incoming_request_list_no_whitelisted_identities')}
                     </Typography>
                   ) : (
                     <List dense disablePadding>
@@ -404,12 +406,12 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
 
               {/* Amount limits */}
               <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                Amount Limits (satoshis)
+                {t('incoming_request_list_amount_limits')}
               </Typography>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="flex-end">
                 <TextField
                   size="small"
-                  label="Min Amount"
+                  label={t('incoming_request_list_min_amount')}
                   type="number"
                   value={minAmount}
                   onChange={(e) => setMinAmount(e.target.value)}
@@ -417,7 +419,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                 />
                 <TextField
                   size="small"
-                  label="Max Amount"
+                  label={t('incoming_request_list_max_amount')}
                   type="number"
                   value={maxAmount}
                   onChange={(e) => setMaxAmount(e.target.value)}
@@ -428,7 +430,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                   onClick={saveLimits}
                   sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}
                 >
-                  {limitsSaved ? 'Saved!' : 'Save'}
+                  {limitsSaved ? t('incoming_request_list_saved') : t('incoming_request_list_save')}
                 </Button>
               </Stack>
             </Stack>
@@ -438,7 +440,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
       {/* ---- Request cards ---- */}
       {requests.length === 0 ? (
         <Paper elevation={2} sx={{ p: 3, textAlign: 'center' }}>
-          <Typography color="text.secondary">No incoming payment requests.</Typography>
+          <Typography color="text.secondary">{t('incoming_request_list_no_requests')}</Typography>
         </Paper>
       ) : (
         requests.map(req => {
@@ -483,7 +485,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                   </Box>
                   <Chip
                     size="small"
-                    label={isExpired ? 'Expired' : 'Pending'}
+                    label={isExpired ? t('incoming_request_list_expired') : t('incoming_request_list_pending')}
                     color={isExpired ? 'default' : 'success'}
                     sx={{ flexShrink: 0 }}
                   />
@@ -515,7 +517,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                     {/* Optional note */}
                     <TextField
                       size="small"
-                      label="Note (optional)"
+                      label={t('incoming_request_list_note_optional')}
                       value={notes[id] ?? ''}
                       onChange={(e) => setNotes(prev => ({ ...prev, [id]: e.target.value }))}
                       disabled={isBusy}
@@ -531,7 +533,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                         startIcon={isPaying ? <CircularProgress size={16} sx={{ color: 'inherit' }} /> : null}
                         sx={{ flexGrow: 1 }}
                       >
-                        {isPaying ? 'Paying…' : 'Pay'}
+                        {isPaying ? t('incoming_request_list_paying') : t('incoming_request_list_pay')}
                       </Button>
                       <Button
                         variant="outlined"
@@ -540,7 +542,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                         startIcon={isDeclining ? <CircularProgress size={16} /> : null}
                         sx={{ flexGrow: 1 }}
                       >
-                        {isDeclining ? 'Declining…' : 'Decline'}
+                        {isDeclining ? t('incoming_request_list_declining') : t('incoming_request_list_decline')}
                       </Button>
                     </Stack>
                   </>
@@ -548,7 +550,7 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
 
                 {isExpired && (
                   <Alert severity="warning" sx={{ py: 0.5 }}>
-                    This request has expired and can no longer be fulfilled.
+                    {t('incoming_request_list_expired_message')}
                   </Alert>
                 )}
               </Stack>

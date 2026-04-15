@@ -1,4 +1,5 @@
 import React, { useCallback, useContext, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Box,
   Typography,
@@ -33,6 +34,7 @@ interface WalletConfigProps {
 }
 
 const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLoginType = false, open, onToggle }) => {
+  const { t } = useTranslation()
   const { managers, finalizeConfig, setConfigStatus, loginType: contextLoginType } = useContext(WalletContext)
 
   // Wallet configuration state
@@ -100,7 +102,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
       }
     } catch (error: any) {
       console.error("Error fetching wallet config:", error)
-      toast.error("Could not fetch wallet configuration: " + error.message)
+      toast.error(t('wallet_config_fetch_error') + error.message)
     } finally {
       setIsLoadingConfig(false)
     }
@@ -198,7 +200,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
     <Box>
       {!isControlled && (
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mb: 1 }}>
-          <Tooltip title={configVisible ? 'Hide configuration' : 'Configure wallet'} placement="left">
+          <Tooltip title={configVisible ? t('wallet_config_hide_tooltip') : t('wallet_config_show_tooltip')} placement="left">
             <IconButton onClick={toggle} size="small" color={configVisible ? 'secondary' : 'default'}>
               {configVisible ? <CloseIcon fontSize="small" /> : <SettingsIcon fontSize="small" />}
             </IconButton>
@@ -212,13 +214,13 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
       ) : (
             <Collapse in={configVisible}>
               <Typography variant="h4" color="primary">
-                Configuration
+                {t('wallet_config_title')}
               </Typography>
               <Box sx={{ py: 2 }}>
                 {/* BSV Network Selection */}
                 <Box sx={{ mb: 3 }}>
                   <Typography variant="body2" gutterBottom>
-                    BSV Network:
+                    {t('wallet_config_network_label')}
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1 }}>
                     <Button
@@ -227,7 +229,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                       onClick={() => setNetwork('main')}
                       sx={{ textTransform: 'none' }}
                     >
-                      Mainnet
+                      {t('wallet_config_mainnet')}
                     </Button>
                     <Button
                       variant={network === 'test' ? "contained" : "outlined"}
@@ -235,7 +237,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                       onClick={() => setNetwork('test')}
                       sx={{ textTransform: 'none' }}
                     >
-                      Testnet
+                      {t('wallet_config_testnet')}
                     </Button>
                   </Box>
                 </Box>
@@ -249,11 +251,11 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                       <FormControl component="fieldset">
                         <FormLabel component="legend">
                           <Typography variant="body2" gutterBottom sx={{ fontWeight: 'bold' }}>
-                            Wallet Login Type
+                            {t('wallet_config_login_type_label')}
                           </Typography>
                         </FormLabel>
                         <Typography variant="body2" gutterBottom sx={{ mt: 1, mb: 2 }}>
-                          Choose how you want to authenticate and manage your wallet keys.
+                          {t('wallet_config_login_type_description')}
                         </Typography>
                         <RadioGroup
                           value={loginType}
@@ -264,7 +266,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                             control={<Radio size="small" />}
                             label={
                               <Typography variant="body2">
-                                I prefer to use WAB
+                                {t('wallet_config_login_wab')}
                               </Typography>
                             }
                           />
@@ -273,7 +275,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                             control={<Radio size="small" />}
                             label={
                               <Typography variant="body2">
-                                I prefer to manage my private key directly
+                                {t('wallet_config_login_direct_key')}
                               </Typography>
                             }
                           />
@@ -282,7 +284,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                             control={<Radio size="small" />}
                             label={
                               <Typography variant="body2">
-                                I prefer to use a mnemonic presentation key (advanced)
+                                {t('wallet_config_login_mnemonic')}
                               </Typography>
                             }
                           />
@@ -292,7 +294,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                       {loginType === 'wab' && (
                         <Box sx={{ mt: 2, ml: 3, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
                           <TextField
-                            label="WAB URL"
+                            label={t('wallet_config_wab_url_label')}
                             fullWidth
                             variant="outlined"
                             value={wabUrl}
@@ -307,13 +309,13 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                               onClick={fetchWalletConfig}
                               disabled={isLoadingConfig}
                             >
-                              Refresh Info
+                              {t('wallet_config_refresh_info')}
                             </Button>
                           </Box>
                           {wabInfo && wabInfo.supportedAuthMethods && wabInfo.supportedAuthMethods.length > 0 && (
                             <Box sx={{ mt: 2 }}>
                               <Typography variant="body2" gutterBottom>
-                                Service which will be used to verify your phone number:
+                                {t('wallet_config_auth_method_description')}
                               </Typography>
                               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                                 {wabInfo.supportedAuthMethods.map((methodOption) => (
@@ -345,11 +347,11 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                   <FormControl component="fieldset">
                     <FormLabel component="legend">
                       <Typography variant="body2" gutterBottom sx={{ fontWeight: 'bold' }}>
-                        Remote Storage:
+                        {t('wallet_config_remote_storage_label')}
                       </Typography>
                     </FormLabel>
                     <Typography variant="body2" gutterBottom sx={{ mt: 1, mb: 2 }}>
-                      Use a remote storage provider for your transactions and metadata.
+                      {t('wallet_config_remote_storage_description')}
                     </Typography>
                     <RadioGroup
                       value={useRemoteStorage.toString()}
@@ -360,7 +362,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                         control={<Radio size="small" />}
                         label={
                           <Typography variant="body2">
-                            Off - Store locally only
+                            {t('wallet_config_remote_storage_off')}
                           </Typography>
                         }
                       />
@@ -369,7 +371,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                         control={<Radio size="small" />}
                         label={
                           <Typography variant="body2">
-                            On - Use remote storage provider
+                            {t('wallet_config_remote_storage_on')}
                           </Typography>
                         }
                       />
@@ -379,7 +381,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                   {useRemoteStorage && (
                     <Box sx={{ mt: 2, ml: 3, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
                       <TextField
-                        label="Storage URL"
+                        label={t('wallet_config_storage_url_label')}
                         fullWidth
                         variant="outlined"
                         value={storageUrl}
@@ -399,11 +401,11 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                   <FormControl component="fieldset">
                     <FormLabel component="legend">
                       <Typography variant="body2" gutterBottom sx={{ fontWeight: 'bold' }}>
-                        Message Box:
+                        {t('wallet_config_message_box_label')}
                       </Typography>
                     </FormLabel>
                     <Typography variant="body2" gutterBottom sx={{ mt: 1, mb: 2 }}>
-                      Use a message box provider for receiving messages while offline. You can set a URL now and anoint the host later from Settings once you have funds.
+                      {t('wallet_config_message_box_description')}
                     </Typography>
                     <RadioGroup
                       value={useMessageBox.toString()}
@@ -414,7 +416,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                         control={<Radio size="small" />}
                         label={
                           <Typography variant="body2">
-                            Off - No message box
+                            {t('wallet_config_message_box_off')}
                           </Typography>
                         }
                       />
@@ -423,7 +425,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                         control={<Radio size="small" />}
                         label={
                           <Typography variant="body2">
-                            On - Use message box provider
+                            {t('wallet_config_message_box_on')}
                           </Typography>
                         }
                       />
@@ -433,14 +435,14 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                   {useMessageBox && (
                     <Box sx={{ mt: 2, ml: 3, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
                       <TextField
-                        label="Message Box URL"
+                        label={t('wallet_config_message_box_url_label')}
                         fullWidth
                         variant="outlined"
                         value={messageBoxUrl}
                         onChange={(e) => setMessageBoxUrl(e.target.value)}
                         margin="normal"
                         size="small"
-                        helperText="You can leave this blank and configure it later in Settings."
+                        helperText={t('wallet_config_message_box_url_helper')}
                       />
                     </Box>
                   )}
@@ -457,7 +459,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                     (useRemoteStorage && !storageUrl)
                   }
                 >
-                  Apply Configuration
+                  {t('wallet_config_apply_button')}
                 </Button>
               </Box>
             </Collapse>

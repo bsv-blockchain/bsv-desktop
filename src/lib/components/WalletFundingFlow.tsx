@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Box,
   Typography,
@@ -62,6 +63,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
   network,
   onFundingComplete
 }) => {
+  const { t } = useTranslation()
   const [paymentAddress, setPaymentAddress] = useState<string | null>(null)
   const [derivationPrefix, setDerivationPrefix] = useState<string>('')
   const [isGeneratingAddress, setIsGeneratingAddress] = useState(false)
@@ -90,10 +92,10 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
 
       const address = PublicKey.fromString(publicKey).toAddress(network)
       setPaymentAddress(address)
-      toast.success('Payment address generated')
+      toast.success(t('wallet_funding_address_generated'))
     } catch (error: any) {
       console.error('Error generating payment address:', error)
-      toast.error(`Failed to generate address: ${error.message || 'unknown error'}`)
+      toast.error(`${t('wallet_funding_failed_to_generate_address')}: ${error.message || t('wallet_funding_unknown_error')}`)
     } finally {
       setIsGeneratingAddress(false)
     }
@@ -122,11 +124,11 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
       setBalance(totalBalance)
 
       if (totalBalance > 0) {
-        toast.info(`Payment detected: ${totalBalance / 100000000} BSV`)
+        toast.info(t('wallet_funding_payment_detected', { amount: totalBalance / 100000000 }))
       }
     } catch (error: any) {
       console.error('Error checking for payment:', error)
-      toast.error(`Failed to check payment: ${error.message || 'unknown error'}`)
+      toast.error(`${t('wallet_funding_failed_to_check_payment')}: ${error.message || t('wallet_funding_unknown_error')}`)
     } finally {
       setIsCheckingPayment(false)
     }
@@ -135,7 +137,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
   // Process the payment and internalize
   const processPayment = useCallback(async () => {
     if (!paymentAddress || balance === 0) {
-      toast.error('No payment to process')
+      toast.error(t('wallet_funding_no_payment_to_process'))
       return
     }
 
@@ -145,7 +147,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
       const utxos = await getUtxosForAddress(paymentAddress)
 
       if (utxos.length === 0) {
-        toast.error('No UTXOs found')
+        toast.error(t('wallet_funding_no_utxos_found'))
         setIsProcessingPayment(false)
         return
       }
@@ -220,30 +222,30 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
       console.log({ txs })
 
       // Internalize each transaction
-      for (const t of txs) {
+      for (const tx of txs) {
         try {
           console.log('Attempting to internalize:', {
-            description: t.description,
-            outputCount: t.outputs.length,
-            outputs: t.outputs.map(o => ({
+            description: tx.description,
+            outputCount: tx.outputs.length,
+            outputs: tx.outputs.map(o => ({
               outputIndex: o.outputIndex,
               protocol: o.protocol,
               paymentRemittance: o.paymentRemittance
             }))
           })
 
-          const response = await wallet.internalizeAction(t, adminOriginator)
+          const response = await wallet.internalizeAction(tx, adminOriginator)
           console.log('Internalize response:', response)
 
           if (response?.accepted) {
-            toast.success('Payment accepted and wallet funded!')
+            toast.success(t('wallet_funding_payment_accepted'))
           } else {
-            toast.error('Payment was rejected')
+            toast.error(t('wallet_funding_payment_rejected'))
           }
         } catch (error: any) {
           console.error('Internalize error:', error)
           console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
-          toast.error(`Payment failed: ${error?.message || 'unknown error'}`)
+          toast.error(`${t('wallet_funding_payment_failed')}: ${error?.message || t('wallet_funding_unknown_error')}`)
           throw error
         }
       }
@@ -252,7 +254,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
       onFundingComplete()
     } catch (e: any) {
       console.error(e)
-      toast.error(`Failed to process payment: ${e.message || 'unknown error'}`)
+      toast.error(`${t('wallet_funding_failed_to_process_payment')}: ${e.message || t('wallet_funding_unknown_error')}`)
     } finally {
       setIsProcessingPayment(false)
     }
@@ -300,14 +302,14 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
       setTimeout(() => {
         setCopied(false)
       }, 2000)
-      toast.success('Address copied to clipboard')
+      toast.success(t('wallet_funding_address_copied'))
     }
   }
 
   return (
     <Box>
       <Alert severity="info" sx={{ mb: 3 }}>
-        Send BSV to the address below to fund your wallet. The payment will be detected automatically.
+        {t('wallet_funding_send_bsv_info')}
       </Alert>
 
       {isGeneratingAddress ? (
@@ -317,7 +319,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
       ) : paymentAddress ? (
         <>
           <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-            <strong>Your Payment Address:</strong>
+            <strong>{t('wallet_funding_your_payment_address')}:</strong>
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <Typography
@@ -359,7 +361,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
               startIcon={isCheckingPayment ? <CircularProgress size={20} /> : <RefreshIcon />}
               fullWidth
             >
-              Check for Payment
+              {t('wallet_funding_check_for_payment')}
             </Button>
             <Button
               variant="contained"
@@ -367,23 +369,23 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
               disabled={isProcessingPayment || balance === 0}
               fullWidth
             >
-              {isProcessingPayment ? <CircularProgress size={24} /> : 'Complete Funding'}
+              {isProcessingPayment ? <CircularProgress size={24} /> : t('wallet_funding_complete_funding')}
             </Button>
           </Box>
 
           <Typography variant="body1" color="textPrimary" sx={{ textAlign: 'center' }}>
-            Detected Balance: <strong>{balance === 0 ? 'Waiting for payment...' : `${balance / 100000000} BSV`}</strong>
+            {t('wallet_funding_detected_balance')}: <strong>{balance === 0 ? t('wallet_funding_waiting_for_payment') : `${balance / 100000000} BSV`}</strong>
           </Typography>
 
           {balance > 0 && (
             <Alert severity="success" sx={{ mt: 2 }}>
-              Payment detected! Click "Complete Funding" to finalize.
+              {t('wallet_funding_payment_detected_click_complete')}
             </Alert>
           )}
         </>
       ) : (
         <Alert severity="error">
-          Failed to generate payment address. Please try again.
+          {t('wallet_funding_failed_to_generate_address_try_again')}
         </Alert>
       )}
     </Box>

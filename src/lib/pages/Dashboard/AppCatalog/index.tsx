@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Typography,
   Container,
@@ -40,6 +41,7 @@ const useStyles = makeStyles({
 })
 
 const AppCatalog: React.FC = () => {
+  const { t } = useTranslation()
   const classes = useStyles()
   const history = useHistory()
 
@@ -152,10 +154,10 @@ const AppCatalog: React.FC = () => {
       {currentView === 'list' && (
         <>
           <PageHeader
-            title="App Catalog"
-            subheading="Discover and explore apps from the Metanet ecosystem"
+            title={t('app_catalog_title')}
+            subheading={t('app_catalog_subheading')}
             icon="https://metanetapps.com/favicon.ico"
-            buttonTitle="Add App"
+            buttonTitle={t('app_catalog_add_app')}
             buttonIcon={<AddIcon />}
             onClick={() => {
               openUrl('https://metanetapps.com')
@@ -179,7 +181,7 @@ const AppCatalog: React.FC = () => {
                   variant='outlined'
                   value={search}
                   onChange={handleSearchChange}
-                  placeholder='Search apps by name, description, category or tags...'
+                  placeholder={t('app_catalog_search_placeholder')}
                   onFocus={handleFocus}
                   onBlur={handleBlur}
                   inputRef={inputRef}
@@ -213,7 +215,7 @@ const AppCatalog: React.FC = () => {
             ) : filteredCatalogApps.length === 0 ? (
               <Box sx={{ textAlign: 'center', p: 4 }}>
                 <Typography variant="h6" color="textSecondary">
-                  No apps found
+                  {t('app_catalog_no_apps_found')}
                 </Typography>
               </Box>
             ) : (
@@ -327,7 +329,7 @@ const AppCatalog: React.FC = () => {
             title={selectedApp.metadata.name}
             subheading={selectedApp.metadata.domain}
             icon={selectedApp.metadata.icon || "https://metanetapps.com/favicon.ico"}
-            buttonTitle="Open App"
+            buttonTitle={t('app_catalog_open_app')}
             buttonIcon={<OpenInNewIcon />}
             onClick={handleNavigateToApp}
             history={history}
@@ -356,7 +358,7 @@ const AppCatalog: React.FC = () => {
             {/* Description */}
             <Box sx={{ mb: 3 }}>
               <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold' }}>
-                Description
+                {t('app_catalog_description')}
               </Typography>
               <Typography variant="body1" color="textSecondary">
                 {selectedApp.metadata.description}
@@ -389,13 +391,13 @@ const AppCatalog: React.FC = () => {
             {/* App Info */}
             <Box sx={{ mb: 3 }}>
               <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
-                App Information
+                {t('app_catalog_app_information')}
               </Typography>
               <Grid2 container spacing={2}>
                 {selectedApp.metadata.category && (
                   <Grid2 size={{ xs: 12, sm: 6, md: 4 }}>
                     <Typography variant="subtitle2" color="textSecondary">
-                      Category
+                      {t('app_catalog_category')}
                     </Typography>
                     <Chip
                       label={selectedApp.metadata.category}
@@ -407,7 +409,7 @@ const AppCatalog: React.FC = () => {
                 )}
                 <Grid2 size={{ xs: 12, sm: 6, md: 4 }}>
                   <Typography variant="subtitle2" color="textSecondary">
-                    Release Date
+                    {t('app_catalog_release_date')}
                   </Typography>
                   <Typography variant="body2">
                     {new Date(selectedApp.metadata.release_date).toLocaleDateString()}
@@ -415,7 +417,7 @@ const AppCatalog: React.FC = () => {
                 </Grid2>
                 <Grid2 size={{ xs: 12, sm: 6, md: 4 }}>
                   <Typography variant="subtitle2" color="textSecondary">
-                    Version
+                    {t('app_catalog_version')}
                   </Typography>
                   <Typography variant="body2">
                     {selectedApp.metadata.version}
@@ -428,7 +430,7 @@ const AppCatalog: React.FC = () => {
             {selectedApp.metadata.tags && selectedApp.metadata.tags.length > 0 && (
               <Box sx={{ mb: 3 }}>
                 <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold' }}>
-                  Tags
+                  {t('app_catalog_tags')}
                 </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                   {selectedApp.metadata.tags.map((tag, index) => (
@@ -447,7 +449,7 @@ const AppCatalog: React.FC = () => {
             {selectedApp.metadata.screenshot_urls && selectedApp.metadata.screenshot_urls.length > 0 && (
               <Box sx={{ mb: 3 }}>
                 <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
-                  Screenshots
+                  {t('app_catalog_screenshots')}
                 </Typography>
                 <Box sx={{ position: 'relative' }}>
                   {/* Horizontal scrollable carousel */}
@@ -548,7 +550,7 @@ const AppCatalog: React.FC = () => {
             {selectedApp.metadata.changelog && (
               <Box sx={{ mb: 3 }}>
                 <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold' }}>
-                  Changelog
+                  {t('app_catalog_changelog')}
                 </Typography>
                 <Typography variant="body2" color="textSecondary" sx={{ whiteSpace: 'pre-wrap' }}>
                   {selectedApp.metadata.changelog}
@@ -573,7 +575,7 @@ const AppCatalog: React.FC = () => {
           </IconButton>
           <Img
             src={modalImage}
-            alt="Screenshot"
+            alt={t('app_catalog_screenshot_alt')}
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           />
         </Box>

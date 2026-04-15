@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Typography,
   Box,
@@ -55,6 +56,7 @@ interface SimpleTabsProps {
 }
 
 const SimpleTabs: React.FC<SimpleTabsProps> = ({ counterparty, trustEndorsements }) => {
+  const { t } = useTranslation();
   const [value, setValue] = useState(0);
 
   const handleChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -64,13 +66,13 @@ const SimpleTabs: React.FC<SimpleTabsProps> = ({ counterparty, trustEndorsements
   return (
     <Box>
       <Tabs value={value} onChange={handleChange} aria-label="counterparty info tabs">
-        <Tab label="Trust Endorsements" />
-        <Tab label="Protocol Access" />
-        <Tab label="Certificates Revealed" />
+        <Tab label={t('counterparty_tab_trust_endorsements')} />
+        <Tab label={t('counterparty_tab_protocol_access')} />
+        <Tab label={t('counterparty_tab_certificates_revealed')} />
       </Tabs>
       <TabPanel value={value} index={0}>
         <Typography variant="body1" sx={{ mb: 2 }}>
-          Trust endorsements given to this counterparty by other people.
+          {t('counterparty_trust_endorsements_description')}
         </Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           {trustEndorsements.length > 0 ? (
@@ -82,13 +84,13 @@ const SimpleTabs: React.FC<SimpleTabsProps> = ({ counterparty, trustEndorsements
               />
             ))
           ) : (
-            <Typography color="textSecondary">No trust endorsements found.</Typography>
+            <Typography color="textSecondary">{t('counterparty_no_trust_endorsements')}</Typography>
           )}
         </Box>
       </TabPanel>
       <TabPanel value={value} index={1}>
         <Typography variant="body1" sx={{ mb: 2 }}>
-          Apps that can be used within specific protocols to interact with this counterparty.
+          {t('counterparty_protocol_access_description')}
         </Typography>
         <Box sx={{ p: 4 }}>
           <ProtocolPermissionList counterparty={counterparty} itemsDisplayed='protocols' showEmptyList canRevoke />
@@ -96,11 +98,11 @@ const SimpleTabs: React.FC<SimpleTabsProps> = ({ counterparty, trustEndorsements
       </TabPanel>
       <TabPanel value={value} index={2}>
         <Typography variant="body1" sx={{ mb: 2 }}>
-          The certificate fields that you have revealed to this counterparty within specific apps.
+          {t('counterparty_certificates_revealed_description')}
         </Typography>
         {/* --- CertificateAccessList Placeholder --- */}
         <Box sx={{ mt: 1, p: 2, border: '1px dashed grey', borderRadius: 1, textAlign: 'center' }}>
-          <Typography color="textSecondary">CertificateAccessList component needs to be created/refactored.</Typography>
+          <Typography color="textSecondary">{t('counterparty_certificate_access_list_placeholder')}</Typography>
           {/* <CertificateAccessList counterparty={counterparty} itemsDisplayed='apps' canRevoke /> */}
         </Box>
         {/* --- End Placeholder --- */}
@@ -113,6 +115,7 @@ const SimpleTabs: React.FC<SimpleTabsProps> = ({ counterparty, trustEndorsements
  * Displays details about a specific counterparty, including identity, trust, and permissions.
  */
 const CounterpartyAccess: React.FC = () => {
+  const { t } = useTranslation();
   const { counterparty } = useParams<{ counterparty: string }>();
   const history = useHistory();
   const { managers, adminOriginator } = useContext(WalletContext);
@@ -152,7 +155,7 @@ const CounterpartyAccess: React.FC = () => {
 
         if (!identity) {
           setIdentity({
-            name: `Counterparty ${counterparty.substring(0, 6)}...`,
+            name: `${t('counterparty_label')} ${counterparty.substring(0, 6)}...`,
             avatarURL: DEFAULT_APP_ICON, // Use a default avatar
             abbreviatedKey: counterparty,
             identityKey: counterparty,
@@ -169,7 +172,7 @@ const CounterpartyAccess: React.FC = () => {
         setError(prev => prev ? `${prev}; Failed to load identity: ${err.message}` : `Failed to load identity: ${err.message}`);
         toast.error(`Failed to load identity: ${err.message}`);
         setIdentity({
-          name: 'Unknown Counterparty',
+          name: t('counterparty_unknown'),
           avatarURL: DEFAULT_APP_ICON,
           abbreviatedKey: counterparty,
           identityKey: counterparty,
@@ -220,11 +223,11 @@ const CounterpartyAccess: React.FC = () => {
       <Grid item>
         <PageHeader
           history={history}
-          title={isLoading ? 'Loading...' : (identity?.name || 'Unknown Counterparty')}
+          title={isLoading ? t('counterparty_loading') : (identity?.name || t('counterparty_unknown'))}
           subheading={
             <Box>
               <Typography variant="caption" color="textSecondary" sx={{ display: 'flex', alignItems: 'center' }}>
-                Public Key: <Typography variant="caption" fontWeight="bold" sx={{ ml: 0.5, wordBreak: 'break-all' }}>{counterparty}</Typography>
+                {t('counterparty_public_key')}: <Typography variant="caption" fontWeight="bold" sx={{ ml: 0.5, wordBreak: 'break-all' }}>{counterparty}</Typography>
                 <IconButton size="small" onClick={() => handleCopy(counterparty, 'id')} disabled={copied.id} sx={{ ml: 0.5 }}>
                   {copied.id ? <CheckIcon fontSize="small" /> : <ContentCopyIcon fontSize="small" />}
                 </IconButton>

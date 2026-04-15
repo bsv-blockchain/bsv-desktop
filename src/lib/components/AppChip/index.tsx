@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Chip, Badge, Tooltip, Avatar, Stack, Typography } from '@mui/material'
 import { withRouter, RouteComponentProps } from 'react-router-dom'
 import isImageUrl from '../../utils/isImageUrl'
@@ -56,6 +57,7 @@ const AppChip: React.FC<AppChipProps> = ({
   onCloseClick
 }) => {
   const theme = useTheme()
+  const { t } = useTranslation()
   if (typeof label !== 'string') {
     throw new Error('Error in AppChip: label prop must be a string!')
   }
@@ -242,7 +244,7 @@ const AppChip: React.FC<AppChipProps> = ({
               badgeContent={
                 <Tooltip
                   arrow
-                  title='App (click to learn more about apps)'
+                  title={t('app_chip_badge_tooltip')}
                   onClick={e => {
                     e.stopPropagation()
                     window.open(
@@ -289,7 +291,7 @@ const AppChip: React.FC<AppChipProps> = ({
                       height: '100%',
                       objectFit: 'cover'
                     }}
-                    alt={`${parsedLabel} app icon`}
+                    alt={t('app_chip_icon_alt', { name: parsedLabel })}
                     onLoad={handleImageLoad}
                     onError={handleImageError}
                   />

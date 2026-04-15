@@ -1,9 +1,11 @@
 import { useState, useEffect, useContext, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import AmountDisplay from './AmountDisplay'
 import { Skeleton, Stack, Typography } from '@mui/material'
 import { WalletContext } from '../WalletContext'
 
 const Profile = () => {
+  const { t } = useTranslation()
   const { managers, adminOriginator } = useContext(WalletContext)
   const [accountBalance, setAccountBalance] = useState<number | null>(null)
   const [balanceLoading, setBalanceLoading] = useState(true)
@@ -54,7 +56,7 @@ const Profile = () => {
 
   return (<Stack alignItems="center">
     <Typography variant='h5' color='textSecondary' align='center'>
-      Your Balance
+      {t('profile_your_balance')}
     </Typography>
     <Typography
       onClick={() => refreshBalance()}

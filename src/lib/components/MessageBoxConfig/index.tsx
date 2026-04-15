@@ -1,4 +1,5 @@
 import { useState, useContext } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Typography,
   Box,
@@ -31,6 +32,7 @@ interface MessageBoxConfigProps {
 }
 
 export default function MessageBoxConfig({ showTitle = true, embedded = false }: MessageBoxConfigProps) {
+  const { t } = useTranslation()
   const {
     useMessageBox,
     messageBoxUrl,
@@ -89,10 +91,10 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
       {showTitle && (
         <>
           <Typography variant="h4" sx={{ mb: 2 }}>
-            Message Box Configuration
+            {t('msgbox_title')}
           </Typography>
           <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-            Configure your Message Box URL to enable secure messaging functionality.
+            {t('msgbox_description')}
           </Typography>
         </>
       )}
@@ -103,7 +105,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
           <>
             <Box>
               <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                Current Message Box URL
+                {t('msgbox_current_url_label')}
               </Typography>
               <Box component="div" sx={{
                 fontFamily: 'monospace',
@@ -118,7 +120,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
               }}>
                 <span>{messageBoxUrl}</span>
                 <Chip
-                  label={isHostAnointed ? "Anointed" : "Not Anointed"}
+                  label={isHostAnointed ? t('msgbox_anointed') : t('msgbox_not_anointed')}
                   color={isHostAnointed ? "success" : "warning"}
                   size="small"
                 />
@@ -129,7 +131,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
             {!isHostAnointed && (
               <Alert severity="warning" sx={{ mt: 1 }}>
                 <Typography variant="body2" sx={{ mb: 1 }}>
-                  Host not yet anointed. Once you have funds, anoint this host to broadcast your identity to the overlay network so others can send you payments and messages.
+                  {t('msgbox_not_anointed_description')}
                 </Typography>
                 <Button
                   variant="contained"
@@ -138,7 +140,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
                   disabled={anointmentLoading}
                   startIcon={anointmentLoading ? <CircularProgress size={16} /> : null}
                 >
-                  {anointmentLoading ? 'Anointing...' : 'Anoint Host'}
+                  {anointmentLoading ? t('msgbox_anointing') : t('msgbox_anoint_button')}
                 </Button>
               </Alert>
             )}
@@ -146,7 +148,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
             {isHostAnointed && (
               <Alert severity="success" sx={{ mt: 1 }}>
                 <Typography variant="body2">
-                  Host is anointed. You can receive payments and messages at this address.
+                  {t('msgbox_anointed_description')}
                 </Typography>
               </Alert>
             )}
@@ -159,7 +161,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
                   onClick={() => setShowAnointedHosts(!showAnointedHosts)}
                   endIcon={showAnointedHosts ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                 >
-                  {showAnointedHosts ? 'Hide' : 'Show'} Anointed Hosts ({anointedHosts.length})
+                  {showAnointedHosts ? t('msgbox_hide_anointed_hosts') : t('msgbox_show_anointed_hosts')} ({anointedHosts.length})
                 </Button>
                 <Collapse in={showAnointedHosts}>
                   <List dense sx={{ bgcolor: 'action.hover', borderRadius: 1, mt: 1 }}>
@@ -167,12 +169,12 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
                       <ListItem key={`${token.txid}-${token.outputIndex}`}>
                         <ListItemText
                           primary={token.host}
-                          secondary={`TXID: ${token.txid.slice(0, 8)}...${token.txid.slice(-8)}`}
+                          secondary={`${t('msgbox_txid_label')}: ${token.txid.slice(0, 8)}...${token.txid.slice(-8)}`}
                           primaryTypographyProps={{ sx: { fontFamily: 'monospace', fontSize: '0.85rem' } }}
                           secondaryTypographyProps={{ sx: { fontFamily: 'monospace', fontSize: '0.7rem' } }}
                         />
                         <ListItemSecondaryAction>
-                          <Tooltip title="Revoke this anointment">
+                          <Tooltip title={t('msgbox_revoke_tooltip')}>
                             <IconButton
                               edge="end"
                               size="small"
@@ -196,7 +198,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
                 onClick={() => setShowMessageBoxDialog(true)}
                 disabled={messageBoxLoading || anointmentLoading}
               >
-                Update URL
+                {t('msgbox_update_url_button')}
               </Button>
               <Button
                 variant="outlined"
@@ -204,7 +206,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
                 onClick={handleRemoveMessageBox}
                 disabled={messageBoxLoading || anointmentLoading}
               >
-                Remove
+                {t('msgbox_remove_button')}
               </Button>
             </Box>
           </>
@@ -216,22 +218,22 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
             disabled={messageBoxLoading}
             fullWidth
           >
-            Enter Message Box URL
+            {t('msgbox_enter_url_button')}
           </Button>
         )}
       </Box>
 
       <Dialog open={showMessageBoxDialog} onClose={() => !messageBoxLoading && setShowMessageBoxDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{useMessageBox && messageBoxUrl ? 'Update Message Box URL' : 'Enter Message Box URL'}</DialogTitle>
+        <DialogTitle>{useMessageBox && messageBoxUrl ? t('msgbox_dialog_update_title') : t('msgbox_dialog_enter_title')}</DialogTitle>
         <DialogContent>
           {useMessageBox && messageBoxUrl && (
             <Alert severity="info" sx={{ mb: 2, mt: 2 }}>
-              Current: {messageBoxUrl}
+              {t('msgbox_dialog_current')}: {messageBoxUrl}
             </Alert>
           )}
           <TextField
             fullWidth
-            label="Message Box URL"
+            label={t('msgbox_url_field_label')}
             placeholder="https://messagebox.example.com"
             value={newMessageBoxUrl}
             onChange={(e) => setNewMessageBoxUrl(e.target.value)}
@@ -240,19 +242,19 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
             autoFocus
           />
           <Alert severity="info" sx={{ mt: 2 }}>
-            After saving, you can anoint the host from Settings whenever you are ready. Anointing requires a small on-chain transaction, so make sure you have funds first.
+            {t('msgbox_dialog_anoint_info')}
           </Alert>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowMessageBoxDialog(false)} disabled={messageBoxLoading}>
-            Cancel
+            {t('msgbox_cancel')}
           </Button>
           <Button
             onClick={handleSetupMessageBox}
             variant="contained"
             disabled={messageBoxLoading || !newMessageBoxUrl}
           >
-            {messageBoxLoading ? 'Saving...' : 'Save'}
+            {messageBoxLoading ? t('msgbox_saving') : t('msgbox_save')}
           </Button>
         </DialogActions>
       </Dialog>

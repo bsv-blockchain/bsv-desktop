@@ -1,5 +1,6 @@
 // src/components/CertificateChip/index.tsx
 import React, { useEffect, useContext, useState, useMemo, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Chip,
   Box,
@@ -69,9 +70,10 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
   history
 }) => {
   const { managers, settings, activeProfile, adminOriginator } = useContext(WalletContext)
+  const { t } = useTranslation()
 
   // Definition-driven state
-  const [certname, setCertName] = useState<string>('Unknown Cert')
+  const [certname, setCertName] = useState<string>(t('certificate_chip_unknown_cert'))
   const [resolvedCertType, setResolvedCertType] = useState<string>(certType || '')
   const [documentationURL, setDocumentationURL] = useState<string>('')
   const [description, setDescription] = useState<string>('')
@@ -207,20 +209,20 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
           </Avatar>
 
           <Typography variant="h6" fontWeight="bold" sx={{ mr: 0.5 }}>
-            {certname || 'Certificate'}
+            {certname || t('certificate_chip_certificate')}
           </Typography>
         </Stack>
 
         <Stack direction="row" spacing={1} alignItems="center">
           {!!documentationURL && (
-            <Tooltip title="Open documentation">
+            <Tooltip title={t('certificate_chip_open_documentation')}>
               <IconButton
                 component={MuiLink}
                 href={documentationURL}
                 target="_blank"
                 rel="noreferrer"
                 size="small"
-                aria-label="open documentation"
+                aria-label={t('certificate_chip_open_documentation')}
                 onClick={(e) => e.stopPropagation()} // prevent bubbling to card click
               >
                 <OpenInNewIcon fontSize="inherit" />
@@ -235,9 +237,9 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
               size="small"
               onClick={(e) => { e.stopPropagation(); onRevokeClick?.() }}
               sx={{ textTransform: 'none', p: 0, minWidth: 0 }}
-              aria-label="Revoke certificate"
+              aria-label={t('certificate_chip_revoke')}
             >
-              Revoke
+              {t('certificate_chip_revoke')}
             </Button>
           )}
         </Stack>
@@ -254,7 +256,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
       {expiry !== undefined && (
         <>
           <Stack direction="row" spacing={1} sx={ROW_SX}>
-            <Typography variant="body1" fontWeight="bold">Expires</Typography>
+            <Typography variant="body1" fontWeight="bold">{t('certificate_chip_expires')}</Typography>
             <Box px={3}><Typography variant="body1" sx={{ fontSize: '1rem' }}>{rel} {abs ? `(${abs})` : ''}</Typography></Box>
           </Stack>
           <Divider />
@@ -265,7 +267,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
       {definitionFieldChips && (
         <>
           <Stack direction="row" spacing={1} sx={{ width: '100%', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-            <Typography variant="body1" fontWeight="bold" sx={{ lineHeight: '32px' }}>Definition fields</Typography>
+            <Typography variant="body1" fontWeight="bold" sx={{ lineHeight: '32px' }}>{t('certificate_chip_definition_fields')}</Typography>
             <Box px={3} sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '70%' }}>{definitionFieldChips}</Box>
           </Stack>
           <Divider />
@@ -276,7 +278,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
       {certFieldKeys.length > 0 && (
         <>
           <Stack direction="row" spacing={1} sx={{ width: '100%', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-            <Typography variant="body1" fontWeight="bold" sx={{ lineHeight: '32px' }}>Fields</Typography>
+            <Typography variant="body1" fontWeight="bold" sx={{ lineHeight: '32px' }}>{t('certificate_chip_fields')}</Typography>
             <Box px={3} sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '70%' }}>
               {certFieldKeys.map((k) => (<Chip key={`field-${k}`} size="small" label={k} />))}
             </Box>
@@ -287,7 +289,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
 
       {/* certType */}
       <Stack direction="row" spacing={1} sx={ROW_SX}>
-        <Typography variant="body1" fontWeight="bold">certType</Typography>
+        <Typography variant="body1" fontWeight="bold">{t('certificate_chip_cert_type')}</Typography>
         <Box px={3}><Typography variant="body1" sx={{ ...MONO_SX, fontSize: '0.95rem' }}>{resolvedCertType}</Typography></Box>
       </Stack>
 
@@ -297,7 +299,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
     <Divider />
     <Stack direction="row" spacing={1} sx={{ ...ROW_SX, height: 'auto' }}>
       <Typography variant="body1" fontWeight="bold" sx={{ mt: 0.5 }}>
-        Verifier
+        {t('certificate_chip_verifier')}
       </Typography>
       <Box
         px={3}
@@ -314,7 +316,7 @@ const CertificateChip: React.FC<CertificateChipProps> = ({
       >
         <CounterpartyChip
           counterparty={certVerifier}
-          label="Verifier"
+          label={t('certificate_chip_verifier')}
           clickable
           size={0.85 * size}
         />

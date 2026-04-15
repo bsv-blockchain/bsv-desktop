@@ -1,5 +1,6 @@
 /* eslint-disable react/prop-types */
 import React, { useState, FC } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Accordion,
   AccordionSummary,
@@ -122,6 +123,7 @@ const Action: FC<ActionProps> = ({
   onClick,
   isExpanded,
 }) => {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState<boolean>(isExpanded || false);
   const [copied, setCopied] = useState<boolean>(false);
   const theme = useTheme();
@@ -204,8 +206,8 @@ const Action: FC<ActionProps> = ({
           {/* Transaction ID Section */}
           <Paper elevation={0} className={classes.detailCard}>
             <div className={classes.sectionTitle}>
-              <Typography variant="h6">Transaction ID</Typography>
-              <Tooltip title="Unique identifier for this transaction">
+              <Typography variant="h6">{t('action_transaction_id')}</Typography>
+              <Tooltip title={t('action_transaction_id_tooltip')}>
                 <InfoOutlinedIcon
                   className={`${classes.infoIcon} ${theme.palette.mode === 'dark'
                     ? classes.infoIconDark
@@ -273,12 +275,12 @@ const Action: FC<ActionProps> = ({
           {/* Transaction Summary */}
           <Paper elevation={0} className={classes.detailCard}>
             <div className={classes.sectionTitle}>
-              <Typography variant="h6">Transaction Summary</Typography>
+              <Typography variant="h6">{t('action_transaction_summary')}</Typography>
             </div>
-            <Box sx={{ 
-              display: 'grid', 
-              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, 
-              gap: 2 
+            <Box sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' },
+              gap: 2
             }}>
               <Box sx={{
                 p: 2,
@@ -289,11 +291,11 @@ const Action: FC<ActionProps> = ({
                 textAlign: 'center'
               }}>
                 <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                  Total Input
+                  {t('action_total_input')}
                 </Typography>
-                <Typography 
-                  variant="h6" 
-                  sx={{ 
+                <Typography
+                  variant="h6"
+                  sx={{
                     fontFamily: 'monospace',
                     fontWeight: 600,
                     color: 'success.main'
@@ -302,7 +304,7 @@ const Action: FC<ActionProps> = ({
                   <AmountDisplay>{totalInputAmount}</AmountDisplay>
                 </Typography>
               </Box>
-              
+
               <Box sx={{
                 p: 2,
                 bgcolor: 'background.paper',
@@ -312,11 +314,11 @@ const Action: FC<ActionProps> = ({
                 textAlign: 'center'
               }}>
                 <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                  Total Output
+                  {t('action_total_output')}
                 </Typography>
-                <Typography 
-                  variant="h6" 
-                  sx={{ 
+                <Typography
+                  variant="h6"
+                  sx={{
                     fontFamily: 'monospace',
                     fontWeight: 600,
                     color: 'primary.main'
@@ -325,7 +327,7 @@ const Action: FC<ActionProps> = ({
                   <AmountDisplay>{totalOutputAmount}</AmountDisplay>
                 </Typography>
               </Box>
-              
+
               <Box sx={{
                 p: 2,
                 bgcolor: 'background.paper',
@@ -335,11 +337,11 @@ const Action: FC<ActionProps> = ({
                 textAlign: 'center'
               }}>
                 <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                  Network Fees
+                  {t('action_network_fees')}
                 </Typography>
-                <Typography 
-                  variant="h6" 
-                  sx={{ 
+                <Typography
+                  variant="h6"
+                  sx={{
                     fontFamily: 'monospace',
                     fontWeight: 600,
                     color: 'warning.main'
@@ -356,7 +358,7 @@ const Action: FC<ActionProps> = ({
             <Paper elevation={0} className={classes.detailCard}>
               <div className={classes.sectionTitle}>
                 <CallReceivedIcon color="primary" />
-                <Typography variant="h6">Inputs</Typography>
+                <Typography variant="h6">{t('action_inputs')}</Typography>
                 <Typography variant="body2" color="textSecondary">
                   ({inputs.length})
                 </Typography>
@@ -377,21 +379,21 @@ const Action: FC<ActionProps> = ({
                     }}
                   >
                     <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography 
-                        variant="body2" 
-                        color="textSecondary" 
+                      <Typography
+                        variant="body2"
+                        color="textSecondary"
                         sx={{ fontSize: '0.75rem', mb: 0.5 }}
                       >
-                        Input #{index + 1}
+                        {t('action_input_number', { number: index + 1 })}
                       </Typography>
                       <Typography>
                         {input.inputDescription}
                       </Typography>
                     </Box>
                     <Box sx={{ ml: 2, flexShrink: 0 }}>
-                      <Typography 
-                        variant="body1" 
-                        sx={{ 
+                      <Typography
+                        variant="body1"
+                        sx={{
                           fontWeight: 500,
                           fontFamily: 'monospace',
                           fontSize: '0.875rem',
@@ -414,7 +416,7 @@ const Action: FC<ActionProps> = ({
             <Paper elevation={0} className={classes.detailCard}>
               <div className={classes.sectionTitle}>
                 <CallMadeIcon color="primary" />
-                <Typography variant="h6">Outputs</Typography>
+                <Typography variant="h6">{t('action_outputs')}</Typography>
                 <Typography variant="body2" color="textSecondary">
                   ({outputs.length})
                 </Typography>
@@ -435,16 +437,16 @@ const Action: FC<ActionProps> = ({
                     }}
                   >
                     <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography 
-                        variant="body2" 
-                        color="textSecondary" 
+                      <Typography
+                        variant="body2"
+                        color="textSecondary"
                         sx={{ fontSize: '0.75rem', mb: 0.5 }}
                       >
-                        Output #{index + 1}
+                        {t('action_output_number', { number: index + 1 })}
                       </Typography>
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
+                      <Typography
+                        variant="body2"
+                        sx={{
                           wordBreak: 'break-word',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
@@ -457,9 +459,9 @@ const Action: FC<ActionProps> = ({
                       </Typography>
                     </Box>
                     <Box sx={{ ml: 2, flexShrink: 0 }}>
-                      <Typography 
-                        variant="body1" 
-                        sx={{ 
+                      <Typography
+                        variant="body1"
+                        sx={{
                           fontWeight: 500,
                           fontFamily: 'monospace',
                           fontSize: '0.875rem',
@@ -487,7 +489,7 @@ const Action: FC<ActionProps> = ({
           horizontal: 'right',
         }}
       >
-        <Alert severity="success">Transaction ID copied!</Alert>
+        <Alert severity="success">{t('action_transaction_id_copied')}</Alert>
       </Snackbar>
     </Accordion>
   );

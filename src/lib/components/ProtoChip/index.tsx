@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Chip, Avatar, Stack, Typography, Divider, Box } from '@mui/material'
 import { withRouter, RouteComponentProps } from 'react-router-dom'
 import CloseIcon from '@mui/icons-material/Close'
@@ -77,9 +78,10 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
     // Don't return null here to avoid conditional hook calls
   }
 
+  const { t } = useTranslation()
   const [protocolName, setProtocolName] = useState(protocolID)
   const [iconURL, setIconURL] = useState(deterministicImage(protocolID))
-  const [description, setDescription] = useState('Protocol description not found.')
+  const [description, setDescription] = useState(t('proto_chip_description_not_found'))
   const [imageError, setImageError] = useState(false)
   const [documentationURL, setDocumentationURL] = useState('https://docs.bsvblockchain.org')
   const { managers, settings, adminOriginator } = useContext(WalletContext)
@@ -168,13 +170,13 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
   const securityLevelExplainer = (securityLevel: number) => {
     switch (securityLevel) {
       case 2:
-        return 'only with this app and counterparty'
+        return t('proto_chip_scope_app_and_counterparty')
       case 1:
-        return 'only with this app'
+        return t('proto_chip_scope_app_only')
       case 0:
-        return 'in general'
+        return t('proto_chip_scope_general')
       default:
-        return 'Unknown security level'
+        return t('proto_chip_scope_unknown')
     }
   }
 
@@ -190,7 +192,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
         width: '100%',
         overflow: 'hidden'
       }}>
-        <Typography variant="body1" fontWeight="bold" sx={{ flexShrink: 0 }}>Protocol:</Typography>
+        <Typography variant="body1" fontWeight="bold" sx={{ flexShrink: 0 }}>{t('proto_chip_protocol')}:</Typography>
         <Chip
           style={theme.templates?.chip ? theme.templates.chip({ size, backgroundColor }) : {
             height: `${size * 32}px`,
@@ -255,7 +257,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
               whiteSpace: 'nowrap'
             }}
           >
-            {description || 'Protocol description not found.'}
+            {description || t('proto_chip_description_not_found')}
           </Typography>
         </Box>
       </Stack>
@@ -275,7 +277,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
       <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{
         height: '3em', width: '100%'
       }}>
-        <Typography variant="body1" fontWeight="bold">Scope:</Typography>
+        <Typography variant="body1" fontWeight="bold">{t('proto_chip_scope')}:</Typography>
         <Box px={3}>
           <Typography variant="body1" sx={{ fontSize: '1rem' }}>{securityLevelExplainer(securityLevel)}</Typography>
         </Box>

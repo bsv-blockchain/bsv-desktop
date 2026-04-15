@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Typography, Button, TextField, DialogContent, DialogContentText, DialogActions, LinearProgress, InputAdornment, Box } from '@mui/material'
 import DomainIcon from '@mui/icons-material/Public'
 import ExpandMore from '@mui/icons-material/ExpandMore'
@@ -16,6 +17,7 @@ import { Certifier } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsMana
 const AddEntityModal = ({
   open, setOpen, trustedEntities, setTrustedEntities
 }: { open: boolean, setOpen: Function, trustedEntities: any, setTrustedEntities: Function }) => {
+  const { t } = useTranslation()
   const [domain, setDomain] = useState('')
   const [advanced, setAdvanced] = useState(false)
   const [name, setName] = useState('')
@@ -58,10 +60,10 @@ const AddEntityModal = ({
       setFieldsValid(false)
       let msg = e.message
       if (msg === 'The user aborted a request.') {
-        msg = 'The domain did not respond within 15 seconds'
+        msg = t('trust_add_entity_domain_timeout')
       }
       if (msg === 'Failed to fetch') {
-        msg = 'Could not fetch the trust data from that domain (it needs to follow the BRC-68 protocol)'
+        msg = t('trust_add_entity_domain_fetch_failed')
       }
       setDomainError(msg)
     } finally {
@@ -101,7 +103,7 @@ const AddEntityModal = ({
   const handleTrust = async () => {
     setTrustedEntities(t => {
       if (t.some(x => x.identityKey === identityKey)) {
-        toast.error('An entity with this public key is already in the list!')
+        toast.error(t('trust_add_entity_duplicate_key'))
         return t
       }
       setDomain('')
@@ -119,7 +121,7 @@ const AddEntityModal = ({
 
   return (
     <CustomDialog
-      title='Add Provider'
+      title={t('trust_add_entity_title')}
       open={open}
       onClose={() => setOpen(false)}
       style={{ minWidth: 'lg' }}
@@ -128,11 +130,11 @@ const AddEntityModal = ({
         <Box sx={{ mb: 2 }} />
         {!advanced &&
           <form onSubmit={handleDomainSubmit}>
-            <DialogContentText>Enter the domain name for the provider you'd like to add.</DialogContentText>
+            <DialogContentText>{t('trust_add_entity_domain_prompt')}</DialogContentText>
             <Box sx={{ mt: 2 }} />
             <Box sx={{ display: 'flex', justifyContent: 'center' }}>
               <TextField
-                label='Domain Name'
+                label={t('trust_add_entity_domain_label')}
                 placeholder='trustedentity.com'
                 value={domain}
                 onChange={e => {
@@ -166,16 +168,16 @@ const AddEntityModal = ({
                   type='submit'
                   disabled={loading}
                 >
-                  Get Provider Details
+                  {t('trust_add_entity_get_details')}
                 </Button>
               </Box>}
           </form>}
         {advanced && (
           <form onSubmit={handleDirectSubmit}>
-            <DialogContentText>Directly enter the details for the provider you'd like to add.</DialogContentText>
+            <DialogContentText>{t('trust_add_entity_advanced_prompt')}</DialogContentText>
             <Box sx={{ mt: 2 }} />
             <TextField
-              label='Entity Name'
+              label={t('trust_add_entity_name_label')}
               placeholder='Identity Certifier'
               value={name}
               onChange={e => {
@@ -199,7 +201,7 @@ const AddEntityModal = ({
             />
             <Box sx={{ mt: 2 }} />
             <TextField
-              label='Icon URL'
+              label={t('trust_add_entity_icon_label')}
               placeholder='https://trustedentity.com/icon.png'
               value={icon}
               onChange={e => {
@@ -223,7 +225,7 @@ const AddEntityModal = ({
             />
             <Box sx={{ mt: 2 }} />
             <TextField
-              label='Entity Public Key'
+              label={t('trust_add_entity_public_key_label')}
               placeholder='0295bf1c7842d14babf60daf2c733956c331f9dcb2c79e41f85fd1dda6a3fa4549'
               value={identityKey}
               onChange={e => {
@@ -256,7 +258,7 @@ const AddEntityModal = ({
                   type='submit'
                   disabled={loading}
                 >
-                  Validate Details
+                  {t('trust_add_entity_validate_details')}
                 </Button>
               </Box>}
           </form>
@@ -266,7 +268,7 @@ const AddEntityModal = ({
           onClick={() => setAdvanced(x => !x)}
           startIcon={!advanced ? <ExpandMore /> : <ExpandLess />}
         >
-          {advanced ? 'Hide' : 'Show'} Advanced
+          {advanced ? t('trust_add_entity_hide_advanced') : t('trust_add_entity_show_advanced')}
         </Button>
         {fieldsValid && (
           <Box sx={{
@@ -295,10 +297,10 @@ const AddEntityModal = ({
             <TextField
               value={description}
               onChange={e => setDescription(e.target.value)}
-              label='description'
+              label={t('trust_add_entity_description_label')}
               fullWidth
               error={description.length < 5 || description.length > 50}
-              helperText={description.length < 5 || description.length > 50 ? 'description must be between 5 and 50 characters' : null}
+              helperText={description.length < 5 || description.length > 50 ? t('trust_add_entity_description_error') : null}
               variant='outlined'
               slotProps={{
                 input: {
@@ -314,14 +316,14 @@ const AddEntityModal = ({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => setOpen(false)}>Cancel</Button>
+        <Button onClick={() => setOpen(false)}>{t('trust_add_entity_cancel')}</Button>
         <Button
           disabled={!fieldsValid}
           variant='contained'
           endIcon={<Shield />}
           onClick={handleTrust}
         >
-          Add Identity Certifier
+          {t('trust_add_entity_add_certifier')}
         </Button>
       </DialogActions>
     </CustomDialog>

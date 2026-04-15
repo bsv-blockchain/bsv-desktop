@@ -1,4 +1,5 @@
 import { useState, useContext, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Typography, Box, Paper, Button, Chip, Alert,
   Collapse, Divider, LinearProgress, Dialog,
@@ -34,6 +35,7 @@ interface ConfirmationState {
 }
 
 const WalletDiagnosis = () => {
+  const { t } = useTranslation()
   const { managers } = useContext(WalletContext)
 
   const [expanded, setExpanded] = useState(false)
@@ -458,19 +460,18 @@ const WalletDiagnosis = () => {
     <Paper elevation={0} sx={{ p: 3, bgcolor: 'background.paper', mb: 4 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h4">
-          Wallet Diagnosis
+          {t('wallet_diagnosis_title')}
         </Typography>
         <Button
           size="small"
           onClick={() => setExpanded(!expanded)}
         >
-          {expanded ? 'Hide' : 'Show'} Diagnosis Tools
+          {expanded ? t('wallet_diagnosis_hide_tools') : t('wallet_diagnosis_show_tools')}
         </Button>
       </Box>
 
       <Alert severity="info" sx={{ mb: 2 }}>
-        Diagnose and repair wallet issues including failed transactions, stuck actions, and orphaned outputs.
-        Use these tools if your wallet balance seems incorrect or transactions are stuck.
+        {t('wallet_diagnosis_info_alert')}
       </Alert>
 
       {loading && (
@@ -482,14 +483,14 @@ const WalletDiagnosis = () => {
       <Collapse in={expanded}>
         {/* --- Run Diagnosis --- */}
         <Box sx={{ mt: 2 }}>
-          <Typography variant="h6" sx={{ mb: 2 }}>Quick Scan</Typography>
+          <Typography variant="h6" sx={{ mb: 2 }}>{t('wallet_diagnosis_quick_scan')}</Typography>
           <Button
             variant="contained"
             onClick={runDiagnosis}
             disabled={loading}
             sx={{ mb: 2 }}
           >
-            {loading ? 'Scanning...' : 'Run Diagnosis'}
+            {loading ? t('wallet_diagnosis_scanning') : t('wallet_diagnosis_run')}
           </Button>
 
           {diagnosis && (
@@ -527,7 +528,7 @@ const WalletDiagnosis = () => {
 
         {/* --- Failed & Stuck Transactions --- */}
         <Box>
-          <Typography variant="h6" sx={{ mb: 2 }}>Failed &amp; Stuck Transactions</Typography>
+          <Typography variant="h6" sx={{ mb: 2 }}>{t('wallet_diagnosis_failed_stuck_title')}</Typography>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
             <Button
               variant="outlined"
@@ -535,7 +536,7 @@ const WalletDiagnosis = () => {
               disabled={loading}
               size="small"
             >
-              Load Transactions
+              {t('wallet_diagnosis_load_transactions')}
             </Button>
             {actions.some(a => a.status === 'failed') && (
               <Button
@@ -545,7 +546,7 @@ const WalletDiagnosis = () => {
                 disabled={loading}
                 size="small"
               >
-                Attempt Recovery ({actions.filter(a => a.status === 'failed').length} Failed)
+                {t('wallet_diagnosis_attempt_recovery', { count: actions.filter(a => a.status === 'failed').length })}
               </Button>
             )}
             {actions.some(a => a.status === 'nosend') && (
@@ -556,7 +557,7 @@ const WalletDiagnosis = () => {
                 disabled={loading}
                 size="small"
               >
-                Abort All NoSend ({actions.filter(a => a.status === 'nosend').length})
+                {t('wallet_diagnosis_abort_nosend', { count: actions.filter(a => a.status === 'nosend').length })}
               </Button>
             )}
           </Box>
@@ -608,7 +609,7 @@ const WalletDiagnosis = () => {
                       onClick={() => abortStuckAction(action.txid)}
                       disabled={loading}
                     >
-                      Abort
+                      {t('wallet_diagnosis_abort')}
                     </Button>
                   )}
                 </Box>
@@ -618,7 +619,7 @@ const WalletDiagnosis = () => {
 
           {actions.length === 0 && (
             <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
-              Click "Load Transactions" to scan for problematic transactions.
+              {t('wallet_diagnosis_load_transactions_hint')}
             </Typography>
           )}
         </Box>
@@ -627,7 +628,7 @@ const WalletDiagnosis = () => {
 
         {/* --- Output Validation --- */}
         <Box>
-          <Typography variant="h6" sx={{ mb: 2 }}>Output Validation</Typography>
+          <Typography variant="h6" sx={{ mb: 2 }}>{t('wallet_diagnosis_output_validation')}</Typography>
           <Button
             variant="outlined"
             onClick={loadOutputs}
@@ -635,7 +636,7 @@ const WalletDiagnosis = () => {
             size="small"
             sx={{ mb: 2 }}
           >
-            Scan Outputs
+            {t('wallet_diagnosis_scan_outputs')}
           </Button>
 
           {outputs && (
@@ -704,7 +705,7 @@ const WalletDiagnosis = () => {
                       onClick={() => relinquishOutput(String(output.outpoint))}
                       disabled={loading}
                     >
-                      Relinquish
+                      {t('wallet_diagnosis_relinquish')}
                     </Button>
                   </Box>
                 ))}
@@ -714,7 +715,7 @@ const WalletDiagnosis = () => {
 
           {!outputs && (
             <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic' }}>
-              Click "Scan Outputs" to inspect wallet outputs in the default basket.
+              {t('wallet_diagnosis_scan_outputs_hint')}
             </Typography>
           )}
         </Box>
@@ -723,10 +724,9 @@ const WalletDiagnosis = () => {
 
         {/* --- Review Spendable Outputs --- */}
         <Box>
-          <Typography variant="h6" sx={{ mb: 1 }}>Review Spendable Outputs</Typography>
+          <Typography variant="h6" sx={{ mb: 1 }}>{t('wallet_diagnosis_review_spendable_title')}</Typography>
           <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-            Verify all spendable outputs against the blockchain. Identifies outputs your wallet considers spendable
-            but that are no longer valid UTXOs on-chain (e.g. spent elsewhere, double-spent, or from orphaned blocks).
+            {t('wallet_diagnosis_review_spendable_description')}
           </Typography>
 
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
@@ -736,7 +736,7 @@ const WalletDiagnosis = () => {
               disabled={loading}
               size="small"
             >
-              Scan Only
+              {t('wallet_diagnosis_scan_only')}
             </Button>
             <Button
               variant="contained"
@@ -745,15 +745,15 @@ const WalletDiagnosis = () => {
               disabled={loading}
               size="small"
             >
-              Review & Release Invalid
+              {t('wallet_diagnosis_review_release_invalid')}
             </Button>
           </Box>
 
           {reviewResults && (
             <Alert severity={reviewResults.invalid > 0 ? 'warning' : 'success'} sx={{ mb: 1 }}>
               {reviewResults.invalid === 0
-                ? 'All spendable outputs are valid on-chain.'
-                : `${reviewResults.invalid} invalid output(s) found${reviewResults.invalid > 0 ? '.' : ''}`}
+                ? t('wallet_diagnosis_all_outputs_valid')
+                : t('wallet_diagnosis_invalid_outputs_found', { count: reviewResults.invalid })}
             </Alert>
           )}
         </Box>
@@ -762,9 +762,9 @@ const WalletDiagnosis = () => {
 
         {/* --- Data Cleanup --- */}
         <Box>
-          <Typography variant="h6" sx={{ mb: 2 }}>Data Cleanup</Typography>
+          <Typography variant="h6" sx={{ mb: 2 }}>{t('wallet_diagnosis_data_cleanup_title')}</Typography>
           <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-            One-click cleanup of all stuck (unsigned + unprocessed) and nosend transactions.
+            {t('wallet_diagnosis_data_cleanup_description')}
           </Typography>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <Button
@@ -773,7 +773,7 @@ const WalletDiagnosis = () => {
               onClick={runCleanup}
               disabled={loading}
             >
-              {loading ? 'Cleaning...' : 'Run Cleanup'}
+              {loading ? t('wallet_diagnosis_cleaning') : t('wallet_diagnosis_run_cleanup')}
             </Button>
             <Button
               variant="outlined"
@@ -781,12 +781,11 @@ const WalletDiagnosis = () => {
               onClick={resetChangeParams}
               disabled={loading}
             >
-              Reset Change Parameters
+              {t('wallet_diagnosis_reset_change_params')}
             </Button>
           </Box>
           <Typography variant="body2" color="textSecondary" sx={{ mt: 1, fontStyle: 'italic' }}>
-            "Reset Change Parameters" fixes the "changeInitialSatoshis must be at least 1" error by
-            restoring default change output settings (count: 144, value: 32 sats).
+            {t('wallet_diagnosis_reset_change_params_hint')}
           </Typography>
         </Box>
 
@@ -795,13 +794,13 @@ const WalletDiagnosis = () => {
         {/* --- Operation Log --- */}
         <Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-            <Typography variant="h6">Operation Log</Typography>
+            <Typography variant="h6">{t('wallet_diagnosis_operation_log')}</Typography>
             {operationLog.length > 0 && (
               <Button
                 size="small"
                 onClick={() => setOperationLog([])}
               >
-                Clear Log
+                {t('wallet_diagnosis_clear_log')}
               </Button>
             )}
           </Box>
@@ -816,7 +815,7 @@ const WalletDiagnosis = () => {
           }}>
             {operationLog.length === 0 ? (
               <Typography variant="body2" color="textSecondary">
-                No operations performed yet.
+                {t('wallet_diagnosis_no_operations')}
               </Typography>
             ) : (
               operationLog.map((log, idx) => (
@@ -839,14 +838,14 @@ const WalletDiagnosis = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={closeConfirmation}>
-            Cancel
+            {t('wallet_diagnosis_cancel')}
           </Button>
           <Button
             onClick={confirmation.onConfirm}
             color="error"
             variant="contained"
           >
-            Confirm
+            {t('wallet_diagnosis_confirm')}
           </Button>
         </DialogActions>
       </Dialog>

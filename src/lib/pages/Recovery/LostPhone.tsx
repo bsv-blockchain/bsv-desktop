@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react'
+import { useTranslation } from 'react-i18next'
 import style from './style.js'
 // import 'react-phone-number-input/style.css'
 import {
@@ -26,6 +27,7 @@ import { Utils } from '@bsv/sdk'
 const useStyles = makeStyles(style as any, { name: 'RecoveryLostPhoneNumber' })
 
 const RecoveryLostPhone: React.FC<any> = ({ history }) => {
+  const { t } = useTranslation()
   const { managers, saveEnhancedSnapshot } = useContext(WalletContext)
   const classes = useStyles()
   const [accordianView, setAccordianView] = useState('recovery-key')
@@ -80,7 +82,7 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
       // const result = await managers.walletManager!.changePhoneNumber(newPhone)
       // if (result === true) {
       // TODO support this in the example wallet manager, get a code, etc.
-      toast.error('Phone is not changed (not yet supported)')
+      toast.error(t('lost_phone_not_yet_supported'))
       history.push('/dashboard/apps')
       // }
     } catch (e) {
@@ -95,23 +97,23 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
     return (
       <div>
         <Typography paragraph>
-          You are currently logged in. You must log out in order to reset your password.
+          {t('lost_phone_already_logged_in')}
         </Typography>
         <Button
           color='secondary'
           onClick={async () => {
-            if (!window.confirm('Log out?')) return
+            if (!window.confirm(t('lost_phone_log_out_confirm'))) return
             await managers.walletManager!.destroy()
             setAuthenticated(false)
           }}
         >
-          Log Out
+          {t('lost_phone_log_out')}
         </Button>
         <Button
           onClick={() => history.go(-1)}
           className={classes.back_button}
         >
-          Go Back
+          {t('lost_phone_go_back')}
         </Button>
       </div>
     )
@@ -120,7 +122,7 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
   return (
     <div className={classes.content_wrap}>
       <Typography variant='h2' paragraph fontFamily='Helvetica' fontSize='2em'>
-        Reset Phone Number
+        {t('lost_phone_title')}
       </Typography>
       <Accordion
         expanded={accordianView === 'recovery-key'}
@@ -132,7 +134,7 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
           <Typography
             className={classes.panel_heading}
           >
-            Recovery Key
+            {t('lost_phone_recovery_key')}
           </Typography>
           {(accordianView === 'password') && (
             <CheckCircleIcon className={classes.complete_icon} />
@@ -144,7 +146,7 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
           >
             <TextField
               onChange={e => setRecoveryKey(e.target.value)}
-              label='Recovery Key'
+              label={t('lost_phone_recovery_key_label')}
               fullWidth
             />
           </AccordionDetails>
@@ -154,7 +156,7 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
               color='primary'
               type='submit'
             >
-              Next
+              {t('lost_phone_next')}
             </Button>
           </AccordionActions>
         </form>
@@ -169,7 +171,7 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
           <Typography
             className={classes.panel_heading}
           >
-            Password
+            {t('lost_phone_password')}
           </Typography>
         </AccordionSummary>
         <form onSubmit={handleSubmitPassword}>
@@ -178,7 +180,7 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
           >
             <TextField
               onChange={e => setPassword(e.target.value)}
-              label='Password'
+              label={t('lost_phone_password_label')}
               fullWidth
               type='password'
             />
@@ -192,7 +194,7 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
                   color='primary'
                   type='submit'
                 >
-                  Continue
+                  {t('lost_phone_continue')}
                 </Button>
               )}
           </AccordionActions>
@@ -208,7 +210,7 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
           <Typography
             className={classes.panel_heading}
           >
-            New Phone
+            {t('lost_phone_new_phone')}
           </Typography>
         </AccordionSummary>
         <form onSubmit={handleSubmitNewPhone}>
@@ -228,14 +230,14 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
                   <Button
                     onClick={() => history.push('/dashboard/apps')}
                   >
-                    Skip Updating Phone
+                    {t('lost_phone_skip_updating')}
                   </Button>
                   <Button
                     variant='contained'
                     color='primary'
                     type='submit'
                   >
-                    Finish
+                    {t('lost_phone_finish')}
                   </Button>
                 </div>
               )}
@@ -246,7 +248,7 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
         onClick={() => history.go(-1)}
         className={classes.back_button}
       >
-        Go Back
+        {t('lost_phone_go_back')}
       </Button>
     </div >
   )

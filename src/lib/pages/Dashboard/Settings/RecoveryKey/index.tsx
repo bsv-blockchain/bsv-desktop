@@ -1,4 +1,5 @@
 import { useState, useContext, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Typography, Button, CircularProgress
 } from '@mui/material'
@@ -21,6 +22,7 @@ interface RecoveryKeySettingsProps {
 }
 
 const RecoveryKeySettings: React.FC<RecoveryKeySettingsProps> = ({ history, onViewKey }) => {
+  const { t } = useTranslation()
   const { managers, saveEnhancedSnapshot } = useContext(WalletContext)
   const [recoveryKey, setRecoveryKey] = useState('')
   const [showLoading, setShowLoading] = useState(false)
@@ -64,10 +66,10 @@ const RecoveryKeySettings: React.FC<RecoveryKeySettingsProps> = ({ history, onVi
   return (
     <>
       <Typography variant="h4" sx={{ mb: 2 }}>
-        Recovery Key
+        {t('settings_recovery_key_title')}
       </Typography>
       <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-        You will need your recovery key if you ever forget your password or lose your phone.
+        {t('settings_recovery_key_description')}
       </Typography>
       <br />
       <div className={classes.button_grid}>
@@ -78,7 +80,7 @@ const RecoveryKeySettings: React.FC<RecoveryKeySettingsProps> = ({ history, onVi
               color='primary'
               onClick={handleViewKey}
             >
-              View
+              {t('settings_recovery_key_view_button')}
             </Button>
           )}
         <div />
@@ -90,7 +92,7 @@ const RecoveryKeySettings: React.FC<RecoveryKeySettingsProps> = ({ history, onVi
               color='primary'
               variant='contained'
             >
-              Change
+              {t('settings_recovery_key_change_button')}
             </Button>
           )}
       </div>

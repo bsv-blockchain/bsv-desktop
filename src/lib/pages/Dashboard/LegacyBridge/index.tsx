@@ -1,4 +1,5 @@
 import { useState, useContext, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { WalletContext } from '../../../WalletContext'
 import {
   Box,
@@ -83,6 +84,7 @@ const timeAgo = (ms: number): string => {
 }
 
 export default function Payments() {
+  const { t } = useTranslation()
   const { managers, network, adminOriginator } = useContext(WalletContext)
   const [paymentAddress, setPaymentAddress] = useState<string | null>(null)
   const [balance, setBalance] = useState<number>(-1)
@@ -461,14 +463,14 @@ export default function Payments() {
   return (
     <Box sx={{ p: 3, maxWidth: 800, mx: 'auto' }}>
       <Typography variant="h4" gutterBottom sx={{ fontWeight: 600, color: 'primary.main' }}>
-        Legacy Bridge
+        {t('legacy_bridge_title')}
       </Typography>
 
       {/* Receive / Send tabbed panel */}
       <Paper elevation={2} sx={{ mb: 3 }}>
         <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="fullWidth">
-          <Tab label="Receive" />
-          <Tab label="Send" />
+          <Tab label={t('legacy_bridge_tab_receive')} />
+          <Tab label={t('legacy_bridge_tab_send')} />
         </Tabs>
         <Divider />
 
@@ -480,7 +482,7 @@ export default function Payments() {
                 <IconButton
                   size="small"
                   onClick={() => dateChange(daysOffset + 1)}
-                  title="Previous day's address"
+                  title={t('legacy_bridge_prev_day_address')}
                 >
                   <ArrowBackIcon />
                 </IconButton>
@@ -491,7 +493,7 @@ export default function Payments() {
                   size="small"
                   onClick={() => dateChange(Math.max(0, daysOffset - 1))}
                   disabled={daysOffset === 0}
-                  title="Next day's address"
+                  title={t('legacy_bridge_next_day_address')}
                 >
                   <ArrowForwardIcon />
                 </IconButton>
@@ -505,7 +507,7 @@ export default function Payments() {
             ) : paymentAddress ? (
               <>
                 <Typography variant="body2" color="textSecondary" sx={{ mb: 1 }}>
-                  <b>Your Payment Address:</b>
+                  <b>{t('legacy_bridge_your_payment_address')}</b>
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                   <Typography
@@ -541,14 +543,14 @@ export default function Payments() {
 
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 2 }}>
                   <Typography variant="body1" color="textPrimary" sx={{ textAlign: 'center' }}>
-                    Available Balance:{' '}
-                    <strong>{balance === -1 ? 'Checking...' : `${balance} BSV`}</strong>
+                    {t('legacy_bridge_available_balance')}{' '}
+                    <strong>{balance === -1 ? t('legacy_bridge_checking') : `${balance} BSV`}</strong>
                   </Typography>
                   {balance === -1 && <CircularProgress size={14} />}
                 </Box>
 
                 <Alert severity="info">
-                  A unique address is derived from your wallet keys each day. Funds sent to any of the last {DAYS_TO_SCAN} days' addresses are automatically detected and imported. Change the date at the top right to look back further.
+                  {t('legacy_bridge_address_info', { days: DAYS_TO_SCAN })}
                 </Alert>
               </>
             ) : null}
@@ -560,8 +562,8 @@ export default function Payments() {
           <Box sx={{ p: 3 }}>
             <TextField
               fullWidth
-              label="Recipient Address"
-              placeholder="Enter BSV address"
+              label={t('legacy_bridge_recipient_address')}
+              placeholder={t('legacy_bridge_enter_bsv_address')}
               value={recipientAddress}
               onChange={(e) => setRecipientAddress(e.target.value)}
               sx={{ mb: 2 }}
@@ -569,8 +571,8 @@ export default function Payments() {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
               <TextField
                 fullWidth
-                label="Amount (BSV)"
-                placeholder={sweepMax ? 'Sweeping entire wallet balance to external address' : '0.00000000'}
+                label={t('legacy_bridge_amount_bsv')}
+                placeholder={sweepMax ? t('legacy_bridge_sweeping_placeholder') : '0.00000000'}
                 type={sweepMax ? 'text' : 'number'}
                 value={sweepMax ? '' : amount}
                 onChange={(e) => setAmount(e.target.value)}
@@ -599,7 +601,7 @@ export default function Payments() {
               disabled={isSending || !recipientAddress || (!sweepMax && !amount)}
               fullWidth
             >
-              {isSending ? <CircularProgress size={24} /> : (sweepMax ? 'Sweep whole wallet' : 'Send BSV')}
+              {isSending ? <CircularProgress size={24} /> : (sweepMax ? t('legacy_bridge_sweep_whole_wallet') : t('legacy_bridge_send_bsv'))}
             </Button>
           </Box>
         )}
@@ -609,7 +611,7 @@ export default function Payments() {
       {tab === 0 && processedTxs.length > 0 && (
         <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
           <Typography variant="h6" gutterBottom sx={{ fontWeight: 500 }}>
-            Received
+            {t('legacy_bridge_received')}
           </Typography>
           <Divider sx={{ mb: 2 }} />
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -638,17 +640,17 @@ export default function Payments() {
       {tab === 1 && <Paper elevation={2} sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
           <Typography variant="h6" sx={{ fontWeight: 500 }}>
-            Sent
+            {t('legacy_bridge_sent')}
           </Typography>
           <Button size="small" variant="outlined" onClick={getPastTransactions}>
-            Refresh
+            {t('legacy_bridge_refresh')}
           </Button>
         </Box>
         <Divider sx={{ mb: 2 }} />
 
         {transactions.length === 0 ? (
           <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-            No outbound transactions yet.
+            {t('legacy_bridge_no_outbound_transactions')}
           </Typography>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -676,8 +678,8 @@ export default function Payments() {
       </Paper>}
 
       <Alert severity="warning" sx={{ mt: 3 }}>
-        <AlertTitle>Deprecated</AlertTitle>
-        Address-based payments are supported here for initial funding and onboarding, but are otherwise deprecated because they rely on central global listening services by design rather than being transmitted directly between you and your counterparty.
+        <AlertTitle>{t('legacy_bridge_deprecated_title')}</AlertTitle>
+        {t('legacy_bridge_deprecated_message')}
       </Alert>
     </Box>
   )

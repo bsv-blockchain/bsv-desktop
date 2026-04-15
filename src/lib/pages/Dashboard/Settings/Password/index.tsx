@@ -1,4 +1,5 @@
 import { useState, useContext } from 'react'
+import { useTranslation } from 'react-i18next'
 import style from './style'
 import {
   Typography,
@@ -15,6 +16,7 @@ import AppLogo
 const useStyles = makeStyles(style, { name: 'PasswordSettings' })
 
 const PasswordSettings = ({ history }) => {
+  const { t } = useTranslation()
   const { managers, saveEnhancedSnapshot } = useContext(WalletContext)
   const classes = useStyles()
   const [password, setPassword] = useState('')
@@ -42,15 +44,15 @@ const PasswordSettings = ({ history }) => {
 
   return (
     <div>
-      <Typography variant='h4' color='textPrimary' sx={{ mb: 2 }}>Change Password</Typography>
+      <Typography variant='h4' color='textPrimary' sx={{ mb: 2 }}>{t('settings_password_title')}</Typography>
       <Typography variant='body1' color='textSecondary' sx={{ mb: 2 }}>
-        You will be prompted to enter your old password to confirm the change.
+        {t('settings_password_description')}
       </Typography>
       <form onSubmit={handleSubmitPassword}>
         <TextField
           style={{ marginTop: '1.5em' }}
           onChange={e => setPassword(e.target.value)}
-          placeholder='New password'
+          placeholder={t('settings_password_new_placeholder')}
           fullWidth
           type='password'
         />
@@ -58,7 +60,7 @@ const PasswordSettings = ({ history }) => {
         <br />
         <TextField
           onChange={e => setConfirmPassword(e.target.value)}
-          placeholder='Retype password'
+          placeholder={t('settings_password_retype_placeholder')}
           fullWidth
           type='password'
         />
@@ -69,7 +71,7 @@ const PasswordSettings = ({ history }) => {
             color='primary'
             onClick={() => history.push('/recovery/lost-password')}
           >
-            Forgot Password?
+            {t('settings_password_forgot')}
           </Button>
           <div />
           {loading
@@ -80,7 +82,7 @@ const PasswordSettings = ({ history }) => {
                 variant='contained'
                 type='submit'
               >
-                Change
+                {t('settings_password_change_button')}
               </Button>
             )}
         </div>

@@ -20,6 +20,7 @@ import { withRouter, RouteComponentProps } from 'react-router-dom'
 import { formatDistance } from 'date-fns'
 import CloseIcon from '@mui/icons-material/Close'
 import { WalletContext } from '../../WalletContext'
+import { useTranslation } from 'react-i18next'
 
 // Simple cache for certificate permissions
 const CERT_CACHE = new Map<string, GrantItem[]>();
@@ -67,6 +68,8 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
   onEmptyList = () => { },
   history
 }) => {
+  const { t } = useTranslation()
+
   // Build stable query key
   const queryKey = useMemo(() => JSON.stringify({ app, itemsDisplayed, counterparty, type }), [app, itemsDisplayed, counterparty, type]);
   const [grants, setGrants] = useState<GrantItem[]>([])
@@ -151,7 +154,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
       setDialogOpen(false)
       setDialogLoading(false)
     } catch (e: any) {
-      toast.error('Certificate access grant may not have been revoked: ' + e.message)
+      toast.error(t('cert_access_list_revoke_error') + ': ' + e.message)
       await refreshGrants(true) // still try to refresh
       setCurrentAccessGrant(null)
       setCurrentApp(null)
@@ -171,7 +174,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
     refreshGrants()
   }, [refreshGrants])
 
-  
+
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<any>).detail || {}
@@ -190,18 +193,18 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
   return (
     <>
       <Dialog open={dialogOpen} onClose={handleDialogClose}>
-        <DialogTitle>Revoke Access?</DialogTitle>
+        <DialogTitle>{t('cert_access_list_revoke_dialog_title')}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            You can re-authorize this certificate access grant next time you use this app.
+            {t('cert_access_list_revoke_dialog_body')}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button color="primary" disabled={dialogLoading} onClick={handleDialogClose}>
-            Cancel
+            {t('cert_access_list_cancel')}
           </Button>
           <Button color="primary" disabled={dialogLoading} onClick={handleConfirm} startIcon={dialogLoading ? <CircularProgress size={16} /> : null}>
-            Revoke
+            {t('cert_access_list_revoke')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -239,7 +242,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
                           color="secondary"
                           className={(classes as any).revokeButton}
                         >
-                          Revoke All
+                          {t('cert_access_list_revoke_all')}
                         </Button>
                       ) : (
                         <IconButton
@@ -296,7 +299,7 @@ const CertificateAccessList: React.FC<CertificateAccessListProps> = ({
       {displayCount && (
         <center>
           <Typography color="textSecondary">
-            <i>Total Certificate Access Grants: {grants.length} limit: {limit}</i>
+            <i>{t('cert_access_list_total_grants', { count: grants.length, limit })}</i>
           </Typography>
         </center>
       )}

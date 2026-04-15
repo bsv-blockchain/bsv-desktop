@@ -1,8 +1,9 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { withTranslation, WithTranslation } from 'react-i18next';
 import { Box, Typography, Button, Paper } from '@mui/material';
 import { Warning as WarningIcon } from '@mui/icons-material';
 
-interface Props {
+interface Props extends WithTranslation {
   children: ReactNode;
   fallback?: ReactNode;
 }
@@ -40,6 +41,8 @@ class ErrorBoundary extends Component<Props, State> {
   };
 
   render() {
+    const { t } = this.props;
+
     if (this.state.hasError) {
       if (this.props.fallback) {
         return this.props.fallback;
@@ -66,10 +69,10 @@ class ErrorBoundary extends Component<Props, State> {
           >
             <WarningIcon sx={{ fontSize: 64, color: 'error.main', mb: 2 }} />
             <Typography variant="h4" gutterBottom>
-              Something went wrong
+              {t('error_boundary_something_went_wrong')}
             </Typography>
             <Typography variant="body1" color="textSecondary" sx={{ mb: 2 }}>
-              An error occurred while rendering this component.
+              {t('error_boundary_error_occurred')}
             </Typography>
             {this.state.error && (
               <Box
@@ -97,7 +100,7 @@ class ErrorBoundary extends Component<Props, State> {
               </Box>
             )}
             <Button variant="contained" onClick={this.handleReset} sx={{ mt: 3 }}>
-              Try Again
+              {t('error_boundary_try_again')}
             </Button>
           </Paper>
         </Box>
@@ -108,4 +111,4 @@ class ErrorBoundary extends Component<Props, State> {
   }
 }
 
-export default ErrorBoundary;
+export default withTranslation()(ErrorBoundary);

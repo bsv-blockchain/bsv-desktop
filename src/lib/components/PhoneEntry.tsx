@@ -1,9 +1,10 @@
 import { forwardRef, useState, useEffect } from 'react'
-import { 
-  TextField, 
-  FormControl, 
-  InputLabel, 
-  Select, 
+import { useTranslation } from 'react-i18next'
+import {
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
   MenuItem,
   FormHelperText,
   Box,
@@ -68,6 +69,7 @@ interface PhoneEntryProps {
 
 const PhoneEntry = forwardRef<HTMLDivElement, PhoneEntryProps>((props, ref) => {
   const { value, onChange, error, required = false, disabled = false, sx = {}, ...other } = props;
+  const { t } = useTranslation()
   const [country, setCountry] = useState<string>('US');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isValid, setIsValid] = useState(true);
@@ -96,12 +98,12 @@ const PhoneEntry = forwardRef<HTMLDivElement, PhoneEntryProps>((props, ref) => {
         const fullNumber = `${countryInfo?.dialCode || '+1'}${phoneNumber}`;
         const isNumberValid = isValidPhoneNumber(fullNumber);
         setIsValid(isNumberValid);
-        
+
         if (isNumberValid) {
           onChange(fullNumber);
           setErrorMessage('');
         } else {
-          setErrorMessage('Invalid phone number');
+          setErrorMessage(t('phone_entry_invalid_phone_number'));
           // Still pass the value to parent even if invalid
           onChange(fullNumber);
         }
@@ -109,12 +111,12 @@ const PhoneEntry = forwardRef<HTMLDivElement, PhoneEntryProps>((props, ref) => {
         console.error('Error validating phone number:', error);
         const countryInfo = countryCodesWithDialCodes.find(c => c.code === country);
         onChange(`${countryInfo?.dialCode || '+1'}${phoneNumber}`);
-        setErrorMessage('Invalid phone number format');
+        setErrorMessage(t('phone_entry_invalid_phone_number_format'));
       }
     } else {
       onChange('');
       setIsValid(!required);
-      setErrorMessage(required ? 'Phone number is required' : '');
+      setErrorMessage(required ? t('phone_entry_phone_number_required') : '');
     }
   }, [country, phoneNumber, onChange, required]);
 
@@ -129,18 +131,18 @@ const PhoneEntry = forwardRef<HTMLDivElement, PhoneEntryProps>((props, ref) => {
       <Stack direction="row" spacing={2}>
         <Box width="40%">
           <FormControl fullWidth variant="outlined" error={!!error} required={required} disabled={disabled}>
-            <InputLabel id="country-select-label">Country</InputLabel>
+            <InputLabel id="country-select-label">{t('phone_entry_country')}</InputLabel>
             <Select
               labelId="country-select-label"
               id="country-select"
               value={country}
               onChange={(e) => setCountry(e.target.value)}
-              label="Country"
+              label={t('phone_entry_country')}
             >
               <MenuItem disabled value="">
-                <em>Select a country</em>
+                <em>{t('phone_entry_select_a_country')}</em>
               </MenuItem>
-              
+
               {/* All countries alphabetically */}
               {countryCodesWithDialCodes.map(country => (
                 <MenuItem key={country.code} value={country.code}>
@@ -151,11 +153,11 @@ const PhoneEntry = forwardRef<HTMLDivElement, PhoneEntryProps>((props, ref) => {
             {error && <FormHelperText>{error}</FormHelperText>}
           </FormControl>
         </Box>
-        
+
         <Box width="70%" position="relative">
           <TextField
             fullWidth
-            label="Phone Number"
+            label={t('phone_entry_phone_number')}
             variant="outlined"
             onChange={handlePhoneChange}
             error={!isValid || !!error}

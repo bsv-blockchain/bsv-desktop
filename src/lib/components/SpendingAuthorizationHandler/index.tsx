@@ -1,25 +1,19 @@
-import { useContext, useState, useEffect, useCallback } from 'react'
+import { useContext, useState } from 'react'
 import {
   DialogContent,
+  DialogActions,
   Button,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
   Box,
-  Stack
+  Stack,
+  Collapse,
+  Typography,
 } from '@mui/material'
 import AmountDisplay from '../AmountDisplay/index.js'
 import CustomDialog from '../CustomDialog/index.js'
 import { WalletContext } from '../../WalletContext.js'
 import AppChip from '../AppChip/index.js'
-import { Services } from '@bsv/wallet-toolbox-client'
 import { UserContext } from '../../UserContext.js'
-
-const services = new Services('main')
+import PaymentsIcon from '@mui/icons-material/Payments'
 
 const SpendingAuthorizationHandler: React.FC = () => {
   const {
@@ -28,7 +22,7 @@ const SpendingAuthorizationHandler: React.FC = () => {
 
   const { spendingAuthorizationModalOpen } = useContext(UserContext)
 
-  const [usdPerBsv, setUsdPerBSV] = useState(35)
+  const [detailsOpen, setDetailsOpen] = useState(false)
 
   const handleCancel = () => {
     if (spendingRequests.length > 0) {
@@ -48,56 +42,18 @@ const SpendingAuthorizationHandler: React.FC = () => {
     advanceSpendingQueue()
   }
 
-  // Helper function to figure out the upgrade amount (note: consider moving to utils)
-  const determineUpgradeAmount = (previousAmountInSats: any, returnType = 'sats') => {
-    let usdAmount
-    const previousAmountInUsd = previousAmountInSats * (usdPerBsv / 100000000)
-
-    // The supported spending limits are $5, $10, $20, $50
-    if (previousAmountInUsd <= 5) {
-      usdAmount = 5
-    } else if (previousAmountInUsd <= 10) {
-      usdAmount = 10
-    } else if (previousAmountInUsd <= 20) {
-      usdAmount = 20
-    } else {
-      usdAmount = 50
-    }
-
-    if (returnType === 'sats') {
-      return Math.round(usdAmount / (usdPerBsv / 100000000))
-    }
-    return usdAmount
-  }
-
-  useEffect(() => {
-    // Fetch exchange rate when we have spending requests
-    if (spendingRequests.length > 0) {
-      services.getBsvExchangeRate().then(rate => {
-        setUsdPerBSV(rate)
-      })
-    }
-  }, [spendingRequests])
-
   if (spendingRequests.length === 0) {
     return null
   }
 
-  // Get the current permission request
   const currentPerm = spendingRequests[0]
 
-  // Determine the type of request
   const isSpendingLimitIncrease = currentPerm.description === 'Increase spending limit'
   const isCreateSpendingLimit = currentPerm.description === 'Create a spending limit'
 
-  // Determine dialog title
   const getDialogTitle = () => {
-    if (isSpendingLimitIncrease) {
-      return 'Spending Limit Increase'
-    }
-    if (isCreateSpendingLimit) {
-      return 'Set Spending Limit'
-    }
+    if (isSpendingLimitIncrease) return 'Spending Limit Increase'
+    if (isCreateSpendingLimit) return 'Set Spending Limit'
     return !currentPerm.renewal ? 'Spending Request' : 'Spending Check-in'
   }
 
@@ -105,246 +61,134 @@ const SpendingAuthorizationHandler: React.FC = () => {
     <CustomDialog
       open={spendingAuthorizationModalOpen}
       title={getDialogTitle()}
+      icon={<PaymentsIcon fontSize="medium" />}
     >
       <DialogContent>
-        <Stack alignItems="center">
+        <Stack spacing={1.5}>
           <AppChip
-            size={2.5}
+            size={1.5}
             label={currentPerm.originator}
             clickable={false}
             showDomain
           />
-          <Box mt={2} />
 
           {isSpendingLimitIncrease ? (
-            // Simplified UI for spending limit increases
-            <Box sx={{ textAlign: 'center', my: 3, width: '100%' }}>
-              <Box sx={{ mb: 2 }}>
-                This app would like to increase its spending limit to:
-              </Box>
-              <Box sx={{
-                fontSize: '1.5rem',
-                fontWeight: 'bold',
-                color: 'secondary.main',
-                mb: 2
-              }}>
-                <AmountDisplay showFiatAsInteger>
-                  {currentPerm.authorizationAmount}
-                </AmountDisplay>
-                /month
-              </Box>
-              <Box sx={{
-                fontSize: '0.875rem',
-                color: 'text.secondary',
-                fontStyle: 'italic'
-              }}>
-                Reason: Increase spending limit
-              </Box>
-            </Box>
+            <Stack alignItems="center" spacing={1} py={2}>
+              <Typography variant="body2" color="text.secondary">
+                This app wants to increase its spending limit to
+              </Typography>
+              <Typography variant="h3" fontWeight="bold">
+                <AmountDisplay showFiatAsInteger>{currentPerm.authorizationAmount}</AmountDisplay>
+              </Typography>
+              <Typography variant="caption" color="text.secondary">/month</Typography>
+            </Stack>
           ) : isCreateSpendingLimit ? (
-            // Simplified UI for creating new spending limits
-            <Box sx={{ textAlign: 'center', my: 3, width: '100%' }}>
-              <Box sx={{ mb: 2 }}>
-                Set a monthly spending limit for this app:
-              </Box>
-              <Box sx={{
-                fontSize: '1.5rem',
-                fontWeight: 'bold',
-                color: 'primary.main',
-                mb: 2
-              }}>
-                <AmountDisplay showFiatAsInteger>
-                  {currentPerm.authorizationAmount}
-                </AmountDisplay>
-                /month
-              </Box>
-              <Box sx={{
-                fontSize: '0.875rem',
-                color: 'text.secondary',
-                fontStyle: 'italic'
-              }}>
-                This will allow the app to spend up to this amount each month without asking for permission.
-              </Box>
-            </Box>
+            <Stack alignItems="center" spacing={1} py={2}>
+              <Typography variant="body2" color="text.secondary">
+                Set a monthly spending limit for this app
+              </Typography>
+              <Typography variant="h3" fontWeight="bold">
+                <AmountDisplay showFiatAsInteger>{currentPerm.authorizationAmount}</AmountDisplay>
+              </Typography>
+              <Typography variant="caption" color="text.secondary">/month</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', maxWidth: 280, textAlign: 'center' }}>
+                The app can spend up to this amount each month without asking again
+              </Typography>
+            </Stack>
           ) : (
-            // Original detailed table UI for regular spending requests
-            <TableContainer
-              component={Paper}
-              sx={{
-                overflow: 'hidden',
-                my: 3,
-                width: '100%'
-              }}
-            >
-              <Table
-                sx={{
-                  width: '100%',
-                  '& th, & td': {
-                    px: 3,
-                    py: 1.5
-                  }
-                }}
-                aria-label='spending details table'
-                size='medium'
-              >
-                <TableHead>
-                  <TableRow
-                    sx={{
-                      color: 'text.primary',
-                      '& th': {
-                        fontSize: '0.875rem',
-                        fontWeight: 600,
-                        color: 'text.primary',
-                        letterSpacing: '0.01em',
-                        borderBottom: '1px solid',
-                        borderColor: 'primary.light',
-                      }
-                    }}
+            <Stack alignItems="center" spacing={0.5} py={2}>
+              {currentPerm.description && (
+                <Typography variant="h6" color="text.secondary" sx={{ mb: 0.5 }}>
+                  {currentPerm.description}
+                </Typography>
+              )}
+              <Typography variant="h2" fontWeight="bold">
+                <AmountDisplay>{currentPerm.authorizationAmount}</AmountDisplay>
+              </Typography>
+
+              {currentPerm.lineItems?.length > 1 && (
+                <Box sx={{ width: '100%', mt: 1 }}>
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={() => setDetailsOpen(o => !o)}
+                    sx={{ color: 'text.secondary', fontSize: '0.75rem', px: 0 }}
                   >
-                    <TableCell>Description</TableCell>
-                    <TableCell align='right'>Amount</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {currentPerm.lineItems.map((item, idx) => (
-                    <TableRow
-                      key={`item-${idx}-${item.description || 'unnamed'}`}
-                      sx={{
-                        '&:last-child td, &:last-child th': {
-                          border: 0
-                        },
-                        '&:nth-of-type(odd)': {
-                          bgcolor: 'background.default'
-                        },
-                        transition: 'background-color 0.2s ease',
-                        '&:hover': {
-                          bgcolor: 'action.hover',
-                        }
-                      }}
-                    >
-                      <TableCell
-                        component='th'
-                        scope='row'
-                        sx={{
-                          fontWeight: 500,
-                          color: 'text.primary'
-                        }}
-                      >
-                        {item.description || '—'}
-                      </TableCell>
-                      <TableCell
-                        align='right'
-                        sx={{
-                          fontWeight: 600,
-                          color: 'secondary.main'
-                        }}
-                      >
-                        <AmountDisplay>
-                          {item.satoshis}
-                        </AmountDisplay>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {/* Show total row if there are multiple items */}
-                  {currentPerm.lineItems.length > 1 && (
-                    <TableRow
-                      sx={{
-                        bgcolor: 'primary.light',
-                        '& td': {
-                          py: 2,
-                          fontWeight: 700,
-                          color: 'primary.contrastText',
-                          borderTop: '1px solid',
-                          borderColor: 'divider'
-                        }
-                      }}
-                    >
-                      <TableCell>Total</TableCell>
-                      <TableCell align="right">
-                        <AmountDisplay>
-                          {currentPerm.authorizationAmount}
-                        </AmountDisplay>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                    Details {detailsOpen ? '▲' : '▼'}
+                  </Button>
+                  <Collapse in={detailsOpen}>
+                    <Stack spacing={0} sx={{ mt: 0.5, border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+                      {currentPerm.lineItems.map((item, idx) => (
+                        <Box
+                          key={idx}
+                          sx={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            px: 2,
+                            py: 1,
+                            borderBottom: idx < currentPerm.lineItems.length - 1 ? '1px solid' : 'none',
+                            borderColor: 'divider',
+                          }}
+                        >
+                          <Typography variant="body2" color="text.secondary">{item.description || '—'}</Typography>
+                          <Typography variant="body2" fontWeight={500}>
+                            <AmountDisplay>{item.satoshis}</AmountDisplay>
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Stack>
+                  </Collapse>
+                </Box>
+              )}
+            </Stack>
           )}
         </Stack>
-
-        <Box sx={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          mt: 3,
-          px: 2
-        }}>
-          <Button
-            variant="outlined"
-            color="error"
-            onClick={handleCancel}
-            sx={{
-              height: '40px'
-            }}
-          >
-            {isSpendingLimitIncrease || isCreateSpendingLimit ? 'Cancel' : 'Deny'}
-          </Button>
-
-          {isSpendingLimitIncrease ? (
-            // Simple approve button for spending limit increases
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={() => handleGrant({ singular: false, amount: currentPerm.authorizationAmount })}
-              sx={{
-                minWidth: '120px',
-                height: '40px'
-              }}
-            >
-              Approve Increase
-            </Button>
-          ) : isCreateSpendingLimit ? (
-            // Simple approve button for creating spending limits
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={() => handleGrant({ singular: false, amount: currentPerm.authorizationAmount })}
-              sx={{
-                minWidth: '120px',
-                height: '40px'
-              }}
-            >
-              Set Limit
-            </Button>
-          ) : (
-            // Original buttons for regular spending requests
-            <>
-              <Button
-                variant="contained"
-                color="secondary"
-                onClick={() => handleGrant({ singular: false, amount: determineUpgradeAmount(currentPerm.amountPreviouslyAuthorized) })}
-                sx={{
-                  minWidth: '120px',
-                  height: '40px'
-                }}
-              >
-                Allow up to &nbsp;<AmountDisplay showFiatAsInteger>{determineUpgradeAmount(currentPerm.amountPreviouslyAuthorized)}</AmountDisplay>
-              </Button>
-
-              <Button
-                variant="contained"
-                color="success"
-                onClick={() => handleGrant({ singular: true })}
-                sx={{
-                  height: '40px'
-                }}
-              >
-                Spend
-              </Button>
-            </>
-          )}
-        </Box>
       </DialogContent>
+
+      <DialogActions sx={{ justifyContent: 'space-between', borderTop: 'none', px: 3, pb: 3 }}>
+        <Button
+          variant="outlined"
+          color="inherit"
+          size="large"
+          onClick={handleCancel}
+          sx={{ minWidth: 120 }}
+        >
+          {isSpendingLimitIncrease || isCreateSpendingLimit ? 'Cancel' : 'Deny'}
+        </Button>
+
+        {isSpendingLimitIncrease ? (
+          <Button
+            variant="contained"
+            color="success"
+            size="large"
+            onClick={() => handleGrant({ singular: false, amount: currentPerm.authorizationAmount })}
+            sx={{ minWidth: 160, backgroundColor: '#2e7d32 !important', color: '#fff !important', '&:hover': { backgroundColor: '#1b5e20 !important' } }}
+          >
+            Approve Increase
+          </Button>
+        ) : isCreateSpendingLimit ? (
+          <Button
+            variant="contained"
+            color="success"
+            size="large"
+            onClick={() => handleGrant({ singular: false, amount: currentPerm.authorizationAmount })}
+            sx={{ minWidth: 160, backgroundColor: '#2e7d32 !important', color: '#fff !important', '&:hover': { backgroundColor: '#1b5e20 !important' } }}
+          >
+            Set Limit
+          </Button>
+        ) : (
+          <Button
+            variant="contained"
+            color="success"
+            size="large"
+            onClick={() => handleGrant({ singular: true })}
+            sx={{ minWidth: 160, backgroundColor: '#2e7d32 !important', color: '#fff !important', '&:hover': { backgroundColor: '#1b5e20 !important' } }}
+          >
+            Authorize
+          </Button>
+        )}
+      </DialogActions>
     </CustomDialog>
   )
 }

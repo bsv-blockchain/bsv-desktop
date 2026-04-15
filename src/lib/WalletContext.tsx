@@ -1217,6 +1217,17 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       const trimmedStorageUrl = (storageUrl || '').replace(/\/+$/, '');
       const trimmedMessageBoxUrl = (messageBoxUrl || '').replace(/\/+$/, '');
 
+      // If loginType is changing and a wallet manager already exists, clear it
+      // so the creation useEffect can build a new one for the new type.
+      if (effectiveLoginType !== loginType && managers.walletManager) {
+        console.log(`[finalizeConfig] loginType changing from '${loginType}' to '${effectiveLoginType}', clearing existing wallet manager`);
+        setManagers(m => {
+          const { walletManager, permissionsManager, settingsManager, ...rest } = m;
+          return rest;
+        });
+        walletManagerInitInFlightRef.current = false;
+      }
+
       setLoginType(effectiveLoginType)
       setWabUrl(trimmedWabUrl)
       setWabInfo(wabInfo)

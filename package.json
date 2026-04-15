@@ -19,7 +19,7 @@
     "package:win": "electron-builder --win",
     "package:linux": "electron-builder --linux",
     "lint:ci": "echo 'No linting'",
-    "test": "echo 'No tests'",
+    "test": "vitest run --config vitest.config.electron.ts test/translations.test.ts",
     "test:perf": "vitest run --config vitest.config.electron.ts"
   },
   "dependencies": {

@@ -369,6 +369,18 @@
     }
   </style>
 
+  <!-- FOUC prevention for i18n -->
+  <style>
+    html.i18n-loading [data-i18n],
+    html.i18n-loading [data-i18n-html] {
+      visibility: hidden;
+    }
+  </style>
+  <script>
+  if(localStorage.getItem('bsvb-lang')&&localStorage.getItem('bsvb-lang')!=='en')
+    document.documentElement.classList.add('i18n-loading');
+  </script>
+
   <!-- Mobile Redirect: iOS/Android (incl. iPadOS that spoofs MacIntel) -->
   <script>
     (function enforceMobileRedirect(){
@@ -401,14 +413,14 @@
       </div>
 
       <h1>BSV Desktop</h1>
-      <p class="hero-subtitle">Wallet. Identity. App catalog. All on your machine.</p>
+      <p class="hero-subtitle" data-i18n="hero.subtitle">Wallet. Identity. App catalog. All on your machine.</p>
 
       <div id="download-section">
         <!-- Download UI injected by JavaScript -->
       </div>
 
       <div class="mobile-link">
-        <a href="https://mobile.bsvb.tech" class="platform-btn">Mobile Version</a>
+        <a href="https://mobile.bsvb.tech" class="platform-btn" data-i18n="hero.mobile_btn">Mobile Version</a>
       </div>
     </div>
   </section>
@@ -416,21 +428,21 @@
   <!-- Features -->
   <section class="features">
     <div class="container">
-      <h2>Three Things No Other Wallet Does</h2>
-      <p class="features-subtitle">Self-custodial keys, cryptographic identity, and a live app catalog in one download.</p>
+      <h2 data-i18n="features.heading">Three Things No Other Wallet Does</h2>
+      <p class="features-subtitle" data-i18n="features.subtitle">Self-custodial keys, cryptographic identity, and a live app catalog in one download.</p>
 
       <div class="features-grid">
         <div class="feature-card">
-          <h3>Works With Any BRC-100 App</h3>
-          <p>Full implementation of the open wallet standard. Connect to any compliant application out of the box — no plugins, no vendor lock-in.</p>
+          <h3 data-i18n="feature.brc100.title">Works With Any BRC-100 App</h3>
+          <p data-i18n="feature.brc100.desc">Full implementation of the open wallet standard. Connect to any compliant application out of the box — no plugins, no vendor lock-in.</p>
         </div>
         <div class="feature-card">
-          <h3>Your Keys, Your Machine</h3>
-          <p>Self-custodial from the first launch. Wallet keys stay on your device, protected by AES-256-GCM encryption and strict access permissions.</p>
+          <h3 data-i18n="feature.keys.title">Your Keys, Your Machine</h3>
+          <p data-i18n="feature.keys.desc">Self-custodial from the first launch. Wallet keys stay on your device, protected by AES-256-GCM encryption and strict access permissions.</p>
         </div>
         <div class="feature-card">
-          <h3>Prove Who You Are, Nothing More</h3>
-          <p>Cryptographic identity certificates let you share exactly what an app needs. Verify your age without revealing your birthday.</p>
+          <h3 data-i18n="feature.identity.title">Prove Who You Are, Nothing More</h3>
+          <p data-i18n="feature.identity.desc">Cryptographic identity certificates let you share exactly what an app needs. Verify your age without revealing your birthday.</p>
         </div>
       </div>
     </div>
@@ -441,15 +453,15 @@
     <div class="container">
       <div class="showcase-inner">
         <div class="showcase-text">
-          <h2>Built for Builders and Users Alike</h2>
-          <p>BSV Desktop puts the full power of the BSV Blockchain in a native app. Browse the app catalog, manage multiple profiles, and send payments — all from one interface.</p>
+          <h2 data-i18n="showcase.heading">Built for Builders and Users Alike</h2>
+          <p data-i18n="showcase.desc">BSV Desktop puts the full power of the BSV Blockchain in a native app. Browse the app catalog, manage multiple profiles, and send payments — all from one interface.</p>
           <ul class="spec-list">
-            <li>Full BRC-100 Wallet Interface — all 28 methods</li>
-            <li>AES-256-GCM encryption and ECDSA signatures</li>
-            <li>Selective data revelation through identity certificates</li>
-            <li>SPV-native with BEEF transaction format</li>
-            <li>Auditable key linkage proofs for privacy and accountability</li>
-            <li>Named baskets for fine-grained output and permission control</li>
+            <li data-i18n="showcase.spec1">Full BRC-100 Wallet Interface — all 28 methods</li>
+            <li data-i18n="showcase.spec2">AES-256-GCM encryption and ECDSA signatures</li>
+            <li data-i18n="showcase.spec3">Selective data revelation through identity certificates</li>
+            <li data-i18n="showcase.spec4">SPV-native with BEEF transaction format</li>
+            <li data-i18n="showcase.spec5">Auditable key linkage proofs for privacy and accountability</li>
+            <li data-i18n="showcase.spec6">Named baskets for fine-grained output and permission control</li>
           </ul>
         </div>
         <div class="showcase-image">
@@ -468,7 +480,7 @@
                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
           </svg>
-          Releases
+          <span data-i18n="footer.releases">Releases</span>
         </a>
         <a href="https://bsvblockchain.org" class="footer-link" rel="noopener noreferrer">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -477,7 +489,7 @@
             <line x1="2" y1="12" x2="22" y2="12"></line>
             <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
           </svg>
-          BSV Blockchain
+          <span data-i18n="footer.blockchain">BSV Blockchain</span>
         </a>
         <a href="https://x.com/bsvblockchain" class="footer-link" rel="noopener noreferrer">
           <svg width="1200" height="1227" viewBox="0 0 1200 1227" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -486,9 +498,13 @@
           @bsvblockchain
         </a>
       </div>
-      <p class="footer-copyright">&copy; 2026 BSV Association</p>
+      <p class="footer-copyright" data-i18n="footer.copyright">&copy; 2026 BSV Association</p>
     </div>
   </footer>
+
+  <link rel="stylesheet" href="i18n/lang-selector.css" />
+  <script src="i18n/i18n.js"></script>
+  <script src="i18n/lang-selector.js"></script>
 
   <script>
     "use strict";
@@ -662,11 +678,11 @@
       if (!releaseInfo) {
         container.innerHTML = `
           <div class="platform-options">
-            <p>Couldn't load release information. Please visit our
+            <p>${t('dl.couldnt_load', "Couldn't load release information. Please visit our")}
               <a href="https://github.com/bsv-blockchain/bsv-desktop/releases/latest" class="download-btn" rel="noopener noreferrer">
-                GitHub Releases Page
+                ${t('dl.github_page', 'GitHub Releases Page')}
               </a>
-              to download the latest version.
+              ${t('dl.couldnt_load_suffix', 'to download the latest version.')}
             </p>
           </div>
         `;
@@ -685,8 +701,8 @@
       if (!hasAnyAsset) {
         container.innerHTML = `
           <div class="platform-options">
-            <p>No downloadable assets found for this release.
-              <a href="${releaseInfo.release_url}" class="download-btn" rel="noopener noreferrer">Release Notes</a>
+            <p>${t('dl.no_assets', 'No downloadable assets found for this release.')}
+              <a href="${releaseInfo.release_url}" class="download-btn" rel="noopener noreferrer">${t('dl.release_notes', 'Release Notes')}</a>
             </p>
           </div>
         `;
@@ -702,14 +718,14 @@
 
         container.innerHTML = `
           <a href="${main.browser_download_url}" class="download-btn">
-            Download for ${getPlatformDisplay(platform)}
+            ${t('dl.download_for', 'Download for')} ${getPlatformDisplay(platform)}
           </a>
           <div class="platform-options">
             ${others}
           </div>
           <p class="release-notes">
             Version ${releaseInfo.release_version}
-            &nbsp;|&nbsp;<a href="${releaseInfo.release_url}" target="_blank" rel="noopener noreferrer">Release Notes</a>
+            &nbsp;|&nbsp;<a href="${releaseInfo.release_url}" target="_blank" rel="noopener noreferrer">${t('dl.release_notes', 'Release Notes')}</a>
           </p>
         `;
       } else {
@@ -719,8 +735,8 @@
         const isMac = /macintosh|mac os x/i.test(ua);
 
         const selectorHeader = isMac
-          ? `<p>Select your macOS build:</p>`
-          : `<p>Select your platform:</p>`;
+          ? `<p>${t('dl.select_macos', 'Select your macOS build:')}</p>`
+          : `<p>${t('dl.select_platform', 'Select your platform:')}</p>`;
 
         const buttons = allPlatforms
           .map(p => buildPlatformButton(assetsMap[p], getPlatformDisplay(p)))
@@ -734,7 +750,7 @@
           </div>
           <p class="release-notes">
             Version ${releaseInfo.release_version}
-            &nbsp;|&nbsp;<a href="${releaseInfo.release_url}" target="_blank" rel="noopener noreferrer">Release Notes</a>
+            &nbsp;|&nbsp;<a href="${releaseInfo.release_url}" target="_blank" rel="noopener noreferrer">${t('dl.release_notes', 'Release Notes')}</a>
           </p>
         `;
       }

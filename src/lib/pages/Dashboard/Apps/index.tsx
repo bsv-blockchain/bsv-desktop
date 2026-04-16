@@ -147,6 +147,7 @@ const Transactions: React.FC = () => {
                 </Typography>
               }
               secondary={getStatusChip(item.status, t)}
+              secondaryTypographyProps={{ component: 'div' }}
             />
             <Box display="flex" alignItems="center" gap={1} flexShrink={0}>
               <Typography variant="body2" fontWeight={600} color={item.satoshis < 0 ? 'error' : 'textPrimary'}>

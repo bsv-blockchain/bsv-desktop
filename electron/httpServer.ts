@@ -25,20 +25,27 @@ const pendingRequests = new Map<number, (response: HttpResponseEvent) => void>()
 export async function startHttpServer(mainWindow: BrowserWindow): Promise<() => Promise<void>> {
   const app = express();
 
+  // Private Network Access header on ALL responses (must be before cors middleware)
+  app.use((_req: Request, res: Response, next) => {
+    res.header('Access-Control-Allow-Private-Network', 'true');
+    next();
+  });
+
   // Enable CORS with all permissive settings
   app.use(cors({
     origin: '*',
     methods: '*',
     allowedHeaders: '*',
     exposedHeaders: '*',
-    credentials: false
+    credentials: false,
+    preflightContinue: true
   }));
 
   // Parse JSON bodies
   app.use(express.json({ limit: '50mb' }));
   app.use(express.text({ type: '*/*', limit: '50mb' }));
 
-  // Handle OPTIONS for all routes
+  // Handle OPTIONS for all routes (runs after cors middleware with preflightContinue)
   app.options('*', (_req: Request, res: Response) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Headers', '*');

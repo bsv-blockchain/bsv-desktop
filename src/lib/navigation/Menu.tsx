@@ -27,18 +27,14 @@ import {
   Box,
   Divider,
   Collapse,
-  Card,
-  CardContent,
   Button,
   IconButton,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogContentText,
   DialogTitle,
   TextField,
-  Grid,
   alpha,
   LinearProgress,
   Checkbox,
@@ -446,76 +442,159 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
               )}
 
               <Collapse in={profilesOpen} timeout="auto" unmountOnExit>
-                <Box sx={{ p: 1 }}>
-                  <Grid container spacing={1} sx={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
-                    {profiles.map((profile) => (
-                      <Grid item xs={12} key={formatProfileId(profile.id)}>
-                        <Card
-                          variant={profile.active ? 'outlined' : 'elevation'}
-                          onClick={!profile.active ? () => handleSwitchProfile(profile.id) : undefined}
+                <List disablePadding sx={{ mt: 0.5 }}>
+                  {profiles.map((profile) => (
+                    <ListItemButton
+                      key={formatProfileId(profile.id)}
+                      onClick={!profile.active ? () => handleSwitchProfile(profile.id) : undefined}
+                      disableRipple={profile.active}
+                      sx={{
+                        borderRadius: '8px',
+                        mx: 1,
+                        mb: 0.5,
+                        py: 0.75,
+                        pl: 1.5,
+                        pr: 1,
+                        borderLeft: 'none',
+                        backgroundColor: profile.active ? alpha('#1976d2', 0.08) : 'transparent',
+                        cursor: profile.active ? 'default' : 'pointer',
+                        '&:hover': {
+                          backgroundColor: profile.active ? alpha('#1976d2', 0.08) : alpha('#1976d2', 0.06),
+                        },
+                        '&:hover .profile-delete': {
+                          opacity: 1,
+                        },
+                      }}
+                    >
+                      {/* Avatar circle with initial */}
+                      <Box
+                        sx={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: '50%',
+                          backgroundColor: profile.active ? 'primary.main' : alpha('#fff', 0.08),
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          mr: 1.5,
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Typography
+                          variant="caption"
                           sx={{
-                            borderColor: profile.active ? 'primary.main' : undefined,
-                            backgroundColor: profile.active ? alpha('#1976d2', 0.08) : undefined,
-                            position: 'relative',
-                            width: '100%',
-                            maxWidth: '100%',
-                            overflow: 'hidden',
-                            cursor: profile.active ? 'default' : 'pointer',
-                            '&:hover': {
-                              boxShadow: profile.active ? 1 : 3,
-                              backgroundColor: profile.active ? alpha('#1976d2', 0.08) : alpha('#1976d2', 0.04)
-                            }
+                            fontWeight: 600,
+                            fontSize: '0.8rem',
+                            color: profile.active ? '#fff' : 'text.secondary',
+                            textTransform: 'uppercase',
                           }}
                         >
-                          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                            <Box display="flex" justifyContent="space-between" alignItems="center">
-                              <Typography variant="subtitle2" sx={{ fontWeight: profile.active ? 'bold' : 'normal' }}>
-                                {profile.name}
-                              </Typography>
-                              {profile.active && <Chip size="small" label={t('menu_profiles_active_chip')} color="primary" sx={{ height: 20, fontSize: '0.7rem' }} />}
-                            </Box>
-                            <Box display="flex" justifyContent="space-between" alignItems="center">
-                              <Typography variant="caption" color="textSecondary">
-                                {t('menu_profiles_identity_key')}: {(profile?.identityKey?.slice(0, 10))}
-                              </Typography>
-                              {!profile.active && !profile.id.every(x => x === 0) && (
-                                <IconButton
-                                  size="small"
-                                  onClick={(e) => {
-                                    e.stopPropagation() // Prevent card click from triggering
-                                    confirmDeleteProfile(profile)
-                                  }}
-                                  sx={{
-                                    color: 'white',
-                                    p: 0.5,
-                                    '&:hover': {
-                                      backgroundColor: alpha('#1976d2', 0.1)
-                                    }
-                                  }}
-                                >
-                                  <DeleteIcon fontSize="small" />
-                                </IconButton>
-                              )}
-                            </Box>
-                          </CardContent>
-                        </Card>
-                      </Grid>
-                    ))}
-                    <Grid item xs={12}>
-                      <Button
-                        fullWidth
-                        variant="outlined"
-                        color="primary"
-                        startIcon={<AddIcon />}
-                        onClick={() => setCreateProfileOpen(true)}
-                        size="small"
-                        sx={{ mt: 1, justifyContent: 'start' }}
-                      >
-                        {t('menu_new_profile')}
-                      </Button>
-                    </Grid>
-                  </Grid>
-                </Box>
+                          {profile.name?.charAt(0) || '?'}
+                        </Typography>
+                      </Box>
+
+                      {/* Name + truncated key */}
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontWeight: profile.active ? 600 : 400,
+                            lineHeight: 1.3,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {profile.name}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: 'text.disabled',
+                            fontFamily: 'monospace',
+                            fontSize: '0.65rem',
+                            letterSpacing: '0.02em',
+                          }}
+                        >
+                          {profile?.identityKey?.slice(0, 12)}...
+                        </Typography>
+                      </Box>
+
+                      {/* Active dot or delete button */}
+                      {profile.active ? (
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            backgroundColor: 'primary.main',
+                            ml: 1,
+                            flexShrink: 0,
+                          }}
+                        />
+                      ) : !profile.id.every(x => x === 0) ? (
+                        <IconButton
+                          className="profile-delete"
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            confirmDeleteProfile(profile)
+                          }}
+                          sx={{
+                            opacity: 0,
+                            transition: 'opacity 0.15s',
+                            color: 'text.disabled',
+                            p: 0.5,
+                            ml: 0.5,
+                            '&:hover': {
+                              color: 'error.main',
+                              backgroundColor: alpha('#f44336', 0.08),
+                            },
+                          }}
+                        >
+                          <DeleteIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      ) : null}
+                    </ListItemButton>
+                  ))}
+
+                  {/* Add profile row */}
+                  <ListItemButton
+                    onClick={() => setCreateProfileOpen(true)}
+                    sx={{
+                      borderRadius: '8px',
+                      mx: 1,
+                      mt: 0.5,
+                      py: 0.75,
+                      pl: 1.5,
+                      opacity: 0.6,
+                      '&:hover': {
+                        opacity: 1,
+                        backgroundColor: alpha('#1976d2', 0.06),
+                      },
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: '50%',
+                        border: '1.5px dashed',
+                        borderColor: 'text.disabled',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        mr: 1.5,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <AddIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                    </Box>
+                    <Typography variant="body2" color="text.secondary">
+                      {t('menu_new_profile')}
+                    </Typography>
+                  </ListItemButton>
+                </List>
               </Collapse>
             </List>
 

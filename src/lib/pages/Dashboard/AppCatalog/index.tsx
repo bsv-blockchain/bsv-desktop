@@ -10,7 +10,8 @@ import {
   Card,
   Modal,
   IconButton,
-  FormControl
+  FormControl,
+  alpha
 } from '@mui/material'
 import Grid2 from '@mui/material/Grid2'
 import { makeStyles } from '@mui/styles'
@@ -219,100 +220,119 @@ const AppCatalog: React.FC = () => {
                 </Typography>
               </Box>
             ) : (
-              <Grid2 container spacing={3}>
+              <Grid2 container spacing={2}>
                 {filteredCatalogApps.map((app) => (
                   <Grid2 key={`${app.token.txid}-${app.token.outputIndex}`} size={{ xs: 12, sm: 6, md: 4 }}>
                     <Box
                       sx={{
-                        p: 2,
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        borderRadius: 2,
+                        p: 2.5,
+                        borderRadius: 3,
                         cursor: 'pointer',
-                        height: 240, // Fixed height for all cards
+                        height: 220,
                         display: 'flex',
                         flexDirection: 'column',
+                        backgroundColor: (theme) => alpha(theme.palette.background.paper, 0.6),
                         transition: 'all 0.2s ease-in-out',
                         '&:hover': {
-                          borderColor: 'primary.main',
+                          backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.06),
                           transform: 'translateY(-2px)',
-                          boxShadow: 2
+                          boxShadow: (theme) => `0 8px 24px ${alpha(theme.palette.common.black, 0.2)}`,
                         }
                       }}
                       onClick={() => handleAppClick(app)}
                     >
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        {app.metadata.icon && (
-                          <Box
-                            component="img"
-                            src={app.metadata.icon}
-                            alt={app.metadata.name}
+                      {/* Header: icon + name + category badge */}
+                      <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 1.5 }}>
+                        <Box
+                          component="img"
+                          src={app.metadata.icon || 'https://metanetapps.com/favicon.ico'}
+                          alt={app.metadata.name}
+                          sx={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 2,
+                            mr: 1.5,
+                            flexShrink: 0,
+                          }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'https://metanetapps.com/favicon.ico'
+                          }}
+                        />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography
+                            variant="subtitle1"
                             sx={{
-                              width: 48,
-                              height: 48,
-                              borderRadius: 1,
-                              mr: 2
+                              fontWeight: 600,
+                              lineHeight: 1.3,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
                             }}
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = 'https://metanetapps.com/favicon.ico'
-                            }}
-                          />
-                        )}
-                        <Box sx={{ flexGrow: 1 }}>
-                          <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                          >
                             {app.metadata.name}
                           </Typography>
-                          <Typography variant="body2" color="textSecondary">
+                          <Typography
+                            variant="caption"
+                            sx={{ color: 'text.disabled', fontSize: '0.7rem' }}
+                          >
                             {app.metadata.domain}
                           </Typography>
                         </Box>
                       </Box>
 
+                      {/* Description */}
                       <Typography
                         variant="body2"
-                        color="textSecondary"
                         sx={{
-                          mb: 2,
+                          color: 'text.secondary',
+                          fontSize: '0.8rem',
+                          lineHeight: 1.5,
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           display: '-webkit-box',
-                          WebkitLineClamp: 3,
+                          WebkitLineClamp: 2,
                           WebkitBoxOrient: 'vertical',
-                          flexGrow: 1 // This will make the description take up available space
+                          flexGrow: 1,
                         }}
                       >
                         {app.metadata.description}
                       </Typography>
 
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2, mt: 'auto' }}>
-                        {app.metadata.tags && app.metadata.tags.slice(0, 3).map((tag, index) => (
+                      {/* Footer: tags + category */}
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 'auto', pt: 1.5, flexWrap: 'wrap' }}>
+                        {app.metadata.category && (
+                          <Chip
+                            label={app.metadata.category}
+                            size="small"
+                            sx={{
+                              height: 22,
+                              fontSize: '0.65rem',
+                              fontWeight: 600,
+                              backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.15),
+                              color: 'primary.light',
+                              border: 'none',
+                            }}
+                          />
+                        )}
+                        {app.metadata.tags && app.metadata.tags.slice(0, 2).map((tag, index) => (
                           <Chip
                             key={index}
                             label={tag}
                             size="small"
-                            variant="outlined"
+                            sx={{
+                              height: 22,
+                              fontSize: '0.65rem',
+                              backgroundColor: (theme) => alpha(theme.palette.text.primary, 0.06),
+                              color: 'text.secondary',
+                              border: 'none',
+                            }}
                           />
                         ))}
-                        {app.metadata.tags && app.metadata.tags.length > 3 && (
-                          <Chip
-                            label={`+${app.metadata.tags.length - 3} more`}
-                            size="small"
-                            variant="outlined"
-                          />
+                        {app.metadata.tags && app.metadata.tags.length > 2 && (
+                          <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: '0.65rem', ml: 0.5 }}>
+                            +{app.metadata.tags.length - 2}
+                          </Typography>
                         )}
-                      </Box>
-
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        {app.metadata.category && (
-                          <Chip
-                            label={app.metadata.category}
-                            color="primary"
-                            size="small"
-                          />
-                        )}
-                        <Typography variant="caption" color="textSecondary">
-                          {new Date(app.metadata.release_date).toLocaleDateString()}
-                        </Typography>
                       </Box>
                     </Box>
                   </Grid2>

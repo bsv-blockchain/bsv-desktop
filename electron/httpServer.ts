@@ -173,13 +173,16 @@ export async function startHttpServer(mainWindow: BrowserWindow): Promise<() => 
   // Prompt user to trust certificate if needed
   await ensureCertTrusted(certPath);
 
-  // Start HTTPS server only
+  // Start HTTPS server (2121) + HTTP fallback (3321)
   const server: Server = await new Promise((resolve, reject) => {
     const srv = https.createServer({ cert, key }, app);
 
     srv.listen(2121, '127.0.0.1', () => {
       console.log('HTTPS server listening on https://127.0.0.1:2121');
-      resolve(srv);
+      app.listen(3321, '127.0.0.1', () => {
+        console.log('HTTP server listening on http://127.0.0.1:3321');
+        resolve(srv);
+      });
     });
 
     srv.on('error', (error: NodeJS.ErrnoException) => {

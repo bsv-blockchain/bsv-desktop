@@ -538,8 +538,11 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   }
 
   private async _updateActiveProfile() {
-    const { walletManager } = this._managers
-    if (!walletManager?.authenticated) {
+    const { walletManager, wallet } = this._managers
+
+    // Use wallet existence (set by _buildWallet) as ready signal.
+    // walletManager.authenticated is unreliable for SimpleWalletManager (direct-key).
+    if (!wallet && !walletManager?.authenticated) {
       this._activeProfile = null
       return
     }
@@ -560,7 +563,11 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
           console.error('[WalletService] Failed to create synthetic profile:', err)
         }
       }
-    } else if (walletManager.listProfiles) {
+    }
+
+    // For WAB/mnemonic modes, try listProfiles regardless of loginType
+    // (loginType in snapshot may not match actual manager type)
+    if (!this._activeProfile && walletManager?.listProfiles) {
       const profiles = walletManager.listProfiles()
       const profileToSet = profiles.find((p: any) => p.active) || profiles[0]
       if (profileToSet?.id) {

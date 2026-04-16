@@ -344,13 +344,20 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const DEBOUNCE_TIME_MS = 5000
 
   useEffect(() => {
-    if (!managers?.walletManager?.authenticated || !activeProfile?.id) {
-      console.log('[onWalletReady effect] guard failed — wallet ref not updated yet')
+    // Use managers.wallet (set by _buildWallet) instead of walletManager.authenticated
+    // SimpleWalletManager (direct-key) doesn't expose an authenticated property
+    const walletReady = !!managers?.wallet
+    console.log('[onWalletReady effect] check:', {
+      walletReady,
+      profileId: activeProfile?.id ? `[${activeProfile.id.length} bytes]` : null,
+      lifecycle: getWalletService().lifecycle,
+    })
+    if (!walletReady || !activeProfile?.id) {
       return
     }
 
-    console.log('[onWalletReady effect] guard passed — updating wallet ref')
-    const wallet = managers.walletManager
+    console.log('[onWalletReady effect] guard passed — registering wallet ref')
+    const wallet = managers.wallet!
 
     const updateRecentAppWrapper = async (profileId: string, origin: string): Promise<void> => {
       try {
@@ -371,7 +378,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     onWalletReady(interceptorWallet)
 
     // No cleanup — IPC listener is permanent, wallet ref is swapped not re-registered
-  }, [managers?.walletManager?.authenticated, managers?.walletManager, activeProfile?.id, onWalletReady])
+  }, [managers?.wallet, activeProfile?.id, onWalletReady])
 
   // ---- Context value ----
   const contextValue = useMemo<WalletContextValue>(() => ({

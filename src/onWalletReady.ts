@@ -75,6 +75,13 @@ function parseOrigin(headers: Record<string, string>): string | null {
 let _currentWallet: WalletInterface | null = null;
 let _listenerRegistered = false;
 
+/** Test-only: read current wallet ref */
+export function _test_getCurrentWallet(): WalletInterface | null { return _currentWallet; }
+/** Test-only: read listener state */
+export function _test_isListenerRegistered(): boolean { return _listenerRegistered; }
+/** Test-only: reset module state */
+export function _test_reset(): void { _currentWallet = null; _listenerRegistered = false; }
+
 /**
  * Update the wallet instance used by the HTTP listener.
  * First call also registers the IPC listener (once, never removed).

@@ -71,10 +71,37 @@ function parseOrigin(headers: Record<string, string>): string | null {
   return null;
 }
 
+// Module-level wallet ref — survives React effect cleanup/re-runs
+let _currentWallet: WalletInterface | null = null;
+let _listenerRegistered = false;
+
+/**
+ * Update the wallet instance used by the HTTP listener.
+ * First call also registers the IPC listener (once, never removed).
+ */
 export const onWalletReady = async (wallet: WalletInterface): Promise<(() => void) | undefined> => {
-  // Set up listener for HTTP requests from the Electron main process
+  _currentWallet = wallet;
+  console.log('[onWalletReady] wallet ref updated, listenerRegistered:', _listenerRegistered);
+
+  if (_listenerRegistered) return undefined;
+  _listenerRegistered = true;
+
+  console.log('[onWalletReady] registering IPC listener (once)');
+
+  // Register ONCE — never removed. Wallet ref swapped via _currentWallet.
   window.electronAPI.onHttpRequest(async (req: HttpRequestEvent) => {
     let response: HttpResponseEvent;
+
+    const wallet = _currentWallet;
+    if (!wallet) {
+      response = {
+        request_id: req.request_id,
+        status: 503,
+        body: JSON.stringify({ message: 'Wallet not ready' })
+      };
+      window.electronAPI.sendHttpResponse(response);
+      return;
+    }
 
     try {
       const origin = parseOrigin(req.headers);
@@ -798,8 +825,6 @@ export const onWalletReady = async (wallet: WalletInterface): Promise<(() => voi
     }
   });
 
-  // Return cleanup function
-  return () => {
-    window.electronAPI.removeHttpRequestListener();
-  };
+  // No cleanup — listener is permanent
+  return undefined;
 };

@@ -344,42 +344,33 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const DEBOUNCE_TIME_MS = 5000
 
   useEffect(() => {
-    if (!managers?.walletManager?.authenticated || !activeProfile?.id) return
+    if (!managers?.walletManager?.authenticated || !activeProfile?.id) {
+      console.log('[onWalletReady effect] guard failed — wallet ref not updated yet')
+      return
+    }
 
+    console.log('[onWalletReady effect] guard passed — updating wallet ref')
     const wallet = managers.walletManager
-    let disposed = false
-    let unlistenFn: (() => void) | undefined
 
-    const setupListener = async () => {
-      const updateRecentAppWrapper = async (profileId: string, origin: string): Promise<void> => {
-        try {
-          const cacheKey = `${profileId}:${origin}`
-          const now = Date.now()
-          const lastProcessed = recentOriginsRef.current.get(cacheKey)
-          if (lastProcessed && (now - lastProcessed) < DEBOUNCE_TIME_MS) return
-          recentOriginsRef.current.set(cacheKey, now)
-          await updateRecentApp(profileId, origin)
-          window.dispatchEvent(new CustomEvent('recentAppsUpdated', { detail: { profileId, origin } }))
-        } catch (error) {
-          console.debug('Error tracking recent app:', error)
-        }
+    const updateRecentAppWrapper = async (profileId: string, origin: string): Promise<void> => {
+      try {
+        const cacheKey = `${profileId}:${origin}`
+        const now = Date.now()
+        const lastProcessed = recentOriginsRef.current.get(cacheKey)
+        if (lastProcessed && (now - lastProcessed) < DEBOUNCE_TIME_MS) return
+        recentOriginsRef.current.set(cacheKey, now)
+        await updateRecentApp(profileId, origin)
+        window.dispatchEvent(new CustomEvent('recentAppsUpdated', { detail: { profileId, origin } }))
+      } catch (error) {
+        console.debug('Error tracking recent app:', error)
       }
-
-      const interceptorWallet = new RequestInterceptorWallet(wallet, Utils.toBase64(activeProfile.id), updateRecentAppWrapper)
-      const maybeUnlisten = await onWalletReady(interceptorWallet)
-      if (disposed) {
-        if (typeof maybeUnlisten === 'function') maybeUnlisten()
-        return
-      }
-      unlistenFn = maybeUnlisten
     }
 
-    setupListener()
+    const interceptorWallet = new RequestInterceptorWallet(wallet, Utils.toBase64(activeProfile.id), updateRecentAppWrapper)
+    // onWalletReady registers IPC listener once, subsequent calls just swap wallet ref
+    onWalletReady(interceptorWallet)
 
-    return () => {
-      disposed = true
-      if (typeof unlistenFn === 'function') unlistenFn()
-    }
+    // No cleanup — IPC listener is permanent, wallet ref is swapped not re-registered
   }, [managers?.walletManager?.authenticated, managers?.walletManager, activeProfile?.id, onWalletReady])
 
   // ---- Context value ----

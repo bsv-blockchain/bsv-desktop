@@ -101,6 +101,7 @@ export async function startHttpServer(mainWindow: BrowserWindow): Promise<() => 
   app.all('*', async (req: Request, res: Response) => {
     try {
       const request_id = requestIdCounter++;
+      console.log(`[HTTP] ${req.method} ${req.path} → renderer (request_id: ${request_id})`);
 
       // Convert headers to simple object
       const headers: Record<string, string> = {};
@@ -135,6 +136,7 @@ export async function startHttpServer(mainWindow: BrowserWindow): Promise<() => 
         // Timeout after 30 seconds
         setTimeout(() => {
           if (pendingRequests.has(request_id)) {
+            console.error(`[HTTP] TIMEOUT — renderer never responded (request_id: ${request_id})`);
             pendingRequests.delete(request_id);
             reject(new Error('Request timeout'));
           }
@@ -171,16 +173,13 @@ export async function startHttpServer(mainWindow: BrowserWindow): Promise<() => 
   // Prompt user to trust certificate if needed
   await ensureCertTrusted(certPath);
 
-  // Start HTTPS server
+  // Start HTTPS server only
   const server: Server = await new Promise((resolve, reject) => {
     const srv = https.createServer({ cert, key }, app);
 
     srv.listen(2121, '127.0.0.1', () => {
       console.log('HTTPS server listening on https://127.0.0.1:2121');
-      app.listen(3321, '127.0.0.1', () => {
-        console.log('HTTP server listening on http://127.0.0.1:3321');
-        resolve(srv);
-      })
+      resolve(srv);
     });
 
     srv.on('error', (error: NodeJS.ErrnoException) => {

@@ -497,7 +497,7 @@ app.whenReady().then(async () => {
 
   createWindow();
 
-  // Start HTTP server on port 3321
+  // Start HTTPS server on port 2121
   if (mainWindow) {
     httpServerCleanup = await startHttpServer(mainWindow);
 

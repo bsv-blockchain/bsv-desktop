@@ -229,13 +229,10 @@ const MyIdentity = () => {
           {t('identity_section_description_certificates')}
         </Typography>
 
-        <Grid2 container spacing={2} justifyContent="space-between" columns={{ xs: 1, sm: 1, md: 1, lg: 2 }}>
+        <Grid2 container spacing={2} columns={{ xs: 1, sm: 1, md: 1, lg: 2 }}>
           {shownCertificates.map((cert) => (
             <Grid2 key={cert.serialNumber} size={1}>
-              <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover', border: 1, borderColor: 'action.main' }}>
-                <CertificateCard certificate={cert} canRevoke={true} onRevoke={handleCertificateRevoke} />
-                
-              </Box>
+              <CertificateCard certificate={cert} canRevoke={true} onRevoke={handleCertificateRevoke} />
             </Grid2>
           ))}
         </Grid2>

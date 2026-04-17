@@ -14,7 +14,9 @@ import {
   IconButton,
   Stack,
   Divider,
-  Tooltip
+  Tooltip,
+  Chip,
+  alpha
 } from '@mui/material'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { Img } from '@bsv/uhrp-react'
@@ -171,100 +173,170 @@ const CertificateCard: React.FC<CertificateCardProps> = ({
   }
 
   return (
-    <Card
+    <Box
       sx={{
         cursor: clickable ? 'pointer' : 'default',
-        transition: 'all 0.3s ease',
+        transition: 'all 0.2s ease',
+        p: 2.5,
+        borderRadius: 3,
+        backgroundColor: (theme) => alpha(theme.palette.background.paper, 0.6),
+        position: 'relative',
         '&:hover': clickable ? {
-          boxShadow: 3,
-          transform: 'translateY(-2px)'
+          backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.06),
+          transform: 'translateY(-2px)',
+          boxShadow: (theme) => `0 8px 24px ${alpha(theme.palette.common.black, 0.2)}`,
         } : {},
-        position: 'relative'
+        '&:hover .cert-actions': {
+          opacity: 1,
+        },
       }}
       onClick={handleClick}
     >
-      <CardContent>
-        {/* Revoke button - only shown when canRevoke is true */}
-        {canRevoke && (
-          <Box sx={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            zIndex: 1
-          }}>
-            <IconButton
-              color="primary"
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation() // Prevent card click
-                handleRelinquishCertificate()
-              }}
-              aria-label="revoke certificate"
-            >
-              <DeleteIcon />
-            </IconButton>
-          </Box>
-        )}
-
-        <Grid container spacing={2} alignItems="center">
-          <Grid item>
-            <Avatar sx={{ width: 56, height: 56 }}>
-              <Img
-                style={{ width: '75%', height: '75%' }}
-                src={iconURL}
-              />
-            </Avatar>
-          </Grid>
-          <Grid item xs>
-            <Typography variant="h6" component="h3" gutterBottom>
-              {certName}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" paragraph>
-              {description}
-            </Typography>
-            <CounterpartyChip
-              counterparty={certificate.certifier}
-              label="Issuer"
-            />
-          </Grid>
-        </Grid>
-        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="body2" color="text.secondary">
-            Type: {certificate.type}
-          </Typography>
-        </Box>
-        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="body2" color="text.secondary">
-            Serial Number:{certificate.serialNumber}
-          </Typography>
-        </Box>
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={(e) => {
-            e.stopPropagation()
-            handleModalOpen()
+      {/* Top row: icon + name + actions */}
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 1.5 }}>
+        <Avatar
+          sx={{
+            width: 44,
+            height: 44,
+            mr: 1.5,
+            flexShrink: 0,
+            borderRadius: 2,
           }}
         >
-          View Details
-        </Button>
+          <Img
+            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            src={iconURL}
+          />
+        </Avatar>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography
+            variant="subtitle1"
+            sx={{
+              fontWeight: 600,
+              lineHeight: 1.3,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {certName}
+          </Typography>
+          {description && (
+            <Typography
+              variant="caption"
+              sx={{
+                color: 'text.disabled',
+                fontSize: '0.7rem',
+                display: '-webkit-box',
+                WebkitLineClamp: 1,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {description}
+            </Typography>
+          )}
+        </Box>
 
-        <CertificateDetailsModal
-          open={modalOpen}
-          onClose={(event) => handleModalClose(event)}
-          fieldDetails={fields}
-          actualData={certificate.decryptedFields || {}}
-          certName={certName}
-          iconURL={iconURL}
-          description={description}
-          serialNumber={certificate.serialNumber}
-          certificateType={certificate.type} 
+        {/* Actions: view details + revoke */}
+        <Box
+          className="cert-actions"
+          sx={{
+            display: 'flex',
+            gap: 0.5,
+            ml: 1,
+            opacity: 0,
+            transition: 'opacity 0.15s',
+            flexShrink: 0,
+          }}
+        >
+          <Tooltip title="View Details">
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleModalOpen()
+              }}
+              sx={{
+                color: 'text.disabled',
+                p: 0.5,
+                '&:hover': { color: 'primary.main' },
+              }}
+            >
+              <Description sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+          {canRevoke && (
+            <Tooltip title="Revoke">
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleRelinquishCertificate()
+                }}
+                sx={{
+                  color: 'text.disabled',
+                  p: 0.5,
+                  '&:hover': {
+                    color: 'error.main',
+                    backgroundColor: (theme) => alpha(theme.palette.error.main, 0.08),
+                  },
+                }}
+              >
+                <DeleteIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
+      </Box>
+
+      {/* Issuer row */}
+      <Box sx={{ mb: 1.5 }}>
+        <CounterpartyChip
+          counterparty={certificate.certifier}
+          label="Issuer"
         />
-        {modalOpen && (() => {
-          return null
-        })()}
-      </CardContent>
-    </Card>
+      </Box>
+
+      {/* Footer: type chip + truncated serial */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+        <Chip
+          label={certificate.type?.slice(0, 12) + '...'}
+          size="small"
+          sx={{
+            height: 22,
+            fontSize: '0.65rem',
+            fontFamily: 'monospace',
+            backgroundColor: (theme) => alpha(theme.palette.text.primary, 0.06),
+            color: 'text.secondary',
+            border: 'none',
+          }}
+        />
+        <Typography
+          variant="caption"
+          sx={{
+            color: 'text.disabled',
+            fontFamily: 'monospace',
+            fontSize: '0.6rem',
+            ml: 'auto',
+          }}
+        >
+          #{certificate.serialNumber?.slice(0, 8)}...
+        </Typography>
+      </Box>
+
+      <CertificateDetailsModal
+        open={modalOpen}
+        onClose={(event) => handleModalClose(event)}
+        fieldDetails={fields}
+        actualData={certificate.decryptedFields || {}}
+        certName={certName}
+        iconURL={iconURL}
+        description={description}
+        serialNumber={certificate.serialNumber}
+        certificateType={certificate.type}
+      />
+    </Box>
   )
 }
 

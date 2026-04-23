@@ -248,7 +248,7 @@ const AppChip: React.FC<AppChipProps> = ({
                   onClick={e => {
                     e.stopPropagation()
                     window.open(
-                      'https://projectbabbage.com/docs/babbage-sdk/concepts/apps',
+                      'https://bsv-blockchain.github.io/ts-sdk/reference/wallet/',
                       '_blank'
                     )
                   }}

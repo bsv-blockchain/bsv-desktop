@@ -10,6 +10,7 @@ The default configuration is for locally stored transactions and metadata, entir
 
 BSV Desktop is a feature-rich Bitcoin SV wallet that runs on macOS, Windows, and Linux. It provides:
 
+- **Official Reference Implementation** - BSV Association reference wallet implementation for the BRC-100 application-to-wallet interface
 - **🔐 Self-Custody Mode** - Full control with local key management and SQLite storage
 - **☁️ Remote Storage Mode** - WAB (Wallet Authentication Backend) integration with remote storage
 - **🌐 BRC-100 Interface** - HTTPS server on port 2121 for external app integration
@@ -353,4 +354,3 @@ Open BSV License
 - [wallet-toolbox](https://github.com/bsv-blockchain/wallet-toolbox) - Core wallet functionality
 - [ts-sdk](https://github.com/bsv-blockchain/ts-sdk) - BSV TypeScript SDK
 - [overlay-services](https://github.com/bsv-blockchain/overlay-express-examples) - Overlay network infrastructure
-

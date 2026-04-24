@@ -166,7 +166,7 @@ const BasketChip: React.FC<BasketChipProps> = ({
                   onClick={e => {
                     e.stopPropagation()
                     window.open(
-                      'https://projectbabbage.com/docs/babbage-sdk/concepts/baskets',
+                      'https://bsv-blockchain.github.io/ts-sdk/reference/wallet/',
                       '_blank'
                     )
                   }}

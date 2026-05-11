@@ -4,6 +4,8 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import fs from 'fs';
 import { startHttpServer } from './httpServer.js';
+import { buildApplicationMenu } from './appMenu.js';
+import { applyPersistedProxySettings, registerNetworkIpc } from './networkSettings.js';
 
 const require = createRequire(import.meta.url);
 
@@ -31,6 +33,22 @@ const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 let httpServerCleanup: (() => Promise<void>) | null = null;
+let cleanupStarted = false;
+
+async function cleanupBeforeExit(): Promise<void> {
+  if (cleanupStarted) return;
+  cleanupStarted = true;
+
+  if (storageManager) {
+    await storageManager.cleanup();
+    storageManager = null;
+  }
+
+  if (httpServerCleanup) {
+    await httpServerCleanup();
+    httpServerCleanup = null;
+  }
+}
 
 // Store previous focused app on macOS
 let prevBundleId: string | null = null;
@@ -131,6 +149,8 @@ function createWindow() {
 }
 
 // ===== IPC Handlers =====
+
+registerNetworkIpc();
 
 // Check if window is focused
 ipcMain.handle('is-focused', () => {
@@ -383,6 +403,12 @@ ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
   }
 });
 
+ipcMain.handle('app:restart', async () => {
+  await cleanupBeforeExit();
+  app.relaunch();
+  app.exit(0);
+});
+
 // Forward HTTP requests to renderer
 ipcMain.on('http-response', (_event, response) => {
   if (mainWindow) {
@@ -495,6 +521,9 @@ app.whenReady().then(async () => {
     app.commandLine.appendSwitch('--disable-web-security');
   }
 
+  await applyPersistedProxySettings();
+
+  buildApplicationMenu({ getMainWindow: () => mainWindow });
   createWindow();
 
   // Start HTTPS server on port 2121
@@ -514,16 +543,9 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', async () => {
-  // Cleanup storage connections
-  if (storageManager) {
-    await storageManager.cleanup();
-  }
+  await cleanupBeforeExit();
 
-  if (httpServerCleanup) {
-    await httpServerCleanup();
-  }
-
-    app.quit();
+  app.quit();
 });
 
 app.on('before-quit', async (event) => {
@@ -531,14 +553,7 @@ app.on('before-quit', async (event) => {
   if (storageManager || httpServerCleanup) {
     event.preventDefault();
 
-    // Cleanup storage connections
-    if (storageManager) {
-      await storageManager.cleanup();
-    }
-
-    if (httpServerCleanup) {
-      await httpServerCleanup();
-    }
+    await cleanupBeforeExit();
 
     // Now actually quit
     app.exit(0);

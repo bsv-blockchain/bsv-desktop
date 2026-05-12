@@ -78,9 +78,20 @@ export type WalletServiceSnapshot = {
     walletManager?: any
     permissionsManager?: WalletPermissionsManager
     settingsManager?: WalletSettingsManager
-    wallet?: WalletInterface
     storageManager?: WalletStorageManager
   }
+  /**
+   * Raw, unwrapped `Wallet` from `@bsv/wallet-toolbox`. Standalone — deliberately
+   * kept out of `managers` so it's never confused with the permission-aware
+   * `permissionsManager`. Used for internal wallet-toolbox plumbing that calls
+   * wallet methods without an originator (e.g. `StorageClient`'s BRC-103
+   * handshake calls `wallet.createHmac` directly). Routing those through
+   * `permissionsManager` throws "Originator is required for permission checks".
+   *
+   * App-originated requests (anything carrying an originator from a third
+   * party) must go through `managers.permissionsManager`, not this field.
+   */
+  wallet?: WalletInterface
   settings: WalletSettings
   activeProfile: WalletProfile | null
   snapshotLoaded: boolean
@@ -115,6 +126,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
 
   // ---- Runtime state ----
   private _managers: WalletServiceSnapshot['managers'] = {}
+  private _wallet?: WalletInterface
   private _settings: WalletSettings = DEFAULT_SETTINGS
   private _activeProfile: WalletProfile | null = null
   private _snapshotLoaded = false
@@ -149,6 +161,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   get backupStorageUrls() { return this._backupStorageUrls }
   get adminOriginator() { return this._adminOriginator }
   get managers() { return this._managers }
+  get wallet() { return this._wallet }
   get settings() { return this._settings }
   get activeProfile() { return this._activeProfile }
   get snapshotLoaded() { return this._snapshotLoaded }
@@ -170,6 +183,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       backupStorageUrls: this._backupStorageUrls,
       adminOriginator: this._adminOriginator,
       managers: this._managers,
+      wallet: this._wallet,
       settings: this._settings,
       activeProfile: this._activeProfile,
       snapshotLoaded: this._snapshotLoaded,
@@ -239,6 +253,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         console.log(`[WalletService] loginType changing, clearing existing wallet manager`)
         const { walletManager, permissionsManager, settingsManager, ...rest } = this._managers
         this._managers = rest
+        this._wallet = undefined
         this._initInFlight = false
       }
 
@@ -503,9 +518,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         ...this._managers,
         permissionsManager,
         settingsManager: (wallet as any).settingsManager,
-        wallet: permissionsManager,
         storageManager,
       }
+      this._wallet = wallet
 
       // Load settings
       try {
@@ -538,7 +553,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   }
 
   private async _updateActiveProfile() {
-    const { walletManager, wallet } = this._managers
+    const { walletManager } = this._managers
+    const wallet = this._wallet
 
     // Use wallet existence (set by _buildWallet) as ready signal.
     // walletManager.authenticated is unreliable for SimpleWalletManager (direct-key).
@@ -676,7 +692,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       throw new Error('Local storage is already your primary storage. Cannot add it as a backup.')
     }
 
-    const { wallet, storageManager } = this._managers
+    const wallet = this._wallet
+    const { storageManager } = this._managers
     if (!wallet || !storageManager) throw new Error('Wallet not available')
 
     let backupProvider: any
@@ -689,6 +706,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       await electronStorage.makeAvailable()
       backupProvider = electronStorage
     } else {
+      // Use the raw `wallet` (not `permissionsManager`) — StorageClient's BRC-103
+      // handshake calls wallet.createHmac without an originator, which the
+      // permissionsManager wrapper rejects with "Originator is required".
       backupProvider = new StorageClient(wallet, url)
       await backupProvider.makeAvailable()
     }
@@ -707,16 +727,35 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   }
 
   async removeBackupStorageUrl(url: string): Promise<void> {
+    if (!this._backupStorageUrls.includes(url)) return
+
     const newBackupUrls = this._backupStorageUrls.filter(u => u !== url)
+
+    // Persist before reload so the rebuilt wallet sees the updated snapshot.
+    // If the snapshot fails to save we abort — leaving the live storageManager
+    // attached to a backup the user thinks is gone is worse than a visible error.
+    let snapshot: string
     try {
-      const snapshot = this.saveEnhancedSnapshot({ backupStorageUrls: newBackupUrls })
-      localStorage.snap = snapshot
-    } catch (err) {
+      snapshot = this.saveEnhancedSnapshot({ backupStorageUrls: newBackupUrls })
+    } catch (err: any) {
       console.error('[WalletService] Failed to save snapshot:', err)
+      toast.error('Failed to remove backup: could not save snapshot')
+      throw err
     }
+    localStorage.snap = snapshot
     this._backupStorageUrls = newBackupUrls
     this._emitState()
-    toast.success('Backup storage removed. It will be disconnected on next restart.')
+
+    // wallet-toolbox has no runtime API to detach a storage provider, so the
+    // live storageManager keeps writing to the just-removed URL until the wallet
+    // is rebuilt. Without this reload, syncBackupStorage and setPrimaryStorage
+    // would still iterate the removed provider — which can fail mid-flight (e.g.,
+    // a flaky removed backup) and, worse, could leave a user-removed store as a
+    // sync target. A renderer reload triggers the standard auto-init path, which
+    // reads the just-persisted snapshot and rebuilds the wallet cleanly with no
+    // bespoke teardown logic for us to maintain.
+    toast.info('Backup storage removed. Reloading wallet...')
+    setTimeout(() => window.location.reload(), 600)
   }
 
   async syncBackupStorage(progressCallback?: (message: string) => void): Promise<void> {
@@ -730,6 +769,94 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       })
     } else {
       progressCallback?.('Backup providers sync automatically on each wallet action')
+    }
+  }
+
+  /**
+   * Switch the active (primary) storage to one of the currently-configured backups.
+   *
+   * - `target` is a storage URL (`http://...` / `https://...`) or the `'LOCAL_STORAGE'`
+   *   sentinel for the local Electron-IPC backend.
+   * - Underneath this calls `WalletStorageManager.setActive`, which syncs pending writes
+   *   to the target backup before atomically flipping the active pointer. The wallet
+   *   object is not rebuilt; subsequent reads/writes route through the new active store.
+   * - The snapshot fields (`useRemoteStorage`, `storageUrl`, `backupStorageUrls`) are
+   *   re-derived from `storageManager.getStores()` after the operation. The manager is
+   *   the authoritative source of truth, so the snapshot always matches its actual
+   *   active store. This also self-heals any prior divergence (e.g., a swap that
+   *   flipped the manager but failed to persist to the snapshot).
+   */
+  async setPrimaryStorage(target: string, progressCallback?: (message: string) => void): Promise<void> {
+    const { storageManager } = this._managers
+    if (!storageManager) throw new Error('Storage manager not available')
+
+    const isLocal = target === 'LOCAL_STORAGE'
+    const normalizedTarget = isLocal ? target : target.trim().replace(/\/+$/, '')
+    if (!isLocal && !normalizedTarget.startsWith('http://') && !normalizedTarget.startsWith('https://')) {
+      throw new Error('Storage target must be a URL or LOCAL_STORAGE')
+    }
+
+    const stores = storageManager.getStores()
+    if (!stores || stores.length === 0) throw new Error('No storage providers configured')
+
+    const targetStore = stores.find(s =>
+      isLocal ? !s.endpointURL : s.endpointURL === normalizedTarget
+    )
+    if (!targetStore) {
+      throw new Error(`No storage provider matching ${normalizedTarget}. Add it as a backup first.`)
+    }
+
+    // Snapshot the *visible* primary before any change, so we can decide which toast to
+    // show after reconciliation.
+    const visiblePrimaryBefore = this._useRemoteStorage ? this._selectedStorageUrl : 'LOCAL_STORAGE'
+    const targetWasAlreadyActive = targetStore.isActive
+
+    if (!targetWasAlreadyActive) {
+      await storageManager.setActive(targetStore.storageIdentityKey, (s: string) => {
+        console.log('[WalletService setPrimaryStorage]', s)
+        progressCallback?.(s)
+        return s
+      })
+    }
+
+    // Reconcile the snapshot from the manager's authoritative store list. Always run
+    // this — even on the no-op path — because the snapshot may have drifted out of
+    // sync from a prior operation (e.g., a swap that completed in the manager but
+    // didn't persist to localStorage). Re-deriving `useRemoteStorage` / `storageUrl` /
+    // `backupStorageUrls` from `getStores()` heals any divergence.
+    const reconciledStores = storageManager.getStores() || []
+    const activeStore = reconciledStores.find(s => s.isActive)
+    if (!activeStore) throw new Error('No active storage after setPrimaryStorage')
+
+    if (activeStore.endpointURL) {
+      this._useRemoteStorage = true
+      this._selectedStorageUrl = activeStore.endpointURL
+    } else {
+      this._useRemoteStorage = false
+      this._selectedStorageUrl = ''
+    }
+    const newBackups: string[] = []
+    let localSeenAsBackup = false
+    for (const s of reconciledStores) {
+      if (s.isActive) continue
+      if (s.endpointURL) {
+        if (!newBackups.includes(s.endpointURL)) newBackups.push(s.endpointURL)
+      } else if (!localSeenAsBackup) {
+        newBackups.push('LOCAL_STORAGE')
+        localSeenAsBackup = true
+      }
+    }
+    this._backupStorageUrls = newBackups
+
+    const snapshot = this.saveEnhancedSnapshot()
+    localStorage.snap = snapshot
+    this._emitState()
+
+    const visiblePrimaryAfter = this._useRemoteStorage ? this._selectedStorageUrl : 'LOCAL_STORAGE'
+    if (targetWasAlreadyActive && visiblePrimaryBefore === visiblePrimaryAfter) {
+      toast.info('Already the primary storage')
+    } else {
+      toast.success('Primary storage switched!')
     }
   }
 
@@ -790,6 +917,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     }
 
     this._managers = {}
+    this._wallet = undefined
     this._lifecycle = 'configured'
     this._snapshotLoaded = false
     this._activeProfile = null

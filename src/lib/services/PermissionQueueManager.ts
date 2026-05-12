@@ -169,6 +169,31 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     this._permissionsManager = pm
   }
 
+  /**
+   * Replace the current permissions config. Updates three things:
+   *   1. The queue's `permissionsConfig` (snapshot/UI source).
+   *   2. The live `WalletPermissionsManager.config` so subsequent BRC-100
+   *      requests honor the new flags without rebuilding the wallet —
+   *      `WalletPermissionsManager` reads `this.config.seek*` on every call.
+   *      `permissionModules` are preserved from the existing config.
+   *   3. Emits a snapshot so `useSyncExternalStore` consumers re-render.
+   *
+   * Persistence to `localStorage` is the caller's responsibility (the React
+   * adapter writes `permissionsConfig` to localStorage so the value survives
+   * reloads). The queue stays storage-agnostic.
+   */
+  setPermissionsConfig(config: PermissionsConfig) {
+    this.permissionsConfig = config
+    if (this._permissionsManager) {
+      const existingModules = this._permissionsManager.config?.permissionModules
+      this._permissionsManager.config = {
+        ...config,
+        permissionModules: existingModules,
+      }
+    }
+    this._emitSnapshot()
+  }
+
   setPermissionsModuleHelpers(
     getById: (id: string) => any,
     promptHandlers: Map<string, PermissionPromptHandler>

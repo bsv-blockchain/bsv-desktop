@@ -128,8 +128,12 @@ async function applyProxySettings(settings: NetworkProxySettings): Promise<void>
 
 export async function applyPersistedProxySettings(): Promise<void> {
   const persistedProxySettings = readProxySettings();
-  if (persistedProxySettings) {
-    await applyProxySettings(persistedProxySettings);
+  const effectiveProxySettings = persistedProxySettings ?? DEFAULT_PROXY_SETTINGS;
+
+  try {
+    await applyProxySettings(effectiveProxySettings);
+  } catch (error) {
+    console.error('[Network] Failed to apply persisted proxy settings:', error);
   }
 }
 

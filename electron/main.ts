@@ -40,13 +40,24 @@ async function cleanupBeforeExit(): Promise<void> {
   cleanupStarted = true;
 
   if (storageManager) {
-    await storageManager.cleanup();
-    storageManager = null;
+    try {
+      await storageManager.cleanup();
+    } catch (error) {
+      console.error('Failed to clean up storage manager before exit:', error);
+    } finally {
+      storageManager = null;
+    }
   }
 
   if (httpServerCleanup) {
-    await httpServerCleanup();
+    const cleanup = httpServerCleanup;
     httpServerCleanup = null;
+
+    try {
+      await cleanup();
+    } catch (error) {
+      console.error('Failed to clean up HTTP server before exit:', error);
+    }
   }
 }
 
@@ -404,9 +415,21 @@ ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
 });
 
 ipcMain.handle('app:restart', async () => {
-  await cleanupBeforeExit();
-  app.relaunch();
-  app.exit(0);
+  let cleanupError: unknown = null;
+
+  try {
+    await cleanupBeforeExit();
+  } catch (error) {
+    cleanupError = error;
+    console.error('App restart cleanup failed:', error);
+  } finally {
+    app.relaunch();
+    app.exit(0);
+  }
+
+  return cleanupError
+    ? { success: false, error: String(cleanupError) }
+    : { success: true };
 });
 
 // Forward HTTP requests to renderer
@@ -521,7 +544,11 @@ app.whenReady().then(async () => {
     app.commandLine.appendSwitch('--disable-web-security');
   }
 
-  await applyPersistedProxySettings();
+  try {
+    await applyPersistedProxySettings();
+  } catch (error) {
+    console.error('[Startup] Failed to apply persisted proxy settings, continuing startup without them:', error);
+  }
 
   buildApplicationMenu({ getMainWindow: () => mainWindow });
   createWindow();

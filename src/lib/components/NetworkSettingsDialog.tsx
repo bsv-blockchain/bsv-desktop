@@ -63,16 +63,21 @@ const NetworkSettingsDialog: React.FC = () => {
       ? { mode: 'fixed_servers', proxyRules: proxyUrl.trim() }
       : { mode: 'direct', proxyRules: '', lastProxyRules: proxyUrl.trim() }
 
-    const result = await window.electronAPI.network.setProxySettings(settings)
-    setSaving(false)
+    try {
+      const result = await window.electronAPI.network.setProxySettings(settings)
 
-    if (!result.success) {
-      toast.error(result.error || 'Failed to save network settings.')
-      return
+      if (!result.success) {
+        toast.error(result.error || 'Failed to save network settings.')
+        return
+      }
+
+      setRestartAvailable(Boolean(result.restartRequired))
+      toast.success('Network settings saved.')
+    } catch {
+      toast.error('Failed to save network settings.')
+    } finally {
+      setSaving(false)
     }
-
-    setRestartAvailable(Boolean(result.restartRequired))
-    toast.success('Network settings saved.')
   }
 
   const handleRestart = async () => {

@@ -38,6 +38,7 @@ import GroupPermissionHandler from './components/GroupPermissionHandler'
 import { UpdateNotification } from './components/UpdateNotification'
 import PrivacyPolicy from './pages/Policies/privacy'
 import UsagePolicy from './pages/Policies/usage'
+import NetworkSettingsDialog from './components/NetworkSettingsDialog'
 
 interface UserInterfaceProps {
   onWalletReady: (wallet: WalletInterface) => Promise<(() => void) | undefined>;
@@ -75,6 +76,7 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
                 <ThemedToastContainer />
                 <GroupPermissionHandler />
                 <UpdateNotificationWrapper />
+                <NetworkSettingsDialog />
                 <Switch>
                   <Route exact path='/' component={Greeter} />
                   <Route path='/dashboard' component={Dashboard} />

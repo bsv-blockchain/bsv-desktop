@@ -22,6 +22,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   proxyFetchManifest: (url: string) =>
     ipcRenderer.invoke('proxy-fetch-manifest', url),
 
+  // Network proxy settings
+  network: {
+    getProxySettings: () => ipcRenderer.invoke('network:get-proxy-settings'),
+    setProxySettings: (settings: { mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }) =>
+      ipcRenderer.invoke('network:set-proxy-settings', settings),
+    onOpenSettings: (callback: () => void) => {
+      ipcRenderer.on('network-settings:open', callback);
+    },
+    removeOpenSettingsListener: (callback: () => void) => {
+      ipcRenderer.removeListener('network-settings:open', callback);
+    }
+  },
+
+  app: {
+    restart: () => ipcRenderer.invoke('app:restart')
+  },
+
   // HTTP request/response handling
   onHttpRequest: (callback: (event: any) => void) => {
     ipcRenderer.on('http-request', (_event, request) => callback(request));
@@ -82,6 +99,15 @@ export interface ElectronAPI {
   saveMnemonic: (mnemonic: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   savePrivateKey: (privateKey: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   proxyFetchManifest: (url: string) => Promise<{ status: number; headers: [string, string][]; body: string }>;
+  network: {
+    getProxySettings: () => Promise<{ mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }>;
+    setProxySettings: (settings: { mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }) => Promise<{ success: boolean; settings?: { mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }; restartRequired?: boolean; error?: string }>;
+    onOpenSettings: (callback: () => void) => void;
+    removeOpenSettingsListener: (callback: () => void) => void;
+  };
+  app: {
+    restart: () => Promise<void>;
+  };
   onHttpRequest: (callback: (event: any) => void) => void;
   sendHttpResponse: (response: any) => void;
   removeHttpRequestListener: () => void;

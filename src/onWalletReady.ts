@@ -45,6 +45,83 @@ interface HttpResponseEvent {
   body: string;
 }
 
+const WALLET_HTTP_REQUEST_TIMEOUT_MS = 60000;
+const WALLET_TIMEOUT_PREFIX = 'WALLET_REQUEST_TIMEOUT';
+
+class WalletRequestTimeoutError extends Error {
+  constructor(
+    public readonly method: string,
+    public readonly timeoutMs: number
+  ) {
+    super(`${WALLET_TIMEOUT_PREFIX}: ${method} did not complete within ${timeoutMs}ms`);
+    this.name = 'WalletRequestTimeoutError';
+  }
+}
+
+function withTimeout<T>(method: string, operation: Promise<T>): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(new WalletRequestTimeoutError(method, WALLET_HTTP_REQUEST_TIMEOUT_MS));
+    }, WALLET_HTTP_REQUEST_TIMEOUT_MS);
+  });
+
+  return Promise.race([operation, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
+
+function withWalletRequestTimeout(wallet: WalletInterface): WalletInterface {
+  return new Proxy(wallet, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function') {
+        return value;
+      }
+
+      return (...args: unknown[]) => withTimeout(String(property), value.apply(target, args));
+    }
+  });
+}
+
+function timeoutPayloadFromBody(body: string): { message: string; method: string; timeoutMs: number } | undefined {
+  let parsed: unknown = body;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    parsed = { message: body };
+  }
+
+  const message = typeof parsed === 'object' && parsed !== null && 'message' in parsed
+    ? String((parsed as { message?: unknown }).message)
+    : typeof parsed === 'string'
+      ? parsed
+      : '';
+  const match = message.match(/^WALLET_REQUEST_TIMEOUT: (.+) did not complete within (\d+)ms$/);
+  if (!match) return undefined;
+
+  return {
+    message,
+    method: match[1],
+    timeoutMs: Number(match[2])
+  };
+}
+
+function normalizeWalletTimeoutResponse(response: HttpResponseEvent): HttpResponseEvent {
+  const timeoutPayload = timeoutPayloadFromBody(response.body);
+  if (!timeoutPayload) return response;
+
+  return {
+    ...response,
+    status: 504,
+    body: JSON.stringify({
+      code: WALLET_TIMEOUT_PREFIX,
+      ...timeoutPayload
+    })
+  };
+}
+
 /**
  * Duck-type check for WERR_REVIEW_ACTIONS-shaped errors. We don't use
  * `error?.constructor.name === 'WERR_REVIEW_ACTIONS'` because Vite's
@@ -163,8 +240,8 @@ export const onWalletReady = async (wallet: WalletInterface): Promise<(() => voi
   window.electronAPI.onHttpRequest(async (req: HttpRequestEvent) => {
     let response: HttpResponseEvent;
 
-    const wallet = _currentWallet;
-    if (!wallet) {
+    const rawWallet = _currentWallet;
+    if (!rawWallet) {
       response = {
         request_id: req.request_id,
         status: 503,
@@ -173,6 +250,7 @@ export const onWalletReady = async (wallet: WalletInterface): Promise<(() => voi
       window.electronAPI.sendHttpResponse(response);
       return;
     }
+    const wallet = withWalletRequestTimeout(rawWallet);
 
     try {
       const origin = parseOrigin(req.headers);
@@ -868,7 +946,7 @@ export const onWalletReady = async (wallet: WalletInterface): Promise<(() => voi
       }
 
       // Send response back to main process
-      window.electronAPI.sendHttpResponse(response);
+      window.electronAPI.sendHttpResponse(normalizeWalletTimeoutResponse(response));
     } catch (e) {
       console.error("Error handling http-request event:", e);
       response = {

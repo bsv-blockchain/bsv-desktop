@@ -276,6 +276,45 @@ describe('onWalletReady', () => {
     )
   })
 
+  it('returns 504 when a wallet call does not complete', async () => {
+    vi.useFakeTimers()
+    try {
+      const wallet = makeMockWallet({
+        getPublicKey: vi.fn(() => new Promise(() => {})),
+      })
+      await onWalletReady(wallet)
+      const handler = mockOnHttpRequest.mock.calls[0][0]
+
+      const pending = handler({
+        request_id: 8,
+        path: '/getPublicKey',
+        headers: { origin: 'https://example.com' },
+        body: JSON.stringify({ identityKey: true, seekPermission: false }),
+        method: 'POST',
+      })
+
+      await vi.advanceTimersByTimeAsync(60000)
+      await pending
+
+      const response = mockSendHttpResponse.mock.calls[0][0]
+      expect(response).toEqual(
+        expect.objectContaining({
+          request_id: 8,
+          status: 504,
+        })
+      )
+      expect(JSON.parse(response.body)).toEqual(
+        expect.objectContaining({
+          code: 'WALLET_REQUEST_TIMEOUT',
+          method: 'getPublicKey',
+          timeoutMs: 60000,
+        })
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('preserves WERR_REVIEW_ACTIONS fields when the class name is minified', async () => {
     const reviewActionResults = [{ txid: '00'.repeat(32), status: 'serviceError' }]
     const sendWithResults = [{ txid: '00'.repeat(32), status: 'failed' }]

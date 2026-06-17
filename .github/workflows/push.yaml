@@ -1,5 +1,7 @@
 on: [pull_request]
 name: Install and Test
+permissions:
+  contents: read
 jobs:
   test:
     name: Install & Test

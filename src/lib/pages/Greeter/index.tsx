@@ -1,4 +1,5 @@
 import { useContext, useState, useRef, useCallback, useEffect } from 'react'
+import * as secrets from '../../services/secrets';
 import { useTranslation } from 'react-i18next'
 import {
   Typography,
@@ -714,7 +715,7 @@ const Greeter: React.FC<any> = ({ history }) => {
       await (walletManager as any).providePassword(password)
       if (walletManager.authenticated) {
         // Save snapshot to local storage
-        localStorage.snap = saveEnhancedSnapshot()
+        secrets.setSnapshot(saveEnhancedSnapshot())
         toast.success(t('password_success_authenticated'))
         history.push('/dashboard/apps')
       } else {
@@ -766,7 +767,7 @@ const Greeter: React.FC<any> = ({ history }) => {
       await (walletManager as any).providePrivilegedKeyManager(createDisabledPrivilegedManager())
 
       if (walletManager.authenticated) {
-        localStorage.snap = saveEnhancedSnapshot()
+        secrets.setSnapshot(saveEnhancedSnapshot())
         toast.success(t('password_success_authenticated'))
         history.push('/dashboard/apps')
       } else {

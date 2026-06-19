@@ -46,6 +46,7 @@ import { EventEmittable } from './EventEmittable'
 import { PermissionQueueManager } from './PermissionQueueManager'
 import { PeerPayManager } from './PeerPayManager'
 import { StorageElectronIPC } from '../StorageElectronIPC'
+import * as secrets from './secrets'
 import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB } from '../config'
 import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
@@ -288,10 +289,11 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
    * Call this once on app startup before calling initialize().
    */
   restoreConfigFromSnapshot() {
-    if (!localStorage.snap || this._lifecycle !== 'unconfigured') return
+    const snap = secrets.getSnapshot()
+    if (!snap || this._lifecycle !== 'unconfigured') return
 
     try {
-      const snapArr = Utils.toArray(localStorage.snap, 'base64')
+      const snapArr = Utils.toArray(snap, 'base64')
       const { config } = this._loadEnhancedSnapshot(snapArr)
       if (!config) return
 
@@ -323,7 +325,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
    * Fetch WAB server info. For new users with WAB auto-config.
    */
   async fetchAndAutoConfig(): Promise<void> {
-    if (!localStorage.snap && this._lifecycle === 'unconfigured' && this._loginType === 'wab' && this._wabUrl) {
+    if (!secrets.getSnapshot() && this._lifecycle === 'unconfigured' && this._loginType === 'wab' && this._wabUrl) {
       try {
         const response = await fetch(`${this._wabUrl}/info`)
         if (!response.ok) throw new Error(`Server responded with ${response.status}`)
@@ -420,8 +422,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       // For direct-key returning users, auto-provide stored key.
       // NOTE: providePrimaryKey calls _buildWallet internally, which will advance
       // lifecycle to 'ready'. We must NOT overwrite that afterwards.
-      if (directKeyMode && localStorage.snap && localStorage.getItem('primaryKeyHex')) {
-        const storedHex = localStorage.getItem('primaryKeyHex')!.trim()
+      if (directKeyMode && secrets.getSnapshot() && secrets.getKeyHex()) {
+        const storedHex = secrets.getKeyHex()!.trim()
         if (storedHex) {
           try {
             const keyBytes = Utils.toArray(storedHex, 'hex')
@@ -537,7 +539,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       }
 
       this._lifecycle = 'ready'
-      this._snapshotLoaded = !!localStorage.snap && !!this._managers.walletManager
+      this._snapshotLoaded = !!secrets.getSnapshot() && !!this._managers.walletManager
 
       this._emitState()
       return permissionsManager
@@ -564,7 +566,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     }
 
     if (this._loginType === 'direct-key') {
-      const storedHex = localStorage.getItem('primaryKeyHex')
+      const storedHex = secrets.getKeyHex()
       if (storedHex) {
         try {
           const keyDeriver = new CachedKeyDeriver(new PrivateKey(Utils.toArray(storedHex.trim(), 'hex')))
@@ -661,14 +663,15 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   }
 
   private async _loadWalletSnapshot(walletManager: any) {
-    if (!localStorage.snap) return
+    const snap = secrets.getSnapshot()
+    if (!snap) return
     try {
-      const snapArr = Utils.toArray(localStorage.snap, 'base64')
+      const snapArr = Utils.toArray(snap, 'base64')
       const { walletSnapshot } = this._loadEnhancedSnapshot(snapArr)
       await walletManager.loadSnapshot(walletSnapshot)
     } catch (err: any) {
       console.error('[WalletService] Error loading snapshot:', err)
-      localStorage.removeItem('snap')
+      secrets.clearSnapshot()
       toast.error("Couldn't load saved data: " + err.message)
     }
   }
@@ -720,7 +723,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
 
     const newBackupUrls = [...this._backupStorageUrls, url]
     const snapshot = this.saveEnhancedSnapshot({ backupStorageUrls: newBackupUrls })
-    localStorage.snap = snapshot
+    secrets.setSnapshot(snapshot)
     this._backupStorageUrls = newBackupUrls
     this._emitState()
     toast.success('Backup storage added successfully!')
@@ -742,7 +745,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       toast.error('Failed to remove backup: could not save snapshot')
       throw err
     }
-    localStorage.snap = snapshot
+    secrets.setSnapshot(snapshot)
     this._backupStorageUrls = newBackupUrls
     this._emitState()
 
@@ -849,7 +852,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     this._backupStorageUrls = newBackups
 
     const snapshot = this.saveEnhancedSnapshot()
-    localStorage.snap = snapshot
+    secrets.setSnapshot(snapshot)
     this._emitState()
 
     const visiblePrimaryAfter = this._useRemoteStorage ? this._selectedStorageUrl : 'LOCAL_STORAGE'
@@ -874,7 +877,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     }
 
     const snapshot = this.saveEnhancedSnapshot({ messageBoxUrl: trimmedUrl, useMessageBox: true })
-    localStorage.snap = snapshot
+    secrets.setSnapshot(snapshot)
     this._emitState()
     toast.success('Message Box URL configured successfully!')
   }
@@ -885,7 +888,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     this._useMessageBox = false
 
     const snapshot = this.saveEnhancedSnapshot()
-    localStorage.snap = snapshot
+    secrets.setSnapshot(snapshot)
     this._emitState()
     toast.success('Message Box URL removed successfully!')
   }
@@ -915,6 +918,13 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     for (const [key, value] of Object.entries(preservedKeys)) {
       localStorage.setItem(key, value)
     }
+
+    // Wallet secrets now live in the encrypted main-process store, not
+    // localStorage, so localStorage.clear() no longer forgets them. Clear
+    // them explicitly on logout.
+    secrets.clearSnapshot()
+    secrets.clearKeyHex()
+    secrets.clearMnemonic()
 
     this._managers = {}
     this._wallet = undefined

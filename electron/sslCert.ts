@@ -1,11 +1,12 @@
 import { app, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import forge from 'node-forge';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 interface CertificateKeyPair {
   cert: string;
@@ -135,13 +136,14 @@ async function isCertTrusted(certPath: string): Promise<boolean> {
   try {
     if (process.platform === 'darwin') {
       // macOS: Check if cert is in user keychain (CN is "localhost", not org name)
-      await execAsync(`security find-certificate -c "localhost" -p ~/Library/Keychains/login.keychain-db`);
+      const loginKeychain = path.join(os.homedir(), 'Library/Keychains/login.keychain-db');
+      await execFileAsync('security', ['find-certificate', '-c', 'localhost', '-p', loginKeychain]);
       // Also verify it's actually trusted, not just present
-      await execAsync(`security verify-cert -c "${certPath}" -p ssl -s localhost`);
+      await execFileAsync('security', ['verify-cert', '-c', certPath, '-p', 'ssl', '-s', 'localhost']);
       return true;
     } else if (process.platform === 'win32') {
       // Windows: Check if cert is in trusted root store
-      const { stdout } = await execAsync(`certutil -user -verifystore Root "BSV Desktop"`);
+      const { stdout } = await execFileAsync('certutil', ['-user', '-verifystore', 'Root', 'BSV Desktop']);
       return stdout.includes('BSV Desktop');
     } else {
       // Linux: Various cert stores, hard to check reliably
@@ -205,18 +207,28 @@ Certificate location: ${certPath}`;
     if (platform === 'darwin') {
       // macOS: add-trusted-cert with -d flag adds to admin trust settings (needs auth prompt)
       // First try without sudo — works if user has keychain access
+      const loginKeychain = path.join(os.homedir(), 'Library/Keychains/login.keychain-db');
       try {
-        await execAsync(`security add-trusted-cert -d -r trustRoot -k ~/Library/Keychains/login.keychain-db "${certPath}"`);
+        await execFileAsync('security', [
+          'add-trusted-cert', '-d', '-r', 'trustRoot', '-k', loginKeychain, certPath
+        ]);
       } catch (firstErr) {
         console.log('Direct trust failed, trying with osascript admin prompt...');
-        // Use osascript to prompt for admin password
-        await execAsync(`osascript -e 'do shell script "security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain \\"${certPath}\\"" with administrator privileges'`);
+        // Use osascript to prompt for admin password. The inner shell script runs
+        // `security` with administrator privileges; build it from a JSON-quoted
+        // path so shell metacharacters in certPath cannot break out of the string.
+        const innerCmd =
+          'security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain '
+          + JSON.stringify(certPath);
+        await execFileAsync('osascript', [
+          '-e', `do shell script ${JSON.stringify(innerCmd)} with administrator privileges`
+        ]);
       }
 
       return true;
     } else if (platform === 'win32') {
       // Windows: Import to Trusted Root store
-      await execAsync(`certutil -addstore -user Root "${certPath}"`);
+      await execFileAsync('certutil', ['-addstore', '-user', 'Root', certPath]);
 
       // await dialog.showMessageBox({
       //   type: 'info',

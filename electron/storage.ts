@@ -24,6 +24,46 @@ const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/**
+ * Allow-list of StorageKnex methods the renderer is permitted to invoke through
+ * the `storage:call-method` IPC channel. Must stay in sync with the methods
+ * exposed by src/lib/StorageElectronIPC.ts. Anything not listed here is rejected.
+ */
+const ALLOWED_STORAGE_METHODS: ReadonlySet<string> = new Set([
+  // Certificates
+  'insertCertificate', 'updateCertificate', 'findCertificates', 'deleteCertificate',
+  'insertCertificateAuth', 'relinquishCertificate', 'findCertificatesAuth', 'listCertificates',
+  // Outputs
+  'insertOutput', 'updateOutput', 'findOutputs', 'deleteOutput',
+  'relinquishOutput', 'findOutputsAuth', 'listOutputs',
+  // Transactions
+  'insertTransaction', 'updateTransaction', 'findTransactions', 'deleteTransaction',
+  // Commissions
+  'insertCommission', 'findCommissions',
+  // Output baskets
+  'insertOutputBasket', 'updateOutputBasket', 'findOutputBaskets', 'deleteOutputBasket',
+  'findOutputBasketsAuth',
+  // Proven transactions
+  'insertProvenTx', 'updateProvenTx', 'findProvenTxs', 'deleteProvenTx',
+  'insertProvenTxReq', 'updateProvenTxReq', 'findProvenTxReqs', 'deleteProvenTxReq',
+  // Labels & tags
+  'insertTxLabel', 'findTxLabels', 'deleteTxLabel',
+  'insertOutputTag', 'findOutputTags', 'deleteOutputTag',
+  // Counterparties
+  'insertCounterparty', 'updateCounterparty', 'findCounterparties', 'deleteCounterparty',
+  // Sync
+  'processSyncChunk', 'requestSyncChunk', 'getSyncChunk', 'findOrInsertSyncStateAuth',
+  // Wallet / chain status
+  'getWalletStatus', 'getHeight', 'updateHeight',
+  // Permissions
+  'findPermissions', 'insertPermission', 'updatePermission', 'deletePermission',
+  // Settings
+  'findSettings', 'insertSetting', 'updateSetting', 'deleteSetting',
+  // Lifecycle & actions
+  'destroy', 'migrate', 'findOrInsertUser', 'setActive',
+  'abortAction', 'createAction', 'processAction', 'internalizeAction', 'listActions',
+]);
+
 // Lazy-load knex to avoid loading better-sqlite3 until actually needed
 let createKnex: any = null;
 function getCreateKnex() {
@@ -352,6 +392,13 @@ class StorageManager {
     method: string,
     args: any[]
   ): Promise<any> {
+    // Only methods the renderer's StorageElectronIPC wrapper actually calls are
+    // permitted. This prevents a compromised renderer from invoking arbitrary
+    // methods (or prototype members) on the StorageKnex instance via IPC.
+    if (!ALLOWED_STORAGE_METHODS.has(method)) {
+      throw new Error(`Storage method not permitted: ${method}`);
+    }
+
     const storage = await this.getOrCreateStorage(identityKey, chain);
 
     // Type assertion to access storage methods dynamically

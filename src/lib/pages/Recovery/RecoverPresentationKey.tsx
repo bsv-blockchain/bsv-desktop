@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react'
+import * as secrets from '../../services/secrets';
 import { useTranslation } from 'react-i18next'
 import style from './style.js'
 import {
@@ -71,7 +72,7 @@ const RecoverPresentationKey: React.FC<any> = ({ history }) => {
       await managers.walletManager!.providePassword(password)
 
       if (managers.walletManager!.authenticated) {
-        localStorage.snap = saveEnhancedSnapshot()
+        secrets.setSnapshot(saveEnhancedSnapshot())
         toast.success(t('recover_key_toast_success'))
         history.push('/dashboard/apps')
       } else {

@@ -1,4 +1,5 @@
 import { useState, useContext, useCallback } from 'react'
+import * as secrets from '../../../../services/secrets';
 import { useTranslation } from 'react-i18next'
 import {
   Typography, Button, CircularProgress
@@ -54,7 +55,7 @@ const RecoveryKeySettings: React.FC<RecoveryKeySettingsProps> = ({ history, onVi
       setChangeLoading(true)
       await managers.walletManager.changeRecoveryKey()
       setRecoveryKey('')
-      localStorage.snap = saveEnhancedSnapshot()
+      secrets.setSnapshot(saveEnhancedSnapshot())
       toast.dark('Recovery key changed!')
     } catch (e) {
       toast.error(e.message)

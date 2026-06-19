@@ -45,6 +45,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('storage:call-method', identityKey, chain, method, args)
   },
 
+  // Secret store (encrypted at rest in the main process)
+  secrets: {
+    getAll: (): Promise<Record<string, string>> =>
+      ipcRenderer.invoke('secrets:get-all'),
+    set: (name: string, value: string): Promise<void> =>
+      ipcRenderer.invoke('secrets:set', name, value),
+    delete: (name: string): Promise<void> =>
+      ipcRenderer.invoke('secrets:delete', name),
+  },
+
   // Auto-update operations
   updates: {
     check: () => ipcRenderer.invoke('update:check'),
@@ -90,6 +100,11 @@ export interface ElectronAPI {
     makeAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; settings?: any; error?: string }>;
     initializeServices: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; error?: string }>;
     callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+  };
+  secrets: {
+    getAll: () => Promise<Record<string, string>>;
+    set: (name: string, value: string) => Promise<void>;
+    delete: (name: string) => Promise<void>;
   };
   updates: {
     check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;

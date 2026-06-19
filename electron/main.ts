@@ -26,6 +26,15 @@ function getUpdaterModule() {
   return updaterModule;
 }
 
+// Lazy load secret store to avoid loading it before app is ready
+let secretStoreModule: typeof import('./secretStore.js') | null = null;
+async function getSecretStore() {
+  if (!secretStoreModule) {
+    secretStoreModule = await import('./secretStore.js');
+  }
+  return secretStoreModule;
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -480,6 +489,23 @@ ipcMain.handle('storage:initialize-services', async (_event, identityKey: string
     console.error('[IPC] storage:initialize-services error:', error);
     return { success: false, error: error.message };
   }
+});
+
+// ===== Secret Store IPC Handlers =====
+
+ipcMain.handle('secrets:get-all', async () => {
+  const store = await getSecretStore();
+  return store.getAll();
+});
+
+ipcMain.handle('secrets:set', async (_event, name: string, value: string) => {
+  const store = await getSecretStore();
+  store.setSecret(name, value);
+});
+
+ipcMain.handle('secrets:delete', async (_event, name: string) => {
+  const store = await getSecretStore();
+  store.deleteSecret(name);
 });
 
 // ===== Auto-Update IPC Handlers =====

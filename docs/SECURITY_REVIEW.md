@@ -17,11 +17,11 @@ Patched in this pass (non-breaking hardening):
 - **#4 XSS in release notes** — release notes are sanitized with `DOMPurify` before `dangerouslySetInnerHTML`.
 - **#6 / #10 Navigation controls** — `setWindowOpenHandler` / `will-navigate` / `will-redirect` now allow only `http:`/`https:` to reach `shell.openExternal`; `javascript:`, `file:`, `data:` and custom protocols are blocked, and `will-redirect` is handled.
 - **#9 Manifest proxy redirects** — the resolved URL after redirects is re-validated for HTTPS + `/manifest.json`.
+- **#5 Plaintext secrets at rest** — `snap`, `primaryKeyHex`, and `mnemonic12` were moved out of renderer `localStorage` into a main-process file (`userData/secrets.dat`) encrypted with Electron `safeStorage` (key held in the OS keychain — macOS Keychain / Windows DPAPI / Linux libsecret/kwallet — not beside the data). The toolbox "encrypted" snapshot offered no at-rest protection because it stores its AES key inside the same blob. Legacy plaintext is migrated and cleared on first launch; `logout()` clears the store. Falls back to a clearly-warned plaintext mode only when no OS keyring is available (`secretStore.ts` / renderer `secrets.ts`). Limit: protects against other apps/users, backups, and disk theft — **not** same-user malware on Windows/Linux (per-user keys). The passphrase upgrade is tracked separately.
 
 Still open (require larger / potentially breaking changes — tracked, not yet done):
 
-- **#1 Unauthenticated local HTTP server** — needs a capability token or socket binding; affects BRC-100 clients.
-- **#5 Plaintext secrets in `localStorage`** — needs at-rest encryption of the wallet snapshot.
+- **#1 Unauthenticated local HTTP server** — intentionally open to local browser clients (the BRC-100 model). The per-origin permission prompt is the security boundary; transport auth can't distinguish a browser from a local process without breaking the web use case. Hardening tracked: ensure all read methods are permissioned; optional burst rate limiting.
 - **#7 `sandbox: false` / dev web-security disabled**, **#8 `removeAllListeners`**, **#11–#16 performance/robustness** — see below.
 
 ---

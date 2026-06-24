@@ -445,7 +445,7 @@ ipcMain.on('http-response', (_event, response) => {
 // ===== Storage IPC Handlers =====
 
 // Check if storage can be made available
-ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain: 'main' | 'test') => {
+ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn') => {
   try {
     const manager = await getStorageManager();
     return await manager.isAvailable(identityKey, chain);
@@ -456,7 +456,7 @@ ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain
 });
 
 // Make storage available (initialize database)
-ipcMain.handle('storage:make-available', async (_event, identityKey: string, chain: 'main' | 'test') => {
+ipcMain.handle('storage:make-available', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn') => {
   try {
     const manager = await getStorageManager();
     const settings = await manager.makeAvailable(identityKey, chain);
@@ -468,7 +468,7 @@ ipcMain.handle('storage:make-available', async (_event, identityKey: string, cha
 });
 
 // Call a storage method
-ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => {
+ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => {
   try {
     const manager = await getStorageManager();
     const result = await manager.callStorageMethod(identityKey, chain, method, args);
@@ -480,7 +480,7 @@ ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain:
 });
 
 // Initialize services on storage
-ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test') => {
+ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn') => {
   try {
     const manager = await getStorageManager();
     await manager.initializeServices(identityKey, chain);

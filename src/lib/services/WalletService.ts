@@ -67,7 +67,7 @@ export type WalletServiceSnapshot = {
   wabUrl: string
   wabInfo: any
   selectedAuthMethod: string
-  selectedNetwork: 'main' | 'test'
+  selectedNetwork: 'main' | 'test' | 'ttn'
   selectedStorageUrl: string
   messageBoxUrl: string
   useRemoteStorage: boolean
@@ -117,7 +117,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   private _wabUrl = ''
   private _wabInfo: any = null
   private _selectedAuthMethod = ''
-  private _selectedNetwork: 'main' | 'test' = DEFAULT_CHAIN
+  private _selectedNetwork: 'main' | 'test' | 'ttn' = DEFAULT_CHAIN
   private _selectedStorageUrl = ''
   private _messageBoxUrl = ''
   private _useRemoteStorage = false

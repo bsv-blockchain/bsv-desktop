@@ -358,7 +358,9 @@ export function useWalletService() {
     // Settings
     settings: walletState.settings,
     updateSettings,
-    network: walletState.selectedNetwork === 'test' ? 'testnet' as const : 'mainnet' as const,
+    // 'ttn' (TeraTestNet) uses testnet-style addresses, so it collapses to 'testnet' here.
+    network: walletState.selectedNetwork === 'main' ? 'mainnet' as const : 'testnet' as const,
+    chain: walletState.selectedNetwork,
     // Profile
     activeProfile: walletState.activeProfile,
     setActiveProfile,

@@ -16,6 +16,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import { toast } from 'react-toastify'
 import { WalletContext } from '../../../WalletContext'
+import { wocExplorerBase } from '../../../utils/woc'
 import AmountDisplay from '../../../components/AmountDisplay'
 import type { WalletAction } from '@bsv/sdk'
 
@@ -44,7 +45,7 @@ function getStatusChip(status: string, t: (key: string) => string) {
 
 const Transactions: React.FC = () => {
   const { t } = useTranslation()
-  const { managers, adminOriginator, network } = useContext(WalletContext)
+  const { managers, adminOriginator, chain } = useContext(WalletContext)
 
   const [actions, setActions] = useState<WalletAction[]>([])
   const [hasMore, setHasMore] = useState(false)
@@ -95,9 +96,7 @@ const Transactions: React.FC = () => {
   }
 
   const handleExplorerLink = (txid: string) => {
-    const base = network === 'mainnet'
-      ? 'https://whatsonchain.com'
-      : 'https://test.whatsonchain.com'
+    const base = wocExplorerBase(chain)
     window.open(`${base}/tx/${txid}`, '_blank', 'noopener,noreferrer')
   }
 

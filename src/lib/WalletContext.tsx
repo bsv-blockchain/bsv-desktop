@@ -102,7 +102,7 @@ export interface WABConfig {
   wabUrl: string;
   wabInfo: any;
   method: string;
-  network: 'main' | 'test';
+  network: 'main' | 'test' | 'ttn';
   storageUrl: string;
   messageBoxUrl: string;
   loginType?: LoginType;
@@ -124,6 +124,9 @@ export interface WalletContextValue {
   settings: WalletSettings;
   updateSettings: (newSettings: WalletSettings) => Promise<void>;
   network: 'mainnet' | 'testnet';
+  /** Raw selected chain. Distinguishes TeraTestNet ('ttn') from plain testnet,
+   *  which `network` collapses to 'testnet'. Use for picking service endpoints. */
+  chain: 'main' | 'test' | 'ttn';
   activeProfile: WalletProfile | null;
   setActiveProfile: (profile: WalletProfile | null) => void;
   logout: () => void;
@@ -185,6 +188,7 @@ export const WalletContext = createContext<WalletContextValue>({
   settings: DEFAULT_SETTINGS,
   updateSettings: async () => {},
   network: 'mainnet',
+  chain: 'main',
   activeProfile: null,
   setActiveProfile: () => {},
   logout: () => {},

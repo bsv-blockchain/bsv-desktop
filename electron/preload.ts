@@ -35,13 +35,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Storage operations
   storage: {
-    isAvailable: (identityKey: string, chain: 'main' | 'test') =>
+    isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') =>
       ipcRenderer.invoke('storage:is-available', identityKey, chain),
-    makeAvailable: (identityKey: string, chain: 'main' | 'test') =>
+    makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') =>
       ipcRenderer.invoke('storage:make-available', identityKey, chain),
-    initializeServices: (identityKey: string, chain: 'main' | 'test') =>
+    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn') =>
       ipcRenderer.invoke('storage:initialize-services', identityKey, chain),
-    callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) =>
+    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) =>
       ipcRenderer.invoke('storage:call-method', identityKey, chain, method, args)
   },
 
@@ -96,10 +96,10 @@ export interface ElectronAPI {
   sendHttpResponse: (response: any) => void;
   removeHttpRequestListener: () => void;
   storage: {
-    isAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<boolean>;
-    makeAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; settings?: any; error?: string }>;
-    initializeServices: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; error?: string }>;
-    callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+    isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<boolean>;
+    makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<{ success: boolean; settings?: any; error?: string }>;
+    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<{ success: boolean; error?: string }>;
+    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
   };
   secrets: {
     getAll: () => Promise<Record<string, string>>;

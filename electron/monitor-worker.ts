@@ -29,7 +29,7 @@ function getCreateKnex() {
 
 interface MonitorConfig {
   identityKey: string;
-  chain: 'main' | 'test';
+  chain: 'main' | 'test' | 'ttn';
 }
 
 let monitor: Monitor | null = null;

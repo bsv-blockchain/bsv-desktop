@@ -130,17 +130,8 @@ export async function startHttpServer(mainWindow: BrowserWindow): Promise<() => 
       };
 
       // Send request to renderer and wait for response
-      const responsePromise = new Promise<HttpResponseEvent>((resolve, reject) => {
+      const responsePromise = new Promise<HttpResponseEvent>((resolve) => {
         pendingRequests.set(request_id, resolve);
-
-        // Timeout after 30 seconds
-        setTimeout(() => {
-          if (pendingRequests.has(request_id)) {
-            console.error(`[HTTP] TIMEOUT — renderer never responded (request_id: ${request_id})`);
-            pendingRequests.delete(request_id);
-            reject(new Error('Request timeout'));
-          }
-        }, 30000);
       });
 
       // Send to renderer

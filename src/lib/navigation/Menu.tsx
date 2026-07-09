@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import * as secrets from '../services/secrets';
 import {
   Apps as BrowseIcon,
   Settings as SettingsIcon,
@@ -266,7 +267,7 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
       setProfilesLoading(true)
       // Handle both synchronous and asynchronous listProfiles implementation
       if (managers.walletManager.saveSnapshot) {
-        localStorage.snap = saveEnhancedSnapshot()
+        secrets.setSnapshot(saveEnhancedSnapshot())
       }
       const profileList = await Promise.resolve(managers.walletManager?.listProfiles())
       setProfiles(profileList)

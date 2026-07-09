@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      'node:crypto': path.resolve(__dirname, './src/node-crypto-shim.ts'),
     },
   },
   base: './',

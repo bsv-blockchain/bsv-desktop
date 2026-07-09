@@ -21,14 +21,12 @@ import React, {
 } from 'react'
 import { useMediaQuery } from '@mui/material'
 import { DEFAULT_SETTINGS, WalletSettings } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
-import { WalletPermissionsManager, PrivilegedKeyManager } from '@bsv/wallet-toolbox-client'
-import { WalletStorageManager, WalletAuthenticationManager } from '@bsv/wallet-toolbox-client'
-import { WalletInterface } from '@bsv/sdk'
+import { WalletPermissionsManager, PrivilegedKeyManager, WalletStorageManager, WalletAuthenticationManager } from '@bsv/wallet-toolbox-client'
+import { WalletInterface, Utils } from '@bsv/sdk'
 import { PeerPayClient, AdvertisementToken } from '@bsv/message-box-client'
-import { toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 
-import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB } from './config'
+import { ADMIN_ORIGINATOR } from './config'
 import { UserContext } from './UserContext'
 import { useWalletService, getWalletService } from './hooks/useWalletService'
 import { buildPermissionModuleRegistry } from './permissionModules/registry'
@@ -37,7 +35,6 @@ import type { GroupPermissionRequest, CounterpartyPermissionRequest } from './ty
 import type { WalletProfile } from './types/WalletProfile'
 import { RequestInterceptorWallet } from './RequestInterceptorWallet'
 import { updateRecentApp } from './pages/Dashboard/Apps/getApps'
-import { Utils } from '@bsv/sdk'
 
 // -----
 // Permission Configuration Types (preserved for backward compatibility)
@@ -98,7 +95,6 @@ interface ManagerState {
   walletManager?: WalletAuthenticationManager;
   permissionsManager?: WalletPermissionsManager;
   settingsManager?: any;
-  wallet?: WalletInterface;
   storageManager?: WalletStorageManager;
 }
 
@@ -106,7 +102,7 @@ export interface WABConfig {
   wabUrl: string;
   wabInfo: any;
   method: string;
-  network: 'main' | 'test';
+  network: 'main' | 'test' | 'ttn';
   storageUrl: string;
   messageBoxUrl: string;
   loginType?: LoginType;
@@ -118,9 +114,19 @@ export interface WABConfig {
 export interface WalletContextValue {
   managers: ManagerState;
   updateManagers: (newManagers: ManagerState) => void;
+  /**
+   * Raw, unwrapped `Wallet` from `@bsv/wallet-toolbox`. Standalone — kept
+   * outside `managers` so it is never confused with `permissionsManager`.
+   * Internal/first-party use only (e.g. diagnostic UI, BRC-103 handshake
+   * plumbing). App-originated requests must go through `managers.permissionsManager`.
+   */
+  wallet?: WalletInterface;
   settings: WalletSettings;
   updateSettings: (newSettings: WalletSettings) => Promise<void>;
   network: 'mainnet' | 'testnet';
+  /** Raw selected chain. Distinguishes TeraTestNet ('ttn') from plain testnet,
+   *  which `network` collapses to 'testnet'. Use for picking service endpoints. */
+  chain: 'main' | 'test' | 'ttn';
   activeProfile: WalletProfile | null;
   setActiveProfile: (profile: WalletProfile | null) => void;
   logout: () => void;
@@ -161,6 +167,7 @@ export interface WalletContextValue {
   addBackupStorageUrl: (url: string) => Promise<void>;
   removeBackupStorageUrl: (url: string) => Promise<void>;
   syncBackupStorage: (progressCallback?: (message: string) => void) => Promise<void>;
+  setPrimaryStorage: (target: string, progressCallback?: (message: string) => void) => Promise<void>;
   updateMessageBoxUrl: (url: string) => Promise<void>;
   removeMessageBoxUrl: () => Promise<void>;
   initializingBackendServices: boolean;
@@ -181,6 +188,7 @@ export const WalletContext = createContext<WalletContextValue>({
   settings: DEFAULT_SETTINGS,
   updateSettings: async () => {},
   network: 'mainnet',
+  chain: 'main',
   activeProfile: null,
   setActiveProfile: () => {},
   logout: () => {},
@@ -221,6 +229,7 @@ export const WalletContext = createContext<WalletContextValue>({
   addBackupStorageUrl: async () => {},
   removeBackupStorageUrl: async () => {},
   syncBackupStorage: async () => {},
+  setPrimaryStorage: async () => {},
   updateMessageBoxUrl: async () => {},
   removeMessageBoxUrl: async () => {},
   initializingBackendServices: false,
@@ -314,18 +323,10 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     svc.permissionQueue.setPermissionsModuleHelpers(getPermissionModuleById as any, permissionPromptHandlersRef.current)
   }, [enabledPermissionModules, getPermissionModuleById, svc])
 
-  // ---- Permissions config (load from localStorage once) ----
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('permissionsConfig')
-      if (stored) {
-        const merged = { ...DEFAULT_PERMISSIONS_CONFIG, ...JSON.parse(stored) }
-        svc.permissionQueue.permissionsConfig = merged
-      }
-    } catch (e) {
-      console.error('Failed to load permissions config:', e)
-    }
-  }, [svc])
+  // Permissions config is loaded from localStorage inside getWalletService()
+  // before React mounts, so the primed _queueSnapshot already reflects the
+  // saved value. Loading here in a useEffect creates a race against
+  // useSyncExternalStore's subscribe phase and the snapshot update is lost.
 
   // ---- Dark mode for permission prompts ----
   const tokenPromptPaletteMode = useMemo<import('@mui/material').PaletteMode>(() => {
@@ -344,9 +345,11 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   const DEBOUNCE_TIME_MS = 5000
 
   useEffect(() => {
-    // Use managers.wallet (set by _buildWallet) instead of walletManager.authenticated
-    // SimpleWalletManager (direct-key) doesn't expose an authenticated property
-    const walletReady = !!managers?.wallet
+    // External BRC-100 traffic (port 3321) hits permissionsManager so app-originated
+    // requests pass through permission prompts. The standalone raw `wallet` (separate
+    // from `managers`) is reserved for internal wallet-toolbox plumbing that
+    // intentionally bypasses permissions (e.g. StorageClient BRC-103 handshake).
+    const walletReady = !!managers?.permissionsManager
     console.log('[onWalletReady effect] check:', {
       walletReady,
       profileId: activeProfile?.id ? `[${activeProfile.id.length} bytes]` : null,
@@ -357,7 +360,6 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     }
 
     console.log('[onWalletReady effect] guard passed — registering wallet ref')
-    const wallet = managers.wallet!
 
     const updateRecentAppWrapper = async (profileId: string, origin: string): Promise<void> => {
       try {
@@ -367,18 +369,18 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
         if (lastProcessed && (now - lastProcessed) < DEBOUNCE_TIME_MS) return
         recentOriginsRef.current.set(cacheKey, now)
         await updateRecentApp(profileId, origin)
-        window.dispatchEvent(new CustomEvent('recentAppsUpdated', { detail: { profileId, origin } }))
+        globalThis.dispatchEvent(new CustomEvent('recentAppsUpdated', { detail: { profileId, origin } }))
       } catch (error) {
         console.debug('Error tracking recent app:', error)
       }
     }
 
-    const interceptorWallet = new RequestInterceptorWallet(wallet, Utils.toBase64(activeProfile.id), updateRecentAppWrapper)
+    const interceptorWallet = new RequestInterceptorWallet(managers.permissionsManager, Utils.toBase64(activeProfile.id), updateRecentAppWrapper)
     // onWalletReady registers IPC listener once, subsequent calls just swap wallet ref
     onWalletReady(interceptorWallet)
 
     // No cleanup — IPC listener is permanent, wallet ref is swapped not re-registered
-  }, [managers?.wallet, activeProfile?.id, onWalletReady])
+  }, [managers?.permissionsManager, activeProfile?.id, onWalletReady])
 
   // ---- Context value ----
   const contextValue = useMemo<WalletContextValue>(() => ({

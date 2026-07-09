@@ -36,7 +36,7 @@ interface ConfirmationState {
 
 const WalletDiagnosis = () => {
   const { t } = useTranslation()
-  const { managers } = useContext(WalletContext)
+  const { wallet: rawWallet } = useContext(WalletContext)
 
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -54,10 +54,9 @@ const WalletDiagnosis = () => {
   }, [])
 
   const getWallet = useCallback(() => {
-    const wallet = managers.wallet
-    if (!wallet) throw new Error('Wallet not available. Please ensure you are logged in.')
-    return wallet
-  }, [managers.wallet])
+    if (!rawWallet) throw new Error('Wallet not available. Please ensure you are logged in.')
+    return rawWallet
+  }, [rawWallet])
 
   const getWalletClass = useCallback((): Wallet => {
     const wallet = getWallet()

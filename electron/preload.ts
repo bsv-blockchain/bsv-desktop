@@ -43,23 +43,66 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onHttpRequest: (callback: (event: any) => void) => {
     ipcRenderer.on('http-request', (_event, request) => callback(request));
   },
+  onHttpRequestCancelled: (callback: (event: { request_id: number; reason?: string }) => void) => {
+    ipcRenderer.on('http-request-cancelled', (_event, payload) => callback(payload));
+  },
   sendHttpResponse: (response: any) => {
     ipcRenderer.send('http-response', response);
   },
   removeHttpRequestListener: () => {
     ipcRenderer.removeAllListeners('http-request');
+    ipcRenderer.removeAllListeners('http-request-cancelled');
   },
 
   // Storage operations
   storage: {
-    isAvailable: (identityKey: string, chain: 'main' | 'test') =>
+    isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') =>
       ipcRenderer.invoke('storage:is-available', identityKey, chain),
-    makeAvailable: (identityKey: string, chain: 'main' | 'test') =>
+    makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') =>
       ipcRenderer.invoke('storage:make-available', identityKey, chain),
-    initializeServices: (identityKey: string, chain: 'main' | 'test') =>
+    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn') =>
       ipcRenderer.invoke('storage:initialize-services', identityKey, chain),
-    callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) =>
+    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) =>
       ipcRenderer.invoke('storage:call-method', identityKey, chain, method, args)
+  },
+
+  // Secret store (vault-backed; requires unlock)
+  secrets: {
+    getAll: (): Promise<Record<string, string>> =>
+      ipcRenderer.invoke('secrets:get-all'),
+    set: (name: string, value: string): Promise<void> =>
+      ipcRenderer.invoke('secrets:set', name, value),
+    delete: (name: string): Promise<void> =>
+      ipcRenderer.invoke('secrets:delete', name),
+  },
+
+  // Vault unlock / enroll (cold-start gate)
+  vault: {
+    status: (): Promise<{
+      locked: boolean
+      hasVault: boolean
+      methods: Array<'se' | 'passphrase'>
+      biometricsAvailable: boolean
+      needsMigration: boolean
+    }> => ipcRenderer.invoke('vault:status'),
+    unlockWithPassphrase: (passphrase: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('vault:unlock-passphrase', passphrase),
+    unlockWithBiometrics: (): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('vault:unlock-biometrics'),
+    enroll: (options: {
+      passphrase: string
+      enableBiometrics: boolean
+      initialSecrets?: Record<string, string>
+    }): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('vault:enroll', options),
+    lock: (): Promise<void> => ipcRenderer.invoke('vault:lock'),
+    endSession: (): Promise<void> => ipcRenderer.invoke('vault:end-session'),
+    destroy: (): Promise<void> => ipcRenderer.invoke('vault:destroy'),
+  },
+
+  bootConfig: {
+    get: (): Promise<any> => ipcRenderer.invoke('boot-config:get'),
+    set: (config: any): Promise<void> => ipcRenderer.invoke('boot-config:set', config),
   },
 
   // Auto-update operations
@@ -110,13 +153,42 @@ export interface ElectronAPI {
     restart: () => Promise<void>;
   };
   onHttpRequest: (callback: (event: any) => void) => void;
+  onHttpRequestCancelled: (callback: (event: { request_id: number; reason?: string }) => void) => void;
   sendHttpResponse: (response: any) => void;
   removeHttpRequestListener: () => void;
   storage: {
-    isAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<boolean>;
-    makeAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; settings?: any; error?: string }>;
-    initializeServices: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; error?: string }>;
-    callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+    isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<boolean>;
+    makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<{ success: boolean; settings?: any; error?: string }>;
+    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<{ success: boolean; error?: string }>;
+    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+  };
+  secrets: {
+    getAll: () => Promise<Record<string, string>>;
+    set: (name: string, value: string) => Promise<void>;
+    delete: (name: string) => Promise<void>;
+  };
+  vault: {
+    status: () => Promise<{
+      locked: boolean;
+      hasVault: boolean;
+      methods: Array<'se' | 'passphrase'>;
+      biometricsAvailable: boolean;
+      needsMigration: boolean;
+    }>;
+    unlockWithPassphrase: (passphrase: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+    unlockWithBiometrics: () => Promise<{ ok: true } | { ok: false; error: string }>;
+    enroll: (options: {
+      passphrase: string;
+      enableBiometrics: boolean;
+      initialSecrets?: Record<string, string>;
+    }) => Promise<{ ok: true } | { ok: false; error: string }>;
+    lock: () => Promise<void>;
+    endSession: () => Promise<void>;
+    destroy: () => Promise<void>;
+  };
+  bootConfig: {
+    get: () => Promise<any>;
+    set: (config: any) => Promise<void>;
   };
   updates: {
     check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;

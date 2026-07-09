@@ -24,6 +24,46 @@ const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/**
+ * Allow-list of StorageKnex methods the renderer is permitted to invoke through
+ * the `storage:call-method` IPC channel. Must stay in sync with the methods
+ * exposed by src/lib/StorageElectronIPC.ts. Anything not listed here is rejected.
+ */
+const ALLOWED_STORAGE_METHODS: ReadonlySet<string> = new Set([
+  // Certificates
+  'insertCertificate', 'updateCertificate', 'findCertificates', 'deleteCertificate',
+  'insertCertificateAuth', 'relinquishCertificate', 'findCertificatesAuth', 'listCertificates',
+  // Outputs
+  'insertOutput', 'updateOutput', 'findOutputs', 'deleteOutput',
+  'relinquishOutput', 'findOutputsAuth', 'listOutputs',
+  // Transactions
+  'insertTransaction', 'updateTransaction', 'findTransactions', 'deleteTransaction',
+  // Commissions
+  'insertCommission', 'findCommissions',
+  // Output baskets
+  'insertOutputBasket', 'updateOutputBasket', 'findOutputBaskets', 'deleteOutputBasket',
+  'findOutputBasketsAuth',
+  // Proven transactions
+  'insertProvenTx', 'updateProvenTx', 'findProvenTxs', 'deleteProvenTx',
+  'insertProvenTxReq', 'updateProvenTxReq', 'findProvenTxReqs', 'deleteProvenTxReq',
+  // Labels & tags
+  'insertTxLabel', 'findTxLabels', 'deleteTxLabel',
+  'insertOutputTag', 'findOutputTags', 'deleteOutputTag',
+  // Counterparties
+  'insertCounterparty', 'updateCounterparty', 'findCounterparties', 'deleteCounterparty',
+  // Sync
+  'processSyncChunk', 'requestSyncChunk', 'getSyncChunk', 'findOrInsertSyncStateAuth',
+  // Wallet / chain status
+  'getWalletStatus', 'getHeight', 'updateHeight',
+  // Permissions
+  'findPermissions', 'insertPermission', 'updatePermission', 'deletePermission',
+  // Settings
+  'findSettings', 'insertSetting', 'updateSetting', 'deleteSetting',
+  // Lifecycle & actions
+  'destroy', 'migrate', 'findOrInsertUser', 'setActive',
+  'abortAction', 'createAction', 'processAction', 'internalizeAction', 'listActions',
+]);
+
 // Lazy-load knex to avoid loading better-sqlite3 until actually needed
 let createKnex: any = null;
 function getCreateKnex() {
@@ -54,7 +94,7 @@ class StorageManager {
   /**
    * Get or create a storage instance for the given identity key
    */
-  async getOrCreateStorage(identityKey: string, chain: 'main' | 'test'): Promise<StorageKnex> {
+  async getOrCreateStorage(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<StorageKnex> {
     const key = `${identityKey}-${chain}`;
 
     if (this.storages.has(key)) {
@@ -136,7 +176,7 @@ class StorageManager {
   /**
    * Check if storage is available for the given identity key
    */
-  async isAvailable(identityKey: string, chain: 'main' | 'test'): Promise<boolean> {
+  async isAvailable(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<boolean> {
     // Storage is always available once created
     await this.getOrCreateStorage(identityKey, chain);
     return true;
@@ -146,7 +186,7 @@ class StorageManager {
    * Make storage available (initialize database tables)
    * Returns TableSettings from the storage
    */
-  async makeAvailable(identityKey: string, chain: 'main' | 'test'): Promise<any> {
+  async makeAvailable(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<any> {
     const storage = await this.getOrCreateStorage(identityKey, chain);
     const settings = await storage.makeAvailable();
     console.log(`[Storage] Storage made available for ${identityKey}-${chain}`);
@@ -159,7 +199,7 @@ class StorageManager {
    */
   async initializeServices(
     identityKey: string,
-    chain: 'main' | 'test'
+    chain: 'main' | 'test' | 'ttn'
   ): Promise<void> {
     const storage = await this.getOrCreateStorage(identityKey, chain);
     const key = `${identityKey}-${chain}`;
@@ -174,7 +214,11 @@ class StorageManager {
 
     // Create Services instance in the backend
     const options = Services.createDefaultOptions(chain);
-    options.chaintracks = new ChaintracksServiceClient(chain, chain === 'main' ? 'https://chaintracks-us-1.bsvb.tech' : 'https://chaintracks-testnet-us-1.bsvb.tech')
+    // For main/test, point ChainTracks at the bsvb.tech endpoints. TeraTestNet ('ttn')
+    // keeps the toolbox default (arcade-v2-ttn ChainTracks) set by createDefaultOptions.
+    if (chain !== 'ttn') {
+      options.chaintracks = new ChaintracksServiceClient(chain, chain === 'main' ? 'https://chaintracks-us-1.bsvb.tech' : 'https://chaintracks-testnet-us-1.bsvb.tech')
+    }
     const services = new Services(options);
 
     // Type assertion to access setServices method
@@ -199,7 +243,7 @@ class StorageManager {
    */
   async startMonitorWorker(
     identityKey: string,
-    chain: 'main' | 'test'
+    chain: 'main' | 'test' | 'ttn'
   ): Promise<void> {
     const key = `${identityKey}-${chain}`;
 
@@ -313,7 +357,7 @@ class StorageManager {
   /**
    * Stop Monitor worker process
    */
-  async stopMonitorWorker(identityKey: string, chain: 'main' | 'test'): Promise<void> {
+  async stopMonitorWorker(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<void> {
     const key = `${identityKey}-${chain}`;
     const worker = this.monitorWorkers.get(key);
 
@@ -353,10 +397,17 @@ class StorageManager {
    */
   async callStorageMethod(
     identityKey: string,
-    chain: 'main' | 'test',
+    chain: 'main' | 'test' | 'ttn',
     method: string,
     args: any[]
   ): Promise<any> {
+    // Only methods the renderer's StorageElectronIPC wrapper actually calls are
+    // permitted. This prevents a compromised renderer from invoking arbitrary
+    // methods (or prototype members) on the StorageKnex instance via IPC.
+    if (!ALLOWED_STORAGE_METHODS.has(method)) {
+      throw new Error(`Storage method not permitted: ${method}`);
+    }
+
     const storage = await this.getOrCreateStorage(identityKey, chain);
 
     // Type assertion to access storage methods dynamically
@@ -388,7 +439,7 @@ class StorageManager {
     for (const [key] of this.monitorWorkers.entries()) {
       const [identityKey, chain] = key.split('-');
       workerStopPromises.push(
-        this.stopMonitorWorker(identityKey, chain as 'main' | 'test')
+        this.stopMonitorWorker(identityKey, chain as 'main' | 'test' | 'ttn')
       );
     }
     await Promise.all(workerStopPromises);

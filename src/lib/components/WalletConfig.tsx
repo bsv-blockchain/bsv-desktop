@@ -49,7 +49,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
     faucetAmount: number;
   } | null>(null)
   const [method, setMethod] = useState<string>("")
-  const [network, setNetwork] = useState<'main' | 'test'>(DEFAULT_CHAIN)
+  const [network, setNetwork] = useState<'main' | 'test' | 'ttn'>(DEFAULT_CHAIN)
   const [storageUrl, setStorageUrl] = useState<string>('')
   const [loginType, setLoginType] = useState<LoginType>(contextLoginType)
   const [useRemoteStorage, setUseRemoteStorage] = useState<boolean>(false)
@@ -122,8 +122,20 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
       useRemoteStorage,
       useMessageBox,
     })
-    if (valid) setShowWalletConfig(false)
-  }, [wabUrl, wabInfo, method, network, storageUrl, messageBoxUrl, loginType, useRemoteStorage, useMessageBox, finalizeConfig, setShowWalletConfig])
+    if (valid) {
+      // The toggle/close path calls `resetCurrentConfig()`, which re-applies `backupConfig`
+      // (the pre-edit snapshot). After a successful Apply we must clear `backupConfig` so
+      // that a subsequent close — including the parent's auto-close below — doesn't
+      // immediately revert the freshly-applied configuration.
+      setBackupConfig(undefined)
+      if (isControlled) {
+        // Parent owns visibility; signal it to close the panel automatically.
+        onToggle?.()
+      } else {
+        setShowWalletConfig(false)
+      }
+    }
+  }, [wabUrl, wabInfo, method, network, storageUrl, messageBoxUrl, loginType, useRemoteStorage, useMessageBox, finalizeConfig, setShowWalletConfig, isControlled, onToggle])
 
   // Force the manager to use the "presentation-key-and-password" flow (only for WAB/CWIStyle managers):
   useEffect(() => {
@@ -238,6 +250,14 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                       sx={{ textTransform: 'none' }}
                     >
                       {t('wallet_config_testnet')}
+                    </Button>
+                    <Button
+                      variant={network === 'ttn' ? "contained" : "outlined"}
+                      size="small"
+                      onClick={() => setNetwork('ttn')}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      {t('wallet_config_teratestnet')}
                     </Button>
                   </Box>
                 </Box>

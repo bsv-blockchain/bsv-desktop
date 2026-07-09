@@ -28,6 +28,24 @@ function getUpdaterModule() {
   return updaterModule;
 }
 
+// Lazy load secret store (v1 migration only)
+let secretStoreModule: typeof import('./secretStore.js') | null = null;
+async function getSecretStore() {
+  if (!secretStoreModule) {
+    secretStoreModule = await import('./secretStore.js');
+  }
+  return secretStoreModule;
+}
+
+// Lazy load vault (biometric / passphrase sealed secrets)
+let vaultModule: typeof import('./vault.js') | null = null;
+async function getVault() {
+  if (!vaultModule) {
+    vaultModule = await import('./vault.js');
+  }
+  return vaultModule;
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -138,25 +156,46 @@ function createWindow() {
 
   // Open external links in the default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // If the URL is external (not our app), open it in the default browser
-    if (url.startsWith('http://') || url.startsWith('https://')) {
+    // Only ever hand http(s) URLs to the OS; deny everything else
+    // (javascript:, file:, data:, custom protocol handlers, etc.).
+    if (isSafeExternalUrl(url)) {
       shell.openExternal(url);
-      return { action: 'deny' }; // Prevent Electron from opening a new window
     }
-    return { action: 'allow' };
+    return { action: 'deny' }; // Never let the renderer open a new Electron window
   });
 
-  // Handle navigation attempts (like clicking links)
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    // Allow navigation within our app, but open external URLs in browser
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      const appUrl = isDev ? 'http://localhost:5173' : 'file://';
-      if (!url.startsWith(appUrl)) {
-        event.preventDefault();
-        shell.openExternal(url);
-      }
+  // Handle navigation attempts (like clicking links). Cover both will-navigate
+  // and will-redirect — the latter fires on server-side redirects and was
+  // previously unguarded.
+  const handleNavigation = (event: Electron.Event, url: string) => {
+    if (isAppUrl(url)) {
+      return; // in-app navigation is fine
     }
-  });
+    // Anything else leaves the app: block it and only forward safe URLs to the OS.
+    event.preventDefault();
+    if (isSafeExternalUrl(url)) {
+      shell.openExternal(url);
+    }
+  };
+  mainWindow.webContents.on('will-navigate', handleNavigation);
+  mainWindow.webContents.on('will-redirect', handleNavigation);
+}
+
+// True for URLs that belong to the app itself (dev server or packaged file://).
+function isAppUrl(url: string): boolean {
+  const appUrl = isDev ? 'http://localhost:5173' : 'file://';
+  return url.startsWith(appUrl);
+}
+
+// Only http(s) URLs may be handed to shell.openExternal. This blocks
+// javascript:, file:, data: and arbitrary custom-protocol handlers.
+function isSafeExternalUrl(url: string): boolean {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 // ===== IPC Handlers =====
@@ -182,15 +221,16 @@ ipcMain.handle('request-focus', async () => {
 
   if (process.platform === 'darwin') {
     // macOS specific focus handling
-    const { exec } = await import('child_process');
+    const { execFile } = await import('child_process');
     const util = await import('util');
-    const execPromise = util.promisify(exec);
+    const execFilePromise = util.promisify(execFile);
 
     try {
       // Capture currently focused app before we steal focus
-      const { stdout } = await execPromise(
-        'osascript -e \'tell application "System Events" to get the bundle identifier of the first process whose frontmost is true\''
-      );
+      const { stdout } = await execFilePromise('osascript', [
+        '-e',
+        'tell application "System Events" to get the bundle identifier of the first process whose frontmost is true'
+      ]);
       const captured = stdout.trim();
       // Don't record ourselves — can happen if focus is called while already active
       if (captured && captured !== OWN_BUNDLE_ID) {
@@ -246,16 +286,25 @@ ipcMain.handle('relinquish-focus', async () => {
     // macOS: try to restore previous app
     if (prevBundleId && prevBundleId !== 'com.apple.finder' && prevBundleId !== OWN_BUNDLE_ID) {
       const util = await import('util');
-      const { exec } = await import('child_process');
-      const execPromise = util.promisify(exec);
+      const { execFile } = await import('child_process');
+      const execFilePromise = util.promisify(execFile);
       const target = prevBundleId;
       prevBundleId = null;
+      // Bundle identifiers are reverse-DNS strings; reject anything with
+      // characters that could alter the AppleScript expression before use.
+      if (!/^[A-Za-z0-9.\-]+$/.test(target)) {
+        console.error('Refusing to restore focus: invalid bundle identifier');
+        return;
+      }
       try {
         // Blur our window first so macOS doesn't fight the activation
         mainWindow.blur();
         // Note: 'tell application id "..." to activate' is ignored by macOS 26
         // when called from a subprocess. 'set frontmost' via System Events works.
-        await execPromise(`osascript -e 'tell application "System Events" to set frontmost of (first process whose bundle identifier is "${target}") to true'`);
+        await execFilePromise('osascript', [
+          '-e',
+          `tell application "System Events" to set frontmost of (first process whose bundle identifier is "${target}") to true`
+        ]);
       } catch (error) {
         console.error('Failed to restore previous app:', error);
       }
@@ -403,6 +452,18 @@ ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
       redirect: 'follow'
     });
 
+    // Re-validate the *resolved* URL after any redirects. A server could 302 to
+    // http://, a non-manifest path, or an internal address; enforce the same
+    // constraints we applied to the input.
+    const finalUrl = new URL(response.url || url);
+    if (finalUrl.protocol !== 'https:') {
+      throw new Error('Redirected to a non-HTTPS URL');
+    }
+    const finalPath = finalUrl.pathname.toLowerCase();
+    if (!finalPath.endsWith('/manifest.json') && finalPath !== '/manifest.json') {
+      throw new Error('Redirected to a non-manifest URL');
+    }
+
     const headers: [string, string][] = [];
     response.headers.forEach((value, key) => {
       headers.push([key, value]);
@@ -441,7 +502,7 @@ ipcMain.on('http-response', (_event, response) => {
 // ===== Storage IPC Handlers =====
 
 // Check if storage can be made available
-ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain: 'main' | 'test') => {
+ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn') => {
   try {
     const manager = await getStorageManager();
     return await manager.isAvailable(identityKey, chain);
@@ -452,7 +513,7 @@ ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain
 });
 
 // Make storage available (initialize database)
-ipcMain.handle('storage:make-available', async (_event, identityKey: string, chain: 'main' | 'test') => {
+ipcMain.handle('storage:make-available', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn') => {
   try {
     const manager = await getStorageManager();
     const settings = await manager.makeAvailable(identityKey, chain);
@@ -464,7 +525,7 @@ ipcMain.handle('storage:make-available', async (_event, identityKey: string, cha
 });
 
 // Call a storage method
-ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => {
+ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => {
   try {
     const manager = await getStorageManager();
     const result = await manager.callStorageMethod(identityKey, chain, method, args);
@@ -476,7 +537,7 @@ ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain:
 });
 
 // Initialize services on storage
-ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test') => {
+ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn') => {
   try {
     const manager = await getStorageManager();
     await manager.initializeServices(identityKey, chain);
@@ -485,6 +546,101 @@ ipcMain.handle('storage:initialize-services', async (_event, identityKey: string
     console.error('[IPC] storage:initialize-services error:', error);
     return { success: false, error: error.message };
   }
+});
+
+// ===== Vault + Secret IPC Handlers =====
+
+ipcMain.handle('vault:status', async () => {
+  const vault = await getVault();
+  return vault.status();
+});
+
+ipcMain.handle('vault:unlock-passphrase', async (_event, passphrase: string) => {
+  const vault = await getVault();
+  return vault.unlockWithPassphrase(passphrase);
+});
+
+ipcMain.handle('vault:unlock-biometrics', async () => {
+  const vault = await getVault();
+  return vault.unlockWithBiometrics();
+});
+
+ipcMain.handle(
+  'vault:enroll',
+  async (
+    _event,
+    options: { passphrase: string; enableBiometrics: boolean; initialSecrets?: Record<string, string> }
+  ) => {
+    const vault = await getVault();
+    // Migrate v1 secrets.dat if present
+    if (vault.needsMigration()) {
+      const store = await getSecretStore();
+      const map = store.getAll();
+      const merged = { ...map, ...(options.initialSecrets || {}) };
+      return vault.migrateFromSecretMap(merged, {
+        passphrase: options.passphrase,
+        enableBiometrics: options.enableBiometrics,
+      });
+    }
+    return vault.enroll(options);
+  }
+);
+
+ipcMain.handle('vault:lock', async () => {
+  const vault = await getVault();
+  vault.lock();
+});
+
+ipcMain.handle('vault:end-session', async () => {
+  const vault = await getVault();
+  vault.endSession();
+});
+
+ipcMain.handle('vault:destroy', async () => {
+  const vault = await getVault();
+  vault.destroyVault();
+});
+
+ipcMain.handle('boot-config:get', async () => {
+  const vault = await getVault();
+  return vault.getBootConfigPublic();
+});
+
+ipcMain.handle('boot-config:set', async (_event, config: any) => {
+  const vault = await getVault();
+  vault.setBootConfigPublic(config);
+});
+
+ipcMain.handle('secrets:get-all', async () => {
+  const vault = await getVault();
+  if (!vault.isUnlocked()) {
+    // Migration path: allow reading v1 store only when no vault yet
+    if (vault.needsMigration()) {
+      const store = await getSecretStore();
+      return store.getAll();
+    }
+    return {};
+  }
+  return vault.getAll();
+});
+
+ipcMain.handle('secrets:set', async (_event, name: string, value: string) => {
+  const vault = await getVault();
+  if (!vault.hasVaultFile()) {
+    throw new Error('VAULT_NEEDS_ENROLL');
+  }
+  if (!vault.isUnlocked()) {
+    throw new Error('VAULT_LOCKED');
+  }
+  vault.setSecret(name, value);
+});
+
+ipcMain.handle('secrets:delete', async (_event, name: string) => {
+  const vault = await getVault();
+  if (!vault.isUnlocked()) {
+    throw new Error('VAULT_LOCKED');
+  }
+  vault.deleteSecret(name);
 });
 
 // ===== Auto-Update IPC Handlers =====

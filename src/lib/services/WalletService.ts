@@ -67,7 +67,7 @@ export type WalletServiceSnapshot = {
   wabUrl: string
   wabInfo: any
   selectedAuthMethod: string
-  selectedNetwork: 'main' | 'test'
+  selectedNetwork: 'main' | 'test' | 'ttn'
   selectedStorageUrl: string
   messageBoxUrl: string
   useRemoteStorage: boolean
@@ -117,7 +117,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   private _wabUrl = ''
   private _wabInfo: any = null
   private _selectedAuthMethod = ''
-  private _selectedNetwork: 'main' | 'test' = DEFAULT_CHAIN
+  private _selectedNetwork: 'main' | 'test' | 'ttn' = DEFAULT_CHAIN
   private _selectedStorageUrl = ''
   private _messageBoxUrl = ''
   private _useRemoteStorage = false
@@ -538,6 +538,11 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         await this.peerPay.createClient(permissionsManager, this._messageBoxUrl, this._adminOriginator)
       }
 
+      // Clear the initializing flag BEFORE the ready emit so React (e.g. Greeter)
+      // does not stay stuck on the non-interactive initializingBackendServices screen.
+      // Previously this was only cleared in `finally` without an emit, so the UI
+      // never learned the flag was false and hung forever after password login.
+      this._initializingBackendServices = false
       this._lifecycle = 'ready'
       this._snapshotLoaded = !!secrets.getSnapshot() && !!this._managers.walletManager
 
@@ -547,10 +552,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       console.error('[WalletService] _buildWallet failed:', error)
       toast.error('Failed to build wallet: ' + error.message)
       this._initializingBackendServices = false
+      this._lifecycle = this._managers.walletManager ? 'authenticated' : 'error'
       this._emitState()
       return null
-    } finally {
-      this._initializingBackendServices = false
     }
   }
 
@@ -617,6 +621,22 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       useMessageBox: configOverrides?.useMessageBox ?? this._useMessageBox,
       messageBoxUrl: configOverrides?.messageBoxUrl ?? this._messageBoxUrl,
     }
+
+    // Dual-write non-secret boot config for pre-unlock routing after restart.
+    // Do not overwrite unlockMethods (set at vault enroll).
+    void window.electronAPI?.bootConfig?.set({
+      version: 1,
+      hasVault: true,
+      network: config.network,
+      loginType: config.loginType,
+      wabUrl: config.wabUrl,
+      storageUrl: config.storageUrl,
+      messageBoxUrl: config.messageBoxUrl,
+      authMethod: config.authMethod,
+      useRemoteStorage: config.useRemoteStorage,
+      useMessageBox: config.useMessageBox,
+      backupStorageUrls: config.backupStorageUrls,
+    }).catch((err: any) => console.warn('[WalletService] bootConfig set failed:', err))
 
     const configJson = JSON.stringify(config)
     const configBytes = Array.from(new TextEncoder().encode(configJson))
@@ -919,12 +939,12 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       localStorage.setItem(key, value)
     }
 
-    // Wallet secrets now live in the encrypted main-process store, not
-    // localStorage, so localStorage.clear() no longer forgets them. Clear
-    // them explicitly on logout.
-    secrets.clearSnapshot()
-    secrets.clearKeyHex()
-    secrets.clearMnemonic()
+    // Clear wallet secrets and lock the vault, but KEEP enrollment (passphrase +
+    // biometrics wraps). Destroying the vault forced "Create vault" on every logout.
+    void secrets.endSession().catch((err) =>
+      console.warn('[WalletService] endSession on logout failed:', err)
+    )
+    secrets.clearCache()
 
     this._managers = {}
     this._wallet = undefined

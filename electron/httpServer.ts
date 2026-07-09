@@ -171,6 +171,22 @@ export async function startHttpServer(mainWindow: BrowserWindow): Promise<() => 
         body = JSON.stringify(req.body);
       }
 
+      // Refuse wallet methods while the vault is locked (cold-start gate).
+      try {
+        const vault = await import('./vault.js');
+        if (vault.hasVaultFile() && !vault.isUnlocked()) {
+          setCorsHeaders(res);
+          res.status(503).send(JSON.stringify({
+            status: 'error',
+            code: 'WALLET_LOCKED',
+            description: 'Wallet vault is locked. Unlock BSV Desktop and try again.',
+          }));
+          return;
+        }
+      } catch (e) {
+        console.warn('[HTTP] vault lock check failed:', e);
+      }
+
       if (mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
         throw new Error('WALLET_BRIDGE_UNAVAILABLE: window is not available');
       }

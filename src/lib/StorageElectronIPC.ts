@@ -25,11 +25,11 @@ import type { WalletStorageProvider, WalletServices } from '@bsv/wallet-toolbox-
 
 export class StorageElectronIPC implements WalletStorageProvider {
   private identityKey: string;
-  private chain: 'main' | 'test';
+  private chain: 'main' | 'test' | 'ttn';
   private services?: WalletServices;
   private settings?: any;
 
-  constructor(identityKey: string, chain: 'main' | 'test') {
+  constructor(identityKey: string, chain: 'main' | 'test' | 'ttn') {
     this.identityKey = identityKey;
     this.chain = chain;
 

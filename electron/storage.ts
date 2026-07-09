@@ -89,7 +89,7 @@ class StorageManager {
   /**
    * Get or create a storage instance for the given identity key
    */
-  async getOrCreateStorage(identityKey: string, chain: 'main' | 'test'): Promise<StorageKnex> {
+  async getOrCreateStorage(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<StorageKnex> {
     const key = `${identityKey}-${chain}`;
 
     if (this.storages.has(key)) {
@@ -171,7 +171,7 @@ class StorageManager {
   /**
    * Check if storage is available for the given identity key
    */
-  async isAvailable(identityKey: string, chain: 'main' | 'test'): Promise<boolean> {
+  async isAvailable(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<boolean> {
     // Storage is always available once created
     await this.getOrCreateStorage(identityKey, chain);
     return true;
@@ -181,7 +181,7 @@ class StorageManager {
    * Make storage available (initialize database tables)
    * Returns TableSettings from the storage
    */
-  async makeAvailable(identityKey: string, chain: 'main' | 'test'): Promise<any> {
+  async makeAvailable(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<any> {
     const storage = await this.getOrCreateStorage(identityKey, chain);
     const settings = await storage.makeAvailable();
     console.log(`[Storage] Storage made available for ${identityKey}-${chain}`);
@@ -194,7 +194,7 @@ class StorageManager {
    */
   async initializeServices(
     identityKey: string,
-    chain: 'main' | 'test'
+    chain: 'main' | 'test' | 'ttn'
   ): Promise<void> {
     const storage = await this.getOrCreateStorage(identityKey, chain);
     const key = `${identityKey}-${chain}`;
@@ -209,7 +209,11 @@ class StorageManager {
 
     // Create Services instance in the backend
     const options = Services.createDefaultOptions(chain);
-    options.chaintracks = new ChaintracksServiceClient(chain, chain === 'main' ? 'https://chaintracks-us-1.bsvb.tech' : 'https://chaintracks-testnet-us-1.bsvb.tech')
+    // For main/test, point ChainTracks at the bsvb.tech endpoints. TeraTestNet ('ttn')
+    // keeps the toolbox default (arcade-v2-ttn ChainTracks) set by createDefaultOptions.
+    if (chain !== 'ttn') {
+      options.chaintracks = new ChaintracksServiceClient(chain, chain === 'main' ? 'https://chaintracks-us-1.bsvb.tech' : 'https://chaintracks-testnet-us-1.bsvb.tech')
+    }
     const services = new Services(options);
 
     // Type assertion to access setServices method
@@ -234,7 +238,7 @@ class StorageManager {
    */
   async startMonitorWorker(
     identityKey: string,
-    chain: 'main' | 'test'
+    chain: 'main' | 'test' | 'ttn'
   ): Promise<void> {
     const key = `${identityKey}-${chain}`;
 
@@ -348,7 +352,7 @@ class StorageManager {
   /**
    * Stop Monitor worker process
    */
-  async stopMonitorWorker(identityKey: string, chain: 'main' | 'test'): Promise<void> {
+  async stopMonitorWorker(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<void> {
     const key = `${identityKey}-${chain}`;
     const worker = this.monitorWorkers.get(key);
 
@@ -388,7 +392,7 @@ class StorageManager {
    */
   async callStorageMethod(
     identityKey: string,
-    chain: 'main' | 'test',
+    chain: 'main' | 'test' | 'ttn',
     method: string,
     args: any[]
   ): Promise<any> {
@@ -430,7 +434,7 @@ class StorageManager {
     for (const [key] of this.monitorWorkers.entries()) {
       const [identityKey, chain] = key.split('-');
       workerStopPromises.push(
-        this.stopMonitorWorker(identityKey, chain as 'main' | 'test')
+        this.stopMonitorWorker(identityKey, chain as 'main' | 'test' | 'ttn')
       );
     }
     await Promise.all(workerStopPromises);

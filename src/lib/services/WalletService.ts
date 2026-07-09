@@ -618,6 +618,22 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       messageBoxUrl: configOverrides?.messageBoxUrl ?? this._messageBoxUrl,
     }
 
+    // Dual-write non-secret boot config for pre-unlock routing after restart.
+    // Do not overwrite unlockMethods (set at vault enroll).
+    void window.electronAPI?.bootConfig?.set({
+      version: 1,
+      hasVault: true,
+      network: config.network,
+      loginType: config.loginType,
+      wabUrl: config.wabUrl,
+      storageUrl: config.storageUrl,
+      messageBoxUrl: config.messageBoxUrl,
+      authMethod: config.authMethod,
+      useRemoteStorage: config.useRemoteStorage,
+      useMessageBox: config.useMessageBox,
+      backupStorageUrls: config.backupStorageUrls,
+    }).catch((err: any) => console.warn('[WalletService] bootConfig set failed:', err))
+
     const configJson = JSON.stringify(config)
     const configBytes = Array.from(new TextEncoder().encode(configJson))
 
@@ -919,12 +935,12 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       localStorage.setItem(key, value)
     }
 
-    // Wallet secrets now live in the encrypted main-process store, not
-    // localStorage, so localStorage.clear() no longer forgets them. Clear
-    // them explicitly on logout.
-    secrets.clearSnapshot()
-    secrets.clearKeyHex()
-    secrets.clearMnemonic()
+    // Destroy the local vault so the next launch does not offer unlock of a wiped wallet.
+    // destroyVault clears durable secrets; rehydrate cache locally.
+    void secrets.destroyVault().catch((err) =>
+      console.warn('[WalletService] destroyVault on logout failed:', err)
+    )
+    secrets.clearCache()
 
     this._managers = {}
     this._wallet = undefined

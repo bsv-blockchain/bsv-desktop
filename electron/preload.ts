@@ -45,7 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('storage:call-method', identityKey, chain, method, args)
   },
 
-  // Secret store (encrypted at rest in the main process)
+  // Secret store (vault-backed; requires unlock)
   secrets: {
     getAll: (): Promise<Record<string, string>> =>
       ipcRenderer.invoke('secrets:get-all'),
@@ -53,6 +53,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('secrets:set', name, value),
     delete: (name: string): Promise<void> =>
       ipcRenderer.invoke('secrets:delete', name),
+  },
+
+  // Vault unlock / enroll (cold-start gate)
+  vault: {
+    status: (): Promise<{
+      locked: boolean
+      hasVault: boolean
+      methods: Array<'se' | 'passphrase'>
+      biometricsAvailable: boolean
+      needsMigration: boolean
+    }> => ipcRenderer.invoke('vault:status'),
+    unlockWithPassphrase: (passphrase: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('vault:unlock-passphrase', passphrase),
+    unlockWithBiometrics: (): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('vault:unlock-biometrics'),
+    enroll: (options: {
+      passphrase: string
+      enableBiometrics: boolean
+      initialSecrets?: Record<string, string>
+    }): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('vault:enroll', options),
+    lock: (): Promise<void> => ipcRenderer.invoke('vault:lock'),
+    destroy: (): Promise<void> => ipcRenderer.invoke('vault:destroy'),
+  },
+
+  bootConfig: {
+    get: (): Promise<any> => ipcRenderer.invoke('boot-config:get'),
+    set: (config: any): Promise<void> => ipcRenderer.invoke('boot-config:set', config),
   },
 
   // Auto-update operations
@@ -105,6 +133,28 @@ export interface ElectronAPI {
     getAll: () => Promise<Record<string, string>>;
     set: (name: string, value: string) => Promise<void>;
     delete: (name: string) => Promise<void>;
+  };
+  vault: {
+    status: () => Promise<{
+      locked: boolean;
+      hasVault: boolean;
+      methods: Array<'se' | 'passphrase'>;
+      biometricsAvailable: boolean;
+      needsMigration: boolean;
+    }>;
+    unlockWithPassphrase: (passphrase: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+    unlockWithBiometrics: () => Promise<{ ok: true } | { ok: false; error: string }>;
+    enroll: (options: {
+      passphrase: string;
+      enableBiometrics: boolean;
+      initialSecrets?: Record<string, string>;
+    }) => Promise<{ ok: true } | { ok: false; error: string }>;
+    lock: () => Promise<void>;
+    destroy: () => Promise<void>;
+  };
+  bootConfig: {
+    get: () => Promise<any>;
+    set: (config: any) => Promise<void>;
   };
   updates: {
     check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;

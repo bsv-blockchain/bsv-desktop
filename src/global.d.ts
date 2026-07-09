@@ -23,6 +23,28 @@ export interface ElectronAPI {
     set: (name: string, value: string) => Promise<void>;
     delete: (name: string) => Promise<void>;
   };
+  vault: {
+    status: () => Promise<{
+      locked: boolean;
+      hasVault: boolean;
+      methods: Array<'se' | 'passphrase'>;
+      biometricsAvailable: boolean;
+      needsMigration: boolean;
+    }>;
+    unlockWithPassphrase: (passphrase: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+    unlockWithBiometrics: () => Promise<{ ok: true } | { ok: false; error: string }>;
+    enroll: (options: {
+      passphrase: string;
+      enableBiometrics: boolean;
+      initialSecrets?: Record<string, string>;
+    }) => Promise<{ ok: true } | { ok: false; error: string }>;
+    lock: () => Promise<void>;
+    destroy: () => Promise<void>;
+  };
+  bootConfig: {
+    get: () => Promise<any>;
+    set: (config: any) => Promise<void>;
+  };
   updates: {
     check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
     download: () => Promise<{ success: boolean; error?: string }>;

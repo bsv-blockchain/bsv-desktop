@@ -4,10 +4,28 @@ const backing = new Map<string, string>()
 const mockGetAll = vi.fn(async () => Object.fromEntries(backing))
 const mockSet = vi.fn(async (name: string, value: string) => { backing.set(name, value) })
 const mockDelete = vi.fn(async (name: string) => { backing.delete(name) })
+const mockVaultStatus = vi.fn(async () => ({
+  locked: false,
+  hasVault: true,
+  methods: ['passphrase'] as Array<'se' | 'passphrase'>,
+  biometricsAvailable: false,
+  needsMigration: false,
+}))
 
 const localStore = new Map<string, string>()
 ;(globalThis as any).window = {
-  electronAPI: { secrets: { getAll: mockGetAll, set: mockSet, delete: mockDelete } },
+  electronAPI: {
+    secrets: { getAll: mockGetAll, set: mockSet, delete: mockDelete },
+    vault: {
+      status: mockVaultStatus,
+      unlockWithPassphrase: vi.fn(),
+      unlockWithBiometrics: vi.fn(),
+      enroll: vi.fn(),
+      lock: vi.fn(),
+      destroy: vi.fn(async () => { backing.clear() }),
+    },
+    bootConfig: { get: vi.fn(), set: vi.fn() },
+  },
 }
 ;(globalThis as any).localStorage = {
   getItem: (k: string) => (localStore.has(k) ? localStore.get(k)! : null),
@@ -34,14 +52,13 @@ describe('renderer secrets facade', () => {
     expect(secrets.getMnemonic()).toBeNull()
   })
 
-  it('migrates legacy localStorage values into the store and clears them', async () => {
+  it('migrates legacy localStorage values into the cache and clears them', async () => {
+    // Legacy localStorage is loaded into the cache; durable vault write happens on enroll.
     localStore.set('snap', 'legacy-snap')
     localStore.set('mnemonic12', 'legacy-mn')
     await secrets.hydrate()
     expect(secrets.getSnapshot()).toBe('legacy-snap')
     expect(secrets.getMnemonic()).toBe('legacy-mn')
-    expect(mockSet).toHaveBeenCalledWith('snap', 'legacy-snap')
-    expect(mockSet).toHaveBeenCalledWith('mnemonic12', 'legacy-mn')
     expect(localStore.has('snap')).toBe(false)
     expect(localStore.has('mnemonic12')).toBe(false)
   })

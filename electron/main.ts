@@ -26,13 +26,22 @@ function getUpdaterModule() {
   return updaterModule;
 }
 
-// Lazy load secret store to avoid loading it before app is ready
+// Lazy load secret store (v1 migration only)
 let secretStoreModule: typeof import('./secretStore.js') | null = null;
 async function getSecretStore() {
   if (!secretStoreModule) {
     secretStoreModule = await import('./secretStore.js');
   }
   return secretStoreModule;
+}
+
+// Lazy load vault (biometric / passphrase sealed secrets)
+let vaultModule: typeof import('./vault.js') | null = null;
+async function getVault() {
+  if (!vaultModule) {
+    vaultModule = await import('./vault.js');
+  }
+  return vaultModule;
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -491,21 +500,94 @@ ipcMain.handle('storage:initialize-services', async (_event, identityKey: string
   }
 });
 
-// ===== Secret Store IPC Handlers =====
+// ===== Vault + Secret IPC Handlers =====
+
+ipcMain.handle('vault:status', async () => {
+  const vault = await getVault();
+  return vault.status();
+});
+
+ipcMain.handle('vault:unlock-passphrase', async (_event, passphrase: string) => {
+  const vault = await getVault();
+  return vault.unlockWithPassphrase(passphrase);
+});
+
+ipcMain.handle('vault:unlock-biometrics', async () => {
+  const vault = await getVault();
+  return vault.unlockWithBiometrics();
+});
+
+ipcMain.handle(
+  'vault:enroll',
+  async (
+    _event,
+    options: { passphrase: string; enableBiometrics: boolean; initialSecrets?: Record<string, string> }
+  ) => {
+    const vault = await getVault();
+    // Migrate v1 secrets.dat if present
+    if (vault.needsMigration()) {
+      const store = await getSecretStore();
+      const map = store.getAll();
+      const merged = { ...map, ...(options.initialSecrets || {}) };
+      return vault.migrateFromSecretMap(merged, {
+        passphrase: options.passphrase,
+        enableBiometrics: options.enableBiometrics,
+      });
+    }
+    return vault.enroll(options);
+  }
+);
+
+ipcMain.handle('vault:lock', async () => {
+  const vault = await getVault();
+  vault.lock();
+});
+
+ipcMain.handle('vault:destroy', async () => {
+  const vault = await getVault();
+  vault.destroyVault();
+});
+
+ipcMain.handle('boot-config:get', async () => {
+  const vault = await getVault();
+  return vault.getBootConfigPublic();
+});
+
+ipcMain.handle('boot-config:set', async (_event, config: any) => {
+  const vault = await getVault();
+  vault.setBootConfigPublic(config);
+});
 
 ipcMain.handle('secrets:get-all', async () => {
-  const store = await getSecretStore();
-  return store.getAll();
+  const vault = await getVault();
+  if (!vault.isUnlocked()) {
+    // Migration path: allow reading v1 store only when no vault yet
+    if (vault.needsMigration()) {
+      const store = await getSecretStore();
+      return store.getAll();
+    }
+    return {};
+  }
+  return vault.getAll();
 });
 
 ipcMain.handle('secrets:set', async (_event, name: string, value: string) => {
-  const store = await getSecretStore();
-  store.setSecret(name, value);
+  const vault = await getVault();
+  if (!vault.hasVaultFile()) {
+    throw new Error('VAULT_NEEDS_ENROLL');
+  }
+  if (!vault.isUnlocked()) {
+    throw new Error('VAULT_LOCKED');
+  }
+  vault.setSecret(name, value);
 });
 
 ipcMain.handle('secrets:delete', async (_event, name: string) => {
-  const store = await getSecretStore();
-  store.deleteSecret(name);
+  const vault = await getVault();
+  if (!vault.isUnlocked()) {
+    throw new Error('VAULT_LOCKED');
+  }
+  vault.deleteSecret(name);
 });
 
 // ===== Auto-Update IPC Handlers =====

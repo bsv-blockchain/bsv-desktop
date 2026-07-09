@@ -196,6 +196,18 @@ export async function startHttpServer(mainWindow: BrowserWindow): Promise<() => 
           console.warn(`[HTTP] client disconnected (request_id: ${request_id})`);
           pendingRequests.delete(request_id);
           reject(new Error('CLIENT_DISCONNECTED: HTTP client closed the connection'));
+
+          // Tell the renderer to dismiss permission UI for this abandoned call.
+          try {
+            if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+              mainWindow.webContents.send('http-request-cancelled', {
+                request_id,
+                reason: 'CLIENT_DISCONNECTED',
+              });
+            }
+          } catch (err) {
+            console.warn('[HTTP] failed to notify renderer of client disconnect:', err);
+          }
         };
         req.on('close', onClientGone);
       });

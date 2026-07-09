@@ -159,113 +159,120 @@ const VaultGate: React.FC<Props> = ({ children, onReady }) => {
     )
   }
 
-  if (mode === 'ready') {
-    return <>{children}</>
-  }
-
+  // Keep children mounted whenever possible so WalletService React subscriptions
+  // stay attached and in-flight login is not torn down by enroll/unlock UI.
   const isEnroll = mode === 'enroll'
+  const isUnlock = mode === 'unlock'
+  const showGate = isEnroll || isUnlock
   const showBioUnlock =
-    !isEnroll &&
+    isUnlock &&
     !!status?.biometricsAvailable &&
     !!status?.methods?.includes('se')
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        p: 2,
-        bgcolor: 'background.default',
-      }}
-    >
-      <Paper elevation={3} sx={{ p: 4, maxWidth: 440, width: '100%' }}>
-        <Stack spacing={2} alignItems="stretch">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <LockIcon color="primary" />
-            <Typography variant="h5" component="h1">
-              {isEnroll ? 'Protect your wallet' : 'Unlock wallet'}
-            </Typography>
-          </Box>
+    <>
+      {(mode === 'ready' || isEnroll) && children}
+      {showGate && (
+        <Box
+          sx={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: (t) => t.zIndex.modal + 10,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            p: 2,
+            bgcolor: 'background.default',
+          }}
+        >
+          <Paper elevation={3} sx={{ p: 4, maxWidth: 440, width: '100%' }}>
+            <Stack spacing={2} alignItems="stretch">
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <LockIcon color="primary" />
+                <Typography variant="h5" component="h1">
+                  {isEnroll ? 'Protect your wallet' : 'Unlock wallet'}
+                </Typography>
+              </Box>
 
-          <Typography variant="body2" color="text.secondary">
-            {isEnroll
-              ? 'Create an unlock passphrase for this device. This is separate from your wallet password or recovery key. When available, biometrics can unlock the vault on launch.'
-              : 'Your wallet secrets are encrypted. Unlock with biometrics or your device unlock passphrase to continue.'}
-          </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {isEnroll
+                  ? 'Create an unlock passphrase for this device. This is separate from your wallet password or recovery key. When available, biometrics can unlock the vault on launch.'
+                  : 'Your wallet secrets are encrypted. Unlock with biometrics or your device unlock passphrase to continue.'}
+              </Typography>
 
-          {error && <Alert severity="error">{error}</Alert>}
+              {error && <Alert severity="error">{error}</Alert>}
 
-          {showBioUnlock && (
-            <Button
-              variant="contained"
-              size="large"
-              startIcon={<FingerprintIcon />}
-              onClick={handleUnlockBiometrics}
-              disabled={busy}
-            >
-              Unlock with Touch ID
-            </Button>
-          )}
+              {showBioUnlock && (
+                <Button
+                  variant="contained"
+                  size="large"
+                  startIcon={<FingerprintIcon />}
+                  onClick={handleUnlockBiometrics}
+                  disabled={busy}
+                >
+                  Unlock with Touch ID
+                </Button>
+              )}
 
-          <TextField
-            label={isEnroll ? 'Unlock passphrase' : 'Unlock passphrase'}
-            type="password"
-            value={passphrase}
-            onChange={(e) => setPassphrase(e.target.value)}
-            fullWidth
-            autoComplete={isEnroll ? 'new-password' : 'current-password'}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !isEnroll) void handleUnlockPassphrase()
-            }}
-          />
-
-          {isEnroll && (
-            <>
               <TextField
-                label="Confirm passphrase"
+                label="Unlock passphrase"
                 type="password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
+                value={passphrase}
+                onChange={(e) => setPassphrase(e.target.value)}
                 fullWidth
-                autoComplete="new-password"
+                autoComplete={isEnroll ? 'new-password' : 'current-password'}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isEnroll) void handleUnlockPassphrase()
+                }}
               />
-              {status?.biometricsAvailable && (
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={enableBio}
-                      onChange={(e) => setEnableBio(e.target.checked)}
-                    />
-                  }
-                  label="Enable Touch ID unlock on this device"
-                />
-              )}
-              {!status?.biometricsAvailable && (
-                <Alert severity="info">
-                  No biometric secure element is available on this device. You will unlock with your passphrase only.
-                </Alert>
-              )}
-              {status?.needsMigration && (
-                <Alert severity="warning">
-                  Existing wallet data will be re-encrypted into a protected vault. You must set a passphrase to continue.
-                </Alert>
-              )}
-            </>
-          )}
 
-          <Button
-            variant={showBioUnlock ? 'outlined' : 'contained'}
-            size="large"
-            onClick={isEnroll ? handleEnroll : handleUnlockPassphrase}
-            disabled={busy || !passphrase}
-          >
-            {busy ? <CircularProgress size={22} /> : isEnroll ? 'Create vault' : 'Unlock with passphrase'}
-          </Button>
-        </Stack>
-      </Paper>
-    </Box>
+              {isEnroll && (
+                <>
+                  <TextField
+                    label="Confirm passphrase"
+                    type="password"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    fullWidth
+                    autoComplete="new-password"
+                  />
+                  {status?.biometricsAvailable && (
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={enableBio}
+                          onChange={(e) => setEnableBio(e.target.checked)}
+                        />
+                      }
+                      label="Enable Touch ID unlock on this device"
+                    />
+                  )}
+                  {!status?.biometricsAvailable && (
+                    <Alert severity="info">
+                      No biometric secure element is available on this device. You will unlock with your passphrase only.
+                    </Alert>
+                  )}
+                  {status?.needsMigration && (
+                    <Alert severity="warning">
+                      Existing wallet data will be re-encrypted into a protected vault. You must set a passphrase to continue.
+                    </Alert>
+                  )}
+                </>
+              )}
+
+              <Button
+                variant={showBioUnlock ? 'outlined' : 'contained'}
+                size="large"
+                onClick={isEnroll ? handleEnroll : handleUnlockPassphrase}
+                disabled={busy || !passphrase}
+              >
+                {busy ? <CircularProgress size={22} /> : isEnroll ? 'Create vault' : 'Unlock with passphrase'}
+              </Button>
+            </Stack>
+          </Paper>
+        </Box>
+      )}
+    </>
   )
 }
 

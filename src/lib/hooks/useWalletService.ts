@@ -69,6 +69,10 @@ function subscribeToWalletService(callback: () => void): () => void {
   const svc = getWalletService()
   const handler = (snap: WalletServiceSnapshot) => { _walletSnapshot = snap; callback() }
   svc.on('stateChanged', handler)
+  // Resync cache on (re)subscribe. stateChanged only updates the cache when a
+  // listener is attached; React Strict Mode and VaultGate mount/unmount can miss
+  // emits in the gap, leaving the UI stuck on a stale lifecycle forever.
+  _walletSnapshot = svc.getSnapshot()
   return () => svc.off('stateChanged', handler)
 }
 

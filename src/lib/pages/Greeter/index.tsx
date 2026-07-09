@@ -822,6 +822,9 @@ const Greeter: React.FC<any> = ({ history }) => {
       <Box sx={{ my: 'auto', py: 3, width: '100%' }}>
         <Paper elevation={4} sx={{ p: 3, borderRadius: 2, bgcolor: 'background.paper', boxShadow: theme.shadows[3] }}>
           {header}
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress />
+          </Box>
         </Paper>
       </Box>
     </Container>

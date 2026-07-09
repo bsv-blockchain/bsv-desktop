@@ -538,6 +538,11 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         await this.peerPay.createClient(permissionsManager, this._messageBoxUrl, this._adminOriginator)
       }
 
+      // Clear the initializing flag BEFORE the ready emit so React (e.g. Greeter)
+      // does not stay stuck on the non-interactive initializingBackendServices screen.
+      // Previously this was only cleared in `finally` without an emit, so the UI
+      // never learned the flag was false and hung forever after password login.
+      this._initializingBackendServices = false
       this._lifecycle = 'ready'
       this._snapshotLoaded = !!secrets.getSnapshot() && !!this._managers.walletManager
 
@@ -547,10 +552,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       console.error('[WalletService] _buildWallet failed:', error)
       toast.error('Failed to build wallet: ' + error.message)
       this._initializingBackendServices = false
+      this._lifecycle = this._managers.walletManager ? 'authenticated' : 'error'
       this._emitState()
       return null
-    } finally {
-      this._initializingBackendServices = false
     }
   }
 

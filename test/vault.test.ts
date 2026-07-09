@@ -105,4 +105,27 @@ describe('vault', () => {
     expect(s.methods).toContain('passphrase')
     expect(s.locked).toBe(false)
   })
+
+  it('endSession clears secrets and locks but keeps vault enrollment', async () => {
+    vault.enroll({
+      passphrase: 'test-passphrase-ok',
+      enableBiometrics: false,
+      initialSecrets: { snap: 'SESSION-SNAP', primaryKeyHex: 'deadbeef' },
+    })
+    expect(vault.getSecret('snap')).toBe('SESSION-SNAP')
+
+    vault.endSession()
+    expect(vault.status().hasVault).toBe(true)
+    expect(vault.status().locked).toBe(true)
+    expect(vault.getAll()).toEqual({})
+
+    // Same vault passphrase still works — no re-enroll required
+    const unlock = await vault.unlockWithPassphrase('test-passphrase-ok')
+    expect(unlock.ok).toBe(true)
+    // Secrets were cleared on logout
+    expect(vault.getSecret('snap')).toBeNull()
+    // Can write again without re-enrolling
+    vault.setSecret('snap', 'after-relogin')
+    expect(vault.getSecret('snap')).toBe('after-relogin')
+  })
 })

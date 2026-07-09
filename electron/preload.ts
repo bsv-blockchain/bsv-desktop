@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }): Promise<{ ok: true } | { ok: false; error: string }> =>
       ipcRenderer.invoke('vault:enroll', options),
     lock: (): Promise<void> => ipcRenderer.invoke('vault:lock'),
+    endSession: (): Promise<void> => ipcRenderer.invoke('vault:end-session'),
     destroy: (): Promise<void> => ipcRenderer.invoke('vault:destroy'),
   },
 
@@ -150,6 +151,7 @@ export interface ElectronAPI {
       initialSecrets?: Record<string, string>;
     }) => Promise<{ ok: true } | { ok: false; error: string }>;
     lock: () => Promise<void>;
+    endSession: () => Promise<void>;
     destroy: () => Promise<void>;
   };
   bootConfig: {

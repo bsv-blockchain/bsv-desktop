@@ -53,6 +53,24 @@ export async function destroyVault(): Promise<void> {
   hydrated = false
 }
 
+/**
+ * Logout path: clear wallet secrets from the vault and lock it, but keep the
+ * vault enrollment (passphrase wrap + biometrics). Next entry is unlock, not enroll.
+ */
+export async function endSession(): Promise<void> {
+  await vaultApi().endSession()
+  cache.clear()
+  hydrated = false
+  window.dispatchEvent(new CustomEvent('vault-locked'))
+}
+
+export async function lockVault(): Promise<void> {
+  await vaultApi().lock()
+  cache.clear()
+  hydrated = false
+  window.dispatchEvent(new CustomEvent('vault-locked'))
+}
+
 /** Snapshot of in-memory cache for enroll/migration. */
 export function cacheSnapshot(): Record<string, string> {
   const out: Record<string, string> = {}

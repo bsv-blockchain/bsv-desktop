@@ -543,6 +543,11 @@ ipcMain.handle('vault:lock', async () => {
   vault.lock();
 });
 
+ipcMain.handle('vault:end-session', async () => {
+  const vault = await getVault();
+  vault.endSession();
+});
+
 ipcMain.handle('vault:destroy', async () => {
   const vault = await getVault();
   vault.destroyVault();

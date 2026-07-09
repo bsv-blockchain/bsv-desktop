@@ -212,8 +212,27 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
       setGateMode((m) => (m === 'ready' ? 'enroll' : m))
       setError(null)
     }
+    const onLocked = () => {
+      // Logout / lock: show unlock (biometrics or passphrase), never re-enroll.
+      setPassphrase('')
+      setConfirm('')
+      setError(null)
+      setGateMode('unlock')
+      void secrets.vaultStatus().then((s) => {
+        setStatus(s)
+        setEnableBio(s.biometricsAvailable && s.methods.includes('se'))
+        // If vault was destroyed somehow, fall back to enroll only when truly missing.
+        if (!s.hasVault) {
+          setGateMode(s.needsMigration ? 'enroll' : 'ready')
+        }
+      })
+    }
     window.addEventListener('vault-needs-enroll', onNeedsEnroll)
-    return () => window.removeEventListener('vault-needs-enroll', onNeedsEnroll)
+    window.addEventListener('vault-locked', onLocked)
+    return () => {
+      window.removeEventListener('vault-needs-enroll', onNeedsEnroll)
+      window.removeEventListener('vault-locked', onLocked)
+    }
   }, [])
 
   const handleUnlockPassphrase = async () => {

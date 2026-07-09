@@ -39,6 +39,7 @@ export interface ElectronAPI {
       initialSecrets?: Record<string, string>;
     }) => Promise<{ ok: true } | { ok: false; error: string }>;
     lock: () => Promise<void>;
+    endSession: () => Promise<void>;
     destroy: () => Promise<void>;
   };
   bootConfig: {

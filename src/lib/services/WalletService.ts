@@ -939,10 +939,10 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       localStorage.setItem(key, value)
     }
 
-    // Destroy the local vault so the next launch does not offer unlock of a wiped wallet.
-    // destroyVault clears durable secrets; rehydrate cache locally.
-    void secrets.destroyVault().catch((err) =>
-      console.warn('[WalletService] destroyVault on logout failed:', err)
+    // Clear wallet secrets and lock the vault, but KEEP enrollment (passphrase +
+    // biometrics wraps). Destroying the vault forced "Create vault" on every logout.
+    void secrets.endSession().catch((err) =>
+      console.warn('[WalletService] endSession on logout failed:', err)
     )
     secrets.clearCache()
 

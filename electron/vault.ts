@@ -264,6 +264,24 @@ export function lock(): void {
   unlocked = false
 }
 
+/**
+ * End a wallet session without destroying vault enrollment.
+ * Clears secret payload (snap/keys) and locks the DEK in memory so the next
+ * launch (or same-session re-entry) requires biometrics/passphrase unlock —
+ * not a brand-new "Create vault" enroll.
+ */
+export function endSession(): void {
+  if (unlocked && dek) {
+    secrets = {}
+    try {
+      persistUnlocked()
+    } catch (err) {
+      console.error('[vault] endSession re-seal failed:', err)
+    }
+  }
+  lock()
+}
+
 export function getSecret(name: string): string | null {
   assertAllowed(name)
   if (!unlocked) return null

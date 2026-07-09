@@ -1,9 +1,11 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, session } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import fs from 'fs';
 import { startHttpServer } from './httpServer.js';
+import { buildApplicationMenu } from './appMenu.js';
+import { applyPersistedProxySettings, registerNetworkIpc } from './networkSettings.js';
 
 const require = createRequire(import.meta.url);
 
@@ -49,6 +51,33 @@ const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 let httpServerCleanup: (() => Promise<void>) | null = null;
+let cleanupStarted = false;
+
+async function cleanupBeforeExit(): Promise<void> {
+  if (cleanupStarted) return;
+  cleanupStarted = true;
+
+  if (storageManager) {
+    try {
+      await storageManager.cleanup();
+    } catch (error) {
+      console.error('Failed to clean up storage manager before exit:', error);
+    } finally {
+      storageManager = null;
+    }
+  }
+
+  if (httpServerCleanup) {
+    const cleanup = httpServerCleanup;
+    httpServerCleanup = null;
+
+    try {
+      await cleanup();
+    } catch (error) {
+      console.error('Failed to clean up HTTP server before exit:', error);
+    }
+  }
+}
 
 // Store previous focused app on macOS
 let prevBundleId: string | null = null;
@@ -170,6 +199,13 @@ function isSafeExternalUrl(url: string): boolean {
 }
 
 // ===== IPC Handlers =====
+
+registerNetworkIpc({
+  hasActiveMonitorWorkers: () => {
+    // storageManager is only set after first storage use; no workers if never loaded
+    return Boolean(storageManager?.hasActiveMonitorWorkers?.());
+  }
+});
 
 // Check if window is focused
 ipcMain.handle('is-focused', () => {
@@ -406,8 +442,9 @@ ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
       throw new Error('Only manifest.json files are allowed');
     }
 
-    const fetch = (await import('node-fetch')).default;
-    const response = await fetch(url, {
+    // Use the Chromium session so manifest fetches honor session proxy settings
+    // (node-fetch would bypass session.setProxy).
+    const response = await session.defaultSession.fetch(url, {
       headers: {
         'User-Agent': 'bsv-desktop-electron/1.0',
         'Accept': 'application/json, */*;q=0.8'
@@ -442,6 +479,17 @@ ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
   } catch (error) {
     throw new Error(String(error));
   }
+});
+
+// Process exits in this handler; the invoke Promise is not observed by the renderer.
+ipcMain.handle('app:restart', async () => {
+  try {
+    await cleanupBeforeExit();
+  } catch (error) {
+    console.error('App restart cleanup failed:', error);
+  }
+  app.relaunch();
+  app.exit(0);
 });
 
 // Forward HTTP requests to renderer
@@ -651,6 +699,13 @@ app.whenReady().then(async () => {
     app.commandLine.appendSwitch('--disable-web-security');
   }
 
+  try {
+    await applyPersistedProxySettings();
+  } catch (error) {
+    console.error('[Startup] Failed to apply persisted proxy settings, continuing startup without them:', error);
+  }
+
+  buildApplicationMenu({ getMainWindow: () => mainWindow });
   createWindow();
 
   // Start HTTPS server on port 2121
@@ -670,16 +725,9 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', async () => {
-  // Cleanup storage connections
-  if (storageManager) {
-    await storageManager.cleanup();
-  }
+  await cleanupBeforeExit();
 
-  if (httpServerCleanup) {
-    await httpServerCleanup();
-  }
-
-    app.quit();
+  app.quit();
 });
 
 app.on('before-quit', async (event) => {
@@ -687,14 +735,7 @@ app.on('before-quit', async (event) => {
   if (storageManager || httpServerCleanup) {
     event.preventDefault();
 
-    // Cleanup storage connections
-    if (storageManager) {
-      await storageManager.cleanup();
-    }
-
-    if (httpServerCleanup) {
-      await httpServerCleanup();
-    }
+    await cleanupBeforeExit();
 
     // Now actually quit
     app.exit(0);

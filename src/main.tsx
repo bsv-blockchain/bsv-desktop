@@ -17,7 +17,7 @@ if (rootElement) {
   // before the wallet tree initializes.
   root.render(
     <React.StrictMode>
-      <VaultGate>
+      <VaultGate appName="BSV Desktop">
         <UserInterface
           onWalletReady={onWalletReady}
           nativeHandlers={electronFunctions}

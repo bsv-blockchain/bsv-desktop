@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, session } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -161,7 +161,12 @@ function createWindow() {
 
 // ===== IPC Handlers =====
 
-registerNetworkIpc();
+registerNetworkIpc({
+  hasActiveMonitorWorkers: () => {
+    // storageManager is only set after first storage use; no workers if never loaded
+    return Boolean(storageManager?.hasActiveMonitorWorkers?.());
+  }
+});
 
 // Check if window is focused
 ipcMain.handle('is-focused', () => {
@@ -388,8 +393,9 @@ ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
       throw new Error('Only manifest.json files are allowed');
     }
 
-    const fetch = (await import('node-fetch')).default;
-    const response = await fetch(url, {
+    // Use the Chromium session so manifest fetches honor session proxy settings
+    // (node-fetch would bypass session.setProxy).
+    const response = await session.defaultSession.fetch(url, {
       headers: {
         'User-Agent': 'bsv-desktop-electron/1.0',
         'Accept': 'application/json, */*;q=0.8'
@@ -414,22 +420,15 @@ ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
   }
 });
 
+// Process exits in this handler; the invoke Promise is not observed by the renderer.
 ipcMain.handle('app:restart', async () => {
-  let cleanupError: unknown = null;
-
   try {
     await cleanupBeforeExit();
   } catch (error) {
-    cleanupError = error;
     console.error('App restart cleanup failed:', error);
-  } finally {
-    app.relaunch();
-    app.exit(0);
   }
-
-  return cleanupError
-    ? { success: false, error: String(cleanupError) }
-    : { success: true };
+  app.relaunch();
+  app.exit(0);
 });
 
 // Forward HTTP requests to renderer

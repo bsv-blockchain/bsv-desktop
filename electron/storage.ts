@@ -46,6 +46,11 @@ class StorageManager {
   // Monitor worker processes
   private monitorWorkers: Map<string, ChildProcess> = new Map();
 
+  /** True when any forked monitor worker is still running (inherits env at fork time). */
+  hasActiveMonitorWorkers(): boolean {
+    return this.monitorWorkers.size > 0;
+  }
+
   /**
    * Get or create a storage instance for the given identity key
    */

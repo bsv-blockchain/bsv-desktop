@@ -10,12 +10,13 @@ export interface ElectronAPI {
   savePrivateKey: (privateKey: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   proxyFetchManifest: (url: string) => Promise<{ status: number; headers: [string, string][]; body: string }>;
   network: {
-    getProxySettings: () => Promise<{ mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }>;
+    getProxySettings: () => Promise<{ mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string; restartRequired?: boolean }>;
     setProxySettings: (settings: { mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }) => Promise<{ success: boolean; settings?: { mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }; restartRequired?: boolean; error?: string }>;
     onOpenSettings: (callback: () => void) => void;
     removeOpenSettingsListener: (callback: () => void) => void;
   };
   app: {
+    /** Relaunches the app; the process exits and the Promise does not resolve. */
     restart: () => Promise<void>;
   };
   onHttpRequest: (callback: (event: any) => void) => void;

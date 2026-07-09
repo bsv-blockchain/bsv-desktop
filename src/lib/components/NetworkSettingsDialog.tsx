@@ -15,29 +15,37 @@ import {
 import { toast } from 'react-toastify'
 
 interface ProxySettings {
-  mode: 'direct' | 'fixed_servers';
-  proxyRules: string;
-  lastProxyRules?: string;
+  mode: 'direct' | 'fixed_servers'
+  proxyRules: string
+  lastProxyRules?: string
+  restartRequired?: boolean
 }
-
-const DEFAULT_PROXY_URL = 'http://127.0.0.1:7890'
 
 const NetworkSettingsDialog: React.FC = () => {
   const [open, setOpen] = useState(false)
   const [proxyEnabled, setProxyEnabled] = useState(false)
-  const [proxyUrl, setProxyUrl] = useState(DEFAULT_PROXY_URL)
+  const [proxyUrl, setProxyUrl] = useState('')
   const [saving, setSaving] = useState(false)
   const [restartAvailable, setRestartAvailable] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   const hasElectronNetworkApi = Boolean(window.electronAPI?.network)
 
   const loadSettings = useCallback(async () => {
     if (!hasElectronNetworkApi) return
 
-    const settings = await window.electronAPI.network.getProxySettings()
-    setProxyEnabled(settings.mode === 'fixed_servers' && Boolean(settings.proxyRules))
-    setProxyUrl(settings.proxyRules || settings.lastProxyRules || DEFAULT_PROXY_URL)
-    setRestartAvailable(false)
+    setLoading(true)
+    try {
+      const settings = await window.electronAPI.network.getProxySettings()
+      setProxyEnabled(settings.mode === 'fixed_servers' && Boolean(settings.proxyRules))
+      setProxyUrl(settings.proxyRules || settings.lastProxyRules || '')
+      setRestartAvailable(Boolean(settings.restartRequired))
+    } catch (error) {
+      console.error('[NetworkSettings] Failed to load settings:', error)
+      toast.error('Failed to load network settings.')
+    } finally {
+      setLoading(false)
+    }
   }, [hasElectronNetworkApi])
 
   useEffect(() => {
@@ -72,7 +80,11 @@ const NetworkSettingsDialog: React.FC = () => {
       }
 
       setRestartAvailable(Boolean(result.restartRequired))
-      toast.success('Network settings saved.')
+      if (result.restartRequired) {
+        toast.success('Network settings saved. Restart to update background services.')
+      } else {
+        toast.success('Network settings applied.')
+      }
     } catch {
       toast.error('Failed to save network settings.')
     } finally {
@@ -91,17 +103,20 @@ const NetworkSettingsDialog: React.FC = () => {
       <DialogContent>
         <Stack spacing={2.5} sx={{ pt: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            Configure an application-wide HTTP proxy for BSV Desktop network requests.
+            Optionally route BSV Desktop traffic through an HTTP proxy. Leave this off unless you need a proxy.
           </Typography>
 
-          <Alert severity="info">
-            Changes take effect after restarting BSV Desktop.
-          </Alert>
+          {restartAvailable && (
+            <Alert severity="warning">
+              Background wallet services are still using the previous proxy settings. Restart BSV Desktop to update them.
+            </Alert>
+          )}
 
           <FormControlLabel
             control={
               <Switch
                 checked={proxyEnabled}
+                disabled={loading || saving}
                 onChange={(event) => setProxyEnabled(event.target.checked)}
               />
             }
@@ -110,12 +125,12 @@ const NetworkSettingsDialog: React.FC = () => {
 
           <TextField
             fullWidth
-            disabled={!proxyEnabled}
+            disabled={!proxyEnabled || loading || saving}
             label="HTTP proxy URL"
             placeholder="http://host:port"
             value={proxyUrl}
             onChange={(event) => setProxyUrl(event.target.value)}
-            helperText="Only HTTP proxy URLs are supported."
+            helperText="Only HTTP proxy URLs are supported (for example http://127.0.0.1:8080)."
           />
         </Stack>
       </DialogContent>
@@ -126,7 +141,7 @@ const NetworkSettingsDialog: React.FC = () => {
             Restart
           </Button>
         )}
-        <Button onClick={handleSave} variant="contained" disabled={saving}>
+        <Button onClick={handleSave} variant="contained" disabled={saving || loading}>
           {saving ? 'Saving...' : 'Save'}
         </Button>
       </DialogActions>

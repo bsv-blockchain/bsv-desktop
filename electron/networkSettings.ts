@@ -2,16 +2,33 @@ import { app, ipcMain, session } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
-interface NetworkProxySettings {
+export interface NetworkProxySettings {
   mode: 'direct' | 'fixed_servers';
   proxyRules: string;
   lastProxyRules?: string;
+}
+
+export interface NetworkProxySettingsResponse extends NetworkProxySettings {
+  restartRequired: boolean;
+}
+
+interface RegisterNetworkIpcOptions {
+  hasActiveMonitorWorkers?: () => boolean | Promise<boolean>;
 }
 
 const DEFAULT_PROXY_SETTINGS: NetworkProxySettings = {
   mode: 'direct',
   proxyRules: ''
 };
+
+const LOCAL_BYPASS = '<local>;localhost;127.0.0.1;::1';
+const LOCAL_NO_PROXY = 'localhost,127.0.0.1,::1';
+
+/** In-memory: workers forked before a mid-session proxy change still need a relaunch. */
+let pendingWorkerRestart = false;
+
+/** Snapshot of settings currently applied to Chromium session + process.env. */
+let appliedSettings: NetworkProxySettings | null = null;
 
 function getProxySettingsPath(): string {
   return path.join(app.getPath('userData'), 'network-settings.json');
@@ -67,6 +84,11 @@ function normalizeProxySettings(settings: NetworkProxySettings): NetworkProxySet
   };
 }
 
+function settingsEqual(a: NetworkProxySettings | null, b: NetworkProxySettings): boolean {
+  if (!a) return false;
+  return a.mode === b.mode && a.proxyRules === b.proxyRules;
+}
+
 function getEffectiveProxySettings(): NetworkProxySettings {
   return readProxySettings() ?? { ...DEFAULT_PROXY_SETTINGS };
 }
@@ -109,44 +131,102 @@ function isValidHttpProxyUrl(value: string): boolean {
   }
 }
 
+function clearProcessProxyEnv(): void {
+  delete process.env.HTTP_PROXY;
+  delete process.env.HTTPS_PROXY;
+  delete process.env.http_proxy;
+  delete process.env.https_proxy;
+  delete process.env.ALL_PROXY;
+  delete process.env.all_proxy;
+  delete process.env.NO_PROXY;
+  delete process.env.no_proxy;
+}
+
+function setProcessProxyEnv(proxyRules: string): void {
+  process.env.HTTP_PROXY = proxyRules;
+  process.env.HTTPS_PROXY = proxyRules;
+  process.env.http_proxy = proxyRules;
+  process.env.https_proxy = proxyRules;
+  process.env.NO_PROXY = LOCAL_NO_PROXY;
+  process.env.no_proxy = LOCAL_NO_PROXY;
+}
+
+/**
+ * Apply Chromium session proxy + process env so Node children forked later inherit the same policy.
+ * Does not restart already-running workers.
+ */
 async function applyProxySettings(settings: NetworkProxySettings): Promise<void> {
   const normalized = normalizeProxySettings(settings);
 
   if (normalized.mode === 'direct') {
     await session.defaultSession.setProxy({ mode: 'direct' });
-    console.log('[Network] Proxy disabled');
+    clearProcessProxyEnv();
+    appliedSettings = normalized;
+    console.log('[Network] Proxy disabled (direct)');
     return;
   }
 
   await session.defaultSession.setProxy({
     mode: 'fixed_servers',
     proxyRules: normalized.proxyRules,
-    proxyBypassRules: '<local>;localhost;127.0.0.1;::1'
+    proxyBypassRules: LOCAL_BYPASS
   });
+  setProcessProxyEnv(normalized.proxyRules);
+  appliedSettings = normalized;
   console.log(`[Network] Proxy enabled: ${normalized.proxyRules}`);
 }
 
+/**
+ * Startup: only touch networking if the user previously saved settings.
+ * No settings file → leave Chromium defaults (including system proxy) alone.
+ */
 export async function applyPersistedProxySettings(): Promise<void> {
-  const persistedProxySettings = readProxySettings();
-  const effectiveProxySettings = persistedProxySettings ?? DEFAULT_PROXY_SETTINGS;
+  const persisted = readProxySettings();
+  if (!persisted) {
+    appliedSettings = null;
+    pendingWorkerRestart = false;
+    return;
+  }
 
   try {
-    await applyProxySettings(effectiveProxySettings);
+    await applyProxySettings(persisted);
+    pendingWorkerRestart = false;
   } catch (error) {
     console.error('[Network] Failed to apply persisted proxy settings:', error);
   }
 }
 
-export function registerNetworkIpc(): void {
-  ipcMain.handle('network:get-proxy-settings', async () => {
-    return getEffectiveProxySettings();
+export function registerNetworkIpc(options: RegisterNetworkIpcOptions = {}): void {
+  const { hasActiveMonitorWorkers } = options;
+
+  ipcMain.handle('network:get-proxy-settings', async (): Promise<NetworkProxySettingsResponse> => {
+    const settings = getEffectiveProxySettings();
+    return {
+      ...settings,
+      restartRequired: pendingWorkerRestart
+    };
   });
 
   ipcMain.handle('network:set-proxy-settings', async (_event, settings: NetworkProxySettings) => {
     try {
       const validated = validateProxySettings(settings);
+      const changed = !settingsEqual(appliedSettings, validated);
+
       writeProxySettings(validated);
-      return { success: true, settings: validated, restartRequired: true };
+      await applyProxySettings(validated);
+
+      if (changed) {
+        const workersActive = hasActiveMonitorWorkers
+          ? Boolean(await hasActiveMonitorWorkers())
+          : false;
+        pendingWorkerRestart = workersActive;
+      }
+
+      return {
+        success: true,
+        settings: validated,
+        restartRequired: pendingWorkerRestart
+      };
     } catch (error: any) {
       console.error('[IPC] network:set-proxy-settings error:', error);
       return { success: false, error: error.message };

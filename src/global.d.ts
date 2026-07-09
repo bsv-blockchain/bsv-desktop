@@ -10,6 +10,7 @@ export interface ElectronAPI {
   savePrivateKey: (privateKey: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   proxyFetchManifest: (url: string) => Promise<{ status: number; headers: [string, string][]; body: string }>;
   onHttpRequest: (callback: (event: any) => void) => void;
+  onHttpRequestCancelled: (callback: (event: { request_id: number; reason?: string }) => void) => void;
   sendHttpResponse: (response: any) => void;
   removeHttpRequestListener: () => void;
   storage: {

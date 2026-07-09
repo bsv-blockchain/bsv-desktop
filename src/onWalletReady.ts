@@ -30,6 +30,10 @@ import {
   type SendWithResult,
   type TXIDHexString
 } from '@bsv/sdk';
+import {
+  beginHttpBridgeSession,
+  endHttpBridgeSession,
+} from './lib/services/httpBridgeSession';
 
 interface HttpRequestEvent {
   method: string;
@@ -138,13 +142,18 @@ function parseOrigin(headers: Record<string, string>): string | null {
 // Module-level wallet ref — survives React effect cleanup/re-runs
 let _currentWallet: WalletInterface | null = null;
 let _listenerRegistered = false;
+let _cancelListenerRegistered = false;
 
 /** Test-only: read current wallet ref */
 export function _test_getCurrentWallet(): WalletInterface | null { return _currentWallet; }
 /** Test-only: read listener state */
 export function _test_isListenerRegistered(): boolean { return _listenerRegistered; }
 /** Test-only: reset module state */
-export function _test_reset(): void { _currentWallet = null; _listenerRegistered = false; }
+export function _test_reset(): void {
+  _currentWallet = null;
+  _listenerRegistered = false;
+  _cancelListenerRegistered = false;
+}
 
 /**
  * Update the wallet instance used by the HTTP listener.
@@ -159,9 +168,23 @@ export const onWalletReady = async (wallet: WalletInterface): Promise<(() => voi
 
   console.log('[onWalletReady] registering IPC listener (once)');
 
+  // When the HTTP client disconnects mid-call, drop matching permission modals.
+  if (!_cancelListenerRegistered && typeof window.electronAPI.onHttpRequestCancelled === 'function') {
+    _cancelListenerRegistered = true;
+    window.electronAPI.onHttpRequestCancelled(async (event: { request_id: number; reason?: string }) => {
+      try {
+        const { getWalletService } = await import('./lib/hooks/useWalletService');
+        await getWalletService().permissionQueue.cancelHttpBridgeRequest(event.request_id);
+      } catch (err) {
+        console.warn('[onWalletReady] failed to cancel permissions for abandoned HTTP request:', err);
+      }
+    });
+  }
+
   // Register ONCE — never removed. Wallet ref swapped via _currentWallet.
   window.electronAPI.onHttpRequest(async (req: HttpRequestEvent) => {
     let response: HttpResponseEvent;
+    let sessionStarted = false;
 
     const wallet = _currentWallet;
     if (!wallet) {
@@ -186,6 +209,9 @@ export const onWalletReady = async (wallet: WalletInterface): Promise<(() => voi
         window.electronAPI.sendHttpResponse(response);
         return;
       }
+
+      beginHttpBridgeSession(req.request_id, origin);
+      sessionStarted = true;
 
       switch (req.path) {
         // 1. createAction
@@ -877,6 +903,10 @@ export const onWalletReady = async (wallet: WalletInterface): Promise<(() => voi
         body: JSON.stringify({ error: String(e) })
       };
       window.electronAPI.sendHttpResponse(response);
+    } finally {
+      if (sessionStarted) {
+        endHttpBridgeSession(req.request_id);
+      }
     }
   });
 

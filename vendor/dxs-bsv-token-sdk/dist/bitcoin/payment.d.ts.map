@@ -1,0 +1,1 @@
+{"version":3,"file":"payment.d.ts","sourceRoot":"","sources":["../../src/bitcoin/payment.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,QAAQ,EAAE,MAAM,aAAa,CAAC;AACvC,OAAO,EAAE,UAAU,EAAE,MAAM,eAAe,CAAC;AAC3C,OAAO,EAAE,MAAM,EAAE,MAAM,UAAU,CAAC;AAElC,MAAM,MAAM,QAAQ,GAAG;IACrB,QAAQ,EAAE,QAAQ,CAAC;IACnB,KAAK,EAAE,UAAU,GAAG,MAAM,CAAC;CAC5B,CAAC"}

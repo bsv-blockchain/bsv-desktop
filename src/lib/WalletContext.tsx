@@ -29,10 +29,13 @@ import 'react-toastify/dist/ReactToastify.css'
 import { ADMIN_ORIGINATOR, DEFAULT_SETTINGS } from './config'
 import { UserContext } from './UserContext'
 import { useWalletService, getWalletService } from './hooks/useWalletService'
+import type { StasServices } from './services/WalletService'
 import { buildPermissionModuleRegistry } from './permissionModules/registry'
 import type { PermissionModuleDefinition, PermissionPromptHandler } from './permissionModules/types'
 import type { GroupPermissionRequest, CounterpartyPermissionRequest } from './types/GroupedPermissions'
 import type { WalletProfile } from './types/WalletProfile'
+import { setStasForHttpRoute, setStasTransferEnqueuer, setBsv21DiscoveryForHttpRoute, setPeerTokensForHttpRoute } from '../onWalletReady'
+import type { StasTransferRequest } from './types/StasTransferRequest'
 import { RequestInterceptorWallet } from './RequestInterceptorWallet'
 import { updateRecentApp } from './pages/Dashboard/Apps/getApps'
 
@@ -121,6 +124,8 @@ export interface WalletContextValue {
    * plumbing). App-originated requests must go through `managers.permissionsManager`.
    */
   wallet?: WalletInterface;
+  /** STAS BRC-42 services + discovery loop (Tasks 3/4). */
+  stas?: StasServices;
   settings: WalletSettings;
   updateSettings: (newSettings: WalletSettings) => Promise<void>;
   network: 'mainnet' | 'testnet';
@@ -138,6 +143,14 @@ export interface WalletContextValue {
   certificateRequests: any[];
   protocolRequests: any[];
   spendingRequests: any[];
+  /**
+   * Pending STAS transfer authorization requests from external apps
+   * calling `POST /stas/transfer`. Surfaced by `StasTransferPermissionHandler`.
+   * Resolves the awaiting route handler when the user clicks Approve/Deny.
+   */
+  stasTransferRequests: StasTransferRequest[];
+  /** Resolves the head of `stasTransferRequests` and removes it from the queue. */
+  advanceStasTransferQueue: (approved: boolean) => void;
   groupPermissionRequests: GroupPermissionRequest[];
   counterpartyPermissionRequests: CounterpartyPermissionRequest[];
   startPactCooldownForCounterparty: (originator: string, counterparty: string) => void;
@@ -200,6 +213,8 @@ export const WalletContext = createContext<WalletContextValue>({
   certificateRequests: [],
   protocolRequests: [],
   spendingRequests: [],
+  stasTransferRequests: [],
+  advanceStasTransferQueue: () => {},
   groupPermissionRequests: [],
   counterpartyPermissionRequests: [],
   startPactCooldownForCounterparty: () => {},
@@ -338,6 +353,41 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   // ---- React adapter hook — provides all the context values ----
   const walletServiceValues = useWalletService()
 
+  // ---- STAS transfer authorization queue (Apps API permission prompts) ----
+  // External apps hitting POST /stas/transfer get gated by a user prompt
+  // here. enqueueStasTransferRequest is exposed to the HTTP route handler
+  // via setStasTransferEnqueuer (parallel to setStasForHttpRoute).
+  const [stasTransferRequests, setStasTransferRequests] = useState<StasTransferRequest[]>([])
+
+  const enqueueStasTransferRequest = useCallback(
+    (
+      args: Omit<StasTransferRequest, 'requestId' | 'resolve'>
+    ): Promise<boolean> => {
+      return new Promise<boolean>((resolve) => {
+        const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36)
+        setStasTransferRequests((q) => [
+          ...q,
+          { ...args, requestId, resolve },
+        ])
+      })
+    },
+    []
+  )
+
+  const advanceStasTransferQueue = useCallback((approved: boolean) => {
+    setStasTransferRequests((q) => {
+      if (q.length === 0) return q
+      const [head, ...rest] = q
+      try { head.resolve(approved) } catch { /* ignore */ }
+      return rest
+    })
+  }, [])
+
+  useEffect(() => {
+    setStasTransferEnqueuer(enqueueStasTransferRequest)
+    return () => setStasTransferEnqueuer(null)
+  }, [enqueueStasTransferRequest])
+
   // ---- onWalletReady integration (replaces Effect 14) ----
   // This stays in React because it depends on onWalletReady prop and activeProfile
   const { managers, activeProfile } = walletServiceValues
@@ -376,16 +426,79 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     }
 
     const interceptorWallet = new RequestInterceptorWallet(managers.permissionsManager, Utils.toBase64(activeProfile.id), updateRecentAppWrapper)
-    // onWalletReady registers IPC listener once, subsequent calls just swap wallet ref
+    // onWalletReady registers IPC listener once, subsequent calls just swap
+    // wallet ref. The STAS service bundle (for the Apps API routes
+    // /stas/list, /stas/tokens, /stas/transfer, /stas/receive-address,
+    // /stas/register-by-txid — Task 7a) is injected via a separate setter so
+    // the prop interface stays single-arg.
     onWalletReady(interceptorWallet)
+    const stas = walletServiceValues.stas
+    if (stas?.keyDeriver && stas.discovery && stas.transfer) {
+      setStasForHttpRoute({
+        discovery: stas.discovery,
+        transfer: stas.transfer,
+        keyDeriver: stas.keyDeriver,
+        identityKey: stas.keyDeriver.identityKey,
+        chain: stas.keyDeriver.chain,
+      })
+    } else {
+      setStasForHttpRoute(null)
+    }
+
+    // Parallel injection for the BSV-21 register-by-txid demo fast-path.
+    // The primary discovery mechanism is bsv21Discovery.scan() — fired by
+    // the AssetsPage Refresh button — which queries the 1Sat overlay's
+    // per-address SSE stream and covers organic receive end-to-end.
+    setBsv21DiscoveryForHttpRoute(stas?.bsv21Discovery ?? null)
+
+    // Peer-token routes (Phase B) — the standalone web page drives this
+    // wallet over /peerToken/*. The page references holdings by outpoint;
+    // source resolution + key derivation stay here behind the HTTP boundary.
+    if (stas?.peerTokens && stas.keyDeriver) {
+      setPeerTokensForHttpRoute({
+        client: stas.peerTokens,
+        wallet: managers.permissionsManager,
+        identityKey: stas.keyDeriver.identityKey,
+        chain: stas.keyDeriver.chain,
+        originator: ADMIN_ORIGINATOR,
+        // TokenProtocolRegistry — powers the /dstas/transfer + /bsv-21/transfer
+        // legacy address-send routes (same adapters the Assets page Send uses).
+        tokens: stas.tokens,
+      })
+    } else {
+      setPeerTokensForHttpRoute(null)
+    }
 
     // No cleanup — IPC listener is permanent, wallet ref is swapped not re-registered
   }, [managers?.permissionsManager, activeProfile?.id, onWalletReady])
 
+  // STAS auto-scan: one shot when the raw wallet + STAS services first appear.
+  // The dev-only Dashboard panel exposes a manual re-scan.
+  useEffect(() => {
+    const stas = walletServiceValues.stas
+    const wallet = walletServiceValues.wallet
+    if (!wallet || !stas?.discovery) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        console.log('[STAS Discovery] auto-scan starting')
+        const result = await stas.discovery.scan()
+        if (cancelled) return
+        console.log('[STAS Discovery] auto-scan result:', result)
+      } catch (err) {
+        if (!cancelled) console.error('[STAS Discovery] auto-scan error:', err)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [walletServiceValues.wallet, walletServiceValues.stas])
+
   // ---- Context value ----
   const contextValue = useMemo<WalletContextValue>(() => ({
     ...walletServiceValues,
-  }), [walletServiceValues])
+    stasTransferRequests,
+    advanceStasTransferQueue,
+  }), [walletServiceValues, stasTransferRequests, advanceStasTransferQueue])
 
   return (
     <WalletContext.Provider value={contextValue}>

@@ -643,6 +643,19 @@ ipcMain.handle('secrets:delete', async (_event, name: string) => {
   vault.deleteSecret(name);
 });
 
+// STAS extension query channel — separate from storage:call-method so STAS
+// queries do not share the StorageKnex method namespace.
+ipcMain.handle('stas:query', async (_event, identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => {
+  try {
+    const manager = await getStorageManager();
+    const result = await manager.callStasQuery(identityKey, chain, method, args ?? []);
+    return { success: true, result };
+  } catch (error: any) {
+    console.error('[IPC] stas:query error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // ===== Auto-Update IPC Handlers =====
 
 ipcMain.handle('update:check', async () => {

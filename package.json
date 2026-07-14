@@ -7,6 +7,7 @@
   "author": "BSV Association <support@bsvassociation.org>",
   "license": "Apache-2.0",
   "scripts": {
+    "postinstall": "electron-builder install-app-deps",
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
     "dev:electron": "tsc -p tsconfig.electron.json && cp electron/storage-loader.cjs electron/updater.cjs dist-electron/ && electron .",
@@ -20,6 +21,10 @@
     "package:linux": "electron-builder --linux",
     "lint:ci": "echo 'No linting'",
     "test": "vitest run --config vitest.config.electron.ts test/translations.test.ts",
+    "test:stas": "vitest run --config vitest.config.electron.ts test/stas",
+    "test:tokens": "vitest run --config vitest.config.electron.ts test/tokens",
+    "test:stas:db": "npm rebuild better-sqlite3 && vitest run --config vitest.config.electron.ts test/stas; npm run rebuild:electron",
+    "rebuild:electron": "electron-rebuild -f -o better-sqlite3 --build-from-source",
     "test:perf": "vitest run --config vitest.config.electron.ts"
   },
   "dependencies": {
@@ -28,7 +33,7 @@
     "@bsv/btms-permission-module": "^1.1.0",
     "@bsv/btms-permission-module-ui": "^1.0.0",
     "@bsv/identity-react": "^1.1.14",
-    "@bsv/message-box-client": "^2.2.0",
+    "@bsv/message-box-client": "^2.2.1",
     "@bsv/sdk": "^2.1.6",
     "@bsv/uhrp-react": "^1.0.6",
     "@bsv/wallet-toolbox": "^2.3.2",
@@ -39,10 +44,12 @@
     "@mui/material": "^6.4.8",
     "@mui/styles": "^6.4.8",
     "better-sqlite3": "^12.8.0",
+    "bsv": "^1.5.6",
     "cors": "^2.8.6",
     "date-fns": "^4.1.0",
     "dompurify": "^3.4.11",
     "dotenv": "^17.2.4",
+    "dxs-bsv-token-sdk": "file:./vendor/dxs-bsv-token-sdk",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.7.3",
     "express": "^4.21.2",
@@ -61,6 +68,7 @@
     "react-i18next": "^17.0.3",
     "react-router-dom": "^5.2.0",
     "react-toastify": "^11.0.5",
+    "stas-js": "^3.0.3",
     "use-async-effect": "^2.2.7"
   },
   "devDependencies": {
@@ -79,6 +87,7 @@
     "typescript": "~5.6.2",
     "vite": "^6.3.6",
     "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-node-polyfills": "^0.28.0",
     "vitest": "^3.0.0"
   },
   "build": {

@@ -40,14 +40,14 @@ import {
   WalletInterface,
   CachedKeyDeriver,
 } from '@bsv/sdk'
-import { WalletSettingsManager, DEFAULT_SETTINGS, WalletSettings } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
+import { WalletSettingsManager, WalletSettings } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 import { toast } from 'react-toastify'
 import { EventEmittable } from './EventEmittable'
 import { PermissionQueueManager } from './PermissionQueueManager'
 import { PeerPayManager } from './PeerPayManager'
 import { StorageElectronIPC } from '../StorageElectronIPC'
 import * as secrets from './secrets'
-import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB } from '../config'
+import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB, DEFAULT_SETTINGS } from '../config'
 import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
 
@@ -481,6 +481,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       const storageManager = new WalletStorageManager(keyDeriver.identityKey, activeStorage, [])
       const signer = new WalletSigner(chain, keyDeriver as any, storageManager)
       const wallet = new Wallet(signer, services, undefined, privilegedKeyManager)
+      // Set default settings including "Who I Am" certifier before first get().
+      // config is private in the type declarations but settable at runtime.
+      ;(wallet.settingsManager as any).config = { defaultSettings: DEFAULT_SETTINGS }
 
       if (this._useRemoteStorage) {
         const client = new StorageClient(wallet, this._selectedStorageUrl)

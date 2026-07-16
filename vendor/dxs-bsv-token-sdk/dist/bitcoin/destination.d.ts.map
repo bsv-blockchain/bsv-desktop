@@ -1,0 +1,1 @@
+{"version":3,"file":"destination.d.ts","sourceRoot":"","sources":["../../src/bitcoin/destination.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,OAAO,EAAE,MAAM,WAAW,CAAC;AACpC,OAAO,EAAE,KAAK,EAAE,MAAM,UAAU,CAAC;AAEjC,MAAM,MAAM,YAAY,GAAG;IACzB,OAAO,EAAE,OAAO,CAAC;IACjB,QAAQ,EAAE,MAAM,CAAC;IACjB,IAAI,CAAC,EAAE,KAAK,EAAE,CAAC;CAChB,CAAC"}

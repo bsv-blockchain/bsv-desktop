@@ -45,9 +45,28 @@ import { toast } from 'react-toastify'
 import { EventEmittable } from './EventEmittable'
 import { PermissionQueueManager } from './PermissionQueueManager'
 import { PeerPayManager } from './PeerPayManager'
+import { StasKeyDeriver, StasOwnershipService, StasRegistration, StasDiscoveryService, StasTransferService } from './stas'
+import {
+  TokenProtocolRegistry,
+  StasProtocolAdapter,
+  DstasProtocolAdapter,
+  BSV21ProtocolAdapter,
+  BSV21KeyDeriver,
+  OneSatIndexerClient,
+  BSV21Registration,
+  BSV21TransferService,
+  BSV21DiscoveryService,
+} from './tokens'
+import { WocTokenIndexerClient } from './tokens/woc/WocTokenIndexerClient'
+import { BackToGenesisClient } from './tokens/woc/BackToGenesisClient'
+import { DstasTransferService } from './tokens/dstas/DstasTransferService'
+import { PeerTokenClient } from '@bsv/message-box-client'
+import { StasTokenSettlementAdapter } from './tokens/peer/StasTokenSettlementAdapter'
+import { Bsv21TokenSettlementAdapter } from './tokens/peer/Bsv21TokenSettlementAdapter'
+import { DstasTokenSettlementAdapter } from './tokens/peer/DstasTokenSettlementAdapter'
 import { StorageElectronIPC } from '../StorageElectronIPC'
 import * as secrets from './secrets'
-import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB, DEFAULT_SETTINGS } from '../config'
+import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB, DEFAULT_SETTINGS, MESSAGEBOX_HOST } from '../config'
 import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
 
@@ -60,6 +79,38 @@ export type WalletLifecycle =
   | 'error'
 
 // State exposed to React via snapshot
+/** Bundle of STAS services produced by `_buildWallet` and exposed to the UI. */
+export type StasServices = {
+  keyDeriver: StasKeyDeriver
+  ownership: StasOwnershipService
+  discovery: StasDiscoveryService
+  transfer: StasTransferService
+  /**
+   * Token-protocol adapter registry. Renderers should route transfer
+   * calls through this rather than `transfer` directly — `transfer`
+   * remains exposed for back-compat but only knows classic STAS.
+   */
+  tokens: TokenProtocolRegistry
+  /** BSV-21 key derivation — symmetric counterpart to `keyDeriver` (STAS). */
+  bsv21KeyDeriver: BSV21KeyDeriver
+  /** BSV-21 discovery loop — symmetric counterpart to `discovery` (STAS). */
+  bsv21Discovery: BSV21DiscoveryService
+  /** 1Sat overlay REST client — exposed for diagnostics + the receive UI. */
+  bsv21Indexer: OneSatIndexerClient
+  /**
+   * Back-to-Genesis provenance client. Verifies that a held/received token
+   * output provably descends from its genesis mint (counterfeit detection).
+   * Reads WOC's bStore-walking endpoints, independent of the token index.
+   */
+  backToGenesis: BackToGenesisClient
+  /**
+   * Peer-to-peer token client over MessageBox (the token analog of PeerPay).
+   * Sends/accepts STAS, DSTAS, and BSV-21 tokens directly to a recipient's
+   * identity key via the configured MessageBox host.
+   */
+  peerTokens: PeerTokenClient
+}
+
 export type WalletServiceSnapshot = {
   lifecycle: WalletLifecycle
   // Config
@@ -93,6 +144,8 @@ export type WalletServiceSnapshot = {
    * party) must go through `managers.permissionsManager`, not this field.
    */
   wallet?: WalletInterface
+  /** STAS BRC-42 services + discovery loop (Tasks 3/4). */
+  stas?: StasServices
   settings: WalletSettings
   activeProfile: WalletProfile | null
   snapshotLoaded: boolean
@@ -128,6 +181,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   // ---- Runtime state ----
   private _managers: WalletServiceSnapshot['managers'] = {}
   private _wallet?: WalletInterface
+  private _stas?: StasServices
   private _settings: WalletSettings = DEFAULT_SETTINGS
   private _activeProfile: WalletProfile | null = null
   private _snapshotLoaded = false
@@ -163,6 +217,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   get adminOriginator() { return this._adminOriginator }
   get managers() { return this._managers }
   get wallet() { return this._wallet }
+  /** STAS BRC-42 services (ownership recognition + receive-key derivation). */
+  get stas() { return this._stas }
   get settings() { return this._settings }
   get activeProfile() { return this._activeProfile }
   get snapshotLoaded() { return this._snapshotLoaded }
@@ -185,6 +241,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       adminOriginator: this._adminOriginator,
       managers: this._managers,
       wallet: this._wallet,
+      stas: this._stas,
       settings: this._settings,
       activeProfile: this._activeProfile,
       snapshotLoaded: this._snapshotLoaded,
@@ -526,6 +583,94 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         storageManager,
       }
       this._wallet = wallet
+
+      // STAS BRC-42 services — ownership recognition + receive-key derivation,
+      // plus the Task-4 discovery loop (WoC scan -> internalizeAction).
+      const stasKeyDeriver = new StasKeyDeriver(wallet, keyDeriver.identityKey, chain)
+      const stasRegistration = new StasRegistration(wallet, keyDeriver.identityKey, chain)
+      const stasTransfer = new StasTransferService(wallet, keyDeriver.identityKey, chain)
+
+      // DSTAS transfer service (F3) — shares the STAS BRC-42 receive
+      // namespace, builds the new output via the SDK's pure
+      // buildDstasLockingScript, and assembles the DSTAS unlocking
+      // script byte-for-byte to match the template's witness format.
+      const dstasTransfer = new DstasTransferService(wallet, keyDeriver.identityKey, chain)
+
+      // BSV-21 services — separate BRC-42 namespace, 1Sat REST indexer,
+      // standard P2PKH unlock path.
+      const bsv21KeyDeriver = new BSV21KeyDeriver(wallet, keyDeriver.identityKey, chain)
+      const bsv21Indexer = new OneSatIndexerClient({ chain })
+      const bsv21Registration = new BSV21Registration(wallet, keyDeriver.identityKey, chain)
+      const bsv21Transfer = new BSV21TransferService({
+        wallet,
+        identityKey: keyDeriver.identityKey,
+        chain,
+        deriver: bsv21KeyDeriver,
+        indexer: bsv21Indexer,
+      })
+
+      // Token-protocol adapter registry. Order matters: STAS's prefix sniff
+      // is cheap and unambiguous, DSTAS's SDK reader next, BSV-21's ord
+      // envelope last (also cheap but distinct prefix).
+      const tokens = new TokenProtocolRegistry()
+      tokens.register(new StasProtocolAdapter(stasTransfer))
+      tokens.register(new DstasProtocolAdapter(dstasTransfer))
+      tokens.register(new BSV21ProtocolAdapter(bsv21Transfer))
+
+      // Token discovery — WhatsOnChain is the single source for all three
+      // standards: STAS (by base58 address) and DSTAS (by owner hash160) ride
+      // StasDiscoveryService, BSV-21 rides BSV21DiscoveryService, all fed by
+      // the same WocTokenIndexerClient.
+      const wocIndexer = new WocTokenIndexerClient({ chain })
+      const backToGenesis = new BackToGenesisClient({ chain })
+
+      const stasDiscovery = new StasDiscoveryService({
+        deriver: stasKeyDeriver,
+        indexer: wocIndexer,
+        registration: stasRegistration,
+        wallet,
+        registry: tokens,
+      })
+      const bsv21Discovery = new BSV21DiscoveryService({
+        deriver: bsv21KeyDeriver,
+        indexer: wocIndexer,
+        registration: bsv21Registration,
+        wallet,
+      })
+
+      // Peer-token client (token analog of PeerPay). Uses the same raw
+      // `wallet` the token services use, so signing/derivation namespaces
+      // match. Each adapter reuses the existing transfer-service building
+      // blocks; the BRC-29 owner derivation lives inside the adapters.
+      const peerTokens = new PeerTokenClient({
+        messageBoxHost: this._messageBoxUrl || MESSAGEBOX_HOST,
+        walletClient: wallet,
+        originator: this._adminOriginator,
+        adapters: [
+          new StasTokenSettlementAdapter(wallet, keyDeriver.identityKey, chain),
+          new Bsv21TokenSettlementAdapter({
+            wallet,
+            identityKey: keyDeriver.identityKey,
+            chain,
+            deriver: bsv21KeyDeriver,
+            indexer: bsv21Indexer,
+          }),
+          new DstasTokenSettlementAdapter(wallet, keyDeriver.identityKey, chain),
+        ],
+      })
+
+      this._stas = {
+        keyDeriver: stasKeyDeriver,
+        ownership: new StasOwnershipService(stasKeyDeriver),
+        discovery: stasDiscovery,
+        transfer: stasTransfer,
+        tokens,
+        bsv21KeyDeriver,
+        bsv21Discovery,
+        bsv21Indexer,
+        backToGenesis,
+        peerTokens,
+      }
 
       // Load settings
       try {

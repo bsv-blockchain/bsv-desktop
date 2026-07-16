@@ -14,6 +14,8 @@ import {
   AccountBalanceWallet as PaymentsIcon,
 } from '@mui/icons-material'
 import SyncAltIcon from '@mui/icons-material/SyncAlt';
+import InventoryIcon from '@mui/icons-material/Inventory';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
 import GridViewIcon from '@mui/icons-material/GridView'
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong'
@@ -738,7 +740,47 @@ export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
                   variant="body1"
                   fontWeight={history.location.pathname === '/dashboard/payments' ? 600 : 400}
                 >
-                  {t('menu_payments')}
+                  {t('menu_transfers', 'Transfers')}
+                </Typography>
+              }
+            />
+          </ListItemButton>
+
+          <ListItemButton
+            onClick={() => navigation.push('/dashboard/assets')}
+            selected={history.location.pathname === '/dashboard/assets'}
+            sx={menuItemStyle(history.location.pathname === '/dashboard/assets')}
+          >
+            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/assets' ? 'primary.main' : 'inherit' }}>
+              <AccountBalanceWalletIcon />
+            </ListItemIcon>
+            <ListItemText
+              primary={
+                <Typography
+                  variant="body1"
+                  fontWeight={history.location.pathname === '/dashboard/assets' ? 600 : 400}
+                >
+                  Assets
+                </Typography>
+              }
+            />
+          </ListItemButton>
+
+          <ListItemButton
+            onClick={() => navigation.push('/dashboard/baskets')}
+            selected={history.location.pathname === '/dashboard/baskets'}
+            sx={menuItemStyle(history.location.pathname === '/dashboard/baskets')}
+          >
+            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/baskets' ? 'primary.main' : 'inherit' }}>
+              <InventoryIcon />
+            </ListItemIcon>
+            <ListItemText
+              primary={
+                <Typography
+                  variant="body1"
+                  fontWeight={history.location.pathname === '/dashboard/baskets' ? 600 : 400}
+                >
+                  Baskets
                 </Typography>
               }
             />

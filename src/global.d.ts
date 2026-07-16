@@ -57,6 +57,9 @@ export interface ElectronAPI {
     get: () => Promise<any>;
     set: (config: any) => Promise<void>;
   };
+  stas: {
+    query: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+  };
   updates: {
     check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
     download: () => Promise<{ success: boolean; error?: string }>;

@@ -359,6 +359,8 @@ export function useWalletService() {
     // Raw, unwrapped Wallet — for internal first-party use only. App-originated
     // requests must go through managers.permissionsManager.
     wallet: walletState.wallet,
+    // STAS BRC-42 services + discovery loop (Tasks 3/4).
+    stas: walletState.stas,
     // Settings
     settings: walletState.settings,
     updateSettings,

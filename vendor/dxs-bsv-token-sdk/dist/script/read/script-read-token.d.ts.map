@@ -1,0 +1,1 @@
+{"version":3,"file":"script-read-token.d.ts","sourceRoot":"","sources":["../../../src/script/read/script-read-token.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,MAAM,EAAE,MAAM,wBAAwB,CAAC;AAChD,OAAO,EAAE,KAAK,EAAE,MAAM,aAAa,CAAC;AAGpC,qBAAa,eAAe;IAC1B,SAAS,EAAE,MAAM,CAAC;IAClB,IAAI,EAAE,KAAK,CAAC;IACZ,MAAM,CAAC,EAAE,MAAM,CAAC;gBAEJ,SAAS,EAAE,MAAM,EAAE,IAAI,CAAC,EAAE,KAAK;CAO5C"}

@@ -15,6 +15,11 @@ dist
 dist-electron
 release
 *.local
+
+# Allow vendored library dist/ (e.g. vendor/dxs-bsv-token-sdk/dist) so the
+# fork is buildable standalone without the parent monorepo checked out.
+!vendor/**
+
 docs/superpowers
 
 # Editor directories and files

@@ -448,7 +448,7 @@ export default function AssetsPage() {
   const verifier = useMemo(
     () =>
       new TokenVerificationService({
-        chain: (chain as 'main' | 'test') ?? 'main',
+        chain: (chain as 'main' | 'test' | 'ttn') ?? 'main',
         client: b2gClient,
       }),
     [chain, b2gClient]

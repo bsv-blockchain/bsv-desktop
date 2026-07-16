@@ -214,7 +214,7 @@ export class BSV21DiscoveryService {
     txid: string;
     vout: number;
     identityKey: string;
-    chain: 'main' | 'test';
+    chain: 'main' | 'test' | 'ttn';
   }): Promise<{
     ok: boolean;
     outputId?: number;

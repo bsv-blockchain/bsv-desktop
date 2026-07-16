@@ -38,13 +38,13 @@ export class StasKeyDeriver {
   constructor(
     private readonly wallet: WalletInterface,
     private readonly _identityKey: string,
-    private readonly _chain: 'main' | 'test'
+    private readonly _chain: 'main' | 'test' | 'ttn'
   ) {}
 
   /** Identity key of the wallet root (hex). */
   get identityKey(): string { return this._identityKey; }
   /** Chain this deriver is scoped to. */
-  get chain(): 'main' | 'test' { return this._chain; }
+  get chain(): 'main' | 'test' | 'ttn' { return this._chain; }
 
   /** Derive the Nth receive key. Pure — no DB access. */
   async deriveReceiveKey(index: number): Promise<DerivedReceiveKey> {

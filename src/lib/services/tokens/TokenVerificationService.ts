@@ -67,11 +67,11 @@ export function aggregateBadge(verdicts: OutpointVerification[]): VerificationBa
 
 export class TokenVerificationService {
   private readonly client: BackToGenesisClient;
-  private readonly chain: 'main' | 'test';
+  private readonly chain: 'main' | 'test' | 'ttn';
   /** Same-session cache. Durable persistence is the wallet DB (see class doc). */
   private readonly cache = new Map<string, OutpointVerification>();
 
-  constructor(opts: { chain?: 'main' | 'test'; client?: BackToGenesisClient } = {}) {
+  constructor(opts: { chain?: 'main' | 'test' | 'ttn'; client?: BackToGenesisClient } = {}) {
     this.chain = opts.chain ?? 'main';
     this.client = opts.client ?? new BackToGenesisClient({ chain: this.chain });
   }

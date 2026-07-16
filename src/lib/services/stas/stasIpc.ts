@@ -8,7 +8,7 @@
  */
 export async function stasQuery(
   identityKey: string,
-  chain: 'main' | 'test',
+  chain: 'main' | 'test' | 'ttn',
   method: string,
   args: any[]
 ): Promise<any> {

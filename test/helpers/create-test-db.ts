@@ -15,14 +15,14 @@ import { patchListCertificates } from '../../electron/optimized-queries'
 const require = createRequire(import.meta.url)
 
 const TEST_IDENTITY_KEY = '02' + 'ab'.repeat(32) // deterministic 66-char hex pubkey
-const TEST_CHAIN: 'main' | 'test' = 'test'
+const TEST_CHAIN: 'main' | 'test' | 'ttn' = 'test'
 
 export interface TestDb {
   db: any // Knex instance
   storage: StorageKnex
   dbPath: string
   identityKey: string
-  chain: 'main' | 'test'
+  chain: 'main' | 'test' | 'ttn'
   userId: number
   cleanup: () => Promise<void>
 }

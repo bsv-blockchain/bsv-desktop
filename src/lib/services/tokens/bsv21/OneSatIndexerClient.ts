@@ -72,7 +72,7 @@ export interface OneSatIndexerOptions {
   /** Base URL override — defaults to api.1sat.app per chain. */
   baseUrl?: string;
   /** 'main' or 'test'. Default 'main'. */
-  chain?: 'main' | 'test';
+  chain?: 'main' | 'test' | 'ttn';
   /** Lock-type path segment. Default 'p2pkh'. */
   lockType?: string;
 }

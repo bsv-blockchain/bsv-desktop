@@ -33,8 +33,7 @@
  */
 
 import { wocFetch } from '../../../utils/RateLimitedFetch';
-
-const WOC_BASE = 'https://api.whatsonchain.com/v1/bsv';
+import { wocApiBase, type Chain } from '../../../utils/woc';
 
 /** Token standard discriminator, matching the endpoint path segment. */
 export type TokenStd = 'stas' | 'dstas' | 'bsv21';
@@ -88,8 +87,8 @@ export interface B2GTraceResult {
 }
 
 export interface BackToGenesisOptions {
-  chain?: 'main' | 'test';
-  /** Base URL override (tests). Defaults to `${WOC_BASE}/${chain}`. */
+  chain?: Chain;
+  /** Base URL override (tests). Defaults to `wocApiBase(chain)`. */
   baseUrl?: string;
 }
 
@@ -103,7 +102,7 @@ export class BackToGenesisClient {
 
   constructor(opts: BackToGenesisOptions = {}) {
     const chain = opts.chain ?? 'main';
-    this.base = (opts.baseUrl ?? `${WOC_BASE}/${chain}`).replace(/\/$/, '');
+    this.base = (opts.baseUrl ?? wocApiBase(chain)).replace(/\/$/, '');
   }
 
   /**

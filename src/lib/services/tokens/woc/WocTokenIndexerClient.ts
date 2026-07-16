@@ -28,9 +28,8 @@
  */
 
 import { wocFetch } from '../../../utils/RateLimitedFetch';
+import { wocApiBase, type Chain } from '../../../utils/woc';
 import type { IndexedOutput } from '../bsv21/OneSatIndexerClient';
-
-const WOC_BASE = 'https://api.whatsonchain.com/v1/bsv';
 
 /**
  * Reports how far a per-address fan-out has got. WOC has no bulk token endpoint,
@@ -58,8 +57,8 @@ export interface WocUtxo {
 }
 
 export interface WocTokenIndexerOptions {
-  chain?: 'main' | 'test';
-  /** Base URL override (tests). Defaults to `${WOC_BASE}/${chain}`. */
+  chain?: Chain;
+  /** Base URL override (tests). Defaults to `wocApiBase(chain)`. */
   baseUrl?: string;
 }
 
@@ -84,7 +83,7 @@ export class WocTokenIndexerClient {
 
   constructor(opts: WocTokenIndexerOptions = {}) {
     const chain = opts.chain ?? 'main';
-    this.base = (opts.baseUrl ?? `${WOC_BASE}/${chain}`).replace(/\/$/, '');
+    this.base = (opts.baseUrl ?? wocApiBase(chain)).replace(/\/$/, '');
   }
 
   private async getJson<T>(path: string): Promise<T | null> {

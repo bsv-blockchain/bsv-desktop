@@ -36,7 +36,7 @@ export type Bsv21AdapterDeps = BSV21TransferDeps;
 export class Bsv21TokenSettlementAdapter implements TokenSettlementAdapter {
   readonly protocol = 'bsv-21';
   private readonly wallet: WalletInterface;
-  private readonly chain: 'main' | 'test';
+  private readonly chain: 'main' | 'test' | 'ttn';
 
   constructor(private readonly deps: Bsv21AdapterDeps) {
     this.wallet = deps.wallet;

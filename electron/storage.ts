@@ -456,7 +456,7 @@ class StorageManager {
    */
   async callStasQuery(
     identityKey: string,
-    chain: 'main' | 'test',
+    chain: 'main' | 'test' | 'ttn',
     method: string,
     args: any[]
   ): Promise<any> {

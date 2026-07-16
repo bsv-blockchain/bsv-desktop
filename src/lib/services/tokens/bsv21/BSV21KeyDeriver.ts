@@ -36,11 +36,11 @@ export class BSV21KeyDeriver {
   constructor(
     private readonly wallet: WalletInterface,
     private readonly _identityKey: string,
-    private readonly _chain: 'main' | 'test'
+    private readonly _chain: 'main' | 'test' | 'ttn'
   ) {}
 
   get identityKey(): string { return this._identityKey; }
-  get chain(): 'main' | 'test' { return this._chain; }
+  get chain(): 'main' | 'test' | 'ttn' { return this._chain; }
 
   async deriveReceiveKey(index: number): Promise<DerivedBsv21ReceiveKey> {
     const keyId = bsv21KeyId(index);

@@ -36,7 +36,7 @@ export default function PeerTokens() {
 
   const peerTokens = stas?.peerTokens
   const identityKey: string | undefined = stas?.keyDeriver?.identityKey
-  const chain: 'main' | 'test' = stas?.keyDeriver?.chain ?? 'main'
+  const chain: 'main' | 'test' | 'ttn' = stas?.keyDeriver?.chain ?? 'main'
   const originator: string | undefined = ctx?.adminOriginator
 
   const [tab, setTab] = useState(0)

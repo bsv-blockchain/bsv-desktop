@@ -42,6 +42,7 @@ import { buildChainedAtomicBeef } from '../../stas/buildChainedAtomicBeef'
 import { StasRegistration } from '../../stas/StasRegistration'
 import { buildDstasUnlockingScript, DSTAS_SIGHASH_TYPE } from './buildDstasUnlockingScript'
 import { tokenLog } from '../tokenLog'
+import { wocExplorerBase } from '../../../utils/woc'
 
 /**
  * Dynamic bsv-js import — same pattern StasTransferService uses.
@@ -106,7 +107,7 @@ export class DstasTransferService {
   constructor(
     private readonly wallet: WalletInterface,
     private readonly identityKey: string,
-    private readonly chain: 'main' | 'test'
+    private readonly chain: 'main' | 'test' | 'ttn'
   ) {}
 
   async transfer(args: DstasTransferArgs): Promise<DstasTransferResult> {
@@ -522,7 +523,7 @@ export class DstasTransferService {
         }
       }
 
-      const wocBase = this.chain === 'main' ? 'https://whatsonchain.com/tx/' : 'https://test.whatsonchain.com/tx/'
+      const wocBase = `${wocExplorerBase(this.chain)}/tx/`
       tokenLog.info(`[dstas-transfer] BROADCAST ✓ txid: ${signResp?.txid}  ${wocBase}${signResp?.txid}`)
 
       // 16. Link the sender's token-change output (vout 1) into the satellite

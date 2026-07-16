@@ -84,7 +84,7 @@ export interface BSV21TransferResult {
 export interface BSV21TransferDeps {
   wallet: WalletInterface;
   identityKey: string;
-  chain: 'main' | 'test';
+  chain: 'main' | 'test' | 'ttn';
   /** Deriver used for token-change addresses. */
   deriver: BSV21KeyDeriver;
   /** Indexer for optional pre-send origin validation. */

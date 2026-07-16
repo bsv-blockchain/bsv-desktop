@@ -25,6 +25,7 @@ import { buildChainedAtomicBeef } from './buildChainedAtomicBeef';
 import { StasRegistration } from './StasRegistration';
 import { parseClassicStasMetadata } from './parseClassicStasMetadata';
 import { tokenLog } from '../tokens/tokenLog';
+import { wocExplorerBase } from '../../utils/woc';
 
 async function loadStasDeps(): Promise<{
   bsv: any;
@@ -101,7 +102,7 @@ export class StasTransferService {
   constructor(
     private readonly wallet: WalletInterface,
     private readonly identityKey: string,
-    private readonly chain: 'main' | 'test'
+    private readonly chain: 'main' | 'test' | 'ttn'
   ) {}
 
   async transfer(args: StasTransferArgs): Promise<StasTransferResult> {
@@ -521,7 +522,7 @@ export class StasTransferService {
         };
       }
 
-      const wocBase = this.chain === 'main' ? 'https://whatsonchain.com/tx/' : 'https://test.whatsonchain.com/tx/';
+      const wocBase = `${wocExplorerBase(this.chain)}/tx/`;
       tokenLog.info(`[stas-transfer] BROADCAST ✓ txid: ${signResp?.txid}  ${wocBase}${signResp?.txid}`);
 
       // 14. Link the sender's token-change output (vout 1 — outputs are not

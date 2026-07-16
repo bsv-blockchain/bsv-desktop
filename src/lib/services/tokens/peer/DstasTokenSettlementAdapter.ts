@@ -42,7 +42,7 @@ export class DstasTokenSettlementAdapter implements TokenSettlementAdapter {
   constructor(
     private readonly wallet: WalletInterface,
     private readonly identityKey: string,
-    private readonly chain: 'main' | 'test'
+    private readonly chain: 'main' | 'test' | 'ttn'
   ) {}
 
   /** BRC-29-style derivation (shared STAS namespace) so the recipient can reconstruct the key. */

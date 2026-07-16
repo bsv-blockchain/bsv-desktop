@@ -42,7 +42,7 @@ function tagValue(tags: string[] | undefined, key: string): string | undefined {
 export interface LoadPeerHoldingsArgs {
   wallet: WalletInterface;
   identityKey: string;
-  chain: 'main' | 'test';
+  chain: 'main' | 'test' | 'ttn';
   originator?: string;
 }
 

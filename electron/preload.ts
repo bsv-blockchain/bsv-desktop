@@ -107,7 +107,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // STAS extension queries
   stas: {
-    query: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) =>
+    query: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) =>
       ipcRenderer.invoke('stas:query', identityKey, chain, method, args)
   },
 
@@ -197,7 +197,7 @@ export interface ElectronAPI {
     set: (config: any) => Promise<void>;
   };
   stas: {
-    query: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+    query: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
   };
   updates: {
     check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;

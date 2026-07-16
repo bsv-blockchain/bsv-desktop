@@ -170,7 +170,7 @@ let _currentStasBundle: {
   transfer: any;
   keyDeriver: any;
   identityKey: string;
-  chain: 'main' | 'test';
+  chain: 'main' | 'test' | 'ttn';
 } | null = null;
 /**
  * Permission gate for /stas/transfer. Set by WalletContext, called by the
@@ -200,7 +200,7 @@ let _currentPeerTokensBundle: {
   client: any;
   wallet: WalletInterface;
   identityKey: string;
-  chain: 'main' | 'test';
+  chain: 'main' | 'test' | 'ttn';
   originator?: string;
   /**
    * TokenProtocolRegistry — the SAME adapters the Assets page uses for
@@ -249,7 +249,7 @@ export function setStasForHttpRoute(
     transfer: any;
     keyDeriver: any;
     identityKey: string;
-    chain: 'main' | 'test';
+    chain: 'main' | 'test' | 'ttn';
   } | null
 ): void {
   _currentStasBundle = bundle;
@@ -289,7 +289,7 @@ export function setPeerTokensForHttpRoute(
     client: any;
     wallet: WalletInterface;
     identityKey: string;
-    chain: 'main' | 'test';
+    chain: 'main' | 'test' | 'ttn';
     originator?: string;
     tokens?: any;
   } | null

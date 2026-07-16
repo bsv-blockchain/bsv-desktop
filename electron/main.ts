@@ -645,7 +645,7 @@ ipcMain.handle('secrets:delete', async (_event, name: string) => {
 
 // STAS extension query channel — separate from storage:call-method so STAS
 // queries do not share the StorageKnex method namespace.
-ipcMain.handle('stas:query', async (_event, identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => {
+ipcMain.handle('stas:query', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => {
   try {
     const manager = await getStorageManager();
     const result = await manager.callStasQuery(identityKey, chain, method, args ?? []);

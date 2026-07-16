@@ -27,7 +27,7 @@ const PROTOCOL_TO_STD: Record<TokenProtocolId, TokenStd> = {
 
 export function verifyAndPersistOnReceive(
   identityKey: string,
-  chain: 'main' | 'test',
+  chain: 'main' | 'test' | 'ttn',
   outpoint: { txid: string; vout: number; protocol: TokenProtocolId },
   client: BackToGenesisClient = new BackToGenesisClient({ chain })
 ): void {

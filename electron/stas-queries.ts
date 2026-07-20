@@ -139,6 +139,11 @@ export class StasQueries {
     let q = this.knex('stas_outputs')
       .join('outputs', 'outputs.outputId', 'stas_outputs.outputId')
       .leftJoin('transactions as spent_tx', 'spent_tx.transactionId', 'outputs.spentBy')
+      // Symbol/name live on stas_tokens (keyed by tokenId), not stas_outputs, so
+      // without this join every holding reaches the UI symbol-less and the token
+      // selector can't tell two STAS/DSTAS holdings apart. leftJoin so an output
+      // whose token row is somehow missing still returns.
+      .leftJoin('stas_tokens', 'stas_tokens.tokenId', 'stas_outputs.tokenId')
       .select(
         'stas_outputs.*',
         'outputs.satoshis as outputSatoshis',
@@ -146,7 +151,9 @@ export class StasQueries {
         'spent_tx.txid as spentBy',
         'outputs.txid',
         'outputs.vout',
-        'outputs.lockingScript' // bytes — converted to hex below for the transfer UI
+        'outputs.lockingScript', // bytes — converted to hex below for the transfer UI
+        'stas_tokens.symbol as symbol',
+        'stas_tokens.name as name'
       );
     if (filter.tokenId) q = q.where('stas_outputs.tokenId', filter.tokenId);
     if (!filter.includeSpent) q = q.whereNull('outputs.spentBy');

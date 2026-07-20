@@ -176,4 +176,111 @@ describe('StasRegistration.register', () => {
     const txBytes = Array.from(calls[0].args.tx as number[])
     expect(txBytes.slice(0, 4)).toEqual([1, 1, 1, 1]) // AtomicBEEF prefix
   })
+
+  /**
+   * Remote-storage guard: when the IPC query channel IS present but
+   * findOutputIdByOutpoint returns nothing (no local outputs row — the
+   * remote-storage case), register must report registered:false with a reason,
+   * NOT the old silent registered:true. Distinct from the no-IPC unit-test path
+   * above, which still reports success.
+   */
+  function withStasQueryChannel(
+    handler: (method: string, args: any[]) => any
+  ): () => void {
+    const g = globalThis as any
+    const had = 'window' in g
+    const prev = g.window
+    g.window = {
+      electronAPI: {
+        stas: {
+          query: async (_id: string, _chain: string, method: string, args: any[]) => {
+            try {
+              return { success: true, result: handler(method, args) }
+            } catch (e) {
+              return { success: false, error: (e as Error).message }
+            }
+          },
+        },
+      },
+    }
+    return () => {
+      if (had) g.window = prev
+      else delete g.window
+    }
+  }
+
+  test('reports registered:false when the query channel finds no local output row (remote storage)', async () => {
+    const ownerHash = 'cd'.repeat(20)
+    const { rawTx, txid } = makeDstasTx(ownerHash)
+    const { wallet } = mkWallet(rawTx, txid)
+
+    // Channel is available, but findOutputIdByOutpoint returns undefined — as it
+    // does under remote storage, where the local `outputs` table is empty.
+    const restore = withStasQueryChannel((method) => {
+      if (method === 'findStasOutputByOutpoint') return undefined // not already registered
+      if (method === 'findOutputIdByOutpoint') return undefined // no local row
+      return undefined
+    })
+    try {
+      const reg = new StasRegistration(wallet, 'test-identity', 'main')
+      const result = await reg.register({
+        txid,
+        vout: 0,
+        tokenSatoshis: 100,
+        ownerFieldHash160: ownerHash,
+        brc42KeyId: 'recv 3',
+        parsed: {
+          ownerFieldHash160: ownerHash,
+          tokenId: 'ab'.repeat(20),
+          freezeEnabled: true,
+          confiscationEnabled: true,
+          flagsHex: '03',
+          serviceFields: [],
+        },
+      })
+      expect(result.registered).toBe(false)
+      expect(result.reason).toMatch(/remote|local outputs row|Assets page/i)
+    } finally {
+      restore()
+    }
+  })
+
+  test('reports registered:true and links satellites when a local output row exists', async () => {
+    const ownerHash = 'cd'.repeat(20)
+    const { rawTx, txid } = makeDstasTx(ownerHash)
+    const { wallet } = mkWallet(rawTx, txid)
+
+    const seen: string[] = []
+    const restore = withStasQueryChannel((method) => {
+      seen.push(method)
+      if (method === 'findStasOutputByOutpoint') return undefined
+      if (method === 'findOutputIdByOutpoint') return 4242 // local row exists
+      return undefined // upsert/insert/setSpendable are void
+    })
+    try {
+      const reg = new StasRegistration(wallet, 'test-identity', 'main')
+      const result = await reg.register({
+        txid,
+        vout: 0,
+        tokenSatoshis: 100,
+        ownerFieldHash160: ownerHash,
+        brc42KeyId: 'recv 3',
+        parsed: {
+          ownerFieldHash160: ownerHash,
+          tokenId: 'ab'.repeat(20),
+          freezeEnabled: true,
+          confiscationEnabled: true,
+          flagsHex: '03',
+          serviceFields: [],
+        },
+      })
+      expect(result.registered).toBe(true)
+      expect(result.outputId).toBe(4242)
+      expect(seen).toContain('upsertStasToken')
+      expect(seen).toContain('insertStasOutput')
+      expect(seen).toContain('setOutputSpendable')
+    } finally {
+      restore()
+    }
+  })
 })

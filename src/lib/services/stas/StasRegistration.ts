@@ -182,6 +182,10 @@ export class StasRegistration {
     //    inside internalizeAction (or by the caller's createAction basket
     //    declaration when skipInternalize); we look it up by outpoint to populate ours.
     let outputId: number | undefined;
+    // Distinguish "the IPC query channel isn't there" (unit tests, no-IPC
+    // contexts — proceed as before) from "the channel answered but there's no
+    // local outputs row" (the real remote-storage failure — report it).
+    let queryChannelAvailable = true;
     try {
       outputId = await this.stasQuery('findOutputIdByOutpoint', [txid, vout]);
       if (outputId) {
@@ -189,7 +193,10 @@ export class StasRegistration {
         await this.stasQuery('upsertStasToken', [
           {
             tokenId: parsed.tokenId,
-            symbol: (parsed as RichParsed).symbol ?? 'STAS',
+            // Real ticker when the parser recovered it (classic STAS carries it
+            // in the OP_RETURN tail); otherwise the protocol name — 'STAS' or
+            // 'DSTAS' — never a blanket 'STAS' that mislabels DSTAS.
+            symbol: (parsed as RichParsed).symbol ?? protocol.id.toUpperCase(),
             name: undefined,
             satoshisPerToken: 1,
             freezeEnabled: parsed.freezeEnabled,
@@ -226,12 +233,36 @@ export class StasRegistration {
         await this.stasQuery('setOutputSpendable', [outputId, true]);
       }
     } catch (err) {
-      // The token is internalized regardless; satellite linkage is best-effort.
-      // Log but report registered=true so the discovery loop does not retry.
-      if (!isQueryUnavailable(err)) {
+      // The token is internalized regardless; the row insert itself is
+      // best-effort. Log but don't fail — a transient insert error shouldn't make
+      // a genuinely-linked output look unregistered. A missing IPC channel is the
+      // benign no-IPC case: record it so we don't misreport it as remote-storage.
+      if (isQueryUnavailable(err)) {
+        queryChannelAvailable = false;
+      } else {
         // eslint-disable-next-line no-console
         console.warn(`[StasRegistration] satellite linkage failed for ${txid}:${vout}`, err);
       }
+    }
+
+    // The channel answered but there was no local outputs row to link — so the
+    // token, though internalized into the basket, will NOT appear on the Assets
+    // page (which renders from the satellite tables). Report this instead of the
+    // old silent `registered: true`. The usual cause is remote ("cloud") storage:
+    // the satellite tables are local-SQLite only, so `findOutputIdByOutpoint`
+    // finds nothing in the local `outputs` table. (When the channel is absent
+    // entirely — unit tests — we fall through and report success as before.)
+    if (queryChannelAvailable && outputId === undefined) {
+      return {
+        registered: false,
+        txid,
+        vout,
+        reason:
+          'internalized into the basket, but no local outputs row was found to link the ' +
+          'STAS/DSTAS satellite tables — so it will not show on the Assets page. This ' +
+          'happens on remote ("cloud") storage (the satellite tables are local-SQLite only). ' +
+          'Switch to local storage and re-register, or view it via the Baskets page.',
+      };
     }
 
     // Verify provenance the moment the token is ours — covers both the discovery

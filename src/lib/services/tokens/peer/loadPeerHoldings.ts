@@ -64,10 +64,15 @@ export async function loadPeerHoldings(args: LoadPeerHoldingsArgs): Promise<Peer
       // brc42KeyId field; decode it into an explicit owner override so the
       // transfer service can re-spend it (counterparty = original sender).
       const brc29 = decodeBrc29KeyId(o.brc42KeyId ?? '');
+      // Ticker (now joined from stas_tokens), an optional name, and a short
+      // outpoint tail so two holdings of the same symbol are still tellable apart
+      // in the selector — the whole point of showing more than "STAS · <amt>".
+      const stasTicker = o.symbol ?? protocol.toUpperCase();
+      const stasName = o.name ? ` (${o.name})` : '';
       next.push({
         key: `${o.txid}.${o.vout}`,
         protocol,
-        label: `${o.symbol ?? protocol.toUpperCase()} · ${sats}${brc29 ? ' (received)' : ''}`,
+        label: `${stasTicker}${stasName} · ${sats}${brc29 ? ' (received)' : ''} · ${String(o.txid).slice(0, 6)}…`,
         amount: String(sats),
         source: {
           txid: o.txid,
@@ -115,7 +120,9 @@ export async function loadPeerHoldings(args: LoadPeerHoldingsArgs): Promise<Peer
       next.push({
         key: `${txid}.${voutStr}`,
         protocol: 'bsv-21',
-        label: `${sym ?? 'BSV-21'} · ${amt}${bsv21Brc29 ? ' (received)' : ''}`,
+        // Short outpoint tail matches the STAS/DSTAS labels so two holdings of
+        // the same BSV-21 symbol are also distinguishable.
+        label: `${sym ?? 'BSV-21'} · ${amt}${bsv21Brc29 ? ' (received)' : ''} · ${String(txid).slice(0, 6)}…`,
         amount: String(amt),
         source: {
           txid,

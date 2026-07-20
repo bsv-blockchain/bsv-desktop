@@ -186,6 +186,11 @@ export default function PeerTokens() {
     <Container maxWidth="sm">
       <Box sx={{ minHeight: '100vh', py: 5 }}>
       <Typography variant="h5" sx={{ mb: 2 }}>Tokens</Typography>
+      <Alert severity="info" sx={{ mb: 2 }}>
+        Sends here go straight to the recipient's identity key over MessageBox and
+        arrive in seconds — no waiting for their wallet to scan. The legacy address
+        send on the Assets page relies on an indexer lookup and can be slow.
+      </Alert>
       <Tabs
         value={tab}
         onChange={(_, v) => { setTab(v); if (v === 1) void refreshIncoming() }}

@@ -1634,6 +1634,14 @@ export default function AssetsPage() {
                   />
                 )
               })()}
+              <Box sx={{ p: 1.5, borderRadius: 1, bgcolor: 'info.main', color: 'info.contrastText' }}>
+                <Typography variant='caption'>
+                  This sends to an on-chain address. The recipient only sees it after their
+                  wallet's indexer scan finds it, which can be slow. For instant delivery,
+                  use <b>Transfers → Tokens</b> to send to someone's identity key — it arrives
+                  in seconds via MessageBox.
+                </Typography>
+              </Box>
               <Typography variant='caption' color='text.secondary'>
                 The wallet covers BSV fee automatically. After broadcast, the recipient
                 wallet picks up the UTXO via the indexer-driven scan on its next Refresh.

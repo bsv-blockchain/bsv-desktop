@@ -118,10 +118,43 @@ export interface BuildChainedBeefResult {
 export async function buildChainedAtomicBeef(
   args: BuildChainedBeefArgs
 ): Promise<BuildChainedBeefResult> {
-  const maxDepth = args.maxDepth ?? 10;
+  // 16 (was 10) gives headroom: the walk only goes deep when a proof lookup
+  // transiently misses and a confirmed ancestor is mistaken for mempool, forcing
+  // recursion past it. The retry below is the real remedy; this is just slack.
+  const maxDepth = args.maxDepth ?? 16;
   const services: any = (args.wallet as any).getServices?.();
   if (!services) {
     throw new Error('wallet.getServices() unavailable');
+  }
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  /**
+   * Resolve a merkle proof, retrying a transient miss.
+   *
+   * A tx that confirmed moments ago (e.g. the just-broadcast mint's funding
+   * ancestor) can briefly return no proof from either Services or WoC. Without a
+   * retry the walk treats it as mempool and recurses into its parents — which is
+   * what produced spurious "depth exceeded" failures and BEEFs the wallet then
+   * rejected. A genuinely-mempool tx simply keeps returning null and the walk
+   * recurses as intended, only a little later.
+   */
+  async function resolveMerklePath(txid: string): Promise<MerklePath | undefined> {
+    // 2 attempts: the second (after a short wait) catches a proof that was
+    // seconds from being indexed. A genuinely-mempool tx just pays one extra
+    // WoC call and ~1.2s before the walk recurses into its parents.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await sleep(1200);
+      try {
+        const mpRes: any = await services.getMerklePath(txid);
+        if (mpRes?.merklePath) return mpRes.merklePath as MerklePath;
+      } catch {
+        /* fall through to WoC */
+      }
+      const fallback = await fetchMerklePathFromWoc(txid);
+      if (fallback) return fallback;
+    }
+    return undefined;
   }
 
   const beef = new Beef();
@@ -131,7 +164,9 @@ export async function buildChainedAtomicBeef(
   async function walk(currentTxid: string, depth: number): Promise<void> {
     if (depth > maxDepth) {
       throw new Error(
-        `chained BEEF: input-chain depth exceeded ${maxDepth} hops at ${currentTxid}`
+        `chained BEEF: input-chain depth exceeded ${maxDepth} hops at ${currentTxid}. ` +
+          `STAS chains are short in practice, so this usually means a confirmed ancestor's ` +
+          `merkle proof was temporarily unavailable and the walk recursed past it — retry shortly.`
       );
     }
     if (seen.has(currentTxid)) return;
@@ -159,20 +194,9 @@ export async function buildChainedAtomicBeef(
 
     const tx = Transaction.fromBinary(rawTxBytes);
 
-    // 2. try to get a merkle proof — Services first, then WoC.
-    let mp: MerklePath | undefined;
-    try {
-      const mpRes: any = await services.getMerklePath(currentTxid);
-      if (mpRes?.merklePath) {
-        mp = mpRes.merklePath as MerklePath;
-      }
-    } catch {
-      /* fall through */
-    }
-    if (!mp) {
-      const fallback = await fetchMerklePathFromWoc(currentTxid);
-      if (fallback) mp = fallback;
-    }
+    // 2. get a merkle proof — Services first, then WoC, with a retry so a
+    //    just-confirmed ancestor isn't misread as mempool (see resolveMerklePath).
+    const mp = await resolveMerklePath(currentTxid);
 
     if (mp) {
       // Confirmed leaf: attach the proof and stop recursion on this branch.

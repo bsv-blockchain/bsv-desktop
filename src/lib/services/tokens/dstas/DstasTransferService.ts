@@ -14,7 +14,8 @@
  *
  * Funding fragmentation suppressed the same way StasTransferService does
  * (lower default basket's numberOfDesiredUTXOs to 0 around the call,
- * restore on every exit path).
+ * restore on every exit path) — via the ACTIVE storage provider (see
+ * walletChangeParams) so it works on remote storage too.
  *
  * Signing:
  *   - DSTAS input (our outpoint): externally via wallet.createSignature
@@ -38,6 +39,7 @@ import { STAS_PROTOCOL_ID, STAS_COUNTERPARTY } from '../../stas/constants'
 import { DSTAS_BASKET } from '../../../constants/baskets'
 import { parseDstasLockingScript } from '../../stas/dstasParser'
 import { stasQuery } from '../../stas/stasIpc'
+import { setChangeParams, DEFAULT_DESIRED_UTXOS, DEFAULT_MIN_UTXO_VALUE } from '../../stas/walletChangeParams'
 import { buildChainedAtomicBeef } from '../../stas/buildChainedAtomicBeef'
 import { StasRegistration } from '../../stas/StasRegistration'
 import { buildDstasUnlockingScript, DSTAS_SIGHASH_TYPE } from './buildDstasUnlockingScript'
@@ -243,34 +245,22 @@ export class DstasTransferService {
 
     // 7. Suppress change fragmentation around the call — same as STAS
     //    transfer needs because the DSTAS template expects the funding
-    //    branch to be a single P2PKH change output.
-    let previousBasketTarget: number | null = null
+    //    branch to be a single P2PKH change output. Routes through the ACTIVE
+    //    store (works local AND remote); fail clean if it can't be applied.
     try {
-      const res: any = await stasQuery(
-        this.identityKey,
-        this.chain,
-        'setDefaultBasketUTXOTarget',
-        [0]
-      )
-      previousBasketTarget = res?.previous ?? null
+      await setChangeParams(this.wallet, 0, DEFAULT_MIN_UTXO_VALUE, ORIGINATOR)
     } catch (err) {
-      tokenLog.warn(
-        '[dstas-transfer] setDefaultBasketUTXOTarget failed — fragmentation may break the template. ' +
-        'Likely cause: stale dist-electron build. Fully restart `npm run dev`. Error:',
-        err
-      )
+      return {
+        ok: false,
+        reason:
+          `could not suppress change fragmentation (setWalletChangeParams): ${errMsg(err)}. ` +
+          'Without it the funding change splits into multiple outputs and the DSTAS template rejects the transfer.',
+      }
     }
     const restoreBasket = async () => {
-      if (previousBasketTarget != null) {
-        try {
-          await stasQuery(
-            this.identityKey,
-            this.chain,
-            'setDefaultBasketUTXOTarget',
-            [previousBasketTarget]
-          )
-        } catch { /* best effort */ }
-      }
+      try {
+        await setChangeParams(this.wallet, DEFAULT_DESIRED_UTXOS, DEFAULT_MIN_UTXO_VALUE, ORIGINATOR)
+      } catch { /* best effort */ }
     }
 
     try {

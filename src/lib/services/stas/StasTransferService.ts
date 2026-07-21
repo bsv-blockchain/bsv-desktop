@@ -9,6 +9,9 @@
  * top up the change basket toward `numberOfDesiredUTXOs` (default 144). To
  * keep the tx at exactly 2 outputs, we LOWER the basket target to 0 before
  * createAction (with `randomizeOutputs: false`), then restore it afterward.
+ * This goes through the ACTIVE storage provider (see `walletChangeParams`), so
+ * it works on remote storage too — a prior local-only IPC write silently
+ * no-op'd on remote and was the cause of STAS/DSTAS sends failing there.
  *
  * Signing:
  *   - STAS input (our outpoint): externally via `wallet.createSignature` with
@@ -21,6 +24,7 @@ import { Beef } from '@bsv/sdk';
 import { STAS_PROTOCOL_ID, STAS_COUNTERPARTY } from './constants';
 import { STAS_BASKET } from '../../constants/baskets';
 import { stasQuery } from './stasIpc';
+import { setChangeParams, DEFAULT_DESIRED_UTXOS, DEFAULT_MIN_UTXO_VALUE } from './walletChangeParams';
 import { buildChainedAtomicBeef } from './buildChainedAtomicBeef';
 import { StasRegistration } from './StasRegistration';
 import { parseClassicStasMetadata } from './parseClassicStasMetadata';
@@ -271,39 +275,27 @@ export class StasTransferService {
       /* best effort */
     }
 
-    // 6. Lower the default basket's numberOfDesiredUTXOs to 0 to suppress
-    //    change fragmentation. Save the previous value to restore after.
-    let previousBasketTarget: number | null = null;
+    // 6. Suppress change fragmentation so the tx keeps exactly one BSV change
+    //    output. Routes through the ACTIVE store (works local AND remote); a
+    //    failure here would otherwise surface as a cryptic script-eval error,
+    //    so fail clean with an actionable reason.
     try {
-      const res: any = await stasQuery(
-        this.identityKey,
-        this.chain,
-        'setDefaultBasketUTXOTarget',
-        [0]
-      );
-      previousBasketTarget = res?.previous ?? null;
-      tokenLog.debug('[stas-transfer] basket UTXO target: previous=', previousBasketTarget, 'set to 0; updated rows=', res?.updated);
+      await setChangeParams(this.wallet, 0, DEFAULT_MIN_UTXO_VALUE, ORIGINATOR);
     } catch (err) {
-      tokenLog.warn(
-        '[stas-transfer] setDefaultBasketUTXOTarget failed — fragmentation will likely break the engine. ' +
-        'Likely cause: stale dist-electron build. Fully restart `npm run dev`. Underlying error:',
-        err
-      );
+      return {
+        ok: false,
+        reason:
+          `could not suppress change fragmentation (setWalletChangeParams): ${errMsg(err)}. ` +
+          'Without it the funding change splits into multiple outputs and the STAS engine rejects the transfer.',
+      };
     }
 
-    // From here, ensure we restore the basket target on every exit path.
+    // From here, restore the change-pool target on every exit path (best-effort).
     const restoreBasket = async () => {
-      if (previousBasketTarget != null) {
-        try {
-          await stasQuery(
-            this.identityKey,
-            this.chain,
-            'setDefaultBasketUTXOTarget',
-            [previousBasketTarget]
-          );
-        } catch {
-          /* best effort */
-        }
+      try {
+        await setChangeParams(this.wallet, DEFAULT_DESIRED_UTXOS, DEFAULT_MIN_UTXO_VALUE, ORIGINATOR);
+      } catch {
+        /* best effort */
       }
     };
 

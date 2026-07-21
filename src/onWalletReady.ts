@@ -1360,7 +1360,9 @@ export const onWalletReady = async (
               };
               break;
             }
-            const { txid } = (req.body ? JSON.parse(req.body) : {}) as { txid?: string };
+            const { txid, symbol, name } = (req.body ? JSON.parse(req.body) : {}) as {
+              txid?: string; symbol?: string; name?: string;
+            };
             if (typeof txid !== 'string' || !/^[0-9a-f]{64}$/i.test(txid)) {
               response = {
                 request_id: req.request_id,
@@ -1369,7 +1371,13 @@ export const onWalletReady = async (
               };
               break;
             }
-            const result = await _currentStasDiscovery.registerByTxid(txid);
+            // Optional symbol/name let a colocated minter label a token the chain
+            // doesn't carry one for (DSTAS). Bounded to keep tags/customInstructions small.
+            const opts = {
+              symbol: typeof symbol === 'string' ? symbol.slice(0, 32) : undefined,
+              name: typeof name === 'string' ? name.slice(0, 64) : undefined,
+            };
+            const result = await _currentStasDiscovery.registerByTxid(txid, opts);
             response = {
               request_id: req.request_id,
               status: 200,

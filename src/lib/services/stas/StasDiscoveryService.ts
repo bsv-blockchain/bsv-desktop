@@ -149,7 +149,17 @@ export class StasDiscoveryService {
    * matches. Useful too as a fallback when the address-based scan is
    * unavailable (e.g. WoC doesn't index custom-script outputs by address).
    */
-  async registerByTxid(txid: string): Promise<RegisterByTxidResult> {
+  /**
+   * `opts.symbol`/`opts.name` let a colocated minter supply a friendly label the
+   * chain doesn't carry — essential for DSTAS, whose symbol lives nowhere
+   * on-chain. When given, it's stored in the output's customInstructions so it
+   * renders portably (local + remote). Ignored for STAS, whose real symbol is
+   * recovered from the script.
+   */
+  async registerByTxid(
+    txid: string,
+    opts?: { symbol?: string; name?: string }
+  ): Promise<RegisterByTxidResult> {
     const out: RegisterByTxidResult = { txid, registered: 0, outputs: [] };
     const services: any = (this.deps.wallet as any).getServices?.();
     if (!services) {
@@ -212,6 +222,8 @@ export class StasDiscoveryService {
         brc42KeyId: `recv ${keyIndex}`,
         parsed: toRichParsed(match.parsed),
         protocol: { id: match.adapter.id, basketName: match.adapter.basketName },
+        symbol: opts?.symbol,
+        name: opts?.name,
       });
       const ok = !!reg.registered;
       if (ok) out.registered++;

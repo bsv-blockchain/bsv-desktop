@@ -16,6 +16,7 @@ import type { AtomicBEEF, WalletInterface } from '@bsv/sdk';
 import { STAS_BASKET } from '../../constants/baskets';
 import { buildChainedAtomicBeef } from './buildChainedAtomicBeef';
 import { verifyAndPersistOnReceive } from '../tokens/verifyOnReceive';
+import { encodeStasOutputMetadata } from './stasOutputMetadata';
 import type { ParsedDstas } from './dstasParser';
 
 /** Classic-STAS parsed payload extends ParsedDstas with optional symbol. */
@@ -67,6 +68,13 @@ export interface RegisterStasArgs {
    * sender's own token-change), so the wallet-toolbox output row already exists.
    */
   skipInternalize?: boolean;
+  /**
+   * Caller-supplied friendly label for a token the chain doesn't carry one for
+   * (DSTAS especially). Overrides the parsed symbol when present; stored in the
+   * output's customInstructions so it renders portably.
+   */
+  symbol?: string;
+  name?: string;
 }
 
 export interface RegisterStasResult {
@@ -135,12 +143,32 @@ export class StasRegistration {
     //    declared the output's basket at createAction time (e.g. a sender's own
     //    token-change) — internalizing it again would conflict; we only need the
     //    satellite linkage below.
-    const customInstructions = JSON.stringify({
+    // Encode the FULL token metadata onto the standard output record so the read
+    // paths can render + spend STAS/DSTAS from listOutputs alone — no local-only
+    // satellite tables. This is what makes these tokens survive remote storage,
+    // the same way BSV-21 already does. (Satellite rows are still written below
+    // during the transition; they become redundant once every reader is cut over.)
+    const richParsed = parsed as RichParsed;
+    // Prefer the on-chain/parsed symbol (classic STAS); fall back to a
+    // caller-supplied one (DSTAS, whose symbol isn't on-chain).
+    const effectiveSymbol = richParsed.symbol ?? args.symbol;
+    const encoded = encodeStasOutputMetadata({
+      kind: protocol.id === 'dstas' ? 'dstas' : 'stas',
       tokenId: parsed.tokenId,
       brc42KeyId,
+      ownerFieldHash160,
+      symbol: effectiveSymbol,
+      name: args.name ?? null,
       flagsHex: parsed.flagsHex,
+      freezeEnabled: parsed.freezeEnabled,
+      confiscationEnabled: parsed.confiscationEnabled,
+      redemptionPkh: parsed.tokenId === '' ? undefined : parsed.tokenId,
+      satoshisPerToken: 1,
       serviceFields: parsed.serviceFields,
+      frozen: false,
+      confiscated: false,
     });
+    const customInstructions = encoded.customInstructions;
     if (args.skipInternalize !== true) {
     try {
       await this.wallet.internalizeAction(
@@ -153,7 +181,7 @@ export class StasRegistration {
               insertionRemittance: {
                 basket: protocol.basketName,
                 customInstructions,
-                tags: [protocol.id],
+                tags: encoded.tags,
               },
             },
           ],
@@ -193,11 +221,11 @@ export class StasRegistration {
         await this.stasQuery('upsertStasToken', [
           {
             tokenId: parsed.tokenId,
-            // Real ticker when the parser recovered it (classic STAS carries it
-            // in the OP_RETURN tail); otherwise the protocol name — 'STAS' or
-            // 'DSTAS' — never a blanket 'STAS' that mislabels DSTAS.
-            symbol: (parsed as RichParsed).symbol ?? protocol.id.toUpperCase(),
-            name: undefined,
+            // Parsed ticker (classic STAS, from the OP_RETURN tail), else a
+            // caller-supplied one (DSTAS), else the protocol name — never a
+            // blanket 'STAS' that mislabels DSTAS.
+            symbol: effectiveSymbol ?? protocol.id.toUpperCase(),
+            name: args.name,
             satoshisPerToken: 1,
             freezeEnabled: parsed.freezeEnabled,
             confiscationEnabled: parsed.confiscationEnabled,

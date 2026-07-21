@@ -209,6 +209,41 @@ describe('StasRegistration.register', () => {
     }
   }
 
+  test('threads a caller-supplied symbol/name into customInstructions (DSTAS)', async () => {
+    // DSTAS carries no on-chain symbol; a colocated minter supplies it so it
+    // renders portably. It must land in the internalized output's metadata.
+    const ownerHash = 'cd'.repeat(20)
+    const { rawTx, txid } = makeDstasTx(ownerHash)
+    const { wallet, calls } = mkWallet(rawTx, txid)
+
+    const reg = new StasRegistration(wallet, 'test-identity', 'main')
+    await reg.register({
+      txid,
+      vout: 0,
+      tokenSatoshis: 100,
+      ownerFieldHash160: ownerHash,
+      brc42KeyId: 'recv 3',
+      parsed: {
+        ownerFieldHash160: ownerHash,
+        tokenId: 'ab'.repeat(20),
+        freezeEnabled: false,
+        confiscationEnabled: false,
+        flagsHex: '00',
+        serviceFields: [],
+      },
+      protocol: { id: 'dstas', basketName: 'dstas-tokens' },
+      symbol: 'EXDSTAS6',
+      name: 'Example DSTAS 6',
+    })
+
+    const ci = JSON.parse(calls[0].args.outputs[0].insertionRemittance.customInstructions)
+    expect(ci.kind).toBe('dstas')
+    expect(ci.symbol).toBe('EXDSTAS6')
+    expect(ci.name).toBe('Example DSTAS 6')
+    // and it surfaces as a sym: tag for filtering
+    expect(calls[0].args.outputs[0].insertionRemittance.tags).toContain('sym:EXDSTAS6')
+  })
+
   test('reports registered:false when the query channel finds no local output row (remote storage)', async () => {
     const ownerHash = 'cd'.repeat(20)
     const { rawTx, txid } = makeDstasTx(ownerHash)

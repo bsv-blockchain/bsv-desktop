@@ -15,10 +15,11 @@
  *     derivation is decoded from customInstructions (scheme:'brc29').
  */
 import type { WalletInterface } from '@bsv/sdk';
-import { stasQuery } from '../../stas/stasIpc';
-import { BSV21_BASKET } from '../../../constants/baskets';
+import { STAS_BASKET, DSTAS_BASKET, BSV21_BASKET } from '../../../constants/baskets';
 import { parseBsv21LockingScript } from './../bsv21/inscription';
 import { decodeBrc29KeyId } from './brc29KeyId';
+import { decodeStasOutputMetadata } from '../../stas/stasOutputMetadata';
+import { parseClassicStasMetadata } from '../../stas/parseClassicStasMetadata';
 import type { TokenSourceRef } from './tokenSettlementTypes';
 
 export type ProtocolId = 'stas' | 'dstas' | 'bsv-21';
@@ -50,46 +51,61 @@ export async function loadPeerHoldings(args: LoadPeerHoldingsArgs): Promise<Peer
   const { wallet, identityKey, chain, originator } = args;
   const next: PeerHolding[] = [];
 
-  // STAS + DSTAS via the satellite-table IPC query.
-  try {
-    const rows: any[] = (await stasQuery(identityKey, chain, 'listStasOutputs', [])) ?? [];
-    for (const o of rows) {
-      if (o?.spendable === false) continue;
-      const protocol: ProtocolId = (o.protocol as ProtocolId) ?? 'stas';
-      if (protocol !== 'stas' && protocol !== 'dstas') continue;
-      const sats = Number(o.outputSatoshis ?? o.tokenSatoshis ?? 0);
-      const scriptHex = o.lockingScript ?? null;
-      if (!scriptHex) continue;
-      // A peer-received token stores its BRC-29 owner derivation in the
-      // brc42KeyId field; decode it into an explicit owner override so the
-      // transfer service can re-spend it (counterparty = original sender).
-      const brc29 = decodeBrc29KeyId(o.brc42KeyId ?? '');
-      // Ticker (now joined from stas_tokens), an optional name, and a short
-      // outpoint tail so two holdings of the same symbol are still tellable apart
-      // in the selector — the whole point of showing more than "STAS · <amt>".
-      const stasTicker = o.symbol ?? protocol.toUpperCase();
-      const stasName = o.name ? ` (${o.name})` : '';
-      next.push({
-        key: `${o.txid}.${o.vout}`,
-        protocol,
-        label: `${stasTicker}${stasName} · ${sats}${brc29 ? ' (received)' : ''} · ${String(o.txid).slice(0, 6)}…`,
-        amount: String(sats),
-        source: {
-          txid: o.txid,
-          outputIndex: Number(o.vout),
-          lockingScriptHex: scriptHex,
-          satoshis: sats,
+  // STAS + DSTAS via listOutputs on their baskets — the SAME portable read path
+  // BSV-21 uses below, decoding metadata from the standard output record instead
+  // of the local-only satellite tables. This is what makes them render under
+  // remote storage.
+  for (const [protocol, basket] of [['stas', STAS_BASKET], ['dstas', DSTAS_BASKET]] as const) {
+    try {
+      const res: any = await wallet.listOutputs({
+        basket,
+        includeTags: true,
+        includeCustomInstructions: true,
+        include: 'locking scripts',
+        limit: 200,
+      }, originator);
+      for (const o of res?.outputs ?? []) {
+        if (o?.spendable === false) continue;
+        const [txid, voutStr] = String(o.outpoint ?? '.').split('.');
+        const scriptHex = o.lockingScript ?? null;
+        if (!scriptHex) continue;
+        // The basket is authoritative for protocol (pass it as fallbackKind), so
+        // legacy/partial records still decode instead of being dropped.
+        const meta = decodeStasOutputMetadata(o.customInstructions, o.tags, protocol);
+        if (!meta) continue;
+        const sats = Number(o.satoshis ?? 0);
+        // A peer-received token carries its BRC-29 owner derivation in
+        // brc42KeyId; decode it into an explicit owner override so the transfer
+        // service can re-spend it (counterparty = original sender).
+        const brc29 = decodeBrc29KeyId(meta.brc42KeyId ?? '');
+        // Recover the real ticker from the locking script when the stored
+        // metadata predates symbol capture (classic STAS carries it on-chain;
+        // DSTAS has none, so it stays the protocol name).
+        const symbol = meta.symbol ?? parseClassicStasMetadata(scriptHex)?.symbol ?? undefined;
+        const stasTicker = symbol ?? protocol.toUpperCase();
+        const stasName = meta.name ? ` (${meta.name})` : '';
+        next.push({
+          key: `${txid}.${voutStr}`,
           protocol,
-          assetId: o.symbol ?? o.tokenId ?? protocol,
-          brc42KeyId: o.brc42KeyId ?? undefined,
-          owner: brc29
-            ? { keyID: `${brc29.derivationPrefix} ${brc29.derivationSuffix}`, counterparty: brc29.senderIdentityKey, forSelf: true }
-            : undefined,
-        },
-      });
+          label: `${stasTicker}${stasName} · ${sats}${brc29 ? ' (received)' : ''} · ${txid.slice(0, 6)}…`,
+          amount: String(sats),
+          source: {
+            txid,
+            outputIndex: Number(voutStr),
+            lockingScriptHex: scriptHex,
+            satoshis: sats,
+            protocol,
+            assetId: symbol ?? meta.tokenId ?? protocol,
+            brc42KeyId: meta.brc42KeyId ?? undefined,
+            owner: brc29
+              ? { keyID: `${brc29.derivationPrefix} ${brc29.derivationSuffix}`, counterparty: brc29.senderIdentityKey, forSelf: true }
+              : undefined,
+          },
+        });
+      }
+    } catch (e) {
+      console.warn(`[loadPeerHoldings] listOutputs(${basket}) failed`, e);
     }
-  } catch (e) {
-    console.warn('[loadPeerHoldings] listStasOutputs failed', e);
   }
 
   // BSV-21 via listOutputs on the basket.

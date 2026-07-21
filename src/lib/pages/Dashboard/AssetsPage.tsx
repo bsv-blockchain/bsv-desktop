@@ -48,7 +48,9 @@ import { WalletContext } from '../../WalletContext'
 import { stasQuery } from '../../services/stas'
 import type { TokenProtocolId, Bsv21SendExtras } from '../../services/tokens'
 import { parseBsv21LockingScript } from '../../services/tokens'
-import { BSV21_BASKET } from '../../constants/baskets'
+import { STAS_BASKET, DSTAS_BASKET, BSV21_BASKET } from '../../constants/baskets'
+import { decodeStasOutputMetadata } from '../../services/stas/stasOutputMetadata'
+import { parseClassicStasMetadata } from '../../services/stas/parseClassicStasMetadata'
 import {
   TokenVerificationService,
   aggregateBadge,
@@ -152,7 +154,12 @@ function groupByToken(outputs: OutputView[]): TokenGroup[] {
     if (!g) {
       g = {
         groupKey: key,
-        symbol: o.symbol ?? 'unknown',
+        // DSTAS carries no on-chain symbol, so fall back to the protocol name
+        // rather than a bare "unknown". The real per-token name (e.g. EXDSTAS1)
+        // only survives in the local satellite table and is restored by the
+        // metadata backfill migration; until then these show as "DSTAS",
+        // distinguished by their genesis/outpoint.
+        symbol: o.symbol ?? (o.protocol ? String(o.protocol).toUpperCase() : 'unknown'),
         name: o.name,
         tokenIds: new Set(),
         outputCount: 0,
@@ -544,12 +551,12 @@ export default function AssetsPage() {
     setLoading(true)
     setError(null)
     try {
-      // Fetch both current (default) and the full set (includeSpent: true).
-      // The full set lets us build the Activity feed alongside the live holdings.
-      const [outputsRaw, allRaw, tokensRaw]: [any[], any[], any[]] = await Promise.all([
-        stasQuery(identityKey, chain, 'listStasOutputs', []),
-        stasQuery(identityKey, chain, 'listStasOutputs', [{ includeSpent: true }]),
-        stasQuery(identityKey, chain, 'listStasTokens', []),
+      // Live holdings now come from the portable basket read below. The local
+      // satellite history is still read for the Activity feed (spent + unspent) —
+      // a local-only view we haven't moved yet; harmless (empty) on remote.
+      const [allRaw, tokensRaw]: [any[], any[]] = await Promise.all([
+        stasQuery(identityKey, chain, 'listStasOutputs', [{ includeSpent: true }]).catch(() => []),
+        stasQuery(identityKey, chain, 'listStasTokens', []).catch(() => []),
       ])
       const tokenMap: Record<string, any> = {}
       for (const t of tokensRaw ?? []) tokenMap[t.tokenId] = t
@@ -582,8 +589,77 @@ export default function AssetsPage() {
         }
       }
 
-      // STAS / DSTAS holdings.
-      const stasHoldings = (outputsRaw ?? []).map(toView)
+      // Live STAS/DSTAS holdings via listOutputs on their baskets — the same
+      // portable path BSV-21 uses (decode metadata from the standard output
+      // record), so they render under remote storage too, not just local.
+      const stasBasketRowToView = (o: any, protocol: TokenProtocolId): OutputView | null => {
+        // The basket is authoritative for protocol, so pass it as the fallback
+        // kind — a legacy/partial record (no `kind`, tags lost to a sync) still
+        // decodes instead of being dropped, which is why STAS/DSTAS were missing
+        // from Assets under remote storage while showing in Baskets.
+        const kind = protocol === 'dstas' ? 'dstas' : 'stas'
+        const meta = decodeStasOutputMetadata(o.customInstructions, o.tags, kind)
+        if (!meta) return null
+        const [txid, voutStr] = String(o.outpoint ?? '.').split('.')
+        const sats = Number(o.satoshis ?? 0)
+        const scriptHex = o.lockingScript ?? null
+        // Old records carry only {tokenId, brc42KeyId} in customInstructions — no
+        // symbol and no ownerFieldHash160. Recover both from the locking script
+        // (classic STAS carries symbol + owner PKH on-chain; DSTAS carries
+        // neither, so they stay absent). Without the owner recovery + guard below,
+        // hash160ToAddress(undefined) threw and wiped the whole basket.
+        const parsed = scriptHex ? parseClassicStasMetadata(scriptHex) : null
+        const symbol = meta.symbol ?? parsed?.symbol ?? null
+        const ownerHash = meta.ownerFieldHash160 ?? parsed?.ownerFieldHash160 ?? undefined
+        return {
+          outpoint: `${txid}.${voutStr}`,
+          txid,
+          vout: Number(voutStr),
+          satoshis: sats,
+          spendable: o.spendable !== false,
+          tokenId: meta.tokenId,
+          symbol,
+          name: meta.name ?? null,
+          brc42KeyId: meta.brc42KeyId ?? null,
+          ownerFieldHash160: ownerHash,
+          ownerAddress: ownerHash ? hash160ToAddress(ownerHash) : '',
+          scriptHex: o.lockingScript ?? null,
+          frozen: !!meta.frozen,
+          confiscated: !!meta.confiscated,
+          spentBy: null,
+          createdAt: null,
+          protocol,
+          tokenAmount: String(sats),
+          decimals: 0,
+          icon: null,
+        }
+      }
+      const stasHoldings: OutputView[] = []
+      if (wallet) {
+        for (const [protocol, basket] of [['stas', STAS_BASKET], ['dstas', DSTAS_BASKET]] as const) {
+          try {
+            const res: any = await wallet.listOutputs({
+              basket,
+              includeTags: true,
+              includeCustomInstructions: true,
+              include: 'locking scripts',
+              limit: 10000,
+            } as any)
+            for (const o of res?.outputs ?? []) {
+              // Per-row guard: a single malformed output must not drop the whole
+              // basket (that's what hid every STAS/DSTAS token under remote).
+              try {
+                const v = stasBasketRowToView(o, protocol)
+                if (v) stasHoldings.push(v)
+              } catch (rowErr) {
+                console.warn(`[assets] skipped a ${protocol} row:`, rowErr)
+              }
+            }
+          } catch {
+            /* basket missing — nothing to show for this protocol */
+          }
+        }
+      }
 
       // BSV-21 holdings — second data source. Goes through the BRC-100
       // listOutputs surface so tags (id/amt/dec/sym/icon) come back with

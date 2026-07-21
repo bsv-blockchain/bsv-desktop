@@ -388,9 +388,9 @@ export class DstasTransferService {
         return {
           ok: false,
           reason:
-            `DSTAS template requires at most one P2PKH change output, but the ` +
-            `assembled tx has ${p2pkhOutputCount}. Same root cause as the ` +
-            `multi-funding-input case — consolidate the default basket first.`,
+            `the storage backend split the fee change into ${p2pkhOutputCount} P2PKH outputs, but the DSTAS ` +
+            `template requires exactly one. This happens on a remote storage server that does not honor the ` +
+            `change-parameter suppression (setWalletChangeParams). Switch to local storage to send this token.`,
         }
       }
 

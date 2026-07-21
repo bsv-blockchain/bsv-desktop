@@ -418,6 +418,30 @@ export class StasTransferService {
         };
       }
 
+      // The classic STAS engine commits to the exact output set, so it needs
+      // exactly ONE P2PKH change output. If the change was fragmented into
+      // several (wallet-toolbox's change-pool building), the unlock preimage
+      // won't match and script eval fails with a cryptic "top stack element
+      // must be truthy". We suppress fragmentation via setWalletChangeParams,
+      // but a remote storage server that doesn't honor that spec-op will still
+      // fragment. Detect it here and fail with an actionable message.
+      let p2pkhOutputCount = 0;
+      for (let v = 0; v < tx.outputs.length; v++) {
+        const sHex = tx.outputs[v].script.toHex();
+        if (sHex.startsWith('76a914') && sHex.endsWith('88ac') && sHex.length === 50) {
+          p2pkhOutputCount++;
+        }
+      }
+      if (p2pkhOutputCount > 1) {
+        return {
+          ok: false,
+          reason:
+            `the storage backend split the fee change into ${p2pkhOutputCount} outputs, but the STAS ` +
+            `engine requires exactly one. This happens on a remote storage server that does not honor the ` +
+            `change-parameter suppression (setWalletChangeParams). Switch to local storage to send this token.`,
+        };
+      }
+
       // 9. Payment segment = the wallet's added change output (now at vout 1).
       let paymentSegment: { satoshis: number; publicKey: string } | null = null;
       for (let v = 1; v < tx.outputs.length; v++) {

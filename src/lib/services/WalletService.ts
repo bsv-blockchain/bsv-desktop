@@ -584,27 +584,34 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       }
       this._wallet = wallet
 
+      // Token indexers (WhatsOnChain, 1Sat, Back-to-Genesis) only exist for
+      // mainnet and testnet. Upstream widened `chain` to include TeraTestNet
+      // ('ttn'), which has no token coverage, so collapse it onto 'test' for
+      // the token services — they still initialize, they just find nothing on
+      // ttn. The full `chain` stays on the wallet/storage services above.
+      const tokenChain: 'main' | 'test' = chain === 'main' ? 'main' : 'test'
+
       // STAS BRC-42 services — ownership recognition + receive-key derivation,
       // plus the Task-4 discovery loop (WoC scan -> internalizeAction).
-      const stasKeyDeriver = new StasKeyDeriver(wallet, keyDeriver.identityKey, chain)
-      const stasRegistration = new StasRegistration(wallet, keyDeriver.identityKey, chain)
-      const stasTransfer = new StasTransferService(wallet, keyDeriver.identityKey, chain)
+      const stasKeyDeriver = new StasKeyDeriver(wallet, keyDeriver.identityKey, tokenChain)
+      const stasRegistration = new StasRegistration(wallet, keyDeriver.identityKey, tokenChain)
+      const stasTransfer = new StasTransferService(wallet, keyDeriver.identityKey, tokenChain)
 
       // DSTAS transfer service (F3) — shares the STAS BRC-42 receive
       // namespace, builds the new output via the SDK's pure
       // buildDstasLockingScript, and assembles the DSTAS unlocking
       // script byte-for-byte to match the template's witness format.
-      const dstasTransfer = new DstasTransferService(wallet, keyDeriver.identityKey, chain)
+      const dstasTransfer = new DstasTransferService(wallet, keyDeriver.identityKey, tokenChain)
 
       // BSV-21 services — separate BRC-42 namespace, 1Sat REST indexer,
       // standard P2PKH unlock path.
-      const bsv21KeyDeriver = new BSV21KeyDeriver(wallet, keyDeriver.identityKey, chain)
-      const bsv21Indexer = new OneSatIndexerClient({ chain })
-      const bsv21Registration = new BSV21Registration(wallet, keyDeriver.identityKey, chain)
+      const bsv21KeyDeriver = new BSV21KeyDeriver(wallet, keyDeriver.identityKey, tokenChain)
+      const bsv21Indexer = new OneSatIndexerClient({ chain: tokenChain })
+      const bsv21Registration = new BSV21Registration(wallet, keyDeriver.identityKey, tokenChain)
       const bsv21Transfer = new BSV21TransferService({
         wallet,
         identityKey: keyDeriver.identityKey,
-        chain,
+        chain: tokenChain,
         deriver: bsv21KeyDeriver,
         indexer: bsv21Indexer,
       })
@@ -621,8 +628,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       // standards: STAS (by base58 address) and DSTAS (by owner hash160) ride
       // StasDiscoveryService, BSV-21 rides BSV21DiscoveryService, all fed by
       // the same WocTokenIndexerClient.
-      const wocIndexer = new WocTokenIndexerClient({ chain })
-      const backToGenesis = new BackToGenesisClient({ chain })
+      const wocIndexer = new WocTokenIndexerClient({ chain: tokenChain })
+      const backToGenesis = new BackToGenesisClient({ chain: tokenChain })
 
       const stasDiscovery = new StasDiscoveryService({
         deriver: stasKeyDeriver,
@@ -647,15 +654,15 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         walletClient: wallet,
         originator: this._adminOriginator,
         adapters: [
-          new StasTokenSettlementAdapter(wallet, keyDeriver.identityKey, chain),
+          new StasTokenSettlementAdapter(wallet, keyDeriver.identityKey, tokenChain),
           new Bsv21TokenSettlementAdapter({
             wallet,
             identityKey: keyDeriver.identityKey,
-            chain,
+            chain: tokenChain,
             deriver: bsv21KeyDeriver,
             indexer: bsv21Indexer,
           }),
-          new DstasTokenSettlementAdapter(wallet, keyDeriver.identityKey, chain),
+          new DstasTokenSettlementAdapter(wallet, keyDeriver.identityKey, tokenChain),
         ],
       })
 

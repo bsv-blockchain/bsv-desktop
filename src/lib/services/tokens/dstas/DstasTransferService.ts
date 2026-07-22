@@ -340,17 +340,16 @@ export class DstasTransferService {
       return { ok: false, reason: `sign funding input: ${errMsg(err)}` }
     }
 
-    // 12. Assemble TX2 AtomicBEEF: token ancestry + funding ancestry + TX2.
-    //     Re-walk the funding chain (buildChainedAtomicBeef) so its merkle proofs
-    //     are freshly fetched — createAction's returned BEEF for a just-created
-    //     unconfirmed funding tx can carry a proof that internalizeAction's
-    //     verify() (isValidRootForHeight) rejects.
+    // 12. Assemble TX2 AtomicBEEF: token ancestry + TX1's own BEEF (from
+    //     createAction — it already carries TX1's full ancestry incl. any
+    //     unconfirmed txs WoC can't re-serve) + TX2. Use mergeTransaction + the
+    //     SDK-computed txid so toBinaryAtomic sets atomicTxid correctly (bsv-js
+    //     tx.id can differ, which made validateAtomicBeef reject it).
     let tx2Txid = ''
     let tx2AtomicBeef: number[]
     try {
       const beef = Beef.fromBinary(tokenBeef)
-      const fundingWalked = await buildChainedAtomicBeef({ wallet: this.wallet, txid: funding.txid })
-      beef.mergeBeef(fundingWalked.beef)
+      beef.mergeBeef(Beef.fromBinary(funding.beef))
       const sdkTx2 = Transaction.fromHex(tx.toString())
       beef.mergeTransaction(sdkTx2)
       tx2Txid = sdkTx2.id('hex')

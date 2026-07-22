@@ -20,6 +20,7 @@ import { toast } from 'react-toastify'
 import { WalletContext } from '../../../WalletContext'
 import type { IncomingToken, SendTokenParams } from '@bsv/message-box-client'
 import { loadPeerHoldings, type PeerHolding as Holding } from '../../../services/tokens/peer/loadPeerHoldings'
+import IdentitySearchField from '../../../components/IdentitySearchField'
 
 interface TokenTx {
   txid: string
@@ -221,7 +222,23 @@ export default function PeerTokens() {
                   <MenuItem key={h.key} value={h.key}>{h.protocol.toUpperCase()} — {h.label}</MenuItem>
                 ))}
               </TextField>
-              <TextField fullWidth label="Recipient identity key" value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="03…" />
+              {/* Search a recipient by name/handle (MessageBox identity lookup),
+                  same as the Payments tab — or paste an identity key below. */}
+              {wallet ? (
+                <IdentitySearchField
+                  wallet={wallet}
+                  originator={originator}
+                  onSelect={setRecipient}
+                  label="Search for a recipient"
+                />
+              ) : null}
+              <TextField
+                fullWidth
+                label={recipient ? 'Recipient identity key' : '…or paste recipient identity key'}
+                value={recipient}
+                onChange={(e) => setRecipient(e.target.value)}
+                placeholder="03…"
+              />
               <TextField
                 fullWidth label="Amount (token units)" value={amount} onChange={(e) => setAmount(e.target.value)}
                 helperText={'Partial amounts supported (STAS/DSTAS split; BSV-21 makes change)'}

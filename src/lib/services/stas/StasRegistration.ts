@@ -15,6 +15,7 @@
 import type { AtomicBEEF, WalletInterface } from '@bsv/sdk';
 import { STAS_BASKET } from '../../constants/baskets';
 import { buildChainedAtomicBeef } from './buildChainedAtomicBeef';
+import { isOutpointInBasket } from './basketOutpoints';
 import { verifyAndPersistOnReceive } from '../tokens/verifyOnReceive';
 import { encodeStasOutputMetadata } from './stasOutputMetadata';
 import type { ParsedDstas } from './dstasParser';
@@ -99,21 +100,12 @@ export class StasRegistration {
     const { txid, vout, parsed, brc42KeyId, ownerFieldHash160, tokenSatoshis } = args;
     const protocol = args.protocol ?? DEFAULT_PROTOCOL;
 
-    // 1. Idempotency — skip outpoints that already live in stas_outputs.
-    try {
-      const existing = await this.stasQuery('findStasOutputByOutpoint', [txid, vout]);
-      if (existing) {
-        return {
-          registered: false,
-          txid,
-          vout,
-          outputId: existing.outputId,
-          reason: 'already registered',
-        };
-      }
-    } catch (err) {
-      // Query channel missing (e.g. unit tests without IPC) — proceed cautiously.
-      if (!isQueryUnavailable(err)) throw err;
+    // 1. Idempotency — skip outpoints already tracked in the token basket.
+    //    Storage-agnostic (listOutputs on the ACTIVE store); the old
+    //    satellite check (findStasOutputByOutpoint) was local-SQLite only, so
+    //    on remote it never recognised a held token and re-registered it.
+    if (await isOutpointInBasket(this.wallet, protocol.basketName, txid, vout, ORIGINATOR)) {
+      return { registered: false, txid, vout, reason: 'already registered' };
     }
 
     // 2. Build a chained AtomicBEEF. Walks back through inputs until every

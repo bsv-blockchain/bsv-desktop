@@ -21,8 +21,11 @@ import type { StasKeyDeriver } from './StasKeyDeriver';
 import type { StasRegistration } from './StasRegistration';
 import type { ScanProgressFn, WocUtxo } from '../tokens/woc/WocTokenIndexerClient';
 import { stasQuery } from './stasIpc';
-import { TOKEN_BASKETS } from '../../constants/baskets';
+import { TOKEN_BASKETS, STAS_BASKET, DSTAS_BASKET } from '../../constants/baskets';
+import { loadBasketOutpoints } from './basketOutpoints';
 import type { TokenProtocolRegistry, ParsedTokenOutput } from '../tokens';
+
+const ORIGINATOR = 'admin.stas-discovery';
 
 /**
  * Adapter-shaped parsed token output the legacy registration expects.
@@ -324,6 +327,16 @@ export class StasDiscoveryService {
     }
     const txCache = new Map<string, Transaction>();
 
+    // Idempotency source: outpoints already tracked in the token baskets
+    // (STAS + DSTAS share the receive namespace). Read once from the ACTIVE
+    // store so re-scans skip tokens already held — the old per-UTXO satellite
+    // check (findStasOutputByOutpoint) was local-SQLite only and re-registered
+    // everything on remote storage each scan.
+    const knownOutpoints = new Set<string>([
+      ...(await loadBasketOutpoints(this.deps.wallet, STAS_BASKET, ORIGINATOR)),
+      ...(await loadBasketOutpoints(this.deps.wallet, DSTAS_BASKET, ORIGINATOR)),
+    ]);
+
     // Each work entry is bound to one owner hash160 by construction (the
     // indexer was queried per-derived-address / per-owner). That mapping is
     // the ownership fallback: if an adapter's parse can't recover an owner
@@ -337,16 +350,11 @@ export class StasDiscoveryService {
           // panel reflects "tokens the wallet recognises at the scanned range"
           // rather than just "newly registered this scan". Field names are
           // legacy STAS-era; treat as "recognised tokens" / "matched to a key".
-          try {
-            const existing = await stasQuery(identityKey, chain, 'findStasOutputByOutpoint', [utxo.txid, utxo.vout]);
-            if (existing) {
-              result.dstas++;
-              result.ownedAndDstas++;
-              result.skippedAlreadyKnown++;
-              continue;
-            }
-          } catch {
-            // Channel error: best-effort; let registration handle the duplicate.
+          if (knownOutpoints.has(`${utxo.txid}.${utxo.vout}`)) {
+            result.dstas++;
+            result.ownedAndDstas++;
+            result.skippedAlreadyKnown++;
+            continue;
           }
 
           // Prefer the indexer-supplied locking script (WOC `?script=true`)

@@ -20,7 +20,7 @@
  */
 
 import type { WalletInterface } from '@bsv/sdk';
-import { Beef } from '@bsv/sdk';
+import { Beef, Transaction } from '@bsv/sdk';
 import { STAS_PROTOCOL_ID, STAS_COUNTERPARTY } from './constants';
 import { STAS_BASKET } from '../../constants/baskets';
 import { buildChainedAtomicBeef } from './buildChainedAtomicBeef';
@@ -380,13 +380,20 @@ export class StasTransferService {
       return { ok: false, reason: `sign funding input: ${errMsg(err)}` };
     }
 
-    // 11. Assemble TX2 AtomicBEEF (token ancestry + TX1 + TX2).
-    const tx2Txid: string = tx.id;
+    // 11. Assemble TX2 AtomicBEEF: token ancestry + funding ancestry + TX2.
+    //     Re-walk the funding chain (buildChainedAtomicBeef) so its merkle proofs
+    //     are freshly fetched — createAction's returned BEEF for a just-created
+    //     unconfirmed funding tx can carry a proof that internalizeAction's
+    //     verify() (isValidRootForHeight) rejects.
+    let tx2Txid = '';
     let tx2AtomicBeef: number[];
     try {
       const beef = Beef.fromBinary(tokenBeef);
-      beef.mergeBeef(Beef.fromBinary(funding.beef));
-      beef.mergeRawTx(Array.from(tx.toBuffer() as Buffer) as number[]);
+      const fundingWalked = await buildChainedAtomicBeef({ wallet: this.wallet, txid: funding.txid });
+      beef.mergeBeef(fundingWalked.beef);
+      const sdkTx2 = Transaction.fromHex(tx.toString());
+      beef.mergeTransaction(sdkTx2);
+      tx2Txid = sdkTx2.id('hex');
       tx2AtomicBeef = beef.toBinaryAtomic(tx2Txid);
     } catch (err) {
       return { ok: false, reason: `TX2 BEEF assembly: ${errMsg(err)}` };

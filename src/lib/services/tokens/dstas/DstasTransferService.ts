@@ -38,10 +38,12 @@ const { buildDstasLockingScript } = DstasLockingBuilderModule
 import { STAS_PROTOCOL_ID, STAS_COUNTERPARTY } from '../../stas/constants'
 import { DSTAS_BASKET } from '../../../constants/baskets'
 import { parseDstasLockingScript } from '../../stas/dstasParser'
-import { stasQuery } from '../../stas/stasIpc'
-import { setChangeParams, DEFAULT_DESIRED_UTXOS, DEFAULT_MIN_UTXO_VALUE } from '../../stas/walletChangeParams'
 import { buildChainedAtomicBeef } from '../../stas/buildChainedAtomicBeef'
 import { StasRegistration } from '../../stas/StasRegistration'
+import { createTokenFundingOutput } from '../twoTx/fundingOutput'
+import { deriveSelfBrc29P2pkh } from '../twoTx/brc29Address'
+import { signP2pkhInput } from '../twoTx/p2pkhInput'
+import { broadcastAndInternalizeChange } from '../twoTx/internalizeChange'
 import { buildDstasUnlockingScript, DSTAS_SIGHASH_TYPE } from './buildDstasUnlockingScript'
 import { tokenLog } from '../tokenLog'
 
@@ -217,341 +219,183 @@ export class DstasTransferService {
       return { ok: false, reason: `build new DSTAS locking script: ${errMsg(err)}` }
     }
 
-    // 5. Build inputBEEF (chained-atomic so mempool ancestors are OK).
-    let inputBEEF: number[]
+    // ===== Storage-agnostic 2-tx transfer (mirrors StasTransferService) =======
+    // TX1 creates a dedicated self-owned funding output; TX2 spends
+    // [token, funding] → [recipient, (token-change), one explicit BSV change],
+    // signing both inputs client-side. No auto-funding ⇒ no server-side change
+    // fragmentation ⇒ works on local AND remote storage.
+
+    // 5. Token input ancestry BEEF (for TX2 SPV).
+    let tokenBeef: number[]
     try {
       const built = await buildChainedAtomicBeef({ wallet: this.wallet, txid: source.txid })
-      inputBEEF = built.beef
+      tokenBeef = built.beef
     } catch (err) {
       return { ok: false, reason: `inputBEEF assembly: ${errMsg(err)}` }
     }
 
-    // 6. Mark the source spendable on wallet-toolbox's side — DSTAS
-    //    outputs are flagged non-spendable by default (the toolbox
-    //    doesn't recognise the custom template).
+    // 6. Self-owned BRC-29 address for TX2's single BSV change output.
+    let changeDeriv: { scriptHex: string; pkhHex: string; derivationPrefix: string; derivationSuffix: string }
     try {
-      const outputId: number | null = await stasQuery(
-        this.identityKey,
-        this.chain,
-        'findOutputIdByOutpoint',
-        [source.txid, source.vout]
-      )
-      if (outputId) {
-        await stasQuery(this.identityKey, this.chain, 'setOutputSpendable', [outputId, true])
-      }
-    } catch {
-      /* best effort */
-    }
-
-    // 7. Suppress change fragmentation around the call — same as STAS
-    //    transfer needs because the DSTAS template expects the funding
-    //    branch to be a single P2PKH change output. Routes through the ACTIVE
-    //    store (works local AND remote); fail clean if it can't be applied.
-    try {
-      await setChangeParams(this.wallet, 0, DEFAULT_MIN_UTXO_VALUE, ORIGINATOR)
+      changeDeriv = await deriveSelfBrc29P2pkh({ wallet: this.wallet, chain: this.chain, originator: ORIGINATOR })
     } catch (err) {
-      return {
-        ok: false,
-        reason:
-          `could not suppress change fragmentation (setWalletChangeParams): ${errMsg(err)}. ` +
-          'Without it the funding change splits into multiple outputs and the DSTAS template rejects the transfer.',
-      }
-    }
-    const restoreBasket = async () => {
-      try {
-        await setChangeParams(this.wallet, DEFAULT_DESIRED_UTXOS, DEFAULT_MIN_UTXO_VALUE, ORIGINATOR)
-      } catch { /* best effort */ }
+      return { ok: false, reason: `change derivation: ${errMsg(err)}` }
     }
 
+    // 7. TX1: funding output sized to TX2's fee (over-estimate; the single
+    //    change output absorbs the remainder so the fee is never underpaid).
+    const FEE_RATE = 1 // sat/byte
+    const estTx2Size =
+      5500 /* DSTAS unlock */ + 120 /* P2PKH unlock */ + 200 /* overhead */ +
+      Math.ceil(newDstasScriptHex.length / 2) +
+      (changeDstasScriptHex ? Math.ceil(changeDstasScriptHex.length / 2) : 0) +
+      34 /* change output */
+    const tx2Fee = Math.ceil(estTx2Size * FEE_RATE)
+    const fundingSats = tx2Fee + 500
+    let funding: Awaited<ReturnType<typeof createTokenFundingOutput>>
     try {
-      // 8. createAction. Wallet auto-funds + adds the BSV change output.
-      //    Conservation: source.satoshis tokens → new DSTAS output gets
-      //    the same satoshis (DSTAS transfer is 1-to-1 per §1).
-      let createRes: any
-      try {
-        createRes = await this.wallet.createAction(
-          {
-            labels: ['peertoken'],
-            inputBEEF,
-            inputs: [
-              {
-                outpoint: `${source.txid}.${source.vout}`,
-                // DSTAS unlocking script is comparable in size to classic STAS
-                // (~3 KB worst-case) — we'll let bsv-js compute the actual size
-                // post-build; the estimate guides createAction's fee math.
-                unlockingScriptLength: 4500,
-                inputDescription: 'DSTAS being transferred',
-              },
-            ],
-            outputs: [
-              {
-                lockingScript: newDstasScriptHex,
-                satoshis: sendAmt,
-                outputDescription: 'DSTAS to recipient',
-              },
-              ...(changeDstasScriptHex != null
-                ? [{
-                    lockingScript: changeDstasScriptHex,
-                    satoshis: changeAmt,
-                    outputDescription: 'DSTAS token change',
-                    // Declare the basket so the wallet tracks this self-owned
-                    // change output natively (mirrors STAS/BSV-21 change).
-                    basket: DSTAS_BASKET,
-                    customInstructions: JSON.stringify({
-                      brc42KeyId: args.senderChangeKeyId,
-                      tokenId: args.tokenId,
-                    }),
-                    tags: ['dstas'],
-                  }]
-                : []),
-            ],
-            description: 'DSTAS transfer',
-            options: { randomizeOutputs: false },
-          } as any,
-          ORIGINATOR
-        )
-      } catch (err) {
-        return { ok: false, reason: `createAction: ${errMsg(err)}` }
-      }
-
-      const signable = createRes?.signableTransaction
-      if (!signable || !signable.tx) {
-        return { ok: false, reason: 'createAction did not return signableTransaction' }
-      }
-
-      // 9. Parse signable.tx (AtomicBEEF) → atomic tx → bsv-js Transaction
-      //    so we can compute sighash + walk outputs for the unlock builder.
-      let tx: any
-      try {
-        const beef = Beef.fromBinary(signable.tx)
-        const atomicTxid = (beef as any).atomicTxid as string | undefined
-        if (!atomicTxid) return { ok: false, reason: 'signable BEEF has no atomic txid' }
-        const btx = beef.findTxid(atomicTxid)
-        if (!btx?.tx) return { ok: false, reason: `signable BEEF missing atomic tx ${atomicTxid}` }
-        const rawTxBytes = btx.tx.toBinary()
-        tx = new bsvJs.Transaction(Buffer.from(rawTxBytes).toString('hex'))
-        // Attach the source's prev-output for sighash computation.
-        tx.inputs[0].output = new bsvJs.Transaction.Output({
-          script: bsvJs.Script.fromHex(source.scriptHex),
-          satoshis: source.satoshis,
-        })
-      } catch (err) {
-        return { ok: false, reason: `parse signable tx: ${errMsg(err)}` }
-      }
-
-      // 10. Resolve the funding input. The DSTAS template encodes EXACTLY
-      //     ONE funding outpoint (vout + txid) into the unlock witness;
-      //     the template verifies this matches the tx's prevout hash.
-      //     wallet-toolbox normally pulls a single funding input, but
-      //     if the default basket only has fragments smaller than the
-      //     fee, it combines multiple — which the template can't accept.
-      //     Same constraint applies to the SDK's `BuildDstasTransferTx`
-      //     (see `input-builder.ts:resolveFundingInput`).
-      //
-      //     Fail clean here so the user gets an actionable message
-      //     instead of a cryptic "OP_EQUALVERIFY required equal" deep
-      //     in the script evaluator.
-      const nonDstasInputs: number[] = []
-      for (let i = 0; i < tx.inputs.length; i++) {
-        if (i === 0) continue // input 0 is our DSTAS source
-        nonDstasInputs.push(i)
-      }
-      if (nonDstasInputs.length === 0) {
-        return { ok: false, reason: 'no funding input found in the assembled tx' }
-      }
-      if (nonDstasInputs.length > 1) {
-        return {
-          ok: false,
-          reason:
-            `DSTAS template requires exactly one funding input, but wallet-toolbox ` +
-            `picked ${nonDstasInputs.length} from the default basket — likely ` +
-            `because no single change UTXO is large enough to cover the tx fee. ` +
-            `Workaround: consolidate the default basket by sending a small BSV ` +
-            `self-payment to yourself first, then retry the DSTAS send. ` +
-            `(Same architectural constraint applies to the SDK's BuildDstasTransferTx.)`,
-        }
-      }
-      const fundingInputIdx = nonDstasInputs[0]
-
-      // Same constraint on outputs: the DSTAS template walks outputs and
-      // expects exactly the recipient DSTAS output + at most 1 P2PKH
-      // change output (+ optional null-data). Multiple P2PKH outputs from
-      // fragmentation would break the template's per-output handling.
-      let p2pkhOutputCount = 0
-      for (const out of tx.outputs) {
-        const sh = out.script.toHex()
-        if (sh.startsWith('76a914') && sh.endsWith('88ac') && sh.length === 50) {
-          p2pkhOutputCount++
-        }
-      }
-      if (p2pkhOutputCount > 1) {
-        return {
-          ok: false,
-          reason:
-            `the storage backend split the fee change into ${p2pkhOutputCount} P2PKH outputs, but the DSTAS ` +
-            `template requires exactly one. This happens on a remote storage server that does not honor the ` +
-            `change-parameter suppression (setWalletChangeParams). Switch to local storage to send this token.`,
-        }
-      }
-
-      tokenLog.debug(
-        `[dstas-transfer] tx shape: ${tx.inputs.length} inputs (DSTAS at 0, funding at ${fundingInputIdx}), ${tx.outputs.length} outputs`
-      )
-
-      // 11. Sighash + signature for input 0.
-      let sigDer: Uint8Array
-      let preimage: Uint8Array
-      try {
-        const sourceLocking = bsvJs.Script.fromHex(source.scriptHex)
-        const satsBN = new bsvJs.crypto.BN(source.satoshis)
-        const preimageBuf: Buffer = bsvJs.Transaction.sighash.sighashPreimage(
-          tx, SIGHASH, 0, sourceLocking, satsBN
-        )
-        preimage = new Uint8Array(preimageBuf)
-        const digestBuf = bsvJs.crypto.Hash.sha256sha256(preimageBuf)
-        const digestBytes = Array.from(digestBuf as Buffer) as number[]
-
-        const sigRes = await this.wallet.createSignature(
-          {
-            protocolID: ownerDerivation.protocolID,
-            keyID: ownerDerivation.keyID,
-            counterparty: ownerDerivation.counterparty,
-            hashToDirectlySign: digestBytes,
-          } as any,
-          ORIGINATOR
-        )
-        sigDer = new Uint8Array(sigRes.signature)
-      } catch (err) {
-        return { ok: false, reason: `sighash/sign: ${errMsg(err)}` }
-      }
-
-      // 12. Assemble DSTAS unlocking script via our helper (mirror of
-      //     SDK's input-builder.ts:91-178).
-      let unlockingScriptHex: string
-      try {
-        unlockingScriptHex = buildDstasUnlockingScript({
-          unsignedTx: tx,
-          inputIdx: 0,
-          fundingInputIdx,
-          preimage,
-          signatureDer: sigDer,
-          publicKey: new Uint8Array(Buffer.from(ownerPubKeyHex, 'hex')),
-          spendingType: 1,
-        })
-      } catch (err) {
-        return { ok: false, reason: `assemble DSTAS unlocking script: ${errMsg(err)}` }
-      }
-
-      // 13. Best-effort pre-broadcast script-level diagnostic.
-      //
-      //     The SDK's AGENTS.md mandates `evaluateTransactionHex` for
-      //     "every flow-producing change" — but that's a normative rule
-      //     for SDK developers writing fully-signed test fixtures, not
-      //     a wallet running mid-flow validation. At THIS point in our
-      //     flow the funding input (input 1) is still unsigned — the
-      //     wallet only signs it inside the upcoming `signAction` call.
-      //     So a full-tx evaluation will fail on input 1 regardless of
-      //     whether our DSTAS input 0 is byte-perfect.
-      //
-      //     We run the evaluator anyway as a diagnostic and log its
-      //     result, but we DO NOT gate the broadcast on it — chain
-      //     validation is the real backstop and StasTransferService
-      //     follows the same trust-the-wallet-and-the-chain model.
-      //
-      //     If the evaluator surfaces a structured per-input result we
-      //     can later harden this into "input 0 must pass" — left as a
-      //     TODO until we see what the evaluator actually returns.
-      try {
-        const evalResult = await evaluateDstasInputZero({
-          tx,
-          sourceScriptHex: source.scriptHex,
-          sourceSatoshis: source.satoshis,
-          unlockingScriptHex,
-        })
-        if (evalResult.success) {
-          tokenLog.debug('[dstas-transfer] script-evaluator pre-broadcast: success')
-        } else {
-          // Expected when the funding input isn't signed yet — log full
-          // diagnostic so a real failure mode (e.g. byte-mismatch on
-          // input 0's unlock) can be diagnosed from the dev tools.
-          tokenLog.warn(
-            '[dstas-transfer] script-evaluator pre-broadcast: NON-SUCCESS (expected — funding input still unsigned at this point). ' +
-            `Diagnostic: ${evalResult.reason ?? 'no detail'}`
-          )
-          if (evalResult.fullResult) {
-            tokenLog.warn('[dstas-transfer] full evaluator result:', evalResult.fullResult)
-          }
-        }
-      } catch (err) {
-        tokenLog.warn(`[dstas-transfer] script-evaluator threw: ${errMsg(err)}`)
-      }
-
-      // 14. signAction. wallet-toolbox signs the funding input and
-      //     queues the broadcast; monitor worker handles relay.
-      let signResp: any
-      try {
-        signResp = await this.wallet.signAction(
-          {
-            reference: signable.reference,
-            spends: { 0: { unlockingScript: unlockingScriptHex } },
-          } as any,
-          ORIGINATOR
-        )
-      } catch (err) {
-        return { ok: false, reason: `signAction: ${errMsg(err)}` }
-      }
-
-      const sendResults: any[] = Array.isArray(signResp?.sendWithResults)
-        ? signResp.sendWithResults
-        : []
-      const failed = sendResults.find((r) => r?.status === 'failed')
-      if (failed) {
-        return {
-          ok: false,
-          reason: `broadcast failed: ${JSON.stringify(failed)} (txid was ${signResp?.txid})`,
-        }
-      }
-
-      const wocBase = this.chain === 'main' ? 'https://whatsonchain.com/tx/' : 'https://test.whatsonchain.com/tx/'
-      tokenLog.info(`[dstas-transfer] BROADCAST ✓ txid: ${signResp?.txid}  ${wocBase}${signResp?.txid}`)
-
-      // 16. Link the sender's token-change output (vout 1) into the satellite
-      //     tables. The Assets view reads DSTAS holdings from `listStasOutputs`,
-      //     not from the basket, so without this the remainder of a partial send
-      //     is invisible until a discovery scan re-finds it on-chain. We built
-      //     the output, so there is nothing to discover. `skipInternalize`:
-      //     createAction already declared its basket. Idempotent — the peer
-      //     settlement adapter's own registration then reports 'already
-      //     registered'.
-      if (changeDstasScriptHex != null && args.senderChangeHash160 && signResp?.txid) {
-        try {
-          const parsedChange = parseDstasLockingScript(source.scriptHex)
-          const r = await new StasRegistration(this.wallet, this.identityKey, this.chain).register({
-            txid: signResp.txid,
-            vout: 1,
-            tokenSatoshis: changeAmt,
-            ownerFieldHash160: args.senderChangeHash160,
-            brc42KeyId: args.senderChangeKeyId ?? source.brc42KeyId,
-            parsed: {
-              ...(parsedChange ?? {}),
-              ownerFieldHash160: args.senderChangeHash160,
-              tokenId: args.tokenId ?? '',
-            } as any,
-            protocol: { id: 'dstas', basketName: DSTAS_BASKET },
-            skipInternalize: true,
-          })
-          if (!r.registered && r.reason !== 'already registered') {
-            tokenLog.warn(`[dstas-transfer] token-change NOT registered: ${r.reason} (scan will recover)`)
-          }
-        } catch (err) {
-          tokenLog.warn(`[dstas-transfer] token-change registration threw: ${errMsg(err)} (scan will recover)`)
-        }
-      }
-
-      return { ok: true, txid: signResp?.txid, beef: signResp?.tx }
-    } finally {
-      await restoreBasket()
+      funding = await createTokenFundingOutput({
+        wallet: this.wallet, chain: this.chain, satoshis: fundingSats,
+        originator: ORIGINATOR, description: 'DSTAS transfer funding',
+      })
+    } catch (err) {
+      return { ok: false, reason: `TX1 funding: ${errMsg(err)}` }
     }
+    const changeValue = funding.satoshis - tx2Fee
+    if (changeValue < 1) {
+      return { ok: false, reason: `funding ${funding.satoshis} below estimated fee ${tx2Fee}` }
+    }
+
+    // 8. Assemble TX2: [token(0), funding(1)] → [recipient(0), (token-change), change].
+    let tx: any
+    try {
+      tx = new bsvJs.Transaction()
+      tx.from({ txId: source.txid, outputIndex: source.vout, script: source.scriptHex, satoshis: source.satoshis })
+      tx.from({ txId: funding.txid, outputIndex: funding.vout, script: funding.scriptHex, satoshis: funding.satoshis })
+      tx.addOutput(new bsvJs.Transaction.Output({ script: bsvJs.Script.fromHex(newDstasScriptHex), satoshis: sendAmt }))
+      if (changeDstasScriptHex != null) {
+        tx.addOutput(new bsvJs.Transaction.Output({ script: bsvJs.Script.fromHex(changeDstasScriptHex), satoshis: changeAmt }))
+      }
+      tx.addOutput(new bsvJs.Transaction.Output({ script: bsvJs.Script.fromHex(changeDeriv.scriptHex), satoshis: changeValue }))
+      // Attach prev-outputs so bsv-js can compute the BIP143 sighash preimages.
+      tx.inputs[0].output = new bsvJs.Transaction.Output({ script: bsvJs.Script.fromHex(source.scriptHex), satoshis: source.satoshis })
+      tx.inputs[1].output = new bsvJs.Transaction.Output({ script: bsvJs.Script.fromHex(funding.scriptHex), satoshis: funding.satoshis })
+    } catch (err) {
+      return { ok: false, reason: `TX2 assembly: ${errMsg(err)}` }
+    }
+    const fundingInputIdx = 1
+    const changeVout = tx.outputs.length - 1
+
+    tokenLog.debug(`[dstas-transfer] TX2 inputs=2 (DSTAS 0, funding 1), outputs=${tx.outputs.length}, change=${changeValue}, fee≈${tx2Fee}`)
+
+    // 9. Sighash + signature for the DSTAS input (index 0).
+    let sigDer: Uint8Array
+    let preimage: Uint8Array
+    try {
+      const sourceLocking = bsvJs.Script.fromHex(source.scriptHex)
+      const satsBN = new bsvJs.crypto.BN(source.satoshis)
+      const preimageBuf: Buffer = bsvJs.Transaction.sighash.sighashPreimage(tx, SIGHASH, 0, sourceLocking, satsBN)
+      preimage = new Uint8Array(preimageBuf)
+      const digestBytes = Array.from(bsvJs.crypto.Hash.sha256sha256(preimageBuf) as Buffer) as number[]
+      const sigRes = await this.wallet.createSignature(
+        {
+          protocolID: ownerDerivation.protocolID,
+          keyID: ownerDerivation.keyID,
+          counterparty: ownerDerivation.counterparty,
+          hashToDirectlySign: digestBytes,
+        } as any,
+        ORIGINATOR
+      )
+      sigDer = new Uint8Array(sigRes.signature)
+    } catch (err) {
+      return { ok: false, reason: `sighash/sign token input: ${errMsg(err)}` }
+    }
+
+    // 10. DSTAS unlocking script for input 0 (walks tx outputs + funding outpoint).
+    try {
+      const unlockingScriptHex = buildDstasUnlockingScript({
+        unsignedTx: tx,
+        inputIdx: 0,
+        fundingInputIdx,
+        preimage,
+        signatureDer: sigDer,
+        publicKey: new Uint8Array(Buffer.from(ownerPubKeyHex, 'hex')),
+        spendingType: 1,
+      })
+      tx.inputs[0].setScript(bsvJs.Script.fromHex(unlockingScriptHex))
+    } catch (err) {
+      return { ok: false, reason: `assemble DSTAS unlocking script: ${errMsg(err)}` }
+    }
+
+    // 11. Sign the funding input (P2PKH) via the two-tx helper.
+    try {
+      const fundingUnlock = await signP2pkhInput({
+        wallet: this.wallet, bsv: bsvJs, tx, inputIndex: 1,
+        derivationPrefix: funding.derivationPrefix, derivationSuffix: funding.derivationSuffix,
+        sourceScriptHex: funding.scriptHex, sourceSatoshis: funding.satoshis,
+        sighashType: SIGHASH, originator: ORIGINATOR,
+      })
+      tx.inputs[1].setScript(bsvJs.Script.fromHex(fundingUnlock))
+    } catch (err) {
+      return { ok: false, reason: `sign funding input: ${errMsg(err)}` }
+    }
+
+    // 12. Assemble TX2 AtomicBEEF (token ancestry + TX1 + TX2).
+    const tx2Txid: string = tx.id
+    let tx2AtomicBeef: number[]
+    try {
+      const beef = Beef.fromBinary(tokenBeef)
+      beef.mergeBeef(Beef.fromBinary(funding.beef))
+      beef.mergeRawTx(Array.from(tx.toBuffer() as Buffer) as number[])
+      tx2AtomicBeef = beef.toBinaryAtomic(tx2Txid)
+    } catch (err) {
+      return { ok: false, reason: `TX2 BEEF assembly: ${errMsg(err)}` }
+    }
+
+    // 13. Broadcast TX2 + internalize the sender's BSV change (wallet payment).
+    try {
+      const r = await broadcastAndInternalizeChange({
+        wallet: this.wallet, atomicBeef: tx2AtomicBeef, changeVout,
+        derivationPrefix: changeDeriv.derivationPrefix, derivationSuffix: changeDeriv.derivationSuffix,
+        originator: ORIGINATOR, description: 'DSTAS transfer', labels: ['peertoken'],
+      })
+      if (!r.accepted) {
+        return { ok: false, reason: 'TX2 broadcast/internalize not accepted by the wallet' }
+      }
+    } catch (err) {
+      return { ok: false, reason: `TX2 broadcast: ${errMsg(err)}` }
+    }
+
+    const wocBase = this.chain === 'main' ? 'https://whatsonchain.com/tx/' : 'https://test.whatsonchain.com/tx/'
+    tokenLog.info(`[dstas-transfer] BROADCAST ✓ txid: ${tx2Txid}  ${wocBase}${tx2Txid}`)
+
+    // 14. Register the sender's token-change (partial sends) as a basket insertion.
+    if (changeDstasScriptHex != null && args.senderChangeHash160) {
+      try {
+        const parsedChange = parseDstasLockingScript(source.scriptHex)
+        const r = await new StasRegistration(this.wallet, this.identityKey, this.chain).register({
+          txid: tx2Txid,
+          vout: 1,
+          tokenSatoshis: changeAmt,
+          ownerFieldHash160: args.senderChangeHash160,
+          brc42KeyId: args.senderChangeKeyId ?? source.brc42KeyId,
+          parsed: {
+            ...(parsedChange ?? {}),
+            ownerFieldHash160: args.senderChangeHash160,
+            tokenId: args.tokenId ?? '',
+          } as any,
+          protocol: { id: 'dstas', basketName: DSTAS_BASKET },
+          atomicBeef: tx2AtomicBeef,
+        } as any)
+        if (!r.registered && r.reason !== 'already registered') {
+          tokenLog.warn(`[dstas-transfer] token-change NOT registered: ${r.reason} (scan will recover)`)
+        }
+      } catch (err) {
+        tokenLog.warn(`[dstas-transfer] token-change registration threw: ${errMsg(err)} (scan will recover)`)
+      }
+    }
+
+    return { ok: true, txid: tx2Txid, beef: tx2AtomicBeef }
   }
 }
 

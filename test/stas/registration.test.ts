@@ -178,11 +178,13 @@ describe('StasRegistration.register', () => {
   })
 
   /**
-   * Remote-storage guard: when the IPC query channel IS present but
+   * Remote storage: when the IPC query channel IS present but
    * findOutputIdByOutpoint returns nothing (no local outputs row — the
-   * remote-storage case), register must report registered:false with a reason,
-   * NOT the old silent registered:true. Distinct from the no-IPC unit-test path
-   * above, which still reports success.
+   * remote-storage case), register must still report registered:true. The token
+   * is internalized into the basket and renders from the basket read; the
+   * satellite link is a local-only optimization we skip on remote. (Reporting
+   * false here used to make the peer-accept flow throw even though the token
+   * arrived.)
    */
   function withStasQueryChannel(
     handler: (method: string, args: any[]) => any
@@ -244,10 +246,10 @@ describe('StasRegistration.register', () => {
     expect(calls[0].args.outputs[0].insertionRemittance.tags).toContain('sym:EXDSTAS6')
   })
 
-  test('reports registered:false when the query channel finds no local output row (remote storage)', async () => {
+  test('reports registered:true on remote storage (satellite link skipped, token internalized)', async () => {
     const ownerHash = 'cd'.repeat(20)
     const { rawTx, txid } = makeDstasTx(ownerHash)
-    const { wallet } = mkWallet(rawTx, txid)
+    const { wallet, calls } = mkWallet(rawTx, txid)
 
     // Channel is available, but findOutputIdByOutpoint returns undefined — as it
     // does under remote storage, where the local `outputs` table is empty.
@@ -273,8 +275,10 @@ describe('StasRegistration.register', () => {
           serviceFields: [],
         },
       })
-      expect(result.registered).toBe(false)
-      expect(result.reason).toMatch(/remote|local outputs row|Assets page/i)
+      // Internalized into the basket (renders); satellite link skipped on remote.
+      expect(result.registered).toBe(true)
+      expect(result.outputId).toBeUndefined()
+      expect(calls).toHaveLength(1) // internalizeAction (basket insertion) happened
     } finally {
       restore()
     }

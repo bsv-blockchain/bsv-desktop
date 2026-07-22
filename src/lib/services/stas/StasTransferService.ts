@@ -1,22 +1,25 @@
 /**
- * StasTransferService — STAS transfer via createAction + signAction.
+ * StasTransferService — STAS transfer via a storage-agnostic 2-transaction flow.
  *
- * The STAS engine assumes exactly 2 outputs in the transfer tx:
+ * Token tx (TX2) output layout:
  *   vout 0 = new STAS to recipient
- *   vout 1 = BSV change back to funder
+ *   vout 1 = (partial send) STAS token-change back to the sender
+ *   last   = one BSV P2PKH change output
  *
- * wallet-toolbox's `generateChange` normally adds fragmentation outputs to
- * top up the change basket toward `numberOfDesiredUTXOs` (default 144). To
- * keep the tx at exactly 2 outputs, we LOWER the basket target to 0 before
- * createAction (with `randomizeOutputs: false`), then restore it afterward.
- * This goes through the ACTIVE storage provider (see `walletChangeParams`), so
- * it works on remote storage too — a prior local-only IPC write silently
- * no-op'd on remote and was the cause of STAS/DSTAS sends failing there.
+ * The STAS engine requires exactly ONE BSV change output, but wallet-toolbox's
+ * `createAction` auto-funds and fragments change server-side on remote storage
+ * (building a pool toward `numberOfDesiredUTXOs`). So we remove the token tx from
+ * the wallet's change operations entirely (see services/tokens/twoTx/):
+ *   TX1 — a dedicated self-owned BRC-29 funding output sized to TX2's fee.
+ *   TX2 — [token, funding] → the outputs above; assembled + signed here, then
+ *         broadcast + change-internalized via the twoTx helpers.
+ * No auto-funding ⇒ no server-side change fragmentation ⇒ works on local AND
+ * remote storage.
  *
  * Signing:
- *   - STAS input (our outpoint): externally via `wallet.createSignature` with
- *     the BRC-42 derivation that owns the STAS.
- *   - BSV input (wallet-owned): the wallet signs it internally during signAction.
+ *   - STAS input: externally via `wallet.createSignature` with the BRC-42
+ *     derivation that owns the STAS.
+ *   - Funding input: `signP2pkhInput` (BRC-29 self-owned P2PKH).
  */
 
 import type { WalletInterface } from '@bsv/sdk';

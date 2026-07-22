@@ -1,28 +1,23 @@
 /**
- * DstasTransferService — DSTAS transfer via createAction + signAction.
+ * DstasTransferService — DSTAS transfer via the storage-agnostic 2-transaction
+ * flow (mirror of StasTransferService; see services/tokens/twoTx/).
  *
- * Same architectural shape as StasTransferService: wallet-toolbox owns
- * the tx assembly + funding via createAction; the DSTAS input is signed
- * externally via wallet.createSignature (BRC-42) and the unlocking script
- * is hand-assembled to match the SDK's expected DSTAS witness format
+ * The DSTAS input is signed externally via wallet.createSignature (BRC-42) and
+ * the unlocking script is hand-assembled to match the SDK's DSTAS witness format
  * (mirror of dxs-bsv-token-sdk's input-builder.ts:91-178 — see
  * buildDstasUnlockingScript.ts for the spec).
  *
- * Output layout (per DSTAS_SCRIPT_INVARIANTS.md §1 — Transfer):
+ * Token tx (TX2) output layout (per DSTAS_SCRIPT_INVARIANTS.md §1 — Transfer):
  *   vout 0 = new DSTAS to recipient (spending-type=1, 1-to-1)
- *   vout 1 = BSV change back to funder
+ *   vout 1 = (partial send) DSTAS token-change back to the sender
+ *   last   = one BSV P2PKH change output
  *
- * Funding fragmentation suppressed the same way StasTransferService does
- * (lower default basket's numberOfDesiredUTXOs to 0 around the call,
- * restore on every exit path) — via the ACTIVE storage provider (see
- * walletChangeParams) so it works on remote storage too.
- *
- * Signing:
- *   - DSTAS input (our outpoint): externally via wallet.createSignature
- *     with the BRC-42 derivation that owns the DSTAS — same protocolID
- *     as classic STAS, since the receive namespace is shared.
- *   - BSV input (wallet-owned): the wallet signs it internally during
- *     signAction.
+ * The DSTAS template requires exactly ONE BSV change output, which createAction
+ * can't guarantee on remote storage (server-side change fragmentation). So TX1
+ * creates a dedicated self-owned BRC-29 funding output and TX2 spends
+ * [token, funding], signing both inputs client-side (funding via signP2pkhInput)
+ * and broadcasting + internalizing the change through the twoTx helpers. No
+ * createAction auto-funding ⇒ no fragmentation ⇒ works on remote storage too.
  */
 
 import type { WalletInterface } from '@bsv/sdk'

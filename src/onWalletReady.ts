@@ -32,6 +32,7 @@ import {
   type SendWithResult,
   type TXIDHexString
 } from '@bsv/sdk';
+import { parseWalletPayload, stringifyWalletPayload } from './walletByteJson';
 import {
   beginHttpBridgeSession,
   endHttpBridgeSession,
@@ -335,7 +336,7 @@ export const onWalletReady = async (
       response = {
         request_id: req.request_id,
         status: 503,
-        body: JSON.stringify({ message: 'Wallet not ready' })
+        body: stringifyWalletPayload({ message: 'Wallet not ready' })
       };
       window.electronAPI.sendHttpResponse(response);
       return;
@@ -348,7 +349,7 @@ export const onWalletReady = async (
         response = {
           request_id: req.request_id,
           status: 400,
-          body: JSON.stringify({ message: 'Origin header is required' })
+          body: stringifyWalletPayload({ message: 'Origin header is required' })
         };
         window.electronAPI.sendHttpResponse(response);
         return;
@@ -361,12 +362,12 @@ export const onWalletReady = async (
         // 1. createAction
         case '/createAction': {
           try {
-            const args = JSON.parse(req.body) as CreateActionArgs;
+            const args = parseWalletPayload(req.body) as CreateActionArgs;
             const result = await wallet.createAction(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             if (isWerrReviewActions(error)) {
@@ -375,14 +376,14 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify(e)
+                body: stringifyWalletPayload(e)
               };
             } else {
               console.error('createAction error:', error);
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify({
+                body: stringifyWalletPayload({
                   message: error instanceof Error ? error.message : String(error)
                 })
               };
@@ -394,12 +395,12 @@ export const onWalletReady = async (
         // 2. signAction
         case '/signAction': {
           try {
-            const args = JSON.parse(req.body) as SignActionArgs;
+            const args = parseWalletPayload(req.body) as SignActionArgs;
             const result = await wallet.signAction(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             if (isWerrReviewActions(error)) {
@@ -408,14 +409,14 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify(e)
+                body: stringifyWalletPayload(e)
               };
             } else {
               console.error('signAction error:', error);
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify({
+                body: stringifyWalletPayload({
                   message: error instanceof Error ? error.message : String(error)
                 })
               };
@@ -427,19 +428,19 @@ export const onWalletReady = async (
         // 3. abortAction
         case '/abortAction': {
           try {
-            const args = JSON.parse(req.body) as AbortActionArgs;
+            const args = parseWalletPayload(req.body) as AbortActionArgs;
             const result = await wallet.abortAction(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('abortAction error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -450,19 +451,19 @@ export const onWalletReady = async (
         // 4. listActions
         case '/listActions': {
           try {
-            const args = JSON.parse(req.body) as ListActionsArgs;
+            const args = parseWalletPayload(req.body) as ListActionsArgs;
             const result = await wallet.listActions(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('listActions error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -473,12 +474,12 @@ export const onWalletReady = async (
         // 5. internalizeAction
         case '/internalizeAction': {
           try {
-            const args = JSON.parse(req.body) as InternalizeActionArgs;
+            const args = parseWalletPayload(req.body) as InternalizeActionArgs;
             const result = await wallet.internalizeAction(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             if (isWerrReviewActions(error)) {
@@ -487,14 +488,14 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify(e)
+                body: stringifyWalletPayload(e)
               };
             } else {
               console.error('internalizeAction error:', error);
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify({
+                body: stringifyWalletPayload({
                   message: error instanceof Error ? error.message : String(error)
                 }),
               };
@@ -506,19 +507,19 @@ export const onWalletReady = async (
         // 6. listOutputs
         case '/listOutputs': {
           try {
-            const args = JSON.parse(req.body) as ListOutputsArgs;
+            const args = parseWalletPayload(req.body) as ListOutputsArgs;
             const result = await wallet.listOutputs(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('listOutputs error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -529,19 +530,19 @@ export const onWalletReady = async (
         // 7. relinquishOutput
         case '/relinquishOutput': {
           try {
-            const args = JSON.parse(req.body) as RelinquishOutputArgs;
+            const args = parseWalletPayload(req.body) as RelinquishOutputArgs;
             const result = await wallet.relinquishOutput(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('relinquishOutput error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -552,19 +553,19 @@ export const onWalletReady = async (
         // 8. getPublicKey
         case '/getPublicKey': {
           try {
-            const args = JSON.parse(req.body) as GetPublicKeyArgs;
+            const args = parseWalletPayload(req.body) as GetPublicKeyArgs;
             const result = await wallet.getPublicKey(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('getPublicKey error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -575,19 +576,19 @@ export const onWalletReady = async (
         // 9. revealCounterpartyKeyLinkage
         case '/revealCounterpartyKeyLinkage': {
           try {
-            const args = JSON.parse(req.body) as RevealCounterpartyKeyLinkageArgs;
+            const args = parseWalletPayload(req.body) as RevealCounterpartyKeyLinkageArgs;
             const result = await wallet.revealCounterpartyKeyLinkage(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('revealCounterpartyKeyLinkage error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -598,19 +599,19 @@ export const onWalletReady = async (
         // 10. revealSpecificKeyLinkage
         case '/revealSpecificKeyLinkage': {
           try {
-            const args = JSON.parse(req.body) as RevealSpecificKeyLinkageArgs;
+            const args = parseWalletPayload(req.body) as RevealSpecificKeyLinkageArgs;
             const result = await wallet.revealSpecificKeyLinkage(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('revealSpecificKeyLinkage error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -621,19 +622,19 @@ export const onWalletReady = async (
         // 11. encrypt
         case '/encrypt': {
           try {
-            const args = JSON.parse(req.body) as WalletEncryptArgs;
+            const args = parseWalletPayload(req.body) as WalletEncryptArgs;
             const result = await wallet.encrypt(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('encrypt error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -644,19 +645,19 @@ export const onWalletReady = async (
         // 12. decrypt
         case '/decrypt': {
           try {
-            const args = JSON.parse(req.body) as WalletDecryptArgs;
+            const args = parseWalletPayload(req.body) as WalletDecryptArgs;
             const result = await wallet.decrypt(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('decrypt error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -667,19 +668,19 @@ export const onWalletReady = async (
         // 13. createHmac
         case '/createHmac': {
           try {
-            const args = JSON.parse(req.body) as CreateHmacArgs;
+            const args = parseWalletPayload(req.body) as CreateHmacArgs;
             const result = await wallet.createHmac(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('createHmac error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -690,19 +691,19 @@ export const onWalletReady = async (
         // 14. verifyHmac
         case '/verifyHmac': {
           try {
-            const args = JSON.parse(req.body) as VerifyHmacArgs;
+            const args = parseWalletPayload(req.body) as VerifyHmacArgs;
             const result = await wallet.verifyHmac(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('verifyHmac error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -713,19 +714,19 @@ export const onWalletReady = async (
         // 15. createSignature
         case '/createSignature': {
           try {
-            const args = JSON.parse(req.body) as CreateSignatureArgs;
+            const args = parseWalletPayload(req.body) as CreateSignatureArgs;
             const result = await wallet.createSignature(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('createSignature error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -736,19 +737,19 @@ export const onWalletReady = async (
         // 16. verifySignature
         case '/verifySignature': {
           try {
-            const args = JSON.parse(req.body) as VerifySignatureArgs;
+            const args = parseWalletPayload(req.body) as VerifySignatureArgs;
             const result = await wallet.verifySignature(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('verifySignature error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -759,19 +760,19 @@ export const onWalletReady = async (
         // 17. acquireCertificate
         case '/acquireCertificate': {
           try {
-            const args = JSON.parse(req.body) as AcquireCertificateArgs;
+            const args = parseWalletPayload(req.body) as AcquireCertificateArgs;
             const result = await wallet.acquireCertificate(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('acquireCertificate error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -782,19 +783,19 @@ export const onWalletReady = async (
         // 18. listCertificates
         case '/listCertificates': {
           try {
-            const args = JSON.parse(req.body) as ListCertificatesArgs;
+            const args = parseWalletPayload(req.body) as ListCertificatesArgs;
             const result = await wallet.listCertificates(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('listCertificates error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -805,19 +806,19 @@ export const onWalletReady = async (
         // 19. proveCertificate
         case '/proveCertificate': {
           try {
-            const args = JSON.parse(req.body) as ProveCertificateArgs;
+            const args = parseWalletPayload(req.body) as ProveCertificateArgs;
             const result = await wallet.proveCertificate(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('proveCertificate error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -828,19 +829,19 @@ export const onWalletReady = async (
         // 20. relinquishCertificate
         case '/relinquishCertificate': {
           try {
-            const args = JSON.parse(req.body) as RelinquishCertificateArgs;
+            const args = parseWalletPayload(req.body) as RelinquishCertificateArgs;
             const result = await wallet.relinquishCertificate(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('relinquishCertificate error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -851,19 +852,19 @@ export const onWalletReady = async (
         // 21. discoverByIdentityKey
         case '/discoverByIdentityKey': {
           try {
-            const args = JSON.parse(req.body) as DiscoverByIdentityKeyArgs;
+            const args = parseWalletPayload(req.body) as DiscoverByIdentityKeyArgs;
             const result = await wallet.discoverByIdentityKey(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('discoverByIdentityKey error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -874,19 +875,19 @@ export const onWalletReady = async (
         // 22. discoverByAttributes
         case '/discoverByAttributes': {
           try {
-            const args = JSON.parse(req.body) as DiscoverByAttributesArgs;
+            const args = parseWalletPayload(req.body) as DiscoverByAttributesArgs;
             const result = await wallet.discoverByAttributes(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('discoverByAttributes error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -901,14 +902,14 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('isAuthenticated error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -923,14 +924,14 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('waitForAuthentication error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -945,14 +946,14 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('getHeight error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -963,19 +964,19 @@ export const onWalletReady = async (
         // 26. getHeaderForHeight
         case '/getHeaderForHeight': {
           try {
-            const args = JSON.parse(req.body) as GetHeaderArgs;
+            const args = parseWalletPayload(req.body) as GetHeaderArgs;
             const result = await wallet.getHeaderForHeight(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('getHeaderForHeight error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -990,14 +991,14 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('getNetwork error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -1012,14 +1013,14 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('getVersion error:', error);
             response = {
               request_id: req.request_id,
               status: 400,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 message: error instanceof Error ? error.message : String(error)
               }),
             };
@@ -1042,7 +1043,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 503,
-              body: JSON.stringify({ error: 'STAS services not ready' }),
+              body: stringifyWalletPayload({ error: 'STAS services not ready' }),
             };
             break;
           }
@@ -1081,13 +1082,13 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify({ holdings, total: holdings.length }),
+              body: stringifyWalletPayload({ holdings, total: holdings.length }),
             };
           } catch (e) {
             response = {
               request_id: req.request_id,
               status: 500,
-              body: JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
+              body: stringifyWalletPayload({ error: e instanceof Error ? e.message : String(e) }),
             };
           }
           break;
@@ -1098,7 +1099,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 503,
-              body: JSON.stringify({ error: 'STAS services not ready' }),
+              body: stringifyWalletPayload({ error: 'STAS services not ready' }),
             };
             break;
           }
@@ -1142,13 +1143,13 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify({ tokens: enhanced }),
+              body: stringifyWalletPayload({ tokens: enhanced }),
             };
           } catch (e) {
             response = {
               request_id: req.request_id,
               status: 500,
-              body: JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
+              body: stringifyWalletPayload({ error: e instanceof Error ? e.message : String(e) }),
             };
           }
           break;
@@ -1159,7 +1160,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 503,
-              body: JSON.stringify({ error: 'STAS services not ready' }),
+              body: stringifyWalletPayload({ error: 'STAS services not ready' }),
             };
             break;
           }
@@ -1176,7 +1177,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 address: base58,
                 ownerFieldHash160: row.ownerFieldHash160,
                 brc42KeyId: row.keyId,
@@ -1187,7 +1188,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 500,
-              body: JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
+              body: stringifyWalletPayload({ error: e instanceof Error ? e.message : String(e) }),
             };
           }
           break;
@@ -1198,13 +1199,13 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 503,
-              body: JSON.stringify({ error: 'STAS services not ready' }),
+              body: stringifyWalletPayload({ error: 'STAS services not ready' }),
             };
             break;
           }
           try {
             const { transfer, identityKey, chain } = _currentStasBundle;
-            const parsed = (req.body ? JSON.parse(req.body) : {}) as {
+            const parsed = (req.body ? parseWalletPayload(req.body) : {}) as {
               outpoint?: string;
               recipientAddress?: string;
             };
@@ -1214,7 +1215,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify({
+                body: stringifyWalletPayload({
                   error: 'outpoint and recipientAddress are required',
                 }),
               };
@@ -1226,7 +1227,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify({ error: 'outpoint must be "<txid64hex>.<vout>"' }),
+                body: stringifyWalletPayload({ error: 'outpoint must be "<txid64hex>.<vout>"' }),
               };
               break;
             }
@@ -1245,7 +1246,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 404,
-                body: JSON.stringify({
+                body: stringifyWalletPayload({
                   error: `STAS UTXO ${outpoint} not found in wallet`,
                 }),
               };
@@ -1260,7 +1261,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 503,
-                body: JSON.stringify({
+                body: stringifyWalletPayload({
                   ok: false,
                   reason: 'STAS transfer permission gate not ready',
                 }),
@@ -1290,7 +1291,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 403,
-                body: JSON.stringify({
+                body: stringifyWalletPayload({
                   ok: false,
                   reason: 'transfer denied by user',
                 }),
@@ -1321,7 +1322,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (e) {
             // Surface the actual exception so future failures are easier to
@@ -1332,7 +1333,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 500,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 ok: false,
                 reason: e instanceof Error ? e.message : String(e),
               }),
@@ -1356,18 +1357,18 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 503,
-                body: JSON.stringify({ error: 'STAS discovery service not ready' }),
+                body: stringifyWalletPayload({ error: 'STAS discovery service not ready' }),
               };
               break;
             }
-            const { txid, symbol, name } = (req.body ? JSON.parse(req.body) : {}) as {
+            const { txid, symbol, name } = (req.body ? parseWalletPayload(req.body) : {}) as {
               txid?: string; symbol?: string; name?: string;
             };
             if (typeof txid !== 'string' || !/^[0-9a-f]{64}$/i.test(txid)) {
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify({ error: 'txid (64-hex) is required' }),
+                body: stringifyWalletPayload({ error: 'txid (64-hex) is required' }),
               };
               break;
             }
@@ -1381,13 +1382,13 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (e) {
             response = {
               request_id: req.request_id,
               status: 500,
-              body: JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
+              body: stringifyWalletPayload({ error: e instanceof Error ? e.message : String(e) }),
             };
           }
           break;
@@ -1406,7 +1407,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 503,
-              body: JSON.stringify({ error: 'BSV-21 services not ready' }),
+              body: stringifyWalletPayload({ error: 'BSV-21 services not ready' }),
             };
             break;
           }
@@ -1416,7 +1417,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 503,
-                body: JSON.stringify({ error: 'BSV-21 key deriver unavailable' }),
+                body: stringifyWalletPayload({ error: 'BSV-21 key deriver unavailable' }),
               };
               break;
             }
@@ -1428,7 +1429,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 address: base58,
                 ownerFieldHash160: row.ownerFieldHash160,
                 brc42KeyId: row.keyId,
@@ -1439,7 +1440,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 500,
-              body: JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
+              body: stringifyWalletPayload({ error: e instanceof Error ? e.message : String(e) }),
             };
           }
           break;
@@ -1463,16 +1464,16 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 503,
-                body: JSON.stringify({ error: 'BSV-21 discovery service not ready' }),
+                body: stringifyWalletPayload({ error: 'BSV-21 discovery service not ready' }),
               };
               break;
             }
-            const { txid } = (req.body ? JSON.parse(req.body) : {}) as { txid?: string };
+            const { txid } = (req.body ? parseWalletPayload(req.body) : {}) as { txid?: string };
             if (typeof txid !== 'string' || !/^[0-9a-f]{64}$/i.test(txid)) {
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify({ error: 'txid (64-hex) is required' }),
+                body: stringifyWalletPayload({ error: 'txid (64-hex) is required' }),
               };
               break;
             }
@@ -1480,13 +1481,13 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (e) {
             response = {
               request_id: req.request_id,
               status: 500,
-              body: JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
+              body: stringifyWalletPayload({ error: e instanceof Error ? e.message : String(e) }),
             };
           }
           break;
@@ -1507,11 +1508,11 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 503,
-                body: JSON.stringify({ error: 'BSV-21 discovery service not ready' }),
+                body: stringifyWalletPayload({ error: 'BSV-21 discovery service not ready' }),
               };
               break;
             }
-            const { txid, vout } = (req.body ? JSON.parse(req.body) : {}) as {
+            const { txid, vout } = (req.body ? parseWalletPayload(req.body) : {}) as {
               txid?: string;
               vout?: number;
             };
@@ -1519,7 +1520,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify({ error: 'txid (64-hex) is required' }),
+                body: stringifyWalletPayload({ error: 'txid (64-hex) is required' }),
               };
               break;
             }
@@ -1527,7 +1528,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify({ error: 'vout (non-negative integer) is required' }),
+                body: stringifyWalletPayload({ error: 'vout (non-negative integer) is required' }),
               };
               break;
             }
@@ -1541,13 +1542,13 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (e) {
             response = {
               request_id: req.request_id,
               status: 500,
-              body: JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
+              body: stringifyWalletPayload({ error: e instanceof Error ? e.message : String(e) }),
             };
           }
           break;
@@ -1565,20 +1566,20 @@ export const onWalletReady = async (
 
         case '/peerToken/identity': {
           if (!_currentPeerTokensBundle) {
-            response = { request_id: req.request_id, status: 503, body: JSON.stringify({ error: 'Peer tokens not ready' }) };
+            response = { request_id: req.request_id, status: 503, body: stringifyWalletPayload({ error: 'Peer tokens not ready' }) };
             break;
           }
           response = {
             request_id: req.request_id,
             status: 200,
-            body: JSON.stringify({ identityKey: _currentPeerTokensBundle.identityKey }),
+            body: stringifyWalletPayload({ identityKey: _currentPeerTokensBundle.identityKey }),
           };
           break;
         }
 
         case '/peerToken/holdings': {
           if (!_currentPeerTokensBundle) {
-            response = { request_id: req.request_id, status: 503, body: JSON.stringify({ error: 'Peer tokens not ready' }) };
+            response = { request_id: req.request_id, status: 503, body: stringifyWalletPayload({ error: 'Peer tokens not ready' }) };
             break;
           }
           try {
@@ -1587,7 +1588,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify({
+              body: stringifyWalletPayload({
                 holdings: holdings.map((h) => ({
                   outpoint: h.key,
                   protocol: h.protocol,
@@ -1598,30 +1599,30 @@ export const onWalletReady = async (
               }),
             };
           } catch (e) {
-            response = { request_id: req.request_id, status: 500, body: JSON.stringify({ error: e instanceof Error ? e.message : String(e) }) };
+            response = { request_id: req.request_id, status: 500, body: stringifyWalletPayload({ error: e instanceof Error ? e.message : String(e) }) };
           }
           break;
         }
 
         case '/peerToken/send': {
           if (!_currentPeerTokensBundle) {
-            response = { request_id: req.request_id, status: 503, body: JSON.stringify({ error: 'Peer tokens not ready' }) };
+            response = { request_id: req.request_id, status: 503, body: stringifyWalletPayload({ error: 'Peer tokens not ready' }) };
             break;
           }
           try {
             const { client, wallet: w, identityKey, chain, originator } = _currentPeerTokensBundle;
-            const { outpoint, recipient, amount, dryRun } = (req.body ? JSON.parse(req.body) : {}) as {
+            const { outpoint, recipient, amount, dryRun } = (req.body ? parseWalletPayload(req.body) : {}) as {
               outpoint?: string; recipient?: string; amount?: string | number; dryRun?: boolean;
             };
             if (!outpoint || !recipient) {
-              response = { request_id: req.request_id, status: 400, body: JSON.stringify({ error: 'outpoint and recipient are required' }) };
+              response = { request_id: req.request_id, status: 400, body: stringifyWalletPayload({ error: 'outpoint and recipient are required' }) };
               break;
             }
             // Re-resolve the full source (incl. owner override) from the outpoint.
             const holdings = await loadPeerHoldings({ wallet: w, identityKey, chain, originator });
             const holding = holdings.find((h) => h.key === outpoint);
             if (!holding) {
-              response = { request_id: req.request_id, status: 404, body: JSON.stringify({ error: `holding ${outpoint} not found (already spent or wrong wallet)` }) };
+              response = { request_id: req.request_id, status: 404, body: stringifyWalletPayload({ error: `holding ${outpoint} not found (already spent or wrong wallet)` }) };
               break;
             }
             const params = {
@@ -1632,57 +1633,57 @@ export const onWalletReady = async (
             };
             if (dryRun) {
               const token = await client.createTokenToken(params, true);
-              response = { request_id: req.request_id, status: 200, body: JSON.stringify({ dryRun: true, token }) };
+              response = { request_id: req.request_id, status: 200, body: stringifyWalletPayload({ dryRun: true, token }) };
             } else {
               const sent = await client.sendToken(params);
-              response = { request_id: req.request_id, status: 200, body: JSON.stringify({ dryRun: false, txid: sent?.txid ?? null, token: sent }) };
+              response = { request_id: req.request_id, status: 200, body: stringifyWalletPayload({ dryRun: false, txid: sent?.txid ?? null, token: sent }) };
             }
           } catch (e) {
-            response = { request_id: req.request_id, status: 500, body: JSON.stringify({ error: e instanceof Error ? e.message : String(e) }) };
+            response = { request_id: req.request_id, status: 500, body: stringifyWalletPayload({ error: e instanceof Error ? e.message : String(e) }) };
           }
           break;
         }
 
         case '/peerToken/incoming': {
           if (!_currentPeerTokensBundle) {
-            response = { request_id: req.request_id, status: 503, body: JSON.stringify({ error: 'Peer tokens not ready' }) };
+            response = { request_id: req.request_id, status: 503, body: stringifyWalletPayload({ error: 'Peer tokens not ready' }) };
             break;
           }
           try {
             const incoming = await _currentPeerTokensBundle.client.listIncomingTokens();
-            response = { request_id: req.request_id, status: 200, body: JSON.stringify({ incoming }) };
+            response = { request_id: req.request_id, status: 200, body: stringifyWalletPayload({ incoming }) };
           } catch (e) {
-            response = { request_id: req.request_id, status: 500, body: JSON.stringify({ error: e instanceof Error ? e.message : String(e) }) };
+            response = { request_id: req.request_id, status: 500, body: stringifyWalletPayload({ error: e instanceof Error ? e.message : String(e) }) };
           }
           break;
         }
 
         case '/peerToken/accept': {
           if (!_currentPeerTokensBundle) {
-            response = { request_id: req.request_id, status: 503, body: JSON.stringify({ error: 'Peer tokens not ready' }) };
+            response = { request_id: req.request_id, status: 503, body: stringifyWalletPayload({ error: 'Peer tokens not ready' }) };
             break;
           }
           try {
             const { client } = _currentPeerTokensBundle;
-            const { messageId } = (req.body ? JSON.parse(req.body) : {}) as { messageId?: string };
+            const { messageId } = (req.body ? parseWalletPayload(req.body) : {}) as { messageId?: string };
             if (!messageId) {
-              response = { request_id: req.request_id, status: 400, body: JSON.stringify({ error: 'messageId is required' }) };
+              response = { request_id: req.request_id, status: 400, body: stringifyWalletPayload({ error: 'messageId is required' }) };
               break;
             }
             const incoming = await client.listIncomingTokens();
             const tok = incoming.find((t: any) => t.messageId === messageId);
             if (!tok) {
-              response = { request_id: req.request_id, status: 404, body: JSON.stringify({ error: `incoming token ${messageId} not found` }) };
+              response = { request_id: req.request_id, status: 404, body: stringifyWalletPayload({ error: `incoming token ${messageId} not found` }) };
               break;
             }
             const r = await client.acceptToken(tok);
             if (typeof r === 'string') {
-              response = { request_id: req.request_id, status: 500, body: JSON.stringify({ error: r }) };
+              response = { request_id: req.request_id, status: 500, body: stringifyWalletPayload({ error: r }) };
             } else {
-              response = { request_id: req.request_id, status: 200, body: JSON.stringify({ accepted: true, protocol: tok.token?.protocol }) };
+              response = { request_id: req.request_id, status: 200, body: stringifyWalletPayload({ accepted: true, protocol: tok.token?.protocol }) };
             }
           } catch (e) {
-            response = { request_id: req.request_id, status: 500, body: JSON.stringify({ error: e instanceof Error ? e.message : String(e) }) };
+            response = { request_id: req.request_id, status: 500, body: stringifyWalletPayload({ error: e instanceof Error ? e.message : String(e) }) };
           }
           break;
         }
@@ -1698,17 +1699,17 @@ export const onWalletReady = async (
         case '/dstas/transfer':
         case '/bsv-21/transfer': {
           if (!_currentPeerTokensBundle?.tokens) {
-            response = { request_id: req.request_id, status: 503, body: JSON.stringify({ error: 'Token services not ready' }) };
+            response = { request_id: req.request_id, status: 503, body: stringifyWalletPayload({ error: 'Token services not ready' }) };
             break;
           }
           const wantProtocol = req.path === '/dstas/transfer' ? 'dstas' : 'bsv-21';
           try {
             const { wallet: w, identityKey, chain, originator, tokens } = _currentPeerTokensBundle;
-            const { outpoint, recipientAddress, amount } = (req.body ? JSON.parse(req.body) : {}) as {
+            const { outpoint, recipientAddress, amount } = (req.body ? parseWalletPayload(req.body) : {}) as {
               outpoint?: string; recipientAddress?: string; amount?: string | number;
             };
             if (!outpoint || !recipientAddress) {
-              response = { request_id: req.request_id, status: 400, body: JSON.stringify({ error: 'outpoint and recipientAddress are required' }) };
+              response = { request_id: req.request_id, status: 400, body: stringifyWalletPayload({ error: 'outpoint and recipientAddress are required' }) };
               break;
             }
             // Resolve the holding's full source from just the outpoint — the
@@ -1716,16 +1717,16 @@ export const onWalletReady = async (
             const holdings = await loadPeerHoldings({ wallet: w, identityKey, chain, originator });
             const holding = holdings.find((h) => h.key === outpoint);
             if (!holding) {
-              response = { request_id: req.request_id, status: 404, body: JSON.stringify({ error: `holding ${outpoint} not found (already spent or wrong wallet)` }) };
+              response = { request_id: req.request_id, status: 404, body: stringifyWalletPayload({ error: `holding ${outpoint} not found (already spent or wrong wallet)` }) };
               break;
             }
             if (holding.protocol !== wantProtocol) {
-              response = { request_id: req.request_id, status: 400, body: JSON.stringify({ error: `outpoint is ${holding.protocol}, not ${wantProtocol}` }) };
+              response = { request_id: req.request_id, status: 400, body: stringifyWalletPayload({ error: `outpoint is ${holding.protocol}, not ${wantProtocol}` }) };
               break;
             }
             const adapter = tokens.getById(holding.protocol);
             if (!adapter?.transferSupported || !adapter.transfer) {
-              response = { request_id: req.request_id, status: 400, body: JSON.stringify({ error: `send not supported for ${holding.protocol}` }) };
+              response = { request_id: req.request_id, status: 400, body: stringifyWalletPayload({ error: `send not supported for ${holding.protocol}` }) };
               break;
             }
             const s: any = holding.source;
@@ -1747,11 +1748,11 @@ export const onWalletReady = async (
               // adapter, matching the Assets page.)
               const sendAmt = amount != null ? String(amount) : String(s.amt ?? '0');
               if (!/^\d+$/.test(sendAmt) || BigInt(sendAmt) <= 0n) {
-                response = { request_id: req.request_id, status: 400, body: JSON.stringify({ error: `amount must be a positive integer (raw token units); got ${sendAmt}` }) };
+                response = { request_id: req.request_id, status: 400, body: stringifyWalletPayload({ error: `amount must be a positive integer (raw token units); got ${sendAmt}` }) };
                 break;
               }
               if (BigInt(sendAmt) > BigInt(s.amt ?? '0')) {
-                response = { request_id: req.request_id, status: 400, body: JSON.stringify({ error: `amount ${sendAmt} exceeds balance ${s.amt}` }) };
+                response = { request_id: req.request_id, status: 400, body: stringifyWalletPayload({ error: `amount ${sendAmt} exceeds balance ${s.amt}` }) };
                 break;
               }
               args = { ...baseArgs, tokenId: s.tokenId ?? s.assetId, sourceAmt: String(s.amt), amount: sendAmt, dec: s.dec, sym: s.sym, icon: s.icon };
@@ -1760,9 +1761,9 @@ export const onWalletReady = async (
             // Origin-gated routes, parity with /peerToken/send, which also
             // avoids the 30s HTTP-bridge timeout racing a human click.
             const result = await adapter.transfer(args);
-            response = { request_id: req.request_id, status: 200, body: JSON.stringify(result) };
+            response = { request_id: req.request_id, status: 200, body: stringifyWalletPayload(result) };
           } catch (e) {
-            response = { request_id: req.request_id, status: 500, body: JSON.stringify({ ok: false, reason: e instanceof Error ? e.message : String(e) }) };
+            response = { request_id: req.request_id, status: 500, body: stringifyWalletPayload({ ok: false, reason: e instanceof Error ? e.message : String(e) }) };
           }
           break;
         }
@@ -1771,7 +1772,7 @@ export const onWalletReady = async (
           response = {
             request_id: req.request_id,
             status: 404,
-            body: JSON.stringify({ error: 'Unknown wallet path: ' + req.path }),
+            body: stringifyWalletPayload({ error: 'Unknown wallet path: ' + req.path }),
           };
           break;
         }
@@ -1784,7 +1785,7 @@ export const onWalletReady = async (
       response = {
         request_id: req.request_id,
         status: 500,
-        body: JSON.stringify({ error: String(e) })
+        body: stringifyWalletPayload({ error: String(e) })
       };
       window.electronAPI.sendHttpResponse(response);
     } finally {

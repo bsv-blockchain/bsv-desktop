@@ -4,7 +4,7 @@
 
 ### Bug Fixes
 
-- Preserve BRC-100 byte arrays across the Electron JSON wallet bridge, including current typed arrays and historical numeric-key objects, so payment, send/receive, cryptographic, and transaction-review flows remain compatible across wallet and app versions.
+- Preserve byte arrays across every BRC-100 and app-specific Electron HTTP wallet route, including current typed arrays and historical numeric-key objects, so payment, send/receive, token, cryptographic, and transaction-review flows remain compatible across wallet and app versions.
 
 ## [2.1.0] - 2026-04-08
 

@@ -279,6 +279,41 @@ describe('onWalletReady', () => {
     )
   })
 
+  it('repairs historical request bytes and emits portable response bytes', async () => {
+    const wallet = makeMockWallet({
+      createAction: vi.fn().mockResolvedValue({
+        txid: '22'.repeat(32),
+        tx: new Uint8Array([4, 5, 6]),
+      }),
+    })
+
+    await onWalletReady(wallet)
+    const handler = mockOnHttpRequest.mock.calls[0][0]
+
+    await handler({
+      request_id: 11,
+      path: '/createAction',
+      headers: { origin: 'https://example.com' },
+      body: JSON.stringify({
+        inputBEEF: { 0: 1, 1: 2, 2: 3 },
+        description: 'compatibility test',
+        outputs: [],
+      }),
+      method: 'POST',
+    })
+
+    expect(wallet.createAction).toHaveBeenCalledWith(
+      expect.objectContaining({ inputBEEF: [1, 2, 3] }),
+      'example.com',
+    )
+    const response = mockSendHttpResponse.mock.calls[0][0]
+    expect(response.status).toBe(200)
+    expect(JSON.parse(response.body)).toEqual({
+      txid: '22'.repeat(32),
+      tx: [4, 5, 6],
+    })
+  })
+
   it('preserves WERR_REVIEW_ACTIONS fields when the class name is minified', async () => {
     const reviewActionResults = [{ txid: '00'.repeat(32), status: 'serviceError' }]
     const sendWithResults = [{ txid: '00'.repeat(32), status: 'failed' }]

@@ -40,13 +40,33 @@ import {
   WalletInterface,
   CachedKeyDeriver,
 } from '@bsv/sdk'
-import { WalletSettingsManager, DEFAULT_SETTINGS, WalletSettings } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
+import { WalletSettingsManager, WalletSettings } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 import { toast } from 'react-toastify'
 import { EventEmittable } from './EventEmittable'
 import { PermissionQueueManager } from './PermissionQueueManager'
 import { PeerPayManager } from './PeerPayManager'
+import { StasKeyDeriver, StasOwnershipService, StasRegistration, StasDiscoveryService, StasTransferService } from './stas'
+import {
+  TokenProtocolRegistry,
+  StasProtocolAdapter,
+  DstasProtocolAdapter,
+  BSV21ProtocolAdapter,
+  BSV21KeyDeriver,
+  OneSatIndexerClient,
+  BSV21Registration,
+  BSV21TransferService,
+  BSV21DiscoveryService,
+} from './tokens'
+import { WocTokenIndexerClient } from './tokens/woc/WocTokenIndexerClient'
+import { BackToGenesisClient } from './tokens/woc/BackToGenesisClient'
+import { DstasTransferService } from './tokens/dstas/DstasTransferService'
+import { PeerTokenClient } from '@bsv/message-box-client'
+import { StasTokenSettlementAdapter } from './tokens/peer/StasTokenSettlementAdapter'
+import { Bsv21TokenSettlementAdapter } from './tokens/peer/Bsv21TokenSettlementAdapter'
+import { DstasTokenSettlementAdapter } from './tokens/peer/DstasTokenSettlementAdapter'
 import { StorageElectronIPC } from '../StorageElectronIPC'
-import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB } from '../config'
+import * as secrets from './secrets'
+import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB, DEFAULT_SETTINGS, MESSAGEBOX_HOST } from '../config'
 import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
 
@@ -59,6 +79,38 @@ export type WalletLifecycle =
   | 'error'
 
 // State exposed to React via snapshot
+/** Bundle of STAS services produced by `_buildWallet` and exposed to the UI. */
+export type StasServices = {
+  keyDeriver: StasKeyDeriver
+  ownership: StasOwnershipService
+  discovery: StasDiscoveryService
+  transfer: StasTransferService
+  /**
+   * Token-protocol adapter registry. Renderers should route transfer
+   * calls through this rather than `transfer` directly — `transfer`
+   * remains exposed for back-compat but only knows classic STAS.
+   */
+  tokens: TokenProtocolRegistry
+  /** BSV-21 key derivation — symmetric counterpart to `keyDeriver` (STAS). */
+  bsv21KeyDeriver: BSV21KeyDeriver
+  /** BSV-21 discovery loop — symmetric counterpart to `discovery` (STAS). */
+  bsv21Discovery: BSV21DiscoveryService
+  /** 1Sat overlay REST client — exposed for diagnostics + the receive UI. */
+  bsv21Indexer: OneSatIndexerClient
+  /**
+   * Back-to-Genesis provenance client. Verifies that a held/received token
+   * output provably descends from its genesis mint (counterfeit detection).
+   * Reads WOC's bStore-walking endpoints, independent of the token index.
+   */
+  backToGenesis: BackToGenesisClient
+  /**
+   * Peer-to-peer token client over MessageBox (the token analog of PeerPay).
+   * Sends/accepts STAS, DSTAS, and BSV-21 tokens directly to a recipient's
+   * identity key via the configured MessageBox host.
+   */
+  peerTokens: PeerTokenClient
+}
+
 export type WalletServiceSnapshot = {
   lifecycle: WalletLifecycle
   // Config
@@ -66,7 +118,7 @@ export type WalletServiceSnapshot = {
   wabUrl: string
   wabInfo: any
   selectedAuthMethod: string
-  selectedNetwork: 'main' | 'test'
+  selectedNetwork: 'main' | 'test' | 'ttn'
   selectedStorageUrl: string
   messageBoxUrl: string
   useRemoteStorage: boolean
@@ -92,6 +144,8 @@ export type WalletServiceSnapshot = {
    * party) must go through `managers.permissionsManager`, not this field.
    */
   wallet?: WalletInterface
+  /** STAS BRC-42 services + discovery loop (Tasks 3/4). */
+  stas?: StasServices
   settings: WalletSettings
   activeProfile: WalletProfile | null
   snapshotLoaded: boolean
@@ -116,7 +170,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   private _wabUrl = ''
   private _wabInfo: any = null
   private _selectedAuthMethod = ''
-  private _selectedNetwork: 'main' | 'test' = DEFAULT_CHAIN
+  private _selectedNetwork: 'main' | 'test' | 'ttn' = DEFAULT_CHAIN
   private _selectedStorageUrl = ''
   private _messageBoxUrl = ''
   private _useRemoteStorage = false
@@ -127,6 +181,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   // ---- Runtime state ----
   private _managers: WalletServiceSnapshot['managers'] = {}
   private _wallet?: WalletInterface
+  private _stas?: StasServices
   private _settings: WalletSettings = DEFAULT_SETTINGS
   private _activeProfile: WalletProfile | null = null
   private _snapshotLoaded = false
@@ -162,6 +217,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   get adminOriginator() { return this._adminOriginator }
   get managers() { return this._managers }
   get wallet() { return this._wallet }
+  /** STAS BRC-42 services (ownership recognition + receive-key derivation). */
+  get stas() { return this._stas }
   get settings() { return this._settings }
   get activeProfile() { return this._activeProfile }
   get snapshotLoaded() { return this._snapshotLoaded }
@@ -184,6 +241,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       adminOriginator: this._adminOriginator,
       managers: this._managers,
       wallet: this._wallet,
+      stas: this._stas,
       settings: this._settings,
       activeProfile: this._activeProfile,
       snapshotLoaded: this._snapshotLoaded,
@@ -288,10 +346,11 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
    * Call this once on app startup before calling initialize().
    */
   restoreConfigFromSnapshot() {
-    if (!localStorage.snap || this._lifecycle !== 'unconfigured') return
+    const snap = secrets.getSnapshot()
+    if (!snap || this._lifecycle !== 'unconfigured') return
 
     try {
-      const snapArr = Utils.toArray(localStorage.snap, 'base64')
+      const snapArr = Utils.toArray(snap, 'base64')
       const { config } = this._loadEnhancedSnapshot(snapArr)
       if (!config) return
 
@@ -323,7 +382,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
    * Fetch WAB server info. For new users with WAB auto-config.
    */
   async fetchAndAutoConfig(): Promise<void> {
-    if (!localStorage.snap && this._lifecycle === 'unconfigured' && this._loginType === 'wab' && this._wabUrl) {
+    if (!secrets.getSnapshot() && this._lifecycle === 'unconfigured' && this._loginType === 'wab' && this._wabUrl) {
       try {
         const response = await fetch(`${this._wabUrl}/info`)
         if (!response.ok) throw new Error(`Server responded with ${response.status}`)
@@ -420,8 +479,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       // For direct-key returning users, auto-provide stored key.
       // NOTE: providePrimaryKey calls _buildWallet internally, which will advance
       // lifecycle to 'ready'. We must NOT overwrite that afterwards.
-      if (directKeyMode && localStorage.snap && localStorage.getItem('primaryKeyHex')) {
-        const storedHex = localStorage.getItem('primaryKeyHex')!.trim()
+      if (directKeyMode && secrets.getSnapshot() && secrets.getKeyHex()) {
+        const storedHex = secrets.getKeyHex()!.trim()
         if (storedHex) {
           try {
             const keyBytes = Utils.toArray(storedHex, 'hex')
@@ -479,6 +538,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       const storageManager = new WalletStorageManager(keyDeriver.identityKey, activeStorage, [])
       const signer = new WalletSigner(chain, keyDeriver as any, storageManager)
       const wallet = new Wallet(signer, services, undefined, privilegedKeyManager)
+      // Set default settings including "Who I Am" certifier before first get().
+      // config is private in the type declarations but settable at runtime.
+      ;(wallet.settingsManager as any).config = { defaultSettings: DEFAULT_SETTINGS }
 
       if (this._useRemoteStorage) {
         const client = new StorageClient(wallet, this._selectedStorageUrl)
@@ -522,6 +584,101 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       }
       this._wallet = wallet
 
+      // Token indexers (WhatsOnChain, 1Sat, Back-to-Genesis) only exist for
+      // mainnet and testnet. Upstream widened `chain` to include TeraTestNet
+      // ('ttn'), which has no token coverage, so collapse it onto 'test' for
+      // the token services — they still initialize, they just find nothing on
+      // ttn. The full `chain` stays on the wallet/storage services above.
+      const tokenChain: 'main' | 'test' = chain === 'main' ? 'main' : 'test'
+
+      // STAS BRC-42 services — ownership recognition + receive-key derivation,
+      // plus the Task-4 discovery loop (WoC scan -> internalizeAction).
+      const stasKeyDeriver = new StasKeyDeriver(wallet, keyDeriver.identityKey, tokenChain)
+      const stasRegistration = new StasRegistration(wallet, keyDeriver.identityKey, tokenChain)
+      const stasTransfer = new StasTransferService(wallet, keyDeriver.identityKey, tokenChain)
+
+      // DSTAS transfer service (F3) — shares the STAS BRC-42 receive
+      // namespace, builds the new output via the SDK's pure
+      // buildDstasLockingScript, and assembles the DSTAS unlocking
+      // script byte-for-byte to match the template's witness format.
+      const dstasTransfer = new DstasTransferService(wallet, keyDeriver.identityKey, tokenChain)
+
+      // BSV-21 services — separate BRC-42 namespace, 1Sat REST indexer,
+      // standard P2PKH unlock path.
+      const bsv21KeyDeriver = new BSV21KeyDeriver(wallet, keyDeriver.identityKey, tokenChain)
+      const bsv21Indexer = new OneSatIndexerClient({ chain: tokenChain })
+      const bsv21Registration = new BSV21Registration(wallet, keyDeriver.identityKey, tokenChain)
+      const bsv21Transfer = new BSV21TransferService({
+        wallet,
+        identityKey: keyDeriver.identityKey,
+        chain: tokenChain,
+        deriver: bsv21KeyDeriver,
+        indexer: bsv21Indexer,
+      })
+
+      // Token-protocol adapter registry. Order matters: STAS's prefix sniff
+      // is cheap and unambiguous, DSTAS's SDK reader next, BSV-21's ord
+      // envelope last (also cheap but distinct prefix).
+      const tokens = new TokenProtocolRegistry()
+      tokens.register(new StasProtocolAdapter(stasTransfer))
+      tokens.register(new DstasProtocolAdapter(dstasTransfer))
+      tokens.register(new BSV21ProtocolAdapter(bsv21Transfer))
+
+      // Token discovery — WhatsOnChain is the single source for all three
+      // standards: STAS (by base58 address) and DSTAS (by owner hash160) ride
+      // StasDiscoveryService, BSV-21 rides BSV21DiscoveryService, all fed by
+      // the same WocTokenIndexerClient.
+      const wocIndexer = new WocTokenIndexerClient({ chain: tokenChain })
+      const backToGenesis = new BackToGenesisClient({ chain: tokenChain })
+
+      const stasDiscovery = new StasDiscoveryService({
+        deriver: stasKeyDeriver,
+        indexer: wocIndexer,
+        registration: stasRegistration,
+        wallet,
+        registry: tokens,
+      })
+      const bsv21Discovery = new BSV21DiscoveryService({
+        deriver: bsv21KeyDeriver,
+        indexer: wocIndexer,
+        registration: bsv21Registration,
+        wallet,
+      })
+
+      // Peer-token client (token analog of PeerPay). Uses the same raw
+      // `wallet` the token services use, so signing/derivation namespaces
+      // match. Each adapter reuses the existing transfer-service building
+      // blocks; the BRC-29 owner derivation lives inside the adapters.
+      const peerTokens = new PeerTokenClient({
+        messageBoxHost: this._messageBoxUrl || MESSAGEBOX_HOST,
+        walletClient: wallet,
+        originator: this._adminOriginator,
+        adapters: [
+          new StasTokenSettlementAdapter(wallet, keyDeriver.identityKey, tokenChain),
+          new Bsv21TokenSettlementAdapter({
+            wallet,
+            identityKey: keyDeriver.identityKey,
+            chain: tokenChain,
+            deriver: bsv21KeyDeriver,
+            indexer: bsv21Indexer,
+          }),
+          new DstasTokenSettlementAdapter(wallet, keyDeriver.identityKey, tokenChain),
+        ],
+      })
+
+      this._stas = {
+        keyDeriver: stasKeyDeriver,
+        ownership: new StasOwnershipService(stasKeyDeriver),
+        discovery: stasDiscovery,
+        transfer: stasTransfer,
+        tokens,
+        bsv21KeyDeriver,
+        bsv21Discovery,
+        bsv21Indexer,
+        backToGenesis,
+        peerTokens,
+      }
+
       // Load settings
       try {
         const userSettings = await (wallet as any).settingsManager?.get()
@@ -536,8 +693,13 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         await this.peerPay.createClient(permissionsManager, this._messageBoxUrl, this._adminOriginator)
       }
 
+      // Clear the initializing flag BEFORE the ready emit so React (e.g. Greeter)
+      // does not stay stuck on the non-interactive initializingBackendServices screen.
+      // Previously this was only cleared in `finally` without an emit, so the UI
+      // never learned the flag was false and hung forever after password login.
+      this._initializingBackendServices = false
       this._lifecycle = 'ready'
-      this._snapshotLoaded = !!localStorage.snap && !!this._managers.walletManager
+      this._snapshotLoaded = !!secrets.getSnapshot() && !!this._managers.walletManager
 
       this._emitState()
       return permissionsManager
@@ -545,10 +707,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       console.error('[WalletService] _buildWallet failed:', error)
       toast.error('Failed to build wallet: ' + error.message)
       this._initializingBackendServices = false
+      this._lifecycle = this._managers.walletManager ? 'authenticated' : 'error'
       this._emitState()
       return null
-    } finally {
-      this._initializingBackendServices = false
     }
   }
 
@@ -564,7 +725,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     }
 
     if (this._loginType === 'direct-key') {
-      const storedHex = localStorage.getItem('primaryKeyHex')
+      const storedHex = secrets.getKeyHex()
       if (storedHex) {
         try {
           const keyDeriver = new CachedKeyDeriver(new PrivateKey(Utils.toArray(storedHex.trim(), 'hex')))
@@ -616,6 +777,22 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       messageBoxUrl: configOverrides?.messageBoxUrl ?? this._messageBoxUrl,
     }
 
+    // Dual-write non-secret boot config for pre-unlock routing after restart.
+    // Do not overwrite unlockMethods (set at vault enroll).
+    void window.electronAPI?.bootConfig?.set({
+      version: 1,
+      hasVault: true,
+      network: config.network,
+      loginType: config.loginType,
+      wabUrl: config.wabUrl,
+      storageUrl: config.storageUrl,
+      messageBoxUrl: config.messageBoxUrl,
+      authMethod: config.authMethod,
+      useRemoteStorage: config.useRemoteStorage,
+      useMessageBox: config.useMessageBox,
+      backupStorageUrls: config.backupStorageUrls,
+    }).catch((err: any) => console.warn('[WalletService] bootConfig set failed:', err))
+
     const configJson = JSON.stringify(config)
     const configBytes = Array.from(new TextEncoder().encode(configJson))
 
@@ -661,14 +838,15 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   }
 
   private async _loadWalletSnapshot(walletManager: any) {
-    if (!localStorage.snap) return
+    const snap = secrets.getSnapshot()
+    if (!snap) return
     try {
-      const snapArr = Utils.toArray(localStorage.snap, 'base64')
+      const snapArr = Utils.toArray(snap, 'base64')
       const { walletSnapshot } = this._loadEnhancedSnapshot(snapArr)
       await walletManager.loadSnapshot(walletSnapshot)
     } catch (err: any) {
       console.error('[WalletService] Error loading snapshot:', err)
-      localStorage.removeItem('snap')
+      secrets.clearSnapshot()
       toast.error("Couldn't load saved data: " + err.message)
     }
   }
@@ -720,7 +898,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
 
     const newBackupUrls = [...this._backupStorageUrls, url]
     const snapshot = this.saveEnhancedSnapshot({ backupStorageUrls: newBackupUrls })
-    localStorage.snap = snapshot
+    secrets.setSnapshot(snapshot)
     this._backupStorageUrls = newBackupUrls
     this._emitState()
     toast.success('Backup storage added successfully!')
@@ -742,7 +920,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       toast.error('Failed to remove backup: could not save snapshot')
       throw err
     }
-    localStorage.snap = snapshot
+    secrets.setSnapshot(snapshot)
     this._backupStorageUrls = newBackupUrls
     this._emitState()
 
@@ -849,7 +1027,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     this._backupStorageUrls = newBackups
 
     const snapshot = this.saveEnhancedSnapshot()
-    localStorage.snap = snapshot
+    secrets.setSnapshot(snapshot)
     this._emitState()
 
     const visiblePrimaryAfter = this._useRemoteStorage ? this._selectedStorageUrl : 'LOCAL_STORAGE'
@@ -874,7 +1052,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     }
 
     const snapshot = this.saveEnhancedSnapshot({ messageBoxUrl: trimmedUrl, useMessageBox: true })
-    localStorage.snap = snapshot
+    secrets.setSnapshot(snapshot)
     this._emitState()
     toast.success('Message Box URL configured successfully!')
   }
@@ -885,7 +1063,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     this._useMessageBox = false
 
     const snapshot = this.saveEnhancedSnapshot()
-    localStorage.snap = snapshot
+    secrets.setSnapshot(snapshot)
     this._emitState()
     toast.success('Message Box URL removed successfully!')
   }
@@ -915,6 +1093,13 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     for (const [key, value] of Object.entries(preservedKeys)) {
       localStorage.setItem(key, value)
     }
+
+    // Clear wallet secrets and lock the vault, but KEEP enrollment (passphrase +
+    // biometrics wraps). Destroying the vault forced "Create vault" on every logout.
+    void secrets.endSession().catch((err) =>
+      console.warn('[WalletService] endSession on logout failed:', err)
+    )
+    secrets.clearCache()
 
     this._managers = {}
     this._wallet = undefined

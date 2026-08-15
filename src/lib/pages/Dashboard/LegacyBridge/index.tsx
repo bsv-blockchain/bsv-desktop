@@ -29,6 +29,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { PublicKey, P2PKH, Beef, Utils, Script, WalletProtocol, InternalizeActionArgs, InternalizeOutput, PrivateKey, AtomicBEEF } from '@bsv/sdk'
 import getBeefForTxid from '../../../utils/getBeefForTxid'
 import { wocFetch } from '../../../utils/RateLimitedFetch'
+import { wocApiBase } from '../../../utils/woc'
 import { toast } from 'react-toastify'
 
 const brc29ProtocolID: WalletProtocol = [2, '3241645161d8']
@@ -85,7 +86,7 @@ const timeAgo = (ms: number): string => {
 
 export default function Payments() {
   const { t } = useTranslation()
-  const { managers, network, adminOriginator } = useContext(WalletContext)
+  const { managers, network, chain, adminOriginator } = useContext(WalletContext)
   const [paymentAddress, setPaymentAddress] = useState<string | null>(null)
   const [balance, setBalance] = useState<number>(-1)
   const [recipientAddress, setRecipientAddress] = useState<string>('')
@@ -128,7 +129,7 @@ export default function Payments() {
 
   // Fetch UTXOs for address from WhatsOnChain (rate-limited)
   const getUtxosForAddress = async (address: string): Promise<Utxo[]> => {
-    const url = `https://api.whatsonchain.com/v1/bsv/${network === 'mainnet' ? 'main' : 'test'}/address/${address}/unspent/all`
+    const url = `${wocApiBase(chain)}/address/${address}/unspent/all`
     const response = await wocFetch.fetch(url)
     const rp: WoCAddressUnspentAll = await response.json()
     if (!rp.result) return []
@@ -237,7 +238,7 @@ export default function Payments() {
     const beef = new Beef()
     for (const utxo of utxos) {
       if (!beef.findTxid(utxo.txid)) {
-        const b = await getBeefForTxid(utxo.txid, network === 'mainnet' ? 'main' : 'test')
+        const b = await getBeefForTxid(utxo.txid, chain)
         beef.mergeBeef(b)
       }
     }

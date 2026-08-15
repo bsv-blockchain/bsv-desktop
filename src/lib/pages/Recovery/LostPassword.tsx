@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react'
+import * as secrets from '../../services/secrets';
 import { useTranslation } from 'react-i18next'
 // import 'react-phone-number-input/style.css'
 import {
@@ -99,7 +100,7 @@ const RecoveryLostPassword: React.FC<any> = ({ history }) => {
       await managers.walletManager!.provideRecoveryKey(Utils.toArray(recoveryKey, 'base64'))
       if (managers.walletManager!.authenticated) {
         setAccordianView('new-password')
-        localStorage.snap = saveEnhancedSnapshot()
+        secrets.setSnapshot(saveEnhancedSnapshot())
       } else {
         throw new Error(t('lost_password_not_authenticated'))
       }

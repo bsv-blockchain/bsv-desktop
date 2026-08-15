@@ -1,4 +1,5 @@
 import { useState, useContext } from 'react'
+import * as secrets from '../../../../services/secrets';
 import { useTranslation } from 'react-i18next'
 import style from './style'
 import {
@@ -31,7 +32,7 @@ const PasswordSettings = ({ history }) => {
         throw new Error('Passwords do not match.')
       }
       await managers.walletManager.changePassword(password)
-      localStorage.snap = saveEnhancedSnapshot()
+      secrets.setSnapshot(saveEnhancedSnapshot())
       toast.dark('Password changed!')
       setPassword('')
       setConfirmPassword('')

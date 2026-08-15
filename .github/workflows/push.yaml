@@ -1,12 +1,14 @@
 on: [pull_request]
 name: Install and Test
+permissions:
+  contents: read
 jobs:
   test:
     name: Install & Test
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18.x, 20.x, 22.x]
+        node-version: [20.x, 22.x]
     steps:
     - uses: actions/checkout@v2
     - name: Use Node.js ${{ matrix.node-version }}

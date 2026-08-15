@@ -1,5 +1,6 @@
 import { Utils } from '@bsv/sdk'
 import { Mnemonic } from '@bsv/sdk/compat'
+import * as secrets from '../services/secrets'
 
 export const normalizeMnemonic = (phrase: string): string =>
   phrase.trim().replace(/\s+/g, ' ')
@@ -66,8 +67,8 @@ export const mnemonicFromKeyHex = (keyHex: string): string => {
 
 export const persistKeyMaterial = (keyHex: string, mnemonic?: string): string => {
   const phrase = mnemonic ? normalizeMnemonic(mnemonic) : mnemonicFromKeyHex(keyHex)
-  localStorage.setItem('primaryKeyHex', keyHex)
-  localStorage.setItem('mnemonic12', phrase)
+  secrets.setKeyHex(keyHex)
+  secrets.setMnemonic(phrase)
   return phrase
 }
 
@@ -76,8 +77,8 @@ export const reconcileStoredKeyMaterial = (): { keyHex: string; mnemonic: string
     return { keyHex: '', mnemonic: '' }
   }
 
-  const storedMnemonic = (localStorage.getItem('mnemonic12') || '').trim()
-  const storedHex = (localStorage.getItem('primaryKeyHex') || '').trim()
+  const storedMnemonic = (secrets.getMnemonic() || '').trim()
+  const storedHex = (secrets.getKeyHex() || '').trim()
 
   if (storedMnemonic) {
     try {
@@ -86,7 +87,7 @@ export const reconcileStoredKeyMaterial = (): { keyHex: string; mnemonic: string
       return { keyHex, mnemonic }
     } catch (err) {
       console.error('Failed to derive key from stored mnemonic', err)
-      localStorage.removeItem('mnemonic12')
+      secrets.clearMnemonic()
     }
   }
 

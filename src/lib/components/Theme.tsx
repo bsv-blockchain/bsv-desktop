@@ -225,6 +225,40 @@ export function AppThemeProvider({ children }: ThemeProps) {
               backgroundPosition: 'center',
               backgroundAttachment: 'fixed',
             },
+            // App-wide themed scrollbars — replaces the default gray/white bars.
+            // Thin, rounded, translucent brand colour on a transparent track so
+            // they sit quietly on any surface and fade with the light/dark theme.
+            '*::-webkit-scrollbar': {
+              width: '10px',
+              height: '10px',
+            },
+            '*::-webkit-scrollbar-track': {
+              backgroundColor: 'transparent',
+            },
+            '*::-webkit-scrollbar-thumb': {
+              backgroundColor:
+                mode === 'light' ? 'rgba(27,54,93,0.30)' : 'rgba(255,255,255,0.22)',
+              borderRadius: '8px',
+              // Transparent border + padding-box clip = inset padding around the
+              // thumb, so it reads as a slim pill rather than a full-width bar.
+              border: '2px solid transparent',
+              backgroundClip: 'padding-box',
+              minHeight: '40px',
+            },
+            '*::-webkit-scrollbar-thumb:hover': {
+              backgroundColor:
+                mode === 'light' ? 'rgba(27,54,93,0.50)' : 'rgba(255,255,255,0.42)',
+            },
+            '*::-webkit-scrollbar-corner': {
+              backgroundColor: 'transparent',
+            },
+            // Firefox (and the web-served build) — thin bars in matching colours.
+            '*': {
+              scrollbarWidth: 'thin',
+              scrollbarColor: `${
+                mode === 'light' ? 'rgba(27,54,93,0.30)' : 'rgba(255,255,255,0.22)'
+              } transparent`,
+            },
           },
         },
         MuiButton: {

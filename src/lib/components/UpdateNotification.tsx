@@ -11,6 +11,7 @@ import {
   Box
 } from '@mui/material';
 import { toast } from 'react-toastify';
+import DOMPurify from 'dompurify';
 
 interface UpdateInfo {
   version: string;
@@ -189,7 +190,10 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                   >
                     <div
                       dangerouslySetInnerHTML={{
-                        __html: updateInfo.releaseNotes || t('update_notification_no_release_notes')
+                        __html: DOMPurify.sanitize(
+                          updateInfo.releaseNotes || t('update_notification_no_release_notes'),
+                          { USE_PROFILES: { html: true } }
+                        )
                       }}
                       style={{
                         fontSize: '0.875rem',

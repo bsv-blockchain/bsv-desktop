@@ -127,7 +127,7 @@ Main Process (storage.ts)
   ↓ StorageManager.callMethod()
 StorageKnex
   ↓ Knex queries
-SQLite (~/.bsv-desktop/wallet.db)
+SQLite (~/.bsv-desktop/wallet-<identityKeyHex>-main.db)
 ```
 
 **Remote Storage** (`useRemoteStorage: true`):
@@ -280,7 +280,7 @@ Worker Process
 **Local (Electron)**:
 - Modify `electron/storage.ts` for IPC handlers
 - Update `src/StorageElectronIPC.ts` for proxy methods
-- Database at `~/.bsv-desktop/wallet.db` or `wallet-test.db`
+- Database files at `~/.bsv-desktop/wallet-<identityKeyHex>-main.db` (mainnet) or `…-test.db` (testnet). One file per identity key; the bare `wallet.db` is legacy and empty on new installs.
 
 **Remote (WAB)**:
 - Uses `StorageClient` from `@bsv/wallet-toolbox`
@@ -339,8 +339,8 @@ curl -X POST http://127.0.0.1:3321/listOutputs \
 
 ### Database
 
-- Location: `~/.bsv-desktop/wallet.db` (mainnet) or `wallet-test.db` (testnet)
-- WAL mode files: `wallet.db-wal`, `wallet.db-shm`
+- Per-identity files: `~/.bsv-desktop/wallet-<identityKeyHex>-main.db` (mainnet) or `…-test.db` (testnet). To find your active DB, grep the wallet log for `identityKey: …`, then match the hex prefix.
+- WAL mode files: `<wallet-file>-wal`, `<wallet-file>-shm`
 - Delete database: `rm -rf ~/.bsv-desktop/` (forces re-initialization)
 
 ## Common Patterns

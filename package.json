@@ -1,12 +1,13 @@
 {
   "name": "bsv-desktop-electron",
-  "version": "2.3.2",
+  "version": "2.8.2",
   "description": "BSV Desktop Wallet - Electron Edition",
   "main": "dist-electron/main.js",
   "type": "module",
   "author": "BSV Association <support@bsvassociation.org>",
   "license": "Apache-2.0",
   "scripts": {
+    "postinstall": "electron-builder install-app-deps",
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
     "dev:electron": "tsc -p tsconfig.electron.json && cp electron/storage-loader.cjs electron/updater.cjs dist-electron/ && electron .",
@@ -14,34 +15,42 @@
     "build:renderer": "tsc && vite build",
     "build:electron": "tsc -p tsconfig.electron.json && cp electron/storage-loader.cjs electron/updater.cjs dist-electron/",
     "icons": "bash scripts/generate-icons.sh",
+    "verify:update-metadata": "node scripts/verify-update-metadata.mjs",
     "package": "electron-builder",
     "package:mac": "electron-builder --mac",
     "package:win": "electron-builder --win",
     "package:linux": "electron-builder --linux",
     "lint:ci": "echo 'No linting'",
-    "test": "vitest run --config vitest.config.electron.ts test/translations.test.ts test/walletByteJson.test.ts",
+    "test": "vitest run --config vitest.config.electron.ts test/translations.test.ts test/appIconFallback.test.ts test/walletByteJson.test.ts",
+    "test:stas": "vitest run --config vitest.config.electron.ts test/stas",
+    "test:tokens": "vitest run --config vitest.config.electron.ts test/tokens",
+    "test:stas:db": "npm rebuild better-sqlite3 && vitest run --config vitest.config.electron.ts test/stas; npm run rebuild:electron",
+    "rebuild:electron": "electron-rebuild -f -o better-sqlite3 --build-from-source",
     "test:perf": "vitest run --config vitest.config.electron.ts"
   },
   "dependencies": {
-    "@bsv/amountinator": "^2.0.2",
-    "@bsv/btms": "^1.0.2",
-    "@bsv/btms-permission-module": "^1.0.2",
+    "@bsv/amountinator": "^2.1.1",
+    "@bsv/btms": "^1.1.1",
+    "@bsv/btms-permission-module": "^1.1.1",
     "@bsv/btms-permission-module-ui": "^1.0.0",
     "@bsv/identity-react": "^1.1.14",
-    "@bsv/message-box-client": "^2.1.2",
-    "@bsv/sdk": "^2.1.3",
+    "@bsv/message-box-client": "^2.2.2",
+    "@bsv/sdk": "^2.2.0",
     "@bsv/uhrp-react": "^1.0.6",
-    "@bsv/wallet-toolbox": "^2.1.28",
-    "@bsv/wallet-toolbox-client": "^2.1.28",
+    "@bsv/wallet-toolbox": "^2.4.4",
+    "@bsv/wallet-toolbox-client": "^2.4.4",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@mui/icons-material": "^6.4.8",
     "@mui/material": "^6.4.8",
     "@mui/styles": "^6.4.8",
     "better-sqlite3": "^12.8.0",
+    "bsv": "^1.5.6",
     "cors": "^2.8.6",
     "date-fns": "^4.1.0",
+    "dompurify": "^3.4.11",
     "dotenv": "^17.2.4",
+    "dxs-bsv-token-sdk": "file:./vendor/dxs-bsv-token-sdk",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.7.3",
     "express": "^4.21.2",
@@ -60,6 +69,7 @@
     "react-i18next": "^17.0.3",
     "react-router-dom": "^5.2.0",
     "react-toastify": "^11.0.5",
+    "stas-js": "^3.0.3",
     "use-async-effect": "^2.2.7"
   },
   "devDependencies": {
@@ -78,6 +88,7 @@
     "typescript": "~5.6.2",
     "vite": "^6.3.6",
     "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-node-polyfills": "^0.28.0",
     "vitest": "^3.0.0"
   },
   "build": {
@@ -89,7 +100,8 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "package.json"
+      "package.json",
+      "build/icon.png"
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**"
@@ -138,7 +150,14 @@
       ],
       "icon": "build/icon.ico",
       "verifyUpdateCodeSignature": false,
-      "artifactName": "${productName}-Setup-${version}.${ext}"
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "signtoolOptions": {
+        "sign": "build/win-sign.cjs",
+        "signingHashAlgorithms": [
+          "sha256"
+        ],
+        "rfc3161TimeStampServer": "http://timestamp.digicert.com"
+      }
     },
     "nsis": {
       "oneClick": false,
@@ -157,7 +176,12 @@
         "rpm"
       ],
       "category": "Finance",
-      "icon": "build/icon.png"
+      "icon": "build/icons",
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "bsv-desktop-electron"
+        }
+      }
     }
   }
 }

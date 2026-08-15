@@ -49,7 +49,7 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
     faucetAmount: number;
   } | null>(null)
   const [method, setMethod] = useState<string>("")
-  const [network, setNetwork] = useState<'main' | 'test'>(DEFAULT_CHAIN)
+  const [network, setNetwork] = useState<'main' | 'test' | 'ttn'>(DEFAULT_CHAIN)
   const [storageUrl, setStorageUrl] = useState<string>('')
   const [loginType, setLoginType] = useState<LoginType>(contextLoginType)
   const [useRemoteStorage, setUseRemoteStorage] = useState<boolean>(false)
@@ -250,6 +250,14 @@ const WalletConfig: React.FC<WalletConfigProps> = ({ autoExpand = false, hideLog
                       sx={{ textTransform: 'none' }}
                     >
                       {t('wallet_config_testnet')}
+                    </Button>
+                    <Button
+                      variant={network === 'ttn' ? "contained" : "outlined"}
+                      size="small"
+                      onClick={() => setNetwork('ttn')}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      {t('wallet_config_teratestnet')}
                     </Button>
                   </Box>
                 </Box>

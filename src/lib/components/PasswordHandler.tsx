@@ -52,14 +52,20 @@ const PasswordHandler: React.FC = () => {
 
   const handleSubmit = async (e: { preventDefault: () => void }) => {
     e.preventDefault()
-    const success = test(password)
-    if (success) {
-      resolve(password)
-      setOpen(false)
-      if (!wasOriginallyFocused) {
-        await onFocusRelinquished()
+    // CWI privileged-key tests are async (KDF + decrypt). Always await.
+    try {
+      const success = await Promise.resolve(test(password))
+      if (success) {
+        resolve(password)
+        setOpen(false)
+        setPassword('')
+        if (!wasOriginallyFocused) {
+          await onFocusRelinquished()
+        }
+      } else {
+        toast.error(t('password_incorrect_error'))
       }
-    } else {
+    } catch {
       toast.error(t('password_incorrect_error'))
     }
   }

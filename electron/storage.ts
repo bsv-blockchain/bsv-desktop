@@ -19,10 +19,55 @@ import { fork, ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 import { StorageKnex, KnexMigrations, Services, Monitor, WalletStorageManager, ChaintracksServiceClient } from '@bsv/wallet-toolbox';
 import { patchListCertificates } from './optimized-queries.js';
+import { stasMigrationSource } from './stas-migrations/index.js';
+import { StasQueries } from './stas-queries.js';
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+/**
+ * Allow-list of StorageKnex methods the renderer is permitted to invoke through
+ * the `storage:call-method` IPC channel. Must stay in sync with the methods
+ * exposed by src/lib/StorageElectronIPC.ts. Anything not listed here is rejected.
+ */
+const ALLOWED_STORAGE_METHODS: ReadonlySet<string> = new Set([
+  // Certificates
+  'insertCertificate', 'updateCertificate', 'findCertificates', 'deleteCertificate',
+  'insertCertificateAuth', 'relinquishCertificate', 'findCertificatesAuth', 'listCertificates',
+  // Outputs
+  'insertOutput', 'updateOutput', 'findOutputs', 'deleteOutput',
+  'relinquishOutput', 'findOutputsAuth', 'listOutputs',
+  // Transactions
+  'insertTransaction', 'updateTransaction', 'findTransactions', 'deleteTransaction',
+  // Commissions
+  'insertCommission', 'findCommissions',
+  // Output baskets
+  'insertOutputBasket', 'updateOutputBasket', 'findOutputBaskets', 'deleteOutputBasket',
+  'findOutputBasketsAuth',
+  // Proven transactions
+  'insertProvenTx', 'updateProvenTx', 'findProvenTxs', 'deleteProvenTx',
+  'insertProvenTxReq', 'updateProvenTxReq', 'findProvenTxReqs', 'deleteProvenTxReq',
+  // Labels & tags
+  'insertTxLabel', 'findTxLabels', 'deleteTxLabel',
+  'insertOutputTag', 'findOutputTags', 'deleteOutputTag',
+  // Counterparties
+  'insertCounterparty', 'updateCounterparty', 'findCounterparties', 'deleteCounterparty',
+  // Sync
+  'processSyncChunk', 'requestSyncChunk', 'getSyncChunk', 'findOrInsertSyncStateAuth',
+  // Wallet / chain status
+  'getWalletStatus', 'getHeight', 'updateHeight',
+  // Permissions
+  'findPermissions', 'insertPermission', 'updatePermission', 'deletePermission',
+  // Settings
+  'findSettings', 'insertSetting', 'updateSetting', 'deleteSetting',
+  // Lifecycle & actions
+  'destroy', 'migrate', 'findOrInsertUser', 'setActive',
+  'abortAction', 'createAction', 'processAction', 'internalizeAction', 'listActions',
+  // Action batches (wallet-toolbox >= 2.4.4)
+  'getCapabilities', 'beginActionBatch', 'extendActionBatch', 'renewActionBatch',
+  'prepareActionBatchCommit', 'putActionBatchBlob', 'commitActionBatch', 'abortActionBatch',
+]);
 
 // Lazy-load knex to avoid loading better-sqlite3 until actually needed
 let createKnex: any = null;
@@ -46,10 +91,15 @@ class StorageManager {
   // Monitor worker processes
   private monitorWorkers: Map<string, ChildProcess> = new Map();
 
+  /** True when any forked monitor worker is still running (inherits env at fork time). */
+  hasActiveMonitorWorkers(): boolean {
+    return this.monitorWorkers.size > 0;
+  }
+
   /**
    * Get or create a storage instance for the given identity key
    */
-  async getOrCreateStorage(identityKey: string, chain: 'main' | 'test'): Promise<StorageKnex> {
+  async getOrCreateStorage(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<StorageKnex> {
     const key = `${identityKey}-${chain}`;
 
     if (this.storages.has(key)) {
@@ -108,11 +158,30 @@ class StorageManager {
     });
     console.log(`[Storage] Migrations complete`);
 
-    // Create StorageKnex instance
+    // Run STAS extension migrations (bsv-desktop-owned). A separate tracking
+    // table keeps them isolated from wallet-toolbox's own migration ledger.
+    console.log(`[Storage] Running STAS extension migrations for ${key}...`);
+    await db.migrate.latest({
+      migrationSource: stasMigrationSource,
+      tableName: 'knex_migrations_stas'
+    });
+    console.log(`[Storage] STAS migrations complete`);
+
+    // Create StorageKnex instance.
+    //
+    // feeModel: TAAL and GorillaPool both advertise a miningFee of 100 sat/1000
+    // bytes (`GET /v1/policy`), i.e. 0.1 sat/byte. Paying exactly 100 sat/kb put
+    // us *on* that floor with zero headroom, which is fine for a standalone tx
+    // but not for tokens: miners price the whole unconfirmed ancestor package,
+    // and a token transfer's package includes engine-signed txs that pay less.
+    // One underpriced ancestor then drags the package average below policy and
+    // the entire chain stalls — observed on a 21-tx mint package that settled at
+    // 0.095 sat/b and needed a CPFP bump to confirm. 250 sat/kb buys margin for
+    // pennies: a 500-byte transfer costs 125 sat instead of 50.
     const storage = new StorageKnex({
       knex: db,
       chain: chain,
-      feeModel: { model: 'sat/kb', value: 100 },
+      feeModel: { model: 'sat/kb', value: 250 },
       commissionSatoshis: 0
     });
 
@@ -131,7 +200,7 @@ class StorageManager {
   /**
    * Check if storage is available for the given identity key
    */
-  async isAvailable(identityKey: string, chain: 'main' | 'test'): Promise<boolean> {
+  async isAvailable(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<boolean> {
     // Storage is always available once created
     await this.getOrCreateStorage(identityKey, chain);
     return true;
@@ -141,7 +210,7 @@ class StorageManager {
    * Make storage available (initialize database tables)
    * Returns TableSettings from the storage
    */
-  async makeAvailable(identityKey: string, chain: 'main' | 'test'): Promise<any> {
+  async makeAvailable(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<any> {
     const storage = await this.getOrCreateStorage(identityKey, chain);
     const settings = await storage.makeAvailable();
     console.log(`[Storage] Storage made available for ${identityKey}-${chain}`);
@@ -154,7 +223,7 @@ class StorageManager {
    */
   async initializeServices(
     identityKey: string,
-    chain: 'main' | 'test'
+    chain: 'main' | 'test' | 'ttn'
   ): Promise<void> {
     const storage = await this.getOrCreateStorage(identityKey, chain);
     const key = `${identityKey}-${chain}`;
@@ -169,7 +238,11 @@ class StorageManager {
 
     // Create Services instance in the backend
     const options = Services.createDefaultOptions(chain);
-    options.chaintracks = new ChaintracksServiceClient(chain, chain === 'main' ? 'https://chaintracks-us-1.bsvb.tech' : 'https://chaintracks-testnet-us-1.bsvb.tech')
+    // For main/test, point ChainTracks at the bsvb.tech endpoints. TeraTestNet ('ttn')
+    // keeps the toolbox default (arcade-v2-ttn ChainTracks) set by createDefaultOptions.
+    if (chain !== 'ttn') {
+      options.chaintracks = new ChaintracksServiceClient(chain, chain === 'main' ? 'https://chaintracks-us-1.bsvb.tech' : 'https://chaintracks-testnet-us-1.bsvb.tech')
+    }
     const services = new Services(options);
 
     // Type assertion to access setServices method
@@ -194,7 +267,7 @@ class StorageManager {
    */
   async startMonitorWorker(
     identityKey: string,
-    chain: 'main' | 'test'
+    chain: 'main' | 'test' | 'ttn'
   ): Promise<void> {
     const key = `${identityKey}-${chain}`;
 
@@ -308,7 +381,7 @@ class StorageManager {
   /**
    * Stop Monitor worker process
    */
-  async stopMonitorWorker(identityKey: string, chain: 'main' | 'test'): Promise<void> {
+  async stopMonitorWorker(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<void> {
     const key = `${identityKey}-${chain}`;
     const worker = this.monitorWorkers.get(key);
 
@@ -348,10 +421,17 @@ class StorageManager {
    */
   async callStorageMethod(
     identityKey: string,
-    chain: 'main' | 'test',
+    chain: 'main' | 'test' | 'ttn',
     method: string,
     args: any[]
   ): Promise<any> {
+    // Only methods the renderer's StorageElectronIPC wrapper actually calls are
+    // permitted. This prevents a compromised renderer from invoking arbitrary
+    // methods (or prototype members) on the StorageKnex instance via IPC.
+    if (!ALLOWED_STORAGE_METHODS.has(method)) {
+      throw new Error(`Storage method not permitted: ${method}`);
+    }
+
     const storage = await this.getOrCreateStorage(identityKey, chain);
 
     // Type assertion to access storage methods dynamically
@@ -373,6 +453,32 @@ class StorageManager {
   }
 
   /**
+   * Run a STAS extension query against the STAS tables for an identity/chain.
+   * Dispatched to `StasQueries` — a bounded surface, separate from the generic
+   * StorageKnex method proxy used by callStorageMethod.
+   */
+  async callStasQuery(
+    identityKey: string,
+    chain: 'main' | 'test' | 'ttn',
+    method: string,
+    args: any[]
+  ): Promise<any> {
+    // Ensure storage (and therefore the STAS migrations) have run.
+    await this.getOrCreateStorage(identityKey, chain);
+    const key = `${identityKey}-${chain}`;
+    const db = this.databases.get(key);
+    if (!db) {
+      throw new Error(`No database connection for ${key}`);
+    }
+    const queries = new StasQueries(db);
+    const fn = (queries as any)[method];
+    if (typeof fn !== 'function') {
+      throw new Error(`Unknown STAS query: ${method}`);
+    }
+    return fn.apply(queries, args || []);
+  }
+
+  /**
    * Cleanup all storage instances
    */
   async cleanup(): Promise<void> {
@@ -383,7 +489,7 @@ class StorageManager {
     for (const [key] of this.monitorWorkers.entries()) {
       const [identityKey, chain] = key.split('-');
       workerStopPromises.push(
-        this.stopMonitorWorker(identityKey, chain as 'main' | 'test')
+        this.stopMonitorWorker(identityKey, chain as 'main' | 'test' | 'ttn')
       );
     }
     await Promise.all(workerStopPromises);

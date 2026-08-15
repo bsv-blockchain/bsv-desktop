@@ -1,0 +1,1 @@
+{"version":3,"file":"script-reader.d.ts","sourceRoot":"","sources":["../../../src/script/read/script-reader.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,KAAK,EAAE,MAAM,aAAa,CAAC;AACpC,OAAO,EAAE,WAAW,EAAE,MAAM,iBAAiB,CAAC;AAG9C,qBAAa,YAAY;IACvB,MAAM,CAAC,IAAI,GAAI,QAAQ,KAAK,mBAkD1B;IAEF,MAAM,CAAC,MAAM,GAAI,QAAQ,KAAK,EAAE,QAAQ,MAAM;;;;aAmC5C;CACH"}

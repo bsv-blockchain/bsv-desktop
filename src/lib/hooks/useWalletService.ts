@@ -69,6 +69,10 @@ function subscribeToWalletService(callback: () => void): () => void {
   const svc = getWalletService()
   const handler = (snap: WalletServiceSnapshot) => { _walletSnapshot = snap; callback() }
   svc.on('stateChanged', handler)
+  // Resync cache on (re)subscribe. stateChanged only updates the cache when a
+  // listener is attached; React Strict Mode and VaultGate mount/unmount can miss
+  // emits in the gap, leaving the UI stuck on a stale lifecycle forever.
+  _walletSnapshot = svc.getSnapshot()
   return () => svc.off('stateChanged', handler)
 }
 
@@ -355,10 +359,14 @@ export function useWalletService() {
     // Raw, unwrapped Wallet — for internal first-party use only. App-originated
     // requests must go through managers.permissionsManager.
     wallet: walletState.wallet,
+    // STAS BRC-42 services + discovery loop (Tasks 3/4).
+    stas: walletState.stas,
     // Settings
     settings: walletState.settings,
     updateSettings,
-    network: walletState.selectedNetwork === 'test' ? 'testnet' as const : 'mainnet' as const,
+    // 'ttn' (TeraTestNet) uses testnet-style addresses, so it collapses to 'testnet' here.
+    network: walletState.selectedNetwork === 'main' ? 'mainnet' as const : 'testnet' as const,
+    chain: walletState.selectedNetwork,
     // Profile
     activeProfile: walletState.activeProfile,
     setActiveProfile,

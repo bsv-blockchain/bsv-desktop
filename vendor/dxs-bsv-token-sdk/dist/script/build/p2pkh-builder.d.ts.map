@@ -1,0 +1,1 @@
+{"version":3,"file":"p2pkh-builder.d.ts","sourceRoot":"","sources":["../../../src/script/build/p2pkh-builder.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,OAAO,EAAE,MAAM,uBAAuB,CAAC;AAKhD,OAAO,EAAE,aAAa,EAAE,MAAM,kBAAkB,CAAC;AACjD,OAAO,EAAE,KAAK,EAAE,MAAM,aAAa,CAAC;AAEpC,qBAAa,YAAa,SAAQ,aAAa;IAC7C,OAAO,CAAC,gBAAgB,CAAkB;gBAE9B,OAAO,EAAE,OAAO;IAe5B,aAAa,CAAC,IAAI,EAAE,KAAK;CAQ1B"}

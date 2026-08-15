@@ -27,6 +27,7 @@ import {
 import { toast } from 'react-toastify'
 import getBeefForTxid from '../utils/getBeefForTxid'
 import { wocFetch } from '../utils/RateLimitedFetch'
+import { wocApiBase } from '../utils/woc'
 
 const brc29ProtocolID: WalletProtocol = [2, '3241645161d8']
 
@@ -54,6 +55,7 @@ interface WalletFundingFlowProps {
   wallet: WalletInterface
   adminOriginator: string
   network: 'mainnet' | 'testnet'
+  chain: 'main' | 'test' | 'ttn'
   onFundingComplete: () => void
 }
 
@@ -61,6 +63,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
   wallet,
   adminOriginator,
   network,
+  chain,
   onFundingComplete
 }) => {
   const { t } = useTranslation()
@@ -104,7 +107,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
   // Fetch UTXOs for the payment address
   const getUtxosForAddress = async (address: string): Promise<Utxo[]> => {
     const response = await wocFetch.fetch(
-      `https://api.whatsonchain.com/v1/bsv/${network === 'mainnet' ? 'main' : 'test'}/address/${address}/unspent/all`
+      `${wocApiBase(chain)}/address/${address}/unspent/all`
     )
     const rp: WoCAddressUnspentAll = await response.json()
     const utxos: Utxo[] = rp.result
@@ -132,7 +135,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
     } finally {
       setIsCheckingPayment(false)
     }
-  }, [paymentAddress, network])
+  }, [paymentAddress, network, chain])
 
   // Process the payment and internalize
   const processPayment = useCallback(async () => {
@@ -157,7 +160,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
       // Merge BEEF for all inputs
       const beef = new Beef()
       for (const txid of txids) {
-        const b = await getBeefForTxid(txid, network === 'mainnet' ? 'main' : 'test')
+        const b = await getBeefForTxid(txid, chain)
         beef.mergeBeef(b)
       }
 
@@ -258,7 +261,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
     } finally {
       setIsProcessingPayment(false)
     }
-  }, [paymentAddress, balance, wallet, adminOriginator, network, derivationPrefix, derivationSuffix, onFundingComplete])
+  }, [paymentAddress, balance, wallet, adminOriginator, network, chain, derivationPrefix, derivationSuffix, onFundingComplete])
 
   // Auto-generate address on mount
   useEffect(() => {

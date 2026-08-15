@@ -18,6 +18,7 @@ import PasswordHandler from './components/PasswordHandler'
 import RecoveryKeyHandler from './components/RecoveryKeyHandler'
 import FundingHandler from './components/FundingHandler'
 import SpendingAuthorizationHandler from './components/SpendingAuthorizationHandler'
+import StasTransferPermissionHandler from './components/StasTransferPermissionHandler'
 import AuthRedirector from './navigation/AuthRedirector'
 import ThemedToastContainer from './components/ThemedToastContainer'
 import { WalletInterface } from '@bsv/sdk'
@@ -38,6 +39,7 @@ import GroupPermissionHandler from './components/GroupPermissionHandler'
 import { UpdateNotification } from './components/UpdateNotification'
 import PrivacyPolicy from './pages/Policies/privacy'
 import UsagePolicy from './pages/Policies/usage'
+import NetworkSettingsDialog from './components/NetworkSettingsDialog'
 
 interface UserInterfaceProps {
   onWalletReady: (wallet: WalletInterface) => Promise<(() => void) | undefined>;
@@ -72,9 +74,11 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
                 <CertificateAccessHandler />
                 <ProtocolPermissionHandler />
                 <SpendingAuthorizationHandler />
+                <StasTransferPermissionHandler />
                 <ThemedToastContainer />
                 <GroupPermissionHandler />
                 <UpdateNotificationWrapper />
+                <NetworkSettingsDialog />
                 <Switch>
                   <Route exact path='/' component={Greeter} />
                   <Route path='/dashboard' component={Dashboard} />

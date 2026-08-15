@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react'
+import * as secrets from '../../services/secrets';
 import { useTranslation } from 'react-i18next'
 import style from './style.js'
 // import 'react-phone-number-input/style.css'
@@ -66,7 +67,7 @@ const RecoveryLostPhone: React.FC<any> = ({ history }) => {
       setLoading(true)
       await managers.walletManager!.providePassword(password)
       setAccordianView('new-phone')
-      localStorage.snap = saveEnhancedSnapshot()
+      secrets.setSnapshot(saveEnhancedSnapshot())
     } catch (e) {
       console.error(e)
       toast.error(e.message)

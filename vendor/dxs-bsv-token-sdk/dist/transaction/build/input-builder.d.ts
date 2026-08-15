@@ -1,0 +1,46 @@
+import { ByteWriter } from "../../binary";
+import { OutPoint } from "../../bitcoin/out-point";
+import { PrivateKey } from "../../bitcoin/private-key";
+import { SignatureHashType } from "../../bitcoin/sig-hash-type";
+import { TransactionBuilder } from "./transaction-builder";
+import { Wallet } from "../../bitcoin";
+import { Bytes } from "../../bytes";
+export declare class InputBilder {
+    protected TxBuilder: TransactionBuilder;
+    protected Owner: PrivateKey | Wallet;
+    protected Idx: number;
+    OutPoint: OutPoint;
+    Merge: boolean;
+    UnlockingScript?: Bytes;
+    AllowPresetUnlockingScript: boolean;
+    PresetUnlockingScriptSizeHint?: number;
+    AuthoritySignaturesCount?: number;
+    AuthorityPubKeysCount?: number;
+    DstasSpendingType: number;
+    Sequence: number;
+    private _mergeVout;
+    private _mergeSegments;
+    private _swapCounterpartyScript;
+    constructor(txBuilder: TransactionBuilder, outPoint: OutPoint, signer: PrivateKey | Wallet, merge: boolean);
+    sign: (force?: boolean) => void;
+    writeTo(writer: ByteWriter): void;
+    size: () => number;
+    preimageLength: () => number;
+    stasNullDataLength: () => number;
+    private resolveOutputOwnerField;
+    private isStasScriptType;
+    private isP2PkLike;
+    private hasDstasSwapActionData;
+    private isDstasRedeemLike;
+    private resolveFundingInput;
+    prevoutHashLength: () => number;
+    unlockingScriptSize: () => number;
+    preimage: (signatureHashType: SignatureHashType) => Uint8Array<ArrayBuffer>;
+    private writePrevoutHash;
+    private writeSequenceHash;
+    private writeOutputsHash;
+    private writeSingleOutputHash;
+    private writeZeroHash;
+    private prepareMergeInfo;
+}
+//# sourceMappingURL=input-builder.d.ts.map

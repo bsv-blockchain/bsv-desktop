@@ -25,11 +25,11 @@ import type { WalletStorageProvider, WalletServices } from '@bsv/wallet-toolbox-
 
 export class StorageElectronIPC implements WalletStorageProvider {
   private identityKey: string;
-  private chain: 'main' | 'test';
+  private chain: 'main' | 'test' | 'ttn';
   private services?: WalletServices;
   private settings?: any;
 
-  constructor(identityKey: string, chain: 'main' | 'test') {
+  constructor(identityKey: string, chain: 'main' | 'test' | 'ttn') {
     this.identityKey = identityKey;
     this.chain = chain;
 
@@ -377,6 +377,40 @@ export class StorageElectronIPC implements WalletStorageProvider {
 
   async internalizeAction(...args: any[]): Promise<any> {
     return this.callMethod('internalizeAction', ...args);
+  }
+
+  // ===== Action batch methods (wallet-toolbox >= 2.4.4) =====
+
+  async getCapabilities(...args: any[]): Promise<any> {
+    return this.callMethod('getCapabilities', ...args);
+  }
+
+  async beginActionBatch(...args: any[]): Promise<any> {
+    return this.callMethod('beginActionBatch', ...args);
+  }
+
+  async extendActionBatch(...args: any[]): Promise<any> {
+    return this.callMethod('extendActionBatch', ...args);
+  }
+
+  async renewActionBatch(...args: any[]): Promise<any> {
+    return this.callMethod('renewActionBatch', ...args);
+  }
+
+  async prepareActionBatchCommit(...args: any[]): Promise<any> {
+    return this.callMethod('prepareActionBatchCommit', ...args);
+  }
+
+  async putActionBatchBlob(...args: any[]): Promise<any> {
+    return this.callMethod('putActionBatchBlob', ...args);
+  }
+
+  async commitActionBatch(...args: any[]): Promise<any> {
+    return this.callMethod('commitActionBatch', ...args);
+  }
+
+  async abortActionBatch(...args: any[]): Promise<any> {
+    return this.callMethod('abortActionBatch', ...args);
   }
 
   async insertCertificateAuth(...args: any[]): Promise<any> {

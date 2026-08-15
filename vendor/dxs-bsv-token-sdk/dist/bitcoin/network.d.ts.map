@@ -1,0 +1,1 @@
+{"version":3,"file":"network.d.ts","sourceRoot":"","sources":["../../src/bitcoin/network.ts"],"names":[],"mappings":"AAAA,MAAM,MAAM,OAAO,GAAG;IACpB,UAAU,EAAE,MAAM,CAAC;IACnB,GAAG,EAAE,MAAM,CAAC;CACb,CAAC;AAEF,eAAO,MAAM,QAAQ,EAAE;IAAE,CAAC,IAAI,EAAE,MAAM,GAAG,OAAO,CAAA;CAK/C,CAAC"}

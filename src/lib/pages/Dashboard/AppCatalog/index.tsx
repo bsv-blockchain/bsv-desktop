@@ -25,6 +25,7 @@ import { Img } from '@bsv/uhrp-react'
 
 import PageHeader from '../../../components/PageHeader'
 import { openUrl } from '../../../utils/openUrl'
+import { applyAppIconFallback, FALLBACK_APP_ICON } from '../../../utils/appIconFallback'
 
 import { AppCatalog as AppCatalogAPI } from 'metanet-apps'
 import type { PublishedApp } from 'metanet-apps/src/types'
@@ -245,7 +246,7 @@ const AppCatalog: React.FC = () => {
                       <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 1.5 }}>
                         <Box
                           component="img"
-                          src={app.metadata.icon || 'https://metanetapps.com/favicon.ico'}
+                          src={app.metadata.icon || FALLBACK_APP_ICON}
                           alt={app.metadata.name}
                           sx={{
                             width: 44,
@@ -255,7 +256,7 @@ const AppCatalog: React.FC = () => {
                             flexShrink: 0,
                           }}
                           onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'https://metanetapps.com/favicon.ico'
+                            applyAppIconFallback(e.currentTarget)
                           }}
                         />
                         <Box sx={{ flex: 1, minWidth: 0 }}>

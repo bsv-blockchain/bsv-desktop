@@ -29,7 +29,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ children, value, index }) => {
 
 const FundingHandler: React.FC = () => {
   const { t } = useTranslation()
-  const { setWalletFunder, network } = useContext(WalletContext)
+  const { setWalletFunder, network, chain } = useContext(WalletContext)
   const [open, setOpen] = useState(false)
   const [identityKey, setIdentityKey] = useState('')
   const [paymentTX, setPaymentTX] = useState<string>('')
@@ -110,6 +110,7 @@ const FundingHandler: React.FC = () => {
               wallet={wallet}
               adminOriginator={adminOriginator}
               network={network === 'mainnet' ? 'mainnet' : 'testnet'}
+              chain={chain}
               onFundingComplete={handleFundingComplete}
             />
           )}

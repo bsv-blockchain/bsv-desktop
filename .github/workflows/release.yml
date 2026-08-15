@@ -22,7 +22,7 @@ jobs:
             args: '--win'
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Delete existing draft releases for this version
         if: github.event_name == 'push'
@@ -42,10 +42,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y librsvg2-dev rpm
 
+      # Pin a concrete Node major (not lts/*) so setup-node does not need to
+      # resolve the LTS alias via the node-versions manifest. That lookup failed
+      # the v2.7.1 release with a GitHub Unicorn 500 HTML response.
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: lts/*
+          node-version: '22'
 
       - name: install frontend dependencies
         run: npm install
@@ -88,9 +91,13 @@ jobs:
           npm run build
           npx electron-builder --mac --publish never
 
+      - name: verify auto-update metadata (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: node scripts/verify-update-metadata.mjs release
+
       - name: Upload macOS artifacts
         if: matrix.platform == 'macos-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: macos-artifacts
           path: |
@@ -132,9 +139,13 @@ jobs:
             gpg --detach-sign --armor SHA256SUMS
           fi
 
+      - name: verify auto-update metadata (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: node scripts/verify-update-metadata.mjs release
+
       - name: Upload Linux Artifacts
         if: matrix.platform == 'ubuntu-22.04'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: linux-artifacts
           path: |
@@ -171,40 +182,30 @@ jobs:
         shell: cmd
         run: smctl windows certsync
 
-      - name: build Electron app (Windows)
+      # Signing happens INSIDE electron-builder via build/win-sign.js, not as a
+      # separate step afterwards. signtool rewrites the .exe, so signing after
+      # the build left latest.yml holding the hash of the unsigned installer and
+      # every Windows auto-update failed with "sha512 checksum mismatch".
+      - name: build and sign Electron app (Windows)
         if: matrix.platform == 'windows-2022'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          WIN_SIGN_SHA1: ${{ secrets.DIGICERT_CODE_SIGNING_SHA1_HASH }}
         run: |
           npm run build
           npx electron-builder --win --publish never
 
-      - name: Sign and verify Windows executables
+      # Fails the release if any artifact no longer matches the sha512 recorded
+      # in latest.yml — the exact condition that broke Windows auto-update.
+      - name: verify auto-update metadata (Windows)
         if: matrix.platform == 'windows-2022'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-          if (-not $signtool) { throw "signtool.exe not found." }
-
-          $targets = Get-ChildItem -Path "release" -Recurse -Include *.exe | Select-Object -ExpandProperty FullName
-          if (-not $targets) { throw "No .exe files found under release/" }
-
-          foreach ($file in $targets) {
-            Write-Host "--- Signing: $file ---"
-            & $signtool sign /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 /sha1 "${{ secrets.DIGICERT_CODE_SIGNING_SHA1_HASH }}" "$file"
-            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $file" }
-
-            Write-Host "--- Verifying: $file ---"
-            & $signtool verify /pa "$file"
-            if ($LASTEXITCODE -ne 0) { throw "Verification failed for $file" }
-          }
+        shell: bash
+        run: node scripts/verify-update-metadata.mjs release
 
       - name: Upload Windows Artifacts
         if: matrix.platform == 'windows-2022'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-artifacts
           path: |
@@ -225,10 +226,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
 

@@ -2,12 +2,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 // Mock window.electronAPI before importing module under test
 const mockOnHttpRequest = vi.fn()
+const mockOnHttpRequestCancelled = vi.fn()
 const mockSendHttpResponse = vi.fn()
 const mockRemoveHttpRequestListener = vi.fn()
 
 ;(globalThis as any).window = {
   electronAPI: {
     onHttpRequest: mockOnHttpRequest,
+    onHttpRequestCancelled: mockOnHttpRequestCancelled,
     sendHttpResponse: mockSendHttpResponse,
     removeHttpRequestListener: mockRemoveHttpRequestListener,
   },
@@ -57,6 +59,7 @@ describe('onWalletReady', () => {
   beforeEach(async () => {
     vi.resetModules()
     mockOnHttpRequest.mockReset()
+    mockOnHttpRequestCancelled.mockReset()
     mockSendHttpResponse.mockReset()
     mockRemoveHttpRequestListener.mockReset()
 

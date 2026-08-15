@@ -24,6 +24,11 @@ import {
   GroupedPermissions,
 } from '../types/GroupedPermissions'
 import type { PermissionPromptHandler } from '../permissionModules/types'
+import {
+  markHttpBridgeSessionCancelled,
+  normalizeBridgeOrigin,
+  trackPermissionForHttpBridge,
+} from './httpBridgeSession'
 
 // ---- Internal types (mirrors WalletContext private types) ----
 
@@ -205,6 +210,37 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
   /** Called by React adapter after handling focusNeeded event. */
   setWasOriginallyFocused(focused: boolean) {
     this._wasOriginallyFocused = focused
+  }
+
+  /**
+   * HTTP client abandoned an in-flight wallet call. Deny any permission prompts
+   * associated with that bridge request so the modal does not outlive the caller.
+   */
+  async cancelHttpBridgeRequest(requestId: number): Promise<void> {
+    const session = markHttpBridgeSessionCancelled(requestId)
+    if (!session) return
+
+    const ids = new Set(session.permissionIds)
+    // Also catch prompts already in the UI queues for this originator that may
+    // not have been tracked (e.g. race before session association).
+    for (const id of this._collectRequestIdsForOrigin(session.origin)) {
+      ids.add(id)
+    }
+
+    if (ids.size === 0) return
+
+    console.warn(
+      `[PermissionQueue] cancelling ${ids.size} permission request(s) for abandoned HTTP request_id=${requestId}`
+    )
+
+    for (const requestID of ids) {
+      await this._denyPermissionRequest(requestID)
+    }
+    this._removeRequestIdsFromQueues(ids)
+    this._emitSnapshot()
+    if (this._allQueuesEmpty()) {
+      this.emit('focusReleasable', this._wasOriginallyFocused)
+    }
   }
 
   getSnapshot(): QueueSnapshot {
@@ -494,6 +530,101 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
   }
 
   // ------------------------------------------------------------------
+  // HTTP bridge cancellation helpers
+  // ------------------------------------------------------------------
+
+  /**
+   * Returns false when the HTTP client is already gone — permission is denied
+   * immediately and must not be queued for UI.
+   */
+  private _acceptPermissionForHttpBridge(requestID: string, originator?: string): boolean {
+    const decision = trackPermissionForHttpBridge(requestID, originator)
+    if (decision === 'auto-deny') {
+      void this._denyPermissionRequest(requestID)
+      return false
+    }
+    return true
+  }
+
+  private async _denyPermissionRequest(requestID: string): Promise<void> {
+    const pm = this._permissionsManager as any
+    if (!pm) return
+
+    const attempts = [
+      () => pm.denyPermission?.(requestID),
+      () => pm.denyGroupedPermission?.(requestID),
+      () => pm.denyCounterpartyPermission?.(requestID),
+    ]
+
+    for (const attempt of attempts) {
+      try {
+        await attempt()
+        return
+      } catch {
+        // Try next API shape; request may already be settled.
+      }
+    }
+  }
+
+  private _collectRequestIdsForOrigin(normalizedOrigin: string): string[] {
+    const match = (originator?: string) =>
+      normalizeBridgeOrigin(originator || '') === normalizedOrigin
+
+    const ids: string[] = []
+    for (const r of this._basketRequests) if (match(r.originator)) ids.push(r.requestID)
+    for (const r of this._certificateRequests) if (match(r.originator)) ids.push(r.requestID)
+    for (const r of this._protocolRequests) if (match(r.originator)) ids.push(r.requestID)
+    for (const r of this._spendingRequests) if (match(r.originator)) ids.push(r.requestID)
+    for (const r of this._groupRequests) if (match(r.originator)) ids.push(r.requestID)
+    for (const r of this._counterpartyRequests) if (match(r.originator)) ids.push(r.requestID)
+    for (const r of this._deferred.basket) if (match(r.originator)) ids.push(r.requestID)
+    for (const r of this._deferred.certificate) if (match(r.originator)) ids.push(r.requestID)
+    for (const r of this._deferred.protocol) if (match(r.originator)) ids.push(r.requestID)
+    for (const r of this._deferred.spending) if (match(r.originator)) ids.push(r.requestID)
+    for (const r of this._deferred.counterparty) if (match(r.originator)) ids.push(r.requestID)
+    return ids
+  }
+
+  private _removeRequestIdsFromQueues(ids: Set<string>): void {
+    const keep = <T extends { requestID: string }>(list: T[]) =>
+      list.filter((r) => !ids.has(r.requestID))
+
+    this._basketRequests = keep(this._basketRequests)
+    this._certificateRequests = keep(this._certificateRequests)
+    this._protocolRequests = keep(this._protocolRequests)
+    this._spendingRequests = keep(this._spendingRequests)
+    this._groupRequests = keep(this._groupRequests)
+    this._counterpartyRequests = keep(this._counterpartyRequests)
+    this._deferred = {
+      basket: keep(this._deferred.basket),
+      certificate: keep(this._deferred.certificate),
+      protocol: keep(this._deferred.protocol),
+      spending: keep(this._deferred.spending),
+      counterparty: keep(this._deferred.counterparty),
+    }
+
+    for (const id of ids) {
+      this._groupRequestCooldownKeyById.delete(id)
+    }
+
+    // If group queue drained mid-pending, release deferred items.
+    if (this._groupPhase === 'pending' && this._groupRequests.length === 0) {
+      void this._releaseDeferredAfterGroup(null)
+    }
+  }
+
+  private _allQueuesEmpty(): boolean {
+    return (
+      this._basketRequests.length === 0 &&
+      this._certificateRequests.length === 0 &&
+      this._protocolRequests.length === 0 &&
+      this._spendingRequests.length === 0 &&
+      this._groupRequests.length === 0 &&
+      this._counterpartyRequests.length === 0
+    )
+  }
+
+  // ------------------------------------------------------------------
   // Permission callbacks (bound to WalletPermissionsManager)
   // ------------------------------------------------------------------
 
@@ -505,20 +636,21 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     reason?: string
     renewal?: boolean
   }) => {
-    if (this._groupPhase === 'pending') {
-      if (incomingRequest?.requestID) {
-        this._deferred.basket.push({
-          requestID: incomingRequest.requestID,
-          basket: incomingRequest.basket,
-          originator: incomingRequest.originator,
-          reason: incomingRequest.reason,
-          renewal: incomingRequest.renewal,
-        })
-      }
+    if (!incomingRequest?.requestID) return
+    if (!this._acceptPermissionForHttpBridge(incomingRequest.requestID, incomingRequest.originator)) {
       return
     }
 
-    if (!incomingRequest?.requestID) return
+    if (this._groupPhase === 'pending') {
+      this._deferred.basket.push({
+        requestID: incomingRequest.requestID,
+        basket: incomingRequest.basket,
+        originator: incomingRequest.originator,
+        reason: incomingRequest.reason,
+        renewal: incomingRequest.renewal,
+      })
+      return
+    }
 
     const wasEmpty = this._basketRequests.length === 0
     this._basketRequests = [
@@ -544,6 +676,11 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     reason?: string
     renewal?: boolean
   }) => {
+    if (!incomingRequest?.requestID) return
+    if (!this._acceptPermissionForHttpBridge(incomingRequest.requestID, incomingRequest.originator)) {
+      return
+    }
+
     if (this._groupPhase === 'pending') {
       const certificate = incomingRequest.certificate as any
       this._deferred.certificate.push({
@@ -557,8 +694,6 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       } as any)
       return
     }
-
-    if (!incomingRequest?.requestID) return
 
     const certificate = incomingRequest.certificate as any
     const wasEmpty = this._certificateRequests.length === 0
@@ -584,6 +719,9 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     const { requestID, counterparty, originator, reason, renewal, protocolID } = args
 
     if (!requestID || !protocolID) return Promise.resolve()
+    if (!this._acceptPermissionForHttpBridge(requestID, originator)) {
+      return Promise.resolve()
+    }
 
     const [protocolSecurityLevel, protocolNameString] = protocolID as any
 
@@ -626,6 +764,9 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     const { requestID, originator, reason, renewal, spending } = args
 
     if (!requestID || !spending) return
+    if (!this._acceptPermissionForHttpBridge(requestID, originator)) {
+      return
+    }
 
     let { satoshis, lineItems } = spending as any
     if (!lineItems) lineItems = []
@@ -666,6 +807,9 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     const { requestID, originator, permissions } = args
 
     if (!requestID || !permissions) return
+    if (!this._acceptPermissionForHttpBridge(requestID, originator)) {
+      return
+    }
 
     // Peer-group requests become counterparty permission requests
     if (requestID.startsWith('group-peer:')) {
@@ -743,6 +887,9 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
   /** Counterparty permission callback — bound by createPermissionsManager. */
   readonly counterpartyPermissionCallback = async (args: CounterpartyPermissionRequest): Promise<void> => {
     if (!args?.requestID || !args?.permissions) return
+    if (!this._acceptPermissionForHttpBridge(args.requestID, args.originator)) {
+      return
+    }
 
     const newItem: CounterpartyPermissionRequest = {
       requestID: args.requestID,

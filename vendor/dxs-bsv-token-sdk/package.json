@@ -1,0 +1,86 @@
+{
+  "name": "dxs-bsv-token-sdk",
+  "version": "1.0.4",
+  "description": "TypeScript SDK for Bitcoin SV with first-class DSTAS flows, older STAS helpers, and low-level BSV primitives for transaction and script work.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dxsapp/dxs-bsv-token-sdk"
+  },
+  "directories": {
+    "test": "tests"
+  },
+  "author": "oleg@dxs.app (https://github.com/panagushin)",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "dependencies": {
+    "@noble/curves": "^2.0.1",
+    "@noble/hashes": "^2.0.1",
+    "@noble/secp256k1": "^3.0.0",
+    "@scure/base": "^2.0.0",
+    "@scure/bip32": "^2.0.1",
+    "@scure/bip39": "^2.0.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./bsv": {
+      "types": "./dist/bsv.d.ts",
+      "import": "./dist/bsv.js",
+      "require": "./dist/bsv.js",
+      "default": "./dist/bsv.js"
+    },
+    "./dstas": {
+      "types": "./dist/dstas.d.ts",
+      "import": "./dist/dstas.js",
+      "require": "./dist/dstas.js",
+      "default": "./dist/dstas.js"
+    },
+    "./stas": {
+      "types": "./dist/stas.d.ts",
+      "import": "./dist/stas.js",
+      "require": "./dist/stas.js",
+      "default": "./dist/stas.js"
+    },
+    "./script/read/locking-script-reader": {
+      "types": "./dist/script/read/locking-script-reader.d.ts",
+      "import": "./dist/script/read/locking-script-reader.js",
+      "require": "./dist/script/read/locking-script-reader.js",
+      "default": "./dist/script/read/locking-script-reader.js"
+    },
+    "./script/build/dstas-locking-builder": {
+      "types": "./dist/script/build/dstas-locking-builder.d.ts",
+      "import": "./dist/script/build/dstas-locking-builder.js",
+      "require": "./dist/script/build/dstas-locking-builder.js",
+      "default": "./dist/script/build/dstas-locking-builder.js"
+    },
+    "./script/eval/script-evaluator": {
+      "types": "./dist/script/eval/script-evaluator.d.ts",
+      "import": "./dist/script/eval/script-evaluator.js",
+      "require": "./dist/script/eval/script-evaluator.js",
+      "default": "./dist/script/eval/script-evaluator.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "homepage": "https://github.com/dxsapp/dxs-bsv-token-sdk",
+  "bugs": {
+    "url": "https://github.com/dxsapp/dxs-bsv-token-sdk/issues"
+  },
+  "keywords": [
+    "bitcoin-sv",
+    "dstas",
+    "stas",
+    "typescript",
+    "bsv",
+    "bitcoin-script",
+    "sdk"
+  ]
+}

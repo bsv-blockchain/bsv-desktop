@@ -1,4 +1,5 @@
 import { useContext, useState, useRef, useCallback, useEffect } from 'react'
+import * as secrets from '../../services/secrets';
 import { useTranslation } from 'react-i18next'
 import {
   Typography,
@@ -499,7 +500,7 @@ const Greeter: React.FC<any> = ({ history }) => {
       wabUrl: '',
       wabInfo: null,
       method: '',
-      network: DEFAULT_CHAIN as 'main' | 'test',
+      network: DEFAULT_CHAIN as 'main' | 'test' | 'ttn',
       storageUrl: '',
       messageBoxUrl: '',
       loginType: 'direct-key',
@@ -516,7 +517,7 @@ const Greeter: React.FC<any> = ({ history }) => {
       wabUrl: '',
       wabInfo: null,
       method: '',
-      network: DEFAULT_CHAIN as 'main' | 'test',
+      network: DEFAULT_CHAIN as 'main' | 'test' | 'ttn',
       storageUrl: '',
       messageBoxUrl: '',
       loginType: 'direct-key',
@@ -714,7 +715,7 @@ const Greeter: React.FC<any> = ({ history }) => {
       await (walletManager as any).providePassword(password)
       if (walletManager.authenticated) {
         // Save snapshot to local storage
-        localStorage.snap = saveEnhancedSnapshot()
+        secrets.setSnapshot(saveEnhancedSnapshot())
         toast.success(t('password_success_authenticated'))
         history.push('/dashboard/apps')
       } else {
@@ -766,7 +767,7 @@ const Greeter: React.FC<any> = ({ history }) => {
       await (walletManager as any).providePrivilegedKeyManager(createDisabledPrivilegedManager())
 
       if (walletManager.authenticated) {
-        localStorage.snap = saveEnhancedSnapshot()
+        secrets.setSnapshot(saveEnhancedSnapshot())
         toast.success(t('password_success_authenticated'))
         history.push('/dashboard/apps')
       } else {
@@ -821,6 +822,9 @@ const Greeter: React.FC<any> = ({ history }) => {
       <Box sx={{ my: 'auto', py: 3, width: '100%' }}>
         <Paper elevation={4} sx={{ p: 3, borderRadius: 2, bgcolor: 'background.paper', boxShadow: theme.shadows[3] }}>
           {header}
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress />
+          </Box>
         </Paper>
       </Box>
     </Container>

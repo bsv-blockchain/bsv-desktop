@@ -10,17 +10,32 @@ const mangled = (bytes: number[]) =>
   JSON.parse(JSON.stringify(new Uint8Array(bytes)));
 
 describe("wallet byte JSON compatibility", () => {
-  it("keeps every Electron wallet request and result on the compatibility boundary", () => {
+  it("keeps every Electron HTTP bridge request and response on the compatibility boundary", () => {
     const source = readFileSync(
       new URL("../src/onWalletReady.ts", import.meta.url),
       "utf8",
     );
+    const handler = source.slice(source.indexOf("export const onWalletReady"));
+    const requestBodyLines = handler
+      .split("\n")
+      .filter((line) => line.includes("req.body"));
+    const responseBodyLines = handler
+      .split("\n")
+      .filter((line) => line.includes("body:"));
 
-    expect(source.match(/parseWalletPayload\(/g)).toHaveLength(23);
-    expect(source.match(/stringifyWalletPayload\(result\)/g)).toHaveLength(28);
-    expect(source.match(/stringifyWalletPayload\(e\)/g)).toHaveLength(3);
-    expect(source).not.toContain("JSON.parse(req.body)");
-    expect(source).not.toContain("JSON.stringify(result)");
+    expect(requestBodyLines.length).toBeGreaterThanOrEqual(23);
+    expect(
+      requestBodyLines.every((line) =>
+        line.includes("parseWalletPayload(req.body)"),
+      ),
+    ).toBe(true);
+    expect(responseBodyLines.length).toBeGreaterThanOrEqual(28);
+    expect(
+      responseBodyLines.every((line) =>
+        line.includes("body: stringifyWalletPayload("),
+      ),
+    ).toBe(true);
+    expect(handler).not.toMatch(/\bJSON\.(?:parse|stringify)\s*\(/);
   });
 
   it("keeps valid number arrays on the identity fast path", () => {

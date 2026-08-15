@@ -1,8 +1,9 @@
 import { Beef, Utils } from '@bsv/sdk'
 import { wocFetch } from './RateLimitedFetch'
+import { wocApiBase } from './woc'
 
-export default async function getBeefForTxid(txid: string, chain: 'main' | 'test'): Promise<Beef> {
-  const baseUrl = `https://api.whatsonchain.com/v1/bsv/${chain}`
+export default async function getBeefForTxid(txid: string, chain: 'main' | 'test' | 'ttn'): Promise<Beef> {
+  const baseUrl = wocApiBase(chain)
 
   // Fetch BEEF from WhatsOnChain's BEEF endpoint
   const beefResponse = await wocFetch.fetch(`${baseUrl}/tx/${txid}/beef`)

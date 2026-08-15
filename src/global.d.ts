@@ -9,14 +9,56 @@ export interface ElectronAPI {
   saveMnemonic: (mnemonic: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   savePrivateKey: (privateKey: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   proxyFetchManifest: (url: string) => Promise<{ status: number; headers: [string, string][]; body: string }>;
+  network: {
+    getProxySettings: () => Promise<{ mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string; restartRequired?: boolean }>;
+    setProxySettings: (settings: { mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }) => Promise<{ success: boolean; settings?: { mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }; restartRequired?: boolean; error?: string }>;
+    onOpenSettings: (callback: () => void) => void;
+    removeOpenSettingsListener: (callback: () => void) => void;
+  };
+  app: {
+    /** Relaunches the app; the process exits and the Promise does not resolve. */
+    restart: () => Promise<void>;
+  };
   onHttpRequest: (callback: (event: any) => void) => void;
+  onHttpRequestCancelled: (callback: (event: { request_id: number; reason?: string }) => void) => void;
   sendHttpResponse: (response: any) => void;
   removeHttpRequestListener: () => void;
   storage: {
-    isAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<boolean>;
-    makeAvailable: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; settings?: any; error?: string }>;
-    callMethod: (identityKey: string, chain: 'main' | 'test', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
-    initializeServices: (identityKey: string, chain: 'main' | 'test') => Promise<{ success: boolean; error?: string }>;
+    isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<boolean>;
+    makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<{ success: boolean; settings?: any; error?: string }>;
+    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<{ success: boolean; error?: string }>;
+  };
+  secrets: {
+    getAll: () => Promise<Record<string, string>>;
+    set: (name: string, value: string) => Promise<void>;
+    delete: (name: string) => Promise<void>;
+  };
+  vault: {
+    status: () => Promise<{
+      locked: boolean;
+      hasVault: boolean;
+      methods: Array<'se' | 'passphrase'>;
+      biometricsAvailable: boolean;
+      needsMigration: boolean;
+    }>;
+    unlockWithPassphrase: (passphrase: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+    unlockWithBiometrics: () => Promise<{ ok: true } | { ok: false; error: string }>;
+    enroll: (options: {
+      passphrase: string;
+      enableBiometrics: boolean;
+      initialSecrets?: Record<string, string>;
+    }) => Promise<{ ok: true } | { ok: false; error: string }>;
+    lock: () => Promise<void>;
+    endSession: () => Promise<void>;
+    destroy: () => Promise<void>;
+  };
+  bootConfig: {
+    get: () => Promise<any>;
+    set: (config: any) => Promise<void>;
+  };
+  stas: {
+    query: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
   };
   updates: {
     check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;

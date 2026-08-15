@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react'
+import * as secrets from '../../services/secrets';
 import { useTranslation } from 'react-i18next'
 import style from './style.js'
 import {
@@ -140,7 +141,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
 
       if (managers.walletManager!.authenticated) {
         setAccordianView('new-password')
-        localStorage.snap = saveEnhancedSnapshot()
+        secrets.setSnapshot(saveEnhancedSnapshot())
       } else {
         throw new Error('Not authenticated. Please check your presentation key and recovery key.')
       }
@@ -163,7 +164,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
     try {
       setLoading(true)
       await managers.walletManager!.changePassword(password)
-      localStorage.snap = saveEnhancedSnapshot()
+      secrets.setSnapshot(saveEnhancedSnapshot())
       toast.success(t('recover_password_toast_success'))
       history.push('/dashboard/apps')
     } catch (e) {

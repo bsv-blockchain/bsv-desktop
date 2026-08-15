@@ -21,7 +21,7 @@ import App from './App/Index'; // Assuming index.tsx or similar
 import Settings from './Settings'; // Assuming index.tsx or similar
 import Security from './Security'; // Assuming index.tsx or similar
 import { UserContext } from '../../UserContext';
-import Payments from './Payments';
+import Transfers from './Transfers';
 import LegacyBridge from './LegacyBridge';
 // Note: These might still be .jsx files and need refactoring later
 import AppAccess from './AppAccess'; // Assuming index.jsx or similar
@@ -30,6 +30,8 @@ import ProtocolAccess from './ProtocolAccess'; // Assuming index.jsx or similar
 import CounterpartyAccess from './CounterpartyAccess'; // Assuming index.jsx or similar
 import CertificateAccess from './CertificateAccess'; // Assuming index.jsx or similar
 import { WalletContext } from '../../WalletContext';
+import BasketsPage from './BasketsPage';
+import AssetsPage from './AssetsPage';
 // @ts-expect-error - Type issues with makeStyles
 const useStyles = makeStyles(style, {
   name: 'Dashboard'
@@ -112,6 +114,14 @@ export default function Dashboard() {
       <div className={classes.page_container}>
         <ErrorBoundary>
           <Switch>
+          <Route
+            path='/dashboard/assets'
+            component={AssetsPage}
+          />
+          <Route
+            path='/dashboard/baskets'
+            component={BasketsPage}
+          />
           {/* Existing Redirects */}
           <Redirect from='/dashboard/counterparty/self' to={`/dashboard/counterparty/${myIdentityKey}`} />
           <Redirect from='/dashboard/counterparty/anyone' to='/dashboard/counterparty/0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798' />
@@ -123,8 +133,12 @@ export default function Dashboard() {
           />
           <Route
             path='/dashboard/payments'
-            component={Payments}
+            component={Transfers}
           />
+          {/* Legacy path — Peer Tokens is now the Tokens tab under Transfers. */}
+          <Route path='/dashboard/peer-tokens'>
+            <Redirect to='/dashboard/payments' />
+          </Route>
           <Route
             path='/dashboard/legacybridge'
             component={LegacyBridge}

@@ -36,6 +36,7 @@ import {
   beginHttpBridgeSession,
   endHttpBridgeSession,
 } from './lib/services/httpBridgeSession';
+import { parseWalletPayload, stringifyWalletPayload } from './walletByteJson';
 
 interface HttpRequestEvent {
   method: string;
@@ -361,12 +362,12 @@ export const onWalletReady = async (
         // 1. createAction
         case '/createAction': {
           try {
-            const args = JSON.parse(req.body) as CreateActionArgs;
+            const args = parseWalletPayload(req.body) as CreateActionArgs;
             const result = await wallet.createAction(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             if (isWerrReviewActions(error)) {
@@ -375,7 +376,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify(e)
+                body: stringifyWalletPayload(e)
               };
             } else {
               console.error('createAction error:', error);
@@ -394,12 +395,12 @@ export const onWalletReady = async (
         // 2. signAction
         case '/signAction': {
           try {
-            const args = JSON.parse(req.body) as SignActionArgs;
+            const args = parseWalletPayload(req.body) as SignActionArgs;
             const result = await wallet.signAction(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             if (isWerrReviewActions(error)) {
@@ -408,7 +409,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify(e)
+                body: stringifyWalletPayload(e)
               };
             } else {
               console.error('signAction error:', error);
@@ -427,12 +428,12 @@ export const onWalletReady = async (
         // 3. abortAction
         case '/abortAction': {
           try {
-            const args = JSON.parse(req.body) as AbortActionArgs;
+            const args = parseWalletPayload(req.body) as AbortActionArgs;
             const result = await wallet.abortAction(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('abortAction error:', error);
@@ -450,12 +451,12 @@ export const onWalletReady = async (
         // 4. listActions
         case '/listActions': {
           try {
-            const args = JSON.parse(req.body) as ListActionsArgs;
+            const args = parseWalletPayload(req.body) as ListActionsArgs;
             const result = await wallet.listActions(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('listActions error:', error);
@@ -473,12 +474,12 @@ export const onWalletReady = async (
         // 5. internalizeAction
         case '/internalizeAction': {
           try {
-            const args = JSON.parse(req.body) as InternalizeActionArgs;
+            const args = parseWalletPayload(req.body) as InternalizeActionArgs;
             const result = await wallet.internalizeAction(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             if (isWerrReviewActions(error)) {
@@ -487,7 +488,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: JSON.stringify(e)
+                body: stringifyWalletPayload(e)
               };
             } else {
               console.error('internalizeAction error:', error);
@@ -506,12 +507,12 @@ export const onWalletReady = async (
         // 6. listOutputs
         case '/listOutputs': {
           try {
-            const args = JSON.parse(req.body) as ListOutputsArgs;
+            const args = parseWalletPayload(req.body) as ListOutputsArgs;
             const result = await wallet.listOutputs(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('listOutputs error:', error);
@@ -529,12 +530,12 @@ export const onWalletReady = async (
         // 7. relinquishOutput
         case '/relinquishOutput': {
           try {
-            const args = JSON.parse(req.body) as RelinquishOutputArgs;
+            const args = parseWalletPayload(req.body) as RelinquishOutputArgs;
             const result = await wallet.relinquishOutput(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('relinquishOutput error:', error);
@@ -552,12 +553,12 @@ export const onWalletReady = async (
         // 8. getPublicKey
         case '/getPublicKey': {
           try {
-            const args = JSON.parse(req.body) as GetPublicKeyArgs;
+            const args = parseWalletPayload(req.body) as GetPublicKeyArgs;
             const result = await wallet.getPublicKey(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('getPublicKey error:', error);
@@ -575,12 +576,12 @@ export const onWalletReady = async (
         // 9. revealCounterpartyKeyLinkage
         case '/revealCounterpartyKeyLinkage': {
           try {
-            const args = JSON.parse(req.body) as RevealCounterpartyKeyLinkageArgs;
+            const args = parseWalletPayload(req.body) as RevealCounterpartyKeyLinkageArgs;
             const result = await wallet.revealCounterpartyKeyLinkage(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('revealCounterpartyKeyLinkage error:', error);
@@ -598,12 +599,12 @@ export const onWalletReady = async (
         // 10. revealSpecificKeyLinkage
         case '/revealSpecificKeyLinkage': {
           try {
-            const args = JSON.parse(req.body) as RevealSpecificKeyLinkageArgs;
+            const args = parseWalletPayload(req.body) as RevealSpecificKeyLinkageArgs;
             const result = await wallet.revealSpecificKeyLinkage(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('revealSpecificKeyLinkage error:', error);
@@ -621,12 +622,12 @@ export const onWalletReady = async (
         // 11. encrypt
         case '/encrypt': {
           try {
-            const args = JSON.parse(req.body) as WalletEncryptArgs;
+            const args = parseWalletPayload(req.body) as WalletEncryptArgs;
             const result = await wallet.encrypt(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('encrypt error:', error);
@@ -644,12 +645,12 @@ export const onWalletReady = async (
         // 12. decrypt
         case '/decrypt': {
           try {
-            const args = JSON.parse(req.body) as WalletDecryptArgs;
+            const args = parseWalletPayload(req.body) as WalletDecryptArgs;
             const result = await wallet.decrypt(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('decrypt error:', error);
@@ -667,12 +668,12 @@ export const onWalletReady = async (
         // 13. createHmac
         case '/createHmac': {
           try {
-            const args = JSON.parse(req.body) as CreateHmacArgs;
+            const args = parseWalletPayload(req.body) as CreateHmacArgs;
             const result = await wallet.createHmac(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('createHmac error:', error);
@@ -690,12 +691,12 @@ export const onWalletReady = async (
         // 14. verifyHmac
         case '/verifyHmac': {
           try {
-            const args = JSON.parse(req.body) as VerifyHmacArgs;
+            const args = parseWalletPayload(req.body) as VerifyHmacArgs;
             const result = await wallet.verifyHmac(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('verifyHmac error:', error);
@@ -713,12 +714,12 @@ export const onWalletReady = async (
         // 15. createSignature
         case '/createSignature': {
           try {
-            const args = JSON.parse(req.body) as CreateSignatureArgs;
+            const args = parseWalletPayload(req.body) as CreateSignatureArgs;
             const result = await wallet.createSignature(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('createSignature error:', error);
@@ -736,12 +737,12 @@ export const onWalletReady = async (
         // 16. verifySignature
         case '/verifySignature': {
           try {
-            const args = JSON.parse(req.body) as VerifySignatureArgs;
+            const args = parseWalletPayload(req.body) as VerifySignatureArgs;
             const result = await wallet.verifySignature(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('verifySignature error:', error);
@@ -759,12 +760,12 @@ export const onWalletReady = async (
         // 17. acquireCertificate
         case '/acquireCertificate': {
           try {
-            const args = JSON.parse(req.body) as AcquireCertificateArgs;
+            const args = parseWalletPayload(req.body) as AcquireCertificateArgs;
             const result = await wallet.acquireCertificate(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('acquireCertificate error:', error);
@@ -782,12 +783,12 @@ export const onWalletReady = async (
         // 18. listCertificates
         case '/listCertificates': {
           try {
-            const args = JSON.parse(req.body) as ListCertificatesArgs;
+            const args = parseWalletPayload(req.body) as ListCertificatesArgs;
             const result = await wallet.listCertificates(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('listCertificates error:', error);
@@ -805,12 +806,12 @@ export const onWalletReady = async (
         // 19. proveCertificate
         case '/proveCertificate': {
           try {
-            const args = JSON.parse(req.body) as ProveCertificateArgs;
+            const args = parseWalletPayload(req.body) as ProveCertificateArgs;
             const result = await wallet.proveCertificate(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('proveCertificate error:', error);
@@ -828,12 +829,12 @@ export const onWalletReady = async (
         // 20. relinquishCertificate
         case '/relinquishCertificate': {
           try {
-            const args = JSON.parse(req.body) as RelinquishCertificateArgs;
+            const args = parseWalletPayload(req.body) as RelinquishCertificateArgs;
             const result = await wallet.relinquishCertificate(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('relinquishCertificate error:', error);
@@ -851,12 +852,12 @@ export const onWalletReady = async (
         // 21. discoverByIdentityKey
         case '/discoverByIdentityKey': {
           try {
-            const args = JSON.parse(req.body) as DiscoverByIdentityKeyArgs;
+            const args = parseWalletPayload(req.body) as DiscoverByIdentityKeyArgs;
             const result = await wallet.discoverByIdentityKey(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('discoverByIdentityKey error:', error);
@@ -874,12 +875,12 @@ export const onWalletReady = async (
         // 22. discoverByAttributes
         case '/discoverByAttributes': {
           try {
-            const args = JSON.parse(req.body) as DiscoverByAttributesArgs;
+            const args = parseWalletPayload(req.body) as DiscoverByAttributesArgs;
             const result = await wallet.discoverByAttributes(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('discoverByAttributes error:', error);
@@ -901,7 +902,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('isAuthenticated error:', error);
@@ -923,7 +924,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('waitForAuthentication error:', error);
@@ -945,7 +946,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('getHeight error:', error);
@@ -963,12 +964,12 @@ export const onWalletReady = async (
         // 26. getHeaderForHeight
         case '/getHeaderForHeight': {
           try {
-            const args = JSON.parse(req.body) as GetHeaderArgs;
+            const args = parseWalletPayload(req.body) as GetHeaderArgs;
             const result = await wallet.getHeaderForHeight(args, origin);
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('getHeaderForHeight error:', error);
@@ -990,7 +991,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('getNetwork error:', error);
@@ -1012,7 +1013,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 200,
-              body: JSON.stringify(result),
+              body: stringifyWalletPayload(result),
             };
           } catch (error) {
             console.error('getVersion error:', error);

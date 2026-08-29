@@ -1,7 +1,7 @@
 import {
   DEFAULT_SETTINGS as LIB_DEFAULT_SETTINGS,
   type WalletSettings,
-} from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
+} from '@bsv/wallet-toolbox-client'
 
 // Default configuration constants
 export const DEFAULT_CHAIN = 'main'

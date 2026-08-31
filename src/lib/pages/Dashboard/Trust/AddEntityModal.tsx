@@ -13,6 +13,7 @@ import CustomDialog from '../../../components/CustomDialog'
 import { toast } from 'react-toastify'
 import validateTrust from '../../../utils/validateTrust'
 import { Certifier } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
+import fetchTrustManifest, { TrustManifestError } from '../../../utils/parseTrustManifest'
 
 const AddEntityModal = ({
   open, setOpen, trustedEntities, setTrustedEntities
@@ -38,31 +39,20 @@ const AddEntityModal = ({
         return
       }
       setLoading(true)
-      const controller = new window.AbortController()
-      const id = setTimeout(() => controller.abort(), 15000)
-      const url = domain.startsWith('http') ? `${domain}/manifest.json` : `https://${domain}/manifest.json`
-      const result = await window.fetch(
-        url,
-        { signal: controller.signal }
-      )
-      clearTimeout(id)
-      const json = await result.json()
-      if (!json.babbage || !json.babbage.trust || typeof json.babbage.trust !== 'object') {
-        throw new Error('This domain does not support importing a trust relationship (it needs to follow the BRC-68 protocol)')
-      }
-      await validateTrust(json.babbage.trust)
-      setName(json.babbage.trust.name)
-      setDescription(json.babbage.trust.note)
-      setIcon(json.babbage.trust.icon)
-      setIdentityKey(json.babbage.trust.publicKey)
+      const { trust } = await fetchTrustManifest(domain)
+      await validateTrust(trust)
+      setName(trust.name)
+      setDescription(trust.note)
+      setIcon(trust.icon)
+      setIdentityKey(trust.publicKey)
       setFieldsValid(true)
     } catch (e) {
       setFieldsValid(false)
-      let msg = e.message
-      if (msg === 'The user aborted a request.') {
+      let msg = e instanceof Error ? e.message : String(e)
+      if (e instanceof TrustManifestError && e.code === 'timeout') {
         msg = t('trust_add_entity_domain_timeout')
       }
-      if (msg === 'Failed to fetch') {
+      if (e instanceof TrustManifestError && e.code === 'fetch-failed') {
         msg = t('trust_add_entity_domain_fetch_failed')
       }
       setDomainError(msg)

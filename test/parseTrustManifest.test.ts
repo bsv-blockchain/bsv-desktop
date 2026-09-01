@@ -100,8 +100,24 @@ describe('fetchTrustManifest', () => {
       .resolves.toEqual({ source: 'metanet', trust: canonicalTrust })
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://sigmaidentity.com/manifest.json',
-      { signal: expect.any(AbortSignal) }
+      {
+        signal: expect.any(AbortSignal),
+        redirect: 'error'
+      }
     )
+  })
+
+  it('rejects a manifest redirected away from the requested domain', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      redirected: true,
+      url: 'https://attacker.example/manifest.json',
+      json: vi.fn().mockResolvedValue({ metanet: { trust: canonicalTrust } })
+    })
+
+    await expect(fetchTrustManifest('sigmaidentity.com', { fetchImpl: fetchImpl as typeof fetch }))
+      .rejects.toMatchObject({ code: 'redirected-manifest' })
   })
 
   it('checks HTTP status before parsing a response body', async () => {

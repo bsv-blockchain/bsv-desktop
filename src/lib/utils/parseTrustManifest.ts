@@ -19,6 +19,7 @@ export type TrustManifestErrorCode =
   | 'insecure-domain'
   | 'timeout'
   | 'fetch-failed'
+  | 'redirected-manifest'
   | 'http-status'
   | 'invalid-json'
   | 'unsupported-manifest'
@@ -174,12 +175,25 @@ export const fetchTrustManifest = async (
   try {
     let response: Response
     try {
-      response = await fetchImpl(url, { signal: controller.signal })
+      response = await fetchImpl(url, {
+        signal: controller.signal,
+        redirect: 'error'
+      })
     } catch (error) {
       if (controller.signal.aborted) {
         throw timeoutError(timeoutMs)
       }
       throw new TrustManifestError('fetch-failed', 'Could not fetch the BRC-68 trust manifest')
+    }
+
+    // The trust key is authoritative only for the domain the user entered.
+    // Do not allow a fetch implementation to silently substitute another
+    // domain through redirects, even if it ignores redirect: 'error'.
+    if (response.redirected || (response.url && response.url !== url)) {
+      throw new TrustManifestError(
+        'redirected-manifest',
+        'The BRC-68 trust manifest must be served directly by the requested domain'
+      )
     }
 
     if (!response.ok) {

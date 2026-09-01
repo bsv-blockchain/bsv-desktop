@@ -42,6 +42,7 @@ const AddEntityModal = ({
       setLoading(true)
       const { trust } = await fetchTrustManifest(domain)
       await validateTrust(trust)
+      setDomainError(null)
       setName(trust.name)
       setDescription(trust.note)
       setIcon(trust.icon)

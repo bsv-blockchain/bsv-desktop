@@ -26,6 +26,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import CustomDialog from '../../../components/CustomDialog'
 import { Certifier } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
+import { removeTrustedCertifier, updateTrustedCertifier } from '../../../utils/trustedCertifiers'
 
 const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { history: any, classes: any, setTrustedEntities: Function, entity: Certifier, trustedEntities: Certifier[] }) => {
   const { t } = useTranslation()
@@ -36,19 +37,11 @@ const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { histo
 
   const handleTrustChange = (e, v) => {
     setTrust(v)
-    setTrustedEntities(old => {
-      const newEntities = [...old]
-      newEntities[newEntities.indexOf(entity)].trust = v
-      return newEntities
-    })
+    setTrustedEntities(old => updateTrustedCertifier(old, entity.identityKey, { trust: v }))
   }
 
   const handleDelete = () => {
-    setTrustedEntities(old => {
-      const newEntities = [...old]
-      newEntities.splice(newEntities.indexOf(entity), 1)
-      return newEntities
-    })
+    setTrustedEntities(old => removeTrustedCertifier(old, entity.identityKey))
     setDeleteOpen(false)
   }
 

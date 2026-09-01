@@ -10,14 +10,14 @@ const canonicalTrust = {
   name: 'Sigma Identity',
   note: 'Certifies verified identity claims',
   icon: 'https://sigmaidentity.com/icon.png',
-  publicKey: `02${'a'.repeat(64)}`
+  publicKey: '02c5046e31396783672648ca8048171cc4f5c97518be4c80318af3a654e175befc'
 }
 
 const legacyTrust = {
   name: 'Legacy Trust',
   note: 'Legacy BRC-68 trust provider',
   icon: 'https://legacy.example/icon.png',
-  publicKey: `03${'b'.repeat(64)}`
+  publicKey: '03f028892bad7ed57d2fb57bf33081d5cfcf6f9ed3d3d7f159c2e2fff579dc341a'
 }
 
 afterEach(() => {
@@ -80,6 +80,7 @@ describe('parseTrustManifest', () => {
     { metanet: { trust: { ...canonicalTrust, note: 'tiny' } } },
     { metanet: { trust: { ...canonicalTrust, icon: 'http://sigmaidentity.com/icon.png' } } },
     { metanet: { trust: { ...canonicalTrust, publicKey: `04${'a'.repeat(64)}` } } },
+    { metanet: { trust: { ...canonicalTrust, publicKey: `02${'0'.repeat(64)}` } } },
     { metanet: {} },
     []
   ])('rejects malformed manifest schema', manifest => {

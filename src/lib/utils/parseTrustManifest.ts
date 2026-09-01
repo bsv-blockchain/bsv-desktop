@@ -1,3 +1,5 @@
+import { PublicKey } from '@bsv/sdk'
+
 export type TrustManifestSource = 'metanet' | 'babbage'
 
 export interface TrustManifestDetails {
@@ -109,7 +111,13 @@ const readTrustDetails = (value: unknown): TrustManifestDetails => {
     throw new TrustManifestError('invalid-schema', 'BRC-68 trust public key must be a compressed secp256k1 public key')
   }
 
-  return { name, note, icon, publicKey }
+  try {
+    PublicKey.fromString(publicKey)
+  } catch (_) {
+    throw new TrustManifestError('invalid-schema', 'BRC-68 trust public key must be a compressed secp256k1 public key')
+  }
+
+  return { name, note, icon, publicKey: publicKey.toLowerCase() }
 }
 
 /**

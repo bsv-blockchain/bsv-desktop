@@ -14,6 +14,7 @@ import { toast } from 'react-toastify'
 import validateTrust from '../../../utils/validateTrust'
 import { Certifier } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 import fetchTrustManifest, { TrustManifestError } from '../../../utils/parseTrustManifest'
+import { addTrustedCertifier, trustedCertifierFromManifest } from '../../../utils/trustedCertifiers'
 
 const AddEntityModal = ({
   open, setOpen, trustedEntities, setTrustedEntities
@@ -91,10 +92,18 @@ const AddEntityModal = ({
   }
 
   const handleTrust = async () => {
-    setTrustedEntities(t => {
-      if (t.some(x => x.identityKey === identityKey)) {
+    setTrustedEntities(current => {
+      const candidate = trustedCertifierFromManifest({
+        name,
+        note: description,
+        icon,
+        publicKey: identityKey
+      }) as Certifier
+      const result = addTrustedCertifier(current, candidate)
+
+      if (!result.added) {
         toast.error(t('trust_add_entity_duplicate_key'))
-        return t
+        return current
       }
       setDomain('')
       setName('')
@@ -102,10 +111,7 @@ const AddEntityModal = ({
       setIdentityKey('')
       setFieldsValid(false)
       setOpen(false)
-      return [
-        { name, icon, description, identityKey, trust: 5 } as Certifier,
-        ...t
-      ]
+      return result.entities
     })
   }
 

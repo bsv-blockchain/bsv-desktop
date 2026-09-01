@@ -108,6 +108,7 @@ const AddEntityModal = ({
       setDomain('')
       setName('')
       setDescription('')
+      setIcon('')
       setIdentityKey('')
       setFieldsValid(false)
       setOpen(false)

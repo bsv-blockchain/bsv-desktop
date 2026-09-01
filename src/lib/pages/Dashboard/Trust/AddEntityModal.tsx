@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Typography, Button, TextField, DialogContent, DialogContentText, DialogActions, LinearProgress, InputAdornment, Box } from '@mui/material'
 import DomainIcon from '@mui/icons-material/Public'
@@ -32,9 +32,11 @@ const AddEntityModal = ({
   const [nameError, setNameError] = useState(null)
   const [iconError, setIconError] = useState(null)
   const [publicKeyError, setPublicKeyError] = useState(null)
+  const domainRequestGeneration = useRef(0)
 
   const handleDomainSubmit = async e => {
     e.preventDefault()
+    const requestGeneration = ++domainRequestGeneration.current
     try {
       if (!domain) {
         return
@@ -42,6 +44,9 @@ const AddEntityModal = ({
       setLoading(true)
       const { trust } = await fetchTrustManifest(domain)
       await validateTrust(trust)
+      if (requestGeneration !== domainRequestGeneration.current) {
+        return
+      }
       setDomainError(null)
       setName(trust.name)
       setDescription(trust.note)
@@ -49,6 +54,9 @@ const AddEntityModal = ({
       setIdentityKey(trust.publicKey)
       setFieldsValid(true)
     } catch (e) {
+      if (requestGeneration !== domainRequestGeneration.current) {
+        return
+      }
       setFieldsValid(false)
       let msg = e instanceof Error ? e.message : String(e)
       if (e instanceof TrustManifestError && e.code === 'timeout') {
@@ -59,7 +67,9 @@ const AddEntityModal = ({
       }
       setDomainError(msg)
     } finally {
-      setLoading(false)
+      if (requestGeneration === domainRequestGeneration.current) {
+        setLoading(false)
+      }
     }
   }
 
@@ -136,7 +146,9 @@ const AddEntityModal = ({
                 placeholder='trustedentity.com'
                 value={domain}
                 onChange={e => {
+                  domainRequestGeneration.current++
                   setDomain(e.target.value)
+                  setLoading(false)
                   setDomainError(null)
                   setFieldsValid(false)
                 }}

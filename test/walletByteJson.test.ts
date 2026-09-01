@@ -10,17 +10,71 @@ const mangled = (bytes: number[]) =>
   JSON.parse(JSON.stringify(new Uint8Array(bytes)));
 
 describe("wallet byte JSON compatibility", () => {
-  it("keeps every Electron wallet request and result on the compatibility boundary", () => {
+  it("keeps every standard BRC-100 wallet request and result on the compatibility boundary", () => {
     const source = readFileSync(
       new URL("../src/onWalletReady.ts", import.meta.url),
       "utf8",
     );
 
-    expect(source.match(/parseWalletPayload\(/g)).toHaveLength(23);
-    expect(source.match(/stringifyWalletPayload\(result\)/g)).toHaveLength(28);
+    const routesWithArguments = [
+      "createAction",
+      "signAction",
+      "abortAction",
+      "listActions",
+      "internalizeAction",
+      "listOutputs",
+      "relinquishOutput",
+      "getPublicKey",
+      "revealCounterpartyKeyLinkage",
+      "revealSpecificKeyLinkage",
+      "encrypt",
+      "decrypt",
+      "createHmac",
+      "verifyHmac",
+      "createSignature",
+      "verifySignature",
+      "acquireCertificate",
+      "listCertificates",
+      "proveCertificate",
+      "relinquishCertificate",
+      "discoverByIdentityKey",
+      "discoverByAttributes",
+      "getHeaderForHeight",
+    ];
+    const routesWithoutArguments = [
+      "isAuthenticated",
+      "waitForAuthentication",
+      "getHeight",
+      "getNetwork",
+      "getVersion",
+    ];
+
+    const routeBlock = (route: string): string => {
+      const marker = `case '/${route}': {`;
+      const start = source.indexOf(marker);
+      expect(start, `missing /${route} route`).toBeGreaterThanOrEqual(0);
+      const nextCase = source.indexOf("\n        case '", start + marker.length);
+      const nextDefault = source.indexOf("\n        default:", start + marker.length);
+      const candidates = [nextCase, nextDefault].filter((index) => index >= 0);
+      const end = candidates.length > 0 ? Math.min(...candidates) : source.length;
+      return source.slice(start, end);
+    };
+
+    for (const route of routesWithArguments) {
+      const block = routeBlock(route);
+      expect(block, `/${route} request`).toContain("parseWalletPayload(req.body)");
+      expect(block, `/${route} result`).toContain("stringifyWalletPayload(result)");
+      expect(block, `/${route} request`).not.toContain("JSON.parse(req.body)");
+      expect(block, `/${route} result`).not.toContain("JSON.stringify(result)");
+    }
+
+    for (const route of routesWithoutArguments) {
+      const block = routeBlock(route);
+      expect(block, `/${route} result`).toContain("stringifyWalletPayload(result)");
+      expect(block, `/${route} result`).not.toContain("JSON.stringify(result)");
+    }
+
     expect(source.match(/stringifyWalletPayload\(e\)/g)).toHaveLength(3);
-    expect(source).not.toContain("JSON.parse(req.body)");
-    expect(source).not.toContain("JSON.stringify(result)");
   });
 
   it("keeps valid number arrays on the identity fast path", () => {

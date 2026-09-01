@@ -27,7 +27,7 @@
     "test": "vitest run --config vitest.config.electron.ts test/translations.test.ts test/appIconFallback.test.ts test/formatReleaseNotes.test.ts test/endpoints.test.ts",
     "test:stas": "vitest run --config vitest.config.electron.ts test/stas",
     "test:tokens": "vitest run --config vitest.config.electron.ts test/tokens",
-    "test:stas:db": "npm rebuild better-sqlite3 && vitest run --config vitest.config.electron.ts test/stas; test_status=$?; npm run rebuild:electron; rebuild_status=$?; if [ $test_status -ne 0 ]; then exit $test_status; fi; exit $rebuild_status",
+    "test:stas:db": "npm rebuild better-sqlite3 && vitest run --config vitest.config.electron.ts test/stas; test_status=$?; npm run rebuild:electron; rebuild_status=$?; if [ \"$test_status\" -ne 0 ]; then exit \"$test_status\"; fi; exit \"$rebuild_status\"",
     "rebuild:electron": "electron-rebuild -f -o better-sqlite3 --build-from-source",
     "test:perf": "vitest run --config vitest.config.electron.ts"
   },

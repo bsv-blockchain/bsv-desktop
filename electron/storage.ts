@@ -22,6 +22,11 @@ import { chaintracksUrl } from './endpoints.js';
 import { patchListCertificates } from './optimized-queries.js';
 import { stasMigrationSource } from './stas-migrations/index.js';
 import { StasQueries } from './stas-queries.js';
+import {
+  DEFAULT_MONITOR_FEE_RATE,
+  DEFAULT_STORAGE_FEE_RATE,
+  getConfiguredFeeRate
+} from './feeSettings.js';
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
@@ -168,21 +173,16 @@ class StorageManager {
     });
     console.log(`[Storage] STAS migrations complete`);
 
-    // Create StorageKnex instance.
-    //
-    // feeModel: TAAL and GorillaPool both advertise a miningFee of 100 sat/1000
-    // bytes (`GET /v1/policy`), i.e. 0.1 sat/byte. Paying exactly 100 sat/kb put
-    // us *on* that floor with zero headroom, which is fine for a standalone tx
-    // but not for tokens: miners price the whole unconfirmed ancestor package,
-    // and a token transfer's package includes engine-signed txs that pay less.
-    // One underpriced ancestor then drags the package average below policy and
-    // the entire chain stalls — observed on a 21-tx mint package that settled at
-    // 0.095 sat/b and needed a CPFP bump to confirm. 250 sat/kb buys margin for
-    // pennies: a 500-byte transfer costs 125 sat instead of 50.
+    // Keep the existing 250 sat/kB default, introduced as a margin for reported
+    // underfunded token ancestors. This is a fixed transaction rate, not an
+    // ancestor-fee calculation. A per-chain override takes effect after restart.
     const storage = new StorageKnex({
       knex: db,
       chain: chain,
-      feeModel: { model: 'sat/kb', value: 250 },
+      feeModel: {
+        model: 'sat/kb',
+        value: getConfiguredFeeRate(chain, DEFAULT_STORAGE_FEE_RATE)
+      },
       commissionSatoshis: 0
     });
 
@@ -365,7 +365,10 @@ class StorageManager {
         type: 'start',
         config: {
           identityKey,
-          chain
+          chain,
+          // Resolve in the main process so a preference saved during this
+          // session cannot alter a worker started before the next restart.
+          feeRate: getConfiguredFeeRate(chain, DEFAULT_MONITOR_FEE_RATE)
         }
       });
 

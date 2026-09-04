@@ -32,6 +32,7 @@ import { UserContext } from '../../../UserContext.js'
 import PageLoading from '../../../components/PageLoading.js'
 import MessageBoxConfig from '../../../components/MessageBoxConfig/index.tsx'
 import WalletDiagnosis from './WalletDiagnosis.tsx'
+import FeeSettings from './FeeSettings.tsx'
 const useStyles = makeStyles((theme: Theme) => ({
   root: {
     padding: theme.spacing(3),
@@ -78,7 +79,7 @@ const Settings = () => {
   const classes = useStyles()
   const { t } = useTranslation()
   const { currentLanguage, setCurrentLanguage, supportedLanguages } = useLanguage()
-  const { settings, updateSettings, wabUrl, useRemoteStorage, useMessageBox, storageUrl, useWab, messageBoxUrl, backupStorageUrls, addBackupStorageUrl, removeBackupStorageUrl, syncBackupStorage, setPrimaryStorage, permissionsConfig, updatePermissionsConfig } = useContext(WalletContext)
+  const { chain, settings, updateSettings, wabUrl, useRemoteStorage, useMessageBox, storageUrl, useWab, messageBoxUrl, backupStorageUrls, addBackupStorageUrl, removeBackupStorageUrl, syncBackupStorage, setPrimaryStorage, permissionsConfig, updatePermissionsConfig } = useContext(WalletContext)
   const { pageLoaded, setManualUpdateInfo } = useContext(UserContext)
   const [settingsLoading, setSettingsLoading] = useState(false)
   const theme = useTheme()
@@ -425,6 +426,8 @@ const Settings = () => {
       <Typography variant="body1" color="textSecondary" sx={{ mb: 2 }}>
         {t('settings_subtitle')}
       </Typography>
+
+      <FeeSettings key={`${chain}-${useRemoteStorage}`} chain={chain} remote={useRemoteStorage} />
 
       {settingsLoading && (
         <Box sx={{ width: '100%', mb: 2 }}>

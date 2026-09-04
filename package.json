@@ -21,7 +21,7 @@
     "package:win": "electron-builder --win",
     "package:linux": "electron-builder --linux",
     "lint:ci": "echo 'No linting'",
-    "test": "vitest run --config vitest.config.electron.ts test/translations.test.ts test/appIconFallback.test.ts test/formatReleaseNotes.test.ts test/endpoints.test.ts",
+    "test": "vitest run --config vitest.config.electron.ts test/translations.test.ts test/appIconFallback.test.ts test/formatReleaseNotes.test.ts test/endpoints.test.ts test/feeSettings.test.ts",
     "test:stas": "vitest run --config vitest.config.electron.ts test/stas",
     "test:tokens": "vitest run --config vitest.config.electron.ts test/tokens",
     "test:stas:db": "npm rebuild better-sqlite3 && vitest run --config vitest.config.electron.ts test/stas; npm run rebuild:electron",

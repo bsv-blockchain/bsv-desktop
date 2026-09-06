@@ -101,10 +101,10 @@ const AddEntityModal = ({
   }
 
   const handleTrust = async () => {
-    setTrustedEntities(t => {
-      if (t.some(x => x.identityKey === identityKey)) {
+    setTrustedEntities((entities: Certifier[]) => {
+      if (entities.some(x => x.identityKey === identityKey)) {
         toast.error(t('trust_add_entity_duplicate_key'))
-        return t
+        return entities
       }
       setDomain('')
       setName('')
@@ -112,10 +112,15 @@ const AddEntityModal = ({
       setIdentityKey('')
       setFieldsValid(false)
       setOpen(false)
-      return [
-        { name, icon, description, identityKey, trust: 5 } as Certifier,
-        ...t
-      ]
+      // Typed (not cast) so a field-name drift against Certifier fails to compile.
+      const certifier: Certifier = {
+        name,
+        description,
+        iconUrl: icon,
+        identityKey,
+        trust: 5
+      }
+      return [certifier, ...entities]
     })
   }
 

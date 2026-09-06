@@ -101,10 +101,10 @@ const AddEntityModal = ({
   }
 
   const handleTrust = async () => {
-    setTrustedEntities(t => {
-      if (t.some(x => x.identityKey === identityKey)) {
+    setTrustedEntities((entities: Certifier[]) => {
+      if (entities.some(x => x.identityKey === identityKey)) {
         toast.error(t('trust_add_entity_duplicate_key'))
-        return t
+        return entities
       }
       setDomain('')
       setName('')
@@ -120,7 +120,7 @@ const AddEntityModal = ({
         identityKey,
         trust: 5
       }
-      return [certifier, ...t]
+      return [certifier, ...entities]
     })
   }
 

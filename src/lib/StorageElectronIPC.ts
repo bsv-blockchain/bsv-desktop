@@ -21,12 +21,12 @@
  * - IPC is more efficient and simpler for Electron's architecture
  */
 
-import type { WalletStorageProvider, WalletServices } from '@bsv/wallet-toolbox-client/out/src/sdk';
+import type { sdk } from '@bsv/wallet-toolbox-client';
 
-export class StorageElectronIPC implements WalletStorageProvider {
+export class StorageElectronIPC implements sdk.WalletStorageProvider {
   private identityKey: string;
   private chain: 'main' | 'test' | 'ttn';
-  private services?: WalletServices;
+  private services?: sdk.WalletServices;
   private settings?: any;
 
   constructor(identityKey: string, chain: 'main' | 'test' | 'ttn') {
@@ -39,7 +39,7 @@ export class StorageElectronIPC implements WalletStorageProvider {
   /**
    * Set wallet services (required by WalletStorageProvider interface)
    */
-  setServices(v: WalletServices): void {
+  setServices(v: sdk.WalletServices): void {
     this.services = v;
   }
 
@@ -75,7 +75,7 @@ export class StorageElectronIPC implements WalletStorageProvider {
   /**
    * Get wallet services
    */
-  getServices(): WalletServices {
+  getServices(): sdk.WalletServices {
     if (!this.services) {
       throw new Error('Services not set on StorageElectronIPC');
     }

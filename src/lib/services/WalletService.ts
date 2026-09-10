@@ -30,6 +30,8 @@ import {
   WABClient,
   Wallet,
   PrivilegedKeyManager,
+  WalletSettingsManager,
+  type WalletSettings,
 } from '@bsv/wallet-toolbox-client'
 import { createServices } from './createServices'
 import {
@@ -40,7 +42,6 @@ import {
   WalletInterface,
   CachedKeyDeriver,
 } from '@bsv/sdk'
-import { WalletSettingsManager, WalletSettings } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
 import { toast } from 'react-toastify'
 import { EventEmittable } from './EventEmittable'
 import { PermissionQueueManager } from './PermissionQueueManager'

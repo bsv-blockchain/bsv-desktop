@@ -151,6 +151,20 @@ export function readFeeSettingsFile(settingsPath = defaultFeeSettingsPath()): Fe
   }
 }
 
+/**
+ * Runtime read used at startup and by the settings UI. A damaged preferences
+ * file must not stop the wallet from starting, so it is ignored (the built-in
+ * defaults apply) and logged; saving a rate from Settings replaces it.
+ */
+export function readFeeSettingsFileOrDefaults(settingsPath = defaultFeeSettingsPath()): FeeSettingsFile {
+  try {
+    return readFeeSettingsFile(settingsPath)
+  } catch (error) {
+    console.warn(`[Fees] Ignoring unreadable fee settings at ${settingsPath}, using defaults: ${errorMessage(error)}`)
+    return {}
+  }
+}
+
 export function defaultFeeSettingsPath(): string {
   return path.join(os.homedir(), '.bsv-desktop', 'fee-settings.json')
 }
@@ -164,7 +178,7 @@ function getStartupFeeSettings(settingsPath = defaultFeeSettingsPath()): FeeSett
   if (existing) {
     return existing
   }
-  const loaded = readFeeSettingsFile(settingsPath)
+  const loaded = readFeeSettingsFileOrDefaults(settingsPath)
   startupFeeSettings.set(settingsPath, loaded)
   return loaded
 }
@@ -217,14 +231,14 @@ export class FeeSettingsService {
     this.timeoutMs = options.timeoutMs ?? POLICY_TIMEOUT_MS
     this.initialSettings = seedStartupFeeSettings(
       this.settingsPath,
-      readFeeSettingsFile(this.settingsPath)
+      readFeeSettingsFileOrDefaults(this.settingsPath)
     )
   }
 
   /** Return current preferences plus a best-effort live policy floor. */
   async get(chain: unknown): Promise<FeeSettingsView> {
     assertFeeChain(chain)
-    const settings = readFeeSettingsFile(this.settingsPath)
+    const settings = readFeeSettingsFileOrDefaults(this.settingsPath)
     const customRate = settings[chain] ?? null
     const policyUrl = `${arcadeUrl(chain)}/policy`
 
@@ -254,7 +268,7 @@ export class FeeSettingsService {
     }
 
     const mutation = this.writeQueue.then(async () => {
-      const settings = readFeeSettingsFile(this.settingsPath)
+      const settings = readFeeSettingsFileOrDefaults(this.settingsPath)
       settings[chain] = customRate
       await writeFeeSettingsFile(this.settingsPath, settings)
     })

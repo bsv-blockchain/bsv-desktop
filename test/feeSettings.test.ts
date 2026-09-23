@@ -1,13 +1,14 @@
 import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   FeeSettingsService,
   feeRatioToSatPerKb,
   getConfiguredFeeRate,
   normalizePolicyFee,
   parseFeeSettingsFile,
+  readFeeSettingsFile,
   registerFeeSettingsIpc,
   type PolicyFetch
 } from '../electron/feeSettings.js'
@@ -166,8 +167,42 @@ describe('FeeSettingsService', () => {
     const settingsPath = await temporarySettingsPath()
     temporaryPaths.push(settingsPath)
     await writeFile(settingsPath, JSON.stringify({ main: 0 }))
-    expect(() => new FeeSettingsService({ settingsPath })).toThrow(/Malformed fee settings/)
+    expect(() => readFeeSettingsFile(settingsPath)).toThrow(/Malformed fee settings/)
     expect(() => parseFeeSettingsFile({ main: Infinity })).toThrow()
+  })
+
+  it.each([
+    ['an invalid rate', JSON.stringify({ main: 0 })],
+    ['an unknown key', JSON.stringify({ main: 500, mainnet: 500 })],
+    ['invalid JSON', '{"main": 5'],
+  ])('falls back to defaults instead of failing startup on %s, and saving repairs the file', async (_case, contents) => {
+    const settingsPath = await temporarySettingsPath()
+    temporaryPaths.push(settingsPath)
+    await writeFile(settingsPath, contents)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    // main.ts constructs the service at module scope; this must not throw.
+    const service = new FeeSettingsService({ settingsPath, fetch: okFetch(policy(100, 1_000)) })
+    expect(getConfiguredFeeRate('main', 250, settingsPath)).toBe(250)
+    expect(getConfiguredFeeRate('test', 100, settingsPath)).toBe(100)
+    await expect(service.get('main')).resolves.toMatchObject({ customRate: null, effectiveRate: 250, restartRequired: false })
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/Ignoring unreadable fee settings/))
+
+    await expect(service.set('main', 500)).resolves.toMatchObject({ customRate: 500, restartRequired: true })
+    expect(readFeeSettingsFile(settingsPath)).toEqual({ main: 500 })
+    warn.mockRestore()
+  })
+
+  it('can reset a damaged file offline', async () => {
+    const settingsPath = await temporarySettingsPath()
+    temporaryPaths.push(settingsPath)
+    await writeFile(settingsPath, 'not json')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const service = new FeeSettingsService({ settingsPath, fetch: async () => { throw new Error('offline') } })
+
+    await expect(service.set('main', null)).resolves.toMatchObject({ customRate: null, effectiveRate: 250 })
+    expect(readFeeSettingsFile(settingsPath)).toEqual({ main: null })
+    warn.mockRestore()
   })
 })
 

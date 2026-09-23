@@ -23,6 +23,7 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete'
 import { PublicKey, WalletInterface } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
+import AmountInput from '../../../components/AmountInput'
 import { IncomingPaymentRequest } from '@bsv/message-box-client'
 import { toast } from 'react-toastify'
 import { useIdentitySearch } from '@bsv/identity-react'
@@ -93,11 +94,13 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
   })
   const [whitelistKeyInput, setWhitelistKeyInput] = useState('')
   const [allowError, setAllowError] = useState('')
-  const [minAmount, setMinAmount] = useState(() =>
-    localStorage.getItem(minAmountKey) ?? '1000'
+  // Limits are always persisted in satoshis; the input renders them in the
+  // user's preferred currency.
+  const [minAmount, setMinAmount] = useState<number | null>(() =>
+    parseInt(localStorage.getItem(minAmountKey) ?? '1000', 10)
   )
-  const [maxAmount, setMaxAmount] = useState(() =>
-    localStorage.getItem(maxAmountKey) ?? '10000000'
+  const [maxAmount, setMaxAmount] = useState<number | null>(() =>
+    parseInt(localStorage.getItem(maxAmountKey) ?? '10000000', 10)
   )
   const [limitsSaved, setLimitsSaved] = useState(false)
 
@@ -174,8 +177,8 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
   }
 
   const saveLimits = () => {
-    localStorage.setItem(minAmountKey, minAmount)
-    localStorage.setItem(maxAmountKey, maxAmount)
+    localStorage.setItem(minAmountKey, String(minAmount ?? 0))
+    localStorage.setItem(maxAmountKey, String(maxAmount ?? 0))
     setLimitsSaved(true)
     setTimeout(() => setLimitsSaved(false), 2000)
     toast.success(t('incoming_request_list_limits_saved'))
@@ -409,20 +412,18 @@ export default function IncomingRequestList({ requests, onRefresh, wallet }: Pro
                 {t('incoming_request_list_amount_limits')}
               </Typography>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="flex-end">
-                <TextField
+                <AmountInput
                   size="small"
                   label={t('incoming_request_list_min_amount')}
-                  type="number"
-                  value={minAmount}
-                  onChange={(e) => setMinAmount(e.target.value)}
+                  valueSats={minAmount}
+                  onChangeSats={setMinAmount}
                   fullWidth
                 />
-                <TextField
+                <AmountInput
                   size="small"
                   label={t('incoming_request_list_max_amount')}
-                  type="number"
-                  value={maxAmount}
-                  onChange={(e) => setMaxAmount(e.target.value)}
+                  valueSats={maxAmount}
+                  onChangeSats={setMaxAmount}
                   fullWidth
                 />
                 <Button

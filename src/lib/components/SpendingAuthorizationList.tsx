@@ -8,9 +8,10 @@ import { FC, useCallback, useContext, useEffect, useMemo, useRef, useState } fro
 import { toast } from 'react-toastify';
 import AmountDisplay from './AmountDisplay';
 import { WalletContext } from '../WalletContext';
-import { PermissionToken, Services } from '@bsv/wallet-toolbox-client';
+import { PermissionToken } from '@bsv/wallet-toolbox-client';
+import { createServices } from '../services/createServices';
 // NOTE: rely on the same exchange-rate provider used by AmountDisplay
-import { ExchangeRateContext } from './AmountDisplay/ExchangeRateContextProvider';
+import { useAmountUnit } from './AmountInput';
 import AppLogo from './AppLogo';
 import { useTranslation } from 'react-i18next';
 
@@ -29,8 +30,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
   onEmptyList = () => { },
 }) => {
   const { t } = useTranslation();
-  const { managers, spendingRequests, settings, activeProfile } = useContext(WalletContext);
-  const rates = useContext<any>(ExchangeRateContext); // { satoshisPerUSD, eurPerUSD, gbpPerUSD, ... }
+  const { managers, spendingRequests, activeProfile } = useContext(WalletContext);
 
   // --------------------------------------------------------------------------
   //   STATE
@@ -45,103 +45,28 @@ export const SpendingAuthorizationList: FC<Props> = ({
   const [originalLimit, setOriginalLimit] = useState<string>('');
 
   // --------------------------------------------------------------------------
-  //   CURRENCY / UNITS (mirror AmountDisplay semantics)
+  //   CURRENCY / UNITS (shared with every other amount input in the app)
   // --------------------------------------------------------------------------
-  const rawCurrency: string = String(
-    (settings as any)?.currency ??
-    (settings as any)?.fiatCurrency ??
-    (settings as any)?.displayCurrency ??
-    ''
-  ).toUpperCase();
-
-  type Unit =
-    | { kind: 'sats' }
-    | { kind: 'bsv' }
-    | { kind: 'fiat'; code: 'USD' | 'EUR' | 'GBP' };
-
-  const unit: Unit = (() => {
-    if (/SAT/i.test(rawCurrency)) return { kind: 'sats' };
-    if (rawCurrency === 'BSV' || /BITCOIN/i.test(rawCurrency)) return { kind: 'bsv' };
-    if (rawCurrency === 'USD' || rawCurrency === 'EUR' || rawCurrency === 'GBP') {
-      return { kind: 'fiat', code: rawCurrency };
-    }
-    // anything else -> sats (matches AmountDisplay behavior)
-    return { kind: 'sats' };
-  })();
+  const {
+    unit,
+    unitLabel,
+    adornmentLabel,
+    step: inputStep,
+    ratesReady: fiatRatesReady,
+    satsToInput,
+    inputToSats
+  } = useAmountUnit();
 
   const inputPlaceholder =
     unit.kind === 'sats' ? t('spending_auth_list_placeholder_sats')
     : unit.kind === 'bsv' ? t('spending_auth_list_placeholder_bsv')
     : t('spending_auth_list_placeholder_fiat', { code: unit.code });
 
-  const inputStep =
-    unit.kind === 'sats' ? 1
-    : unit.kind === 'bsv' ? 0.00000001
-    : 0.01;
-
-  const adornmentLabel =
-    unit.kind === 'sats' ? 'sats'
-    : unit.kind === 'bsv' ? 'BSV'
-    : unit.code === 'USD' ? '$'
-    : unit.code === 'EUR' ? '€'
-    : unit.code === 'GBP' ? '£'
-    : unit.code;
-
-  // --------------------------------------------------------------------------
-  //   CONVERSIONS (use same rate model as AmountDisplay)
-  // --------------------------------------------------------------------------
-  const { satoshisPerUSD, eurPerUSD, gbpPerUSD } = rates || {};
-
-  const fiatRatesReady =
-    unit.kind !== 'fiat' ? true
-    : unit.code === 'USD' ? !!satoshisPerUSD
-    : unit.code === 'EUR' ? (!!satoshisPerUSD && !!eurPerUSD)
-    : unit.code === 'GBP' ? (!!satoshisPerUSD && !!gbpPerUSD)
-    : false;
-
-  // sats -> input units
-  const satsToInput = useCallback((sats: number) => {
-    if (unit.kind === 'sats') return sats;
-    if (unit.kind === 'bsv') return sats / 1e8;
-
-    // fiat
-    if (!satoshisPerUSD) return NaN;
-    const usd = sats / satoshisPerUSD; // USD = sats / (sats per USD)
-    if (unit.code === 'USD') return usd;
-    if (unit.code === 'EUR') {
-      if (!eurPerUSD) return NaN;
-      return usd * eurPerUSD; // EUR = USD * (EUR per USD)
-    }
-    if (unit.code === 'GBP') {
-      if (!gbpPerUSD) return NaN;
-      return usd * gbpPerUSD; // GBP = USD * (GBP per USD)
-    }
-    return NaN;
-  }, [unit, satoshisPerUSD, eurPerUSD, gbpPerUSD]);
-
-  // input units -> sats
-  const inputToSats = useCallback((amount: number) => {
-    if (unit.kind === 'sats') return Math.round(amount);
-    if (unit.kind === 'bsv') return Math.round(amount * 1e8);
-
-    // fiat
-    if (!satoshisPerUSD) return NaN;
-    let usd = amount;
-    if (unit.code === 'EUR') {
-      if (!eurPerUSD) return NaN;
-      usd = amount / eurPerUSD; // USD = EUR / (EUR per USD)
-    } else if (unit.code === 'GBP') {
-      if (!gbpPerUSD) return NaN;
-      usd = amount / gbpPerUSD; // USD = GBP / (GBP per USD)
-    }
-    return Math.round(usd * satoshisPerUSD); // sats = USD * (sats per USD)
-  }, [unit, satoshisPerUSD, eurPerUSD, gbpPerUSD]);
-
   // --------------------------------------------------------------------------
   //   MISC
   // --------------------------------------------------------------------------
   const cacheKey = app + activeProfile.id;
-  const services = useMemo(() => new Services('main'), []); // keep if other code relies on this instantiation
+  const services = useMemo(() => createServices('main'), []); // keep if other code relies on this instantiation
   const prevRqRef = useRef<number>(spendingRequests.length);
 
   // --------------------------------------------------------------------------
@@ -370,7 +295,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                     isEditingLimit
                       ? ''
                       : t('spending_auth_list_new_limit_placeholder', {
-                          unit: unit.kind === 'sats' ? 'sats' : unit.kind === 'bsv' ? 'BSV' : unit.code
+                          unit: unitLabel
                         })
                   }
                   size="small"
@@ -379,7 +304,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
                   InputProps={
                     isEditingLimit
                       ? { startAdornment: <InputAdornment position="start">
-                          {unit.kind === 'sats' ? 'sats' : unit.kind === 'bsv' ? 'BSV' : (unit.code === 'USD' ? '$' : unit.code === 'EUR' ? '€' : '£')}
+                          {adornmentLabel}
                         </InputAdornment> }
                       : undefined
                   }

@@ -24,7 +24,6 @@ import {
   WalletStorageManager,
   OverlayUMPTokenInteractor,
   WalletSigner,
-  Services,
   StorageClient,
   TwilioPhoneInteractor,
   DevConsoleInteractor,
@@ -32,6 +31,7 @@ import {
   Wallet,
   PrivilegedKeyManager,
 } from '@bsv/wallet-toolbox-client'
+import { createServices } from './createServices'
 import {
   PrivateKey,
   SHIPBroadcaster,
@@ -521,7 +521,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     try {
       const chain = this._selectedNetwork
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey))
-      const services = new Services(chain)
+      const services = createServices(chain)
 
       let activeStorage: any
 
@@ -879,7 +879,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       const identityKey = (storageManager as any)?._authId?.identityKey
       if (!identityKey) throw new Error('Could not get identity key from wallet')
       const electronStorage = new StorageElectronIPC(identityKey, this._selectedNetwork)
-      const services = new Services(this._selectedNetwork)
+      const services = createServices(this._selectedNetwork)
       electronStorage.setServices(services as any)
       await electronStorage.makeAvailable()
       backupProvider = electronStorage

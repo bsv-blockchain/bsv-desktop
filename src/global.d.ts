@@ -1,11 +1,25 @@
 // Global type declarations for Electron IPC API
 
+export interface FeeSettingsView {
+  chain: 'main' | 'test' | 'ttn';
+  customRate: number | null;
+  effectiveRate: number;
+  floorRate: number | null;
+  policyUrl: string;
+  policyError?: string;
+  restartRequired: boolean;
+}
+
 export interface ElectronAPI {
   walletData: {
     call: (action: string, data: Record<string, unknown>) => Promise<any>;
     onProgress: (callback: (message: string) => void) => () => void;
   };
 
+  fees: {
+    get: (chain: 'main' | 'test' | 'ttn') => Promise<FeeSettingsView>;
+    set: (chain: 'main' | 'test' | 'ttn', rate: number | null) => Promise<{ success: boolean; settings?: FeeSettingsView; error?: string }>;
+  };
   isFocused: () => Promise<boolean>;
   requestFocus: () => Promise<void>;
   relinquishFocus: () => Promise<void>;

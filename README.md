@@ -170,6 +170,14 @@ Users can configure at runtime via the WalletConfig component:
 - **Message Box**: Enable/disable message box integration
 
 Configuration is persisted in **Version 3 snapshots** (localStorage + encrypted).
+### Transaction fee rate
+
+For local storage wallets, Settings → Transaction fees shows the configured rate and the advertised Arcade floor for the selected network. A custom rate is stored per network on this device and takes effect after restarting Desktop. The main wallet retains its existing 250 sats/kB default until an override is saved.
+
+Saving a custom rate requires a fresh successful policy check and rejects rates below the advertised floor. If policy discovery is unavailable, refresh before saving; restoring the default remains available offline. The policy uses 1 kB = 1,000 bytes. It is a current advertised minimum, not a guarantee of confirmation or a quote for an entire unconfirmed transaction package.
+
+One custom setting is shared by transaction storage and its background monitor. It does not calculate or add an ancestor surcharge. A lower rate may leave transactions with underfunded unconfirmed ancestors unable to confirm. Remote storage providers control their own fees; this setting does not change them. Already-created transactions are not repriced, and later network policy changes do not automatically raise the saved rate.
+
 ## Storage Modes
 
 ### Local Storage (Self-Custody)

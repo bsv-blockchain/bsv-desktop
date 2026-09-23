@@ -19,6 +19,7 @@ import { fork, ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 import { StorageKnex, KnexMigrations, Services, Monitor, WalletStorageManager, ChaintracksServiceClient } from '@bsv/wallet-toolbox';
 import { chaintracksUrl } from './endpoints.js';
+import { installArcadeServices } from './arcade.js';
 import { patchListCertificates } from './optimized-queries.js';
 import { stasMigrationSource } from './stas-migrations/index.js';
 import { StasQueries } from './stas-queries.js';
@@ -243,6 +244,11 @@ class StorageManager {
     // defaults still resolve main/test to the retired babbage.systems hosts.
     options.chaintracks = new ChaintracksServiceClient(chain, chaintracksUrl(chain))
     const services = new Services(options);
+    // Broadcasting has to follow the same chain as ChainTracks. The toolbox
+    // defaults post to TAAL ARC hosts for other networks, which rejects every
+    // transaction as invalidTx while the balance and height still look correct.
+    const arcade = installArcadeServices(services, chain);
+    console.log(`[Storage] Broadcasting and proofs via Arcade at ${arcade}`);
 
     // Type assertion to access setServices method
     const storageAny = storage as any;

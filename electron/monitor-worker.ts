@@ -16,6 +16,7 @@ import os from 'os';
 import { createRequire } from 'module';
 import { StorageKnex, Services, Monitor, WalletStorageManager, ChaintracksServiceClient } from '@bsv/wallet-toolbox';
 import { chaintracksUrl } from './endpoints.js';
+import { installArcadeServices } from './arcade.js';
 
 const require = createRequire(import.meta.url);
 
@@ -89,6 +90,11 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     const serviceOptions = Services.createDefaultOptions(chain);
     serviceOptions.chaintracks = new ChaintracksServiceClient(chain, chaintracksUrl(chain));
     const services = new Services(serviceOptions);
+    // The Monitor re-broadcasts unconfirmed transactions and collects their
+    // merkle proofs, so it needs the same Arcade routing as the main process.
+    // Left on the defaults it would neither resend nor ever prove anything.
+    const arcade = installArcadeServices(services, chain);
+    console.log(`[Monitor Worker] Broadcasting and proofs via Arcade at ${arcade}`);
 
     // Set services on storage
     const storageAny = storage as any;

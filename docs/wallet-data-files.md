@@ -17,3 +17,19 @@ BRC-39 uses NFC passphrases, Argon2id (7 passes, 128 MiB, one lane), independent
 Run `npm run test:wallet-files` with Node-native SQLite dependencies (`npm rebuild better-sqlite3`), then `npm run rebuild:electron` before launching Electron. The regression suite covers all categories, embedded NUL text, reciprocal published-codec encryption, corrupt tags, altered stages, isolated merge resumption, queue draining and identity-bound activation. Native macOS validation additionally exercised encrypted import, failed-attempt recovery across restart, separate restore and save-dialog export; an independent Node/OpenSSL decoder verified complete fixture equality. Native Windows/Linux, remote-provider and application-level acceptance must be recorded separately.
 
 References: [BRC-38](https://github.com/bsv-blockchain/BRCs/blob/2b959b13f1f73040d13cc4eb14edbfc376f8010b/outpoints/0038.md), [BRC-39](https://github.com/bsv-blockchain/BRCs/blob/2b959b13f1f73040d13cc4eb14edbfc376f8010b/outpoints/0039.md).
+
+## Dependency qualification for this proposal
+
+The wallet uses published SDK 2.8.1 (portable authenticated-empty AES-GCM repair),
+Toolbox/Client 2.13.2, Message Box Client 2.5.2, BTMS 1.2.3 and permission module
+1.2.1. DOMPurify 3.4.16, electron-updater 6.8.9 and compatible Express/transitive
+updates address the available production graph fixes without major overrides.
+
+A 2026-09-23 production audit still reports eight existing findings (two critical,
+two high, four moderate) through legacy `bsv` 1.5.6 and `stas-js` 3.0.3: `bsv`,
+`elliptic`, `bn.js`, `stas-js`, `axios`, `jest-allure`, `allure-js-commons` and
+`uuid`. STAS and BSV-21 transfer construction currently use that legacy API;
+substituting the incompatible `bsv` 2.x major to satisfy audit would require a
+separately validated token-engine migration. This proposal does not suppress the
+findings or claim a clean audit. BSVA retains release approval and the decision
+on that migration; the BRC-38/39 codec uses the current `@bsv/sdk`.

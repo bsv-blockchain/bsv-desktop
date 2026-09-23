@@ -21,7 +21,7 @@ References: [BRC-38](https://github.com/bsv-blockchain/BRCs/blob/2b959b13f1f7304
 ## Dependency qualification for this proposal
 
 The wallet uses published SDK 2.8.1 (portable authenticated-empty AES-GCM repair),
-Toolbox/Client 2.13.2, Message Box Client 2.5.2, BTMS 1.2.3 and permission module
+Toolbox/Client 2.14.0, Message Box Client 2.5.3, BTMS 1.2.3 and permission module
 1.2.1. DOMPurify 3.4.16, electron-updater 6.8.9 and compatible Express/transitive
 updates address the available production graph fixes without major overrides.
 

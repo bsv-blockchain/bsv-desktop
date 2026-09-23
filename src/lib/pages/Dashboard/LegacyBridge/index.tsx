@@ -27,6 +27,8 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import { QRCodeSVG } from 'qrcode.react'
 import { PublicKey, P2PKH, Beef, Utils, Script, WalletProtocol, InternalizeActionArgs, InternalizeOutput, PrivateKey, AtomicBEEF } from '@bsv/sdk'
+import AmountDisplay from '../../../components/AmountDisplay'
+import AmountInput, { useAmountUnit } from '../../../components/AmountInput'
 import getBeefForTxid from '../../../utils/getBeefForTxid'
 import { wocFetch } from '../../../utils/RateLimitedFetch'
 import { wocApiBase } from '../../../utils/woc'
@@ -65,6 +67,7 @@ interface ProcessedTx {
 interface TransactionRecord {
   txid: string
   to: string
+  /** Amount in satoshis. Signed display is applied at render time. */
   amount: number
 }
 
@@ -87,10 +90,12 @@ const timeAgo = (ms: number): string => {
 export default function Payments() {
   const { t } = useTranslation()
   const { managers, network, chain, adminOriginator } = useContext(WalletContext)
+  const { unitLabel, formatWithUnit: formatAmountForUnit } = useAmountUnit()
   const [paymentAddress, setPaymentAddress] = useState<string | null>(null)
+  // Balance in satoshis. -1 means "not checked yet".
   const [balance, setBalance] = useState<number>(-1)
   const [recipientAddress, setRecipientAddress] = useState<string>('')
-  const [amount, setAmount] = useState<string>('')
+  const [amountSats, setAmountSats] = useState<number | null>(null)
   const [transactions, setTransactions] = useState<TransactionRecord[]>([])
   const [processedTxs, setProcessedTxs] = useState<ProcessedTx[]>([])
   const [isImporting, setIsImporting] = useState<boolean>(false)
@@ -172,12 +177,12 @@ export default function Payments() {
     internalizedCacheRef.current.clear()
   }
 
-  // Fetch uninternalized balance for a single address
+  // Fetch uninternalized balance (in satoshis) for a single address
   const fetchBSVBalance = async (address: string): Promise<number> => {
     const allUtxos = await getUtxosForAddress(address)
     const internalizedUtxos = await getInternalizedUtxosForAddress(address)
     const availableUtxos = allUtxos.filter(utxo => !internalizedUtxos.has(`${utxo.txid}.${utxo.vout}`))
-    return availableUtxos.reduce((acc, r) => acc + r.satoshis, 0) / 100000000
+    return availableUtxos.reduce((acc, r) => acc + r.satoshis, 0)
   }
 
   // Fetch already-processed transactions for a specific address
@@ -339,7 +344,7 @@ export default function Payments() {
           return {
             txid: action.txid,
             to: address || 'unknown',
-            amount: action.satoshis / 100000000,
+            amount: action.satoshis,
           }
         })
         return pastTxs.filter((tx: TransactionRecord) => tx.amount !== 0)
@@ -369,12 +374,12 @@ export default function Payments() {
 
   // Handle sending BSV
   const handleSendBSV = async () => {
-    if (!recipientAddress || !amount) {
+    if (!recipientAddress || amountSats === null) {
       toast.error('Please enter a recipient address AND an amount first!')
       return
     }
-    const amt = Number(amount)
-    if (isNaN(amt) || amt <= 0) {
+    const sats = Math.round(amountSats)
+    if (isNaN(sats) || sats <= 0) {
       toast.error('Please enter a valid amount > 0.')
       return
     }
@@ -391,27 +396,27 @@ export default function Payments() {
         description: 'Send BSV to address',
         outputs: [{
           lockingScript,
-          satoshis: Math.round(amt * 100000000),
+          satoshis: sats,
           outputDescription: 'BSV for recipient address',
         }],
         labels: ['legacy', 'outbound'],
       }, adminOriginator)
 
-      let displayAmount = amt
+      let sentSatoshis = sats
       if (sweepMax && tx) {
         try {
           const beef = Beef.fromBinary(tx)
           const transaction = beef.findAtomicTransaction(txid)
-          displayAmount = transaction.outputs[0].satoshis / 100000000
+          sentSatoshis = transaction.outputs[0].satoshis
         } catch (e) {
           console.error('Failed to parse tx for actual amount:', e)
         }
       }
 
-      toast.success(`Successfully sent ${displayAmount} BSV to ${recipientAddress}`)
-      setTransactions((prev) => [...prev, { txid, to: recipientAddress, amount: displayAmount }])
+      toast.success(`Successfully sent ${formatAmountForUnit(sentSatoshis)} to ${recipientAddress}`)
+      setTransactions((prev) => [...prev, { txid, to: recipientAddress, amount: sentSatoshis }])
       setRecipientAddress('')
-      setAmount('')
+      setAmountSats(null)
       if (sweepMax) setSweepMax(false)
       window.dispatchEvent(new CustomEvent('balance-changed'))
     } catch (error: any) {
@@ -545,7 +550,7 @@ export default function Payments() {
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 2 }}>
                   <Typography variant="body1" color="textPrimary" sx={{ textAlign: 'center' }}>
                     {t('legacy_bridge_available_balance')}{' '}
-                    <strong>{balance === -1 ? t('legacy_bridge_checking') : `${balance} BSV`}</strong>
+                    <strong>{balance === -1 ? t('legacy_bridge_checking') : <AmountDisplay>{balance}</AmountDisplay>}</strong>
                   </Typography>
                   {balance === -1 && <CircularProgress size={14} />}
                 </Box>
@@ -570,15 +575,23 @@ export default function Payments() {
               sx={{ mb: 2 }}
             />
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <TextField
-                fullWidth
-                label={t('legacy_bridge_amount_bsv')}
-                placeholder={sweepMax ? t('legacy_bridge_sweeping_placeholder') : '0.00000000'}
-                type={sweepMax ? 'text' : 'number'}
-                value={sweepMax ? '' : amount}
-                onChange={(e) => setAmount(e.target.value)}
-                disabled={sweepMax}
-              />
+              {sweepMax ? (
+                <TextField
+                  fullWidth
+                  label={t('legacy_bridge_amount_unit', { unit: unitLabel })}
+                  placeholder={t('legacy_bridge_sweeping_placeholder')}
+                  value=""
+                  disabled
+                />
+              ) : (
+                <AmountInput
+                  fullWidth
+                  label={t('legacy_bridge_amount_unit', { unit: unitLabel })}
+                  showAdornment={false}
+                  valueSats={amountSats}
+                  onChangeSats={setAmountSats}
+                />
+              )}
               <FormControlLabel
                 control={
                   <Switch
@@ -586,7 +599,7 @@ export default function Payments() {
                     onChange={(e) => {
                       const checked = e.target.checked
                       setSweepMax(checked)
-                      setAmount(checked ? '20999999.99999999' : '')
+                      setAmountSats(checked ? 2099999999999999 : null)
                     }}
                     size="small"
                   />
@@ -599,7 +612,7 @@ export default function Payments() {
             <Button
               variant="contained"
               onClick={handleSendBSV}
-              disabled={isSending || !recipientAddress || (!sweepMax && !amount)}
+              disabled={isSending || !recipientAddress || (!sweepMax && !amountSats)}
               fullWidth
             >
               {isSending ? <CircularProgress size={24} /> : (sweepMax ? t('legacy_bridge_sweep_whole_wallet') : t('legacy_bridge_send_bsv'))}
@@ -621,7 +634,7 @@ export default function Payments() {
                 <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
                     <Typography variant="body2" color="textPrimary" fontWeight={600}>
-                      +{(tx.satoshis / 100000000).toFixed(8)} BSV
+                      +<AmountDisplay>{tx.satoshis}</AmountDisplay>
                     </Typography>
                     <Chip label={timeAgo(tx.importedAt)} size="small" variant="outlined" />
                   </Box>
@@ -660,7 +673,7 @@ export default function Payments() {
                 <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
                     <Typography variant="body2" color="textPrimary" fontWeight={600}>
-                      -{Math.abs(tx.amount).toFixed(8)} BSV
+                      -<AmountDisplay>{Math.abs(tx.amount)}</AmountDisplay>
                     </Typography>
                     <Typography variant="caption" color="textSecondary" sx={{ fontFamily: 'monospace' }}>
                       {tx.to}

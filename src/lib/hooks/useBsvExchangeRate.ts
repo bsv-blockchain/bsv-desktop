@@ -1,9 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Services } from '@bsv/wallet-toolbox-client';
+import { createServices } from '../services/createServices';
 
 export const useBsvExchangeRate = (defaultRate = 70) => {
   const [rate, setRate] = useState(defaultRate);
-  const services = useMemo(() => new Services('main'), []);
+  const services = useMemo(() => createServices('main'), []);
 
   useEffect(() => {
     let cancelled = false;

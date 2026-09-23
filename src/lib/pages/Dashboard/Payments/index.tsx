@@ -32,6 +32,7 @@ import RequestPaymentForm from './RequestPaymentForm'
 import IncomingRequestList from './IncomingRequestList'
 import { Utils, Script, PublicKey, WalletInterface } from '@bsv/sdk'
 import { WalletContext } from '../../../WalletContext'
+import AmountDisplay from '../../../components/AmountDisplay'
 import { toast } from 'react-toastify'
 import { CurrencyConverter } from '@bsv/amountinator'
 import useAsyncEffect from 'use-async-effect'
@@ -447,7 +448,7 @@ function PaymentList({ payments, onRefresh }: PaymentListProps) {
                   <ListItemText
                     primary={
                       <Stack direction="row" spacing={1} alignItems="center">
-                        <Chip size="small" label={`${p.token.amount} sats`} />
+                        <Chip size="small" label={<AmountDisplay>{p.token.amount}</AmountDisplay>} />
                         <Typography fontFamily="monospace" fontSize="0.9rem">
                           {id.slice(0, 10)}…
                         </Typography>
@@ -557,7 +558,7 @@ export default function PeerPayRoute() {
           return {
             txid: action.txid,
             to: address || 'unknown',
-            amount: action.satoshis / 100000000,
+            amount: action.satoshis,
           }
         })
         const newTxs = pastTxs.filter((tx) => tx.amount !== 0 && !set.has(tx.txid))
@@ -658,7 +659,7 @@ export default function PeerPayRoute() {
                           <strong>{t('payments_to')}:</strong> {tx.to || t('payments_na')}
                         </Typography>
                         <Typography variant="body2" color="textSecondary">
-                          <strong>{t('payments_amount')}:</strong> {tx.amount || t('payments_na')} BSV
+                          <strong>{t('payments_amount')}:</strong> {tx.amount ? <AmountDisplay>{tx.amount}</AmountDisplay> : t('payments_na')}
                         </Typography>
                       </CardContent>
                     </Card>

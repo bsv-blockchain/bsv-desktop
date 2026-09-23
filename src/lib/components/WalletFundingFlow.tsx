@@ -25,6 +25,8 @@ import {
   Utils
 } from '@bsv/sdk'
 import { toast } from 'react-toastify'
+import AmountDisplay from './AmountDisplay'
+import { useAmountUnit } from './AmountInput'
 import getBeefForTxid from '../utils/getBeefForTxid'
 import { wocFetch } from '../utils/RateLimitedFetch'
 import { wocApiBase } from '../utils/woc'
@@ -67,6 +69,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
   onFundingComplete
 }) => {
   const { t } = useTranslation()
+  const { formatWithUnit } = useAmountUnit()
   const [paymentAddress, setPaymentAddress] = useState<string | null>(null)
   const [derivationPrefix, setDerivationPrefix] = useState<string>('')
   const [isGeneratingAddress, setIsGeneratingAddress] = useState(false)
@@ -127,7 +130,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
       setBalance(totalBalance)
 
       if (totalBalance > 0) {
-        toast.info(t('wallet_funding_payment_detected', { amount: totalBalance / 100000000 }))
+        toast.info(t('wallet_funding_payment_detected', { amount: formatWithUnit(totalBalance) }))
       }
     } catch (error: any) {
       console.error('Error checking for payment:', error)
@@ -135,7 +138,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
     } finally {
       setIsCheckingPayment(false)
     }
-  }, [paymentAddress, network, chain])
+  }, [paymentAddress, network, chain, formatWithUnit])
 
   // Process the payment and internalize
   const processPayment = useCallback(async () => {
@@ -377,7 +380,7 @@ const WalletFundingFlow: React.FC<WalletFundingFlowProps> = ({
           </Box>
 
           <Typography variant="body1" color="textPrimary" sx={{ textAlign: 'center' }}>
-            {t('wallet_funding_detected_balance')}: <strong>{balance === 0 ? t('wallet_funding_waiting_for_payment') : `${balance / 100000000} BSV`}</strong>
+            {t('wallet_funding_detected_balance')}: <strong>{balance === 0 ? t('wallet_funding_waiting_for_payment') : <AmountDisplay>{balance}</AmountDisplay>}</strong>
           </Typography>
 
           {balance > 0 && (

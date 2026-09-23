@@ -18,6 +18,7 @@ import { createRequire } from 'module';
 import { fork, ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 import { StorageKnex, KnexMigrations, Services, Monitor, WalletStorageManager, ChaintracksServiceClient } from '@bsv/wallet-toolbox';
+import { chaintracksUrl } from './endpoints.js';
 import { patchListCertificates } from './optimized-queries.js';
 import { stasMigrationSource } from './stas-migrations/index.js';
 import { StasQueries } from './stas-queries.js';
@@ -238,11 +239,9 @@ class StorageManager {
 
     // Create Services instance in the backend
     const options = Services.createDefaultOptions(chain);
-    // For main/test, point ChainTracks at the bsvb.tech endpoints. TeraTestNet ('ttn')
-    // keeps the toolbox default (arcade-v2-ttn ChainTracks) set by createDefaultOptions.
-    if (chain !== 'ttn') {
-      options.chaintracks = new ChaintracksServiceClient(chain, chain === 'main' ? 'https://chaintracks-us-1.bsvb.tech' : 'https://chaintracks-testnet-us-1.bsvb.tech')
-    }
+    // Point ChainTracks at the Arcade deployments for every chain; the toolbox
+    // defaults still resolve main/test to the retired babbage.systems hosts.
+    options.chaintracks = new ChaintracksServiceClient(chain, chaintracksUrl(chain))
     const services = new Services(options);
 
     // Type assertion to access setServices method

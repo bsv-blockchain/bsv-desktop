@@ -14,7 +14,8 @@
 import path from 'path';
 import os from 'os';
 import { createRequire } from 'module';
-import { StorageKnex, Services, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
+import { StorageKnex, Services, Monitor, WalletStorageManager, ChaintracksServiceClient } from '@bsv/wallet-toolbox';
+import { chaintracksUrl } from './endpoints.js';
 
 const require = createRequire(import.meta.url);
 
@@ -83,8 +84,11 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
 
     console.log(`[Monitor Worker] StorageKnex created`);
 
-    // Create Services
-    const services = new Services(chain);
+    // Create Services, with ChainTracks pointed at the Arcade deployments
+    // (toolbox defaults still resolve main/test to retired babbage.systems hosts).
+    const serviceOptions = Services.createDefaultOptions(chain);
+    serviceOptions.chaintracks = new ChaintracksServiceClient(chain, chaintracksUrl(chain));
+    const services = new Services(serviceOptions);
 
     // Set services on storage
     const storageAny = storage as any;

@@ -1,7 +1,7 @@
 import { ReactNode, createContext, useEffect, useState } from 'react'
-import { Services } from '@bsv/wallet-toolbox-client'
+import { createServices } from '../../services/createServices'
 
-const services = new Services('main')
+const services = createServices('main')
 
 const EXCHANGE_RATE_UPDATE_INTERVAL = 5 * 60 * 1000
 

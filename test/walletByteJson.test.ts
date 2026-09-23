@@ -115,4 +115,27 @@ describe("wallet byte JSON compatibility", () => {
     expect(payload.tx).toBe(view);
     expect(payload.signature).toBe(buffer);
   });
+  it("repairs historical empty byte arrays except in ambiguous data/payload fields", () => {
+    // JSON.stringify(new Uint8Array(0)) === "{}", so an empty object in a
+    // byte-only field is a mangled empty byte array; data/payload stay ambiguous.
+    const parsed = parseWalletPayload<Record<string, unknown>>(
+      JSON.stringify({ plaintext: mangled([]), signature: {}, data: {}, payload: {} }),
+    );
+
+    expect(parsed).toEqual({ plaintext: [], signature: [], data: {}, payload: {} });
+    expect(JSON.parse(stringifyWalletPayload({ hmac: new Uint8Array(0), data: {} }))).toEqual({
+      hmac: [],
+      data: {},
+    });
+  });
+
+  it("rejects payloads that are not JSON serializable", () => {
+    expect(() => stringifyWalletPayload(undefined)).toThrow(TypeError);
+    expect(() => stringifyWalletPayload(() => 1)).toThrow(TypeError);
+    expect(() => stringifyWalletPayload({ amount: 1n })).toThrow(TypeError);
+  });
+
+  it("surfaces malformed request JSON as a SyntaxError", () => {
+    expect(() => parseWalletPayload("{not json")).toThrow(SyntaxError);
+  });
 });

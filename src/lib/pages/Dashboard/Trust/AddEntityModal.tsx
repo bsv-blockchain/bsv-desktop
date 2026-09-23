@@ -13,6 +13,7 @@ import CustomDialog from '../../../components/CustomDialog'
 import { toast } from 'react-toastify'
 import validateTrust from '../../../utils/validateTrust'
 import { Certifier } from '@bsv/wallet-toolbox-client'
+import { buildTrustedCertifier } from './certifier'
 
 const AddEntityModal = ({
   open, setOpen, trustedEntities, setTrustedEntities
@@ -112,15 +113,7 @@ const AddEntityModal = ({
       setIdentityKey('')
       setFieldsValid(false)
       setOpen(false)
-      // Typed (not cast) so a field-name drift against Certifier fails to compile.
-      const certifier: Certifier = {
-        name,
-        description,
-        iconUrl: icon,
-        identityKey,
-        trust: 5
-      }
-      return [certifier, ...entities]
+      return [buildTrustedCertifier({ name, description, icon, identityKey }), ...entities]
     })
   }
 

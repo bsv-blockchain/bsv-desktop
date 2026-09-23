@@ -4,6 +4,7 @@ import path from 'node:path'
 import { WalletPortabilityService } from './service.js'
 import { newArchiveId } from './repository.js'
 import { type ArchiveChain, PortabilityError } from './schema.js'
+import { WalletDataBindings } from './bindings.js'
 
 const string = (value: unknown, max = 4096): string => {
   if (typeof value !== 'string' || value.length > max) throw new Error('Invalid wallet file request')
@@ -13,7 +14,7 @@ const chain = (value: unknown): ArchiveChain => {
   if (value !== 'main' && value !== 'test' && value !== 'ttn') throw new Error('Invalid wallet network')
   return value
 }
-export function registerWalletPortabilityIpc(getWindow: () => BrowserWindow | null, getService: () => Promise<WalletPortabilityService>): void {
+export function registerWalletPortabilityIpc(getWindow: () => BrowserWindow | null, getService: () => Promise<WalletPortabilityService>, bindings = new WalletDataBindings()): void {
   const trusted = (event: IpcMainInvokeEvent) => {
     const window = getWindow()
     if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('Wallet file operations require the wallet window')
@@ -22,7 +23,10 @@ export function registerWalletPortabilityIpc(getWindow: () => BrowserWindow | nu
   ipcMain.handle('wallet-data:call', async (event, action: string, raw: unknown) => {
     const window = trusted(event)
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid wallet file request')
-    const data = raw as Record<string, any>, service = await getService(), repo = service.repository
+    const data = raw as Record<string, any>
+    // Every login looks up its binding; keep that off the archive repository.
+    if (action === 'binding') return bindings.get(string(data.identity, 66), chain(data.chain))
+    const service = await getService(), repo = service.repository
     const report = (message: string) => { if (!window.isDestroyed()) window.webContents.send('wallet-data:progress', message) }
     const saveDestination = async (name: string) => {
       const selection = await dialog.showSaveDialog(window, { title: 'Save encrypted wallet data', defaultPath: name, filters: [{ name: 'Encrypted wallet data', extensions: ['brc39'] }] })
@@ -31,7 +35,6 @@ export function registerWalletPortabilityIpc(getWindow: () => BrowserWindow | nu
     switch (action) {
       case 'list': return await repo.list()
       case 'cancel': repo.cancel(); return
-      case 'binding': return service.host.bindings.get(string(data.identity, 66), chain(data.chain))
       case 'preference': {
         const identity = string(data.identity, 66), network = chain(data.chain)
         const bindings = service.host.bindings, binding = bindings.get(identity, network)

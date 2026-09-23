@@ -29,7 +29,12 @@ export class WalletStorageAccess {
     this.inFlight.add(pending)
     try { return await pending } finally { this.inFlight.delete(pending) }
   }
-  async close(operation: () => Promise<void>): Promise<void> {
-    await this.run(async () => { this.closed = true; await operation() })
+  /** Fence this generation. An operation that fails before calling `seal`
+   * leaves storage usable; once sealed (or completed) it stays fenced. */
+  async close(operation: (seal: () => void) => Promise<void>): Promise<void> {
+    await this.run(async () => {
+      await operation(() => { this.closed = true })
+      this.closed = true
+    })
   }
 }

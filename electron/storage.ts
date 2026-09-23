@@ -108,12 +108,18 @@ class StorageManager {
       const running = this.monitorWorkers.has(walletStorageKey(identityKey, chain));
       await this.stopMonitorWorker(identityKey, chain);
       try { return await operation(); }
-      finally { if (running) await this.startMonitorWorker(identityKey, chain); }
+      finally {
+        // A failed restart must not mask the operation's own result.
+        if (running) await this.startMonitorWorker(identityKey, chain).catch(error =>
+          console.error(`[Monitor Worker] Failed to restart for ${walletStorageKey(identityKey, chain)}:`, error));
+      }
     });
   }
   async closeForActivation(identityKey: string, chain: 'main' | 'test' | 'ttn', commit: () => Promise<void>): Promise<void> {
-    await this.storageAccess(identityKey, chain).close(async () => {
+    await this.storageAccess(identityKey, chain).close(async seal => {
+      // If the monitor cannot be stopped nothing has changed yet, so storage stays usable.
       await this.stopMonitorWorker(identityKey, chain);
+      seal();
       const key = walletStorageKey(identityKey, chain);
       const db = this.databases.get(key);
       if (db) await db.destroy();
@@ -547,7 +553,10 @@ class StorageManager {
         this.stopMonitorWorker(identityKey, chain as 'main' | 'test' | 'ttn')
       );
     }
-    await Promise.all(workerStopPromises);
+    // One stuck worker must not stop the database connections below from closing.
+    for (const result of await Promise.allSettled(workerStopPromises)) {
+      if (result.status === 'rejected') console.error('[Storage] Monitor worker did not stop during cleanup:', result.reason);
+    }
     this.monitorWorkers.clear();
 
     // Stop all Monitors (legacy, should be empty now)

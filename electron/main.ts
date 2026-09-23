@@ -670,7 +670,7 @@ ipcMain.handle('secrets:delete', async (_event, name: string) => {
 ipcMain.handle('stas:query', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => {
   try {
     const manager = await getStorageManager();
-    const result = await manager.callStasQuery(identityKey, chain, method, args ?? []);
+    const result = await manager.request(identityKey, chain, () => manager.callStasQuery(identityKey, chain, method, args ?? []));
     return { success: true, result };
   } catch (error: any) {
     console.error('[IPC] stas:query error:', error);

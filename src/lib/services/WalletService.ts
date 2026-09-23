@@ -532,7 +532,14 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey))
       const services = createServices(chain)
 
-      const binding = await walletDataCall('binding', { identity: keyDeriver.identityKey, chain })
+      let binding: { preferLocal: boolean } | undefined
+      try {
+        binding = await walletDataCall('binding', { identity: keyDeriver.identityKey, chain })
+      } catch (error) {
+        // Local storage cannot open without its binding, but a remote wallet can.
+        if (!this._useRemoteStorage) throw error
+        console.warn('[WalletService] Wallet data binding unavailable; continuing with remote storage:', error)
+      }
       if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while opening storage')
       if (binding?.preferLocal) {
         this._useRemoteStorage = false

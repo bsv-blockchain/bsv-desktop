@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { FeeSettingsView } from './feeSettings.js';
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -33,6 +34,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeOpenSettingsListener: (callback: () => void) => {
       ipcRenderer.removeListener('network-settings:open', callback);
     }
+  },
+
+  // Transaction fee settings
+  fees: {
+    get: (chain: 'main' | 'test' | 'ttn') =>
+      ipcRenderer.invoke('fees:get', chain),
+    set: (chain: 'main' | 'test' | 'ttn', rate: number | null) =>
+      ipcRenderer.invoke('fees:set', chain, rate)
   },
 
   app: {
@@ -153,6 +162,14 @@ export interface ElectronAPI {
     setProxySettings: (settings: { mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }) => Promise<{ success: boolean; settings?: { mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }; restartRequired?: boolean; error?: string }>;
     onOpenSettings: (callback: () => void) => void;
     removeOpenSettingsListener: (callback: () => void) => void;
+  };
+  fees: {
+    get: (chain: 'main' | 'test' | 'ttn') => Promise<FeeSettingsView>;
+    set: (chain: 'main' | 'test' | 'ttn', rate: number | null) => Promise<{
+      success: boolean;
+      settings?: FeeSettingsView;
+      error?: string;
+    }>;
   };
   app: {
     /** Relaunches the app; the process exits and the Promise does not resolve. */

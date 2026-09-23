@@ -12,7 +12,8 @@ import PublicKeyIcon from '@mui/icons-material/Key'
 import CustomDialog from '../../../components/CustomDialog'
 import { toast } from 'react-toastify'
 import validateTrust from '../../../utils/validateTrust'
-import { Certifier } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
+import { Certifier } from '@bsv/wallet-toolbox-client'
+import { buildTrustedCertifier } from './certifier'
 
 const AddEntityModal = ({
   open, setOpen, trustedEntities, setTrustedEntities
@@ -101,10 +102,10 @@ const AddEntityModal = ({
   }
 
   const handleTrust = async () => {
-    setTrustedEntities(t => {
-      if (t.some(x => x.identityKey === identityKey)) {
+    setTrustedEntities((entities: Certifier[]) => {
+      if (entities.some(x => x.identityKey === identityKey)) {
         toast.error(t('trust_add_entity_duplicate_key'))
-        return t
+        return entities
       }
       setDomain('')
       setName('')
@@ -112,10 +113,7 @@ const AddEntityModal = ({
       setIdentityKey('')
       setFieldsValid(false)
       setOpen(false)
-      return [
-        { name, icon, description, identityKey, trust: 5 } as Certifier,
-        ...t
-      ]
+      return [buildTrustedCertifier({ name, description, icon, identityKey }), ...entities]
     })
   }
 

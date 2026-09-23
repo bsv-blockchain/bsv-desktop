@@ -20,7 +20,7 @@ import React, {
   useRef,
 } from 'react'
 import { useMediaQuery } from '@mui/material'
-import { WalletSettings } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
+import { WalletSettings } from '@bsv/wallet-toolbox-client'
 import { WalletPermissionsManager, PrivilegedKeyManager, WalletStorageManager, WalletAuthenticationManager } from '@bsv/wallet-toolbox-client'
 import { WalletInterface, Utils } from '@bsv/sdk'
 import { PeerPayClient, AdvertisementToken } from '@bsv/message-box-client'

@@ -27,7 +27,7 @@
     "test:stas:db": "npm rebuild better-sqlite3 && vitest run --config vitest.config.electron.ts test/stas; npm run rebuild:electron",
     "rebuild:electron": "electron-rebuild -f -o better-sqlite3 --build-from-source",
     "test:perf": "vitest run --config vitest.config.electron.ts",
-    "test:wallet-files": "vitest run --config vitest.config.electron.ts test/wallet-portability.test.ts test/wallet-portability-service.test.ts test/wallet-portability-argon2.test.ts"
+    "test:wallet-files": "vitest run --config vitest.config.electron.ts test/wallet-portability.test.ts test/wallet-portability-service.test.ts test/wallet-portability-argon2.test.ts test/wallet-portability-storage.test.ts test/wallet-portability-ipc.test.ts"
   },
   "dependencies": {
     "@bsv/amountinator": "^2.1.6",

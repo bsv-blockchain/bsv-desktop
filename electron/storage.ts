@@ -99,11 +99,12 @@ class StorageManager {
     if (!this.access.has(key)) this.access.set(key, new WalletStorageAccess());
     return this.access.get(key)!;
   }
+  /** Everyday storage IPC: concurrent, but fenced by quiesce/activation. */
   request<T>(identityKey: string, chain: 'main' | 'test' | 'ttn', operation: () => Promise<T>): Promise<T> {
-    return this.storageAccess(identityKey, chain).run(operation);
+    return this.storageAccess(identityKey, chain).share(operation);
   }
   async quiesce<T>(identityKey: string, chain: 'main' | 'test' | 'ttn', operation: () => Promise<T>): Promise<T> {
-    return this.request(identityKey, chain, async () => {
+    return this.storageAccess(identityKey, chain).run(async () => {
       const running = this.monitorWorkers.has(walletStorageKey(identityKey, chain));
       await this.stopMonitorWorker(identityKey, chain);
       try { return await operation(); }

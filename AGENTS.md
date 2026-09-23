@@ -340,6 +340,7 @@ curl -X POST http://127.0.0.1:3321/listOutputs \
 ### Database
 
 - Per-identity files: `~/.bsv-desktop/wallet-<identityKeyHex>-main.db` (mainnet) or `…-test.db` (testnet). To find your active DB, grep the wallet log for `identityKey: …`, then match the hex prefix.
+- After a wallet data file is activated as the main device copy (Settings → Wallet data files), that identity/network opens `~/.bsv-desktop/wallet-portability-v1/<archiveId>.db` instead; the mapping is in `wallet-portability-v1/bindings.json` (see `docs/wallet-data-files.md`).
 - WAL mode files: `<wallet-file>-wal`, `<wallet-file>-shm`
 - Delete database: `rm -rf ~/.bsv-desktop/` (forces re-initialization)
 

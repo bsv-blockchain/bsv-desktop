@@ -83,9 +83,10 @@ describe.skipIf(!sqliteAvailable)('fee rate wiring', () => {
     await storageManager.startMonitorWorker(identityKey, 'main')
 
     const configs = forked.map(worker => worker.send.mock.calls[0][0])
+    const databasePath = (chain: string) => path.join(home, '.bsv-desktop', `wallet-${identityKey}-${chain}.db`)
     expect(configs).toEqual([
-      { type: 'start', config: { identityKey, chain: 'test', feeRate: 321 } },
-      { type: 'start', config: { identityKey, chain: 'main', feeRate: 100 } }
+      { type: 'start', config: { identityKey, chain: 'test', databasePath: databasePath('test'), feeRate: 321 } },
+      { type: 'start', config: { identityKey, chain: 'main', databasePath: databasePath('main'), feeRate: 100 } }
     ])
   })
 })

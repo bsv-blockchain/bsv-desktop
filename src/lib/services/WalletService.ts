@@ -40,7 +40,7 @@ import {
   WalletInterface,
   CachedKeyDeriver,
 } from '@bsv/sdk'
-import { WalletSettingsManager, WalletSettings } from '@bsv/wallet-toolbox-client/out/src/WalletSettingsManager'
+import { WalletSettingsManager, WalletSettings } from '@bsv/wallet-toolbox-client'
 import { toast } from 'react-toastify'
 import { EventEmittable } from './EventEmittable'
 import { PermissionQueueManager } from './PermissionQueueManager'

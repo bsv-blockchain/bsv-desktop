@@ -22,6 +22,7 @@ import { chaintracksUrl } from './endpoints.js';
 import { patchListCertificates } from './optimized-queries.js';
 import { stasMigrationSource } from './stas-migrations/index.js';
 import { StasQueries } from './stas-queries.js';
+import { ensureUniqueLocalStorageIdentity } from './storage-identity.js';
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
@@ -86,6 +87,7 @@ function getCreateKnex() {
 class StorageManager {
   private storages: Map<string, StorageKnex> = new Map();
   private databases: Map<string, any> = new Map();
+  private storageInitializations: Map<string, Promise<StorageKnex>> = new Map();
   // Separate storage managers for backend monitoring (independent from renderer)
   private monitorStorageManagers: Map<string, WalletStorageManager> = new Map();
   private monitors: Map<string, Monitor> = new Map();
@@ -106,6 +108,26 @@ class StorageManager {
     if (this.storages.has(key)) {
       return this.storages.get(key)!;
     }
+
+    const pending = this.storageInitializations.get(key);
+    if (pending) return await pending;
+
+    const initialization = this.createStorage(identityKey, chain, key);
+    this.storageInitializations.set(key, initialization);
+    try {
+      return await initialization;
+    } finally {
+      if (this.storageInitializations.get(key) === initialization) {
+        this.storageInitializations.delete(key);
+      }
+    }
+  }
+
+  private async createStorage(
+    identityKey: string,
+    chain: 'main' | 'test' | 'ttn',
+    key: string
+  ): Promise<StorageKnex> {
 
     // Create new storage instance
     const homeDir = os.homedir();
@@ -157,6 +179,8 @@ class StorageManager {
     await db.migrate.latest({
       migrationSource: migrations
     });
+    const storageIdentityKey = await ensureUniqueLocalStorageIdentity(db, identityKey);
+    console.log(`[Storage] Local provider identity ready: ${storageIdentityKey.slice(0, 10)}...`);
     console.log(`[Storage] Migrations complete`);
 
     // Run STAS extension migrations (bsv-desktop-owned). A separate tracking

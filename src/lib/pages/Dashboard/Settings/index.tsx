@@ -1,3 +1,4 @@
+import { Link as RouterLink } from 'react-router-dom'
 import { useState, useContext, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLanguage, languageNames } from '../../../i18n/LanguageContext'
@@ -419,6 +420,7 @@ const Settings = () => {
 
   return (
     <div className={classes.root}>
+      <Button component={RouterLink} to="/recovery/wallet-data">Wallet data files: export, import and recovery</Button>
       <Typography variant="h1" color="textPrimary" sx={{ mb: 2 }}>
         {t('settings_title')}
       </Typography>

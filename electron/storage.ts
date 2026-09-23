@@ -22,6 +22,8 @@ import { chaintracksUrl } from './endpoints.js';
 import { patchListCertificates } from './optimized-queries.js';
 import { stasMigrationSource } from './stas-migrations/index.js';
 import { StasQueries } from './stas-queries.js';
+import { WalletStorageAccess } from './wallet-portability/access.js';
+import { WalletDataBindings, walletStorageKey, assertRecoveryBinding } from './wallet-portability/bindings.js';
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
@@ -84,6 +86,34 @@ function getCreateKnex() {
  * Maintains a map of storage instances keyed by identityKey
  */
 class StorageManager {
+  readonly bindings = new WalletDataBindings();
+  private access = new Map<string, WalletStorageAccess>();
+  private storageAccess(identityKey: string, chain: 'main' | 'test' | 'ttn'): WalletStorageAccess {
+    const key = walletStorageKey(identityKey, chain);
+    if (!this.access.has(key)) this.access.set(key, new WalletStorageAccess());
+    return this.access.get(key)!;
+  }
+  request<T>(identityKey: string, chain: 'main' | 'test' | 'ttn', operation: () => Promise<T>): Promise<T> {
+    return this.storageAccess(identityKey, chain).run(operation);
+  }
+  async quiesce<T>(identityKey: string, chain: 'main' | 'test' | 'ttn', operation: () => Promise<T>): Promise<T> {
+    return this.request(identityKey, chain, async () => {
+      const running = this.monitorWorkers.has(walletStorageKey(identityKey, chain));
+      await this.stopMonitorWorker(identityKey, chain);
+      try { return await operation(); }
+      finally { if (running) await this.startMonitorWorker(identityKey, chain); }
+    });
+  }
+  async closeForActivation(identityKey: string, chain: 'main' | 'test' | 'ttn', commit: () => Promise<void>): Promise<void> {
+    await this.storageAccess(identityKey, chain).close(async () => {
+      await this.stopMonitorWorker(identityKey, chain);
+      const key = walletStorageKey(identityKey, chain);
+      const db = this.databases.get(key);
+      if (db) await db.destroy();
+      this.databases.delete(key); this.storages.delete(key);
+      await commit();
+    });
+  }
   private storages: Map<string, StorageKnex> = new Map();
   private databases: Map<string, any> = new Map();
   // Separate storage managers for backend monitoring (independent from renderer)
@@ -101,7 +131,7 @@ class StorageManager {
    * Get or create a storage instance for the given identity key
    */
   async getOrCreateStorage(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<StorageKnex> {
-    const key = `${identityKey}-${chain}`;
+    const key = walletStorageKey(identityKey, chain);
 
     if (this.storages.has(key)) {
       return this.storages.get(key)!;
@@ -118,8 +148,7 @@ class StorageManager {
 
     // Use separate database files for different identities and chains
     // Format: wallet-<identityKey>-<chain>.db
-    const dbFileName = `wallet-${key}.db`;
-    const dbPath = path.join(bsvDir, dbFileName);
+    const dbPath = this.bindings.databasePath(identityKey, chain);
 
     console.log(`[Storage] Creating storage at: ${dbPath}`);
 
@@ -145,6 +174,15 @@ class StorageManager {
         }
       }
     });
+
+    // A recovered database must still match its binding before any migrations
+    // or monitor can write to it. A substituted file never becomes a new wallet.
+    const binding = this.bindings.get(identityKey, chain);
+    if (binding) {
+      try {
+        assertRecoveryBinding(binding, chain, await db('settings').first(), await db('users').where({ identityKey }).first(), identityKey);
+      } catch (error) { await db.destroy(); throw error; }
+    }
 
     // Run database migrations to create tables
     console.log(`[Storage] Running database migrations for ${key}...`);
@@ -227,7 +265,7 @@ class StorageManager {
     chain: 'main' | 'test' | 'ttn'
   ): Promise<void> {
     const storage = await this.getOrCreateStorage(identityKey, chain);
-    const key = `${identityKey}-${chain}`;
+    const key = walletStorageKey(identityKey, chain);
 
     // Check if already initialized to prevent duplicates
     if (this.monitorWorkers.has(key)) {
@@ -268,7 +306,7 @@ class StorageManager {
     identityKey: string,
     chain: 'main' | 'test' | 'ttn'
   ): Promise<void> {
-    const key = `${identityKey}-${chain}`;
+    const key = walletStorageKey(identityKey, chain);
 
     // Don't start if already running
     if (this.monitorWorkers.has(key)) {
@@ -365,7 +403,8 @@ class StorageManager {
         type: 'start',
         config: {
           identityKey,
-          chain
+          chain,
+          databasePath: this.bindings.databasePath(identityKey, chain)
         }
       });
 
@@ -381,38 +420,27 @@ class StorageManager {
    * Stop Monitor worker process
    */
   async stopMonitorWorker(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<void> {
-    const key = `${identityKey}-${chain}`;
+    const key = walletStorageKey(identityKey, chain);
     const worker = this.monitorWorkers.get(key);
 
     if (!worker) {
       return;
     }
 
-    console.log(`[Monitor Worker] Stopping worker for ${key}`);
-
-    try {
-      // Send stop command
-      worker.send({ type: 'stop' });
-
-      // Wait for graceful shutdown
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          console.warn(`[Monitor Worker] Timeout waiting for ${key} to stop, forcing kill`);
-          worker.kill('SIGKILL');
-          resolve();
-        }, 5000);
-
-        worker.once('exit', () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-      });
-
-      this.monitorWorkers.delete(key);
-      console.log(`[Monitor Worker] Stopped successfully for ${key}`);
-    } catch (error) {
-      console.error(`[Monitor Worker] Error stopping for ${key}:`, error);
-    }
+    // Resolve only after the child is actually gone. Sending SIGKILL is not
+    // evidence that the old writer has exited.
+    if (worker.exitCode !== null || worker.signalCode !== null) { this.monitorWorkers.delete(key); return; }
+    await new Promise<void>((resolve, reject) => {
+      let forceTimer: ReturnType<typeof setTimeout>;
+      const timeout = setTimeout(() => {
+        worker.kill('SIGKILL');
+        forceTimer = setTimeout(() => reject(new Error('Monitor did not exit; storage was not switched')), 5000);
+      }, 5000);
+      worker.once('exit', () => { clearTimeout(timeout); clearTimeout(forceTimer); resolve(); });
+      if (worker.connected) worker.send({ type: 'stop' }, error => { if (error) worker.kill('SIGTERM'); });
+      else worker.kill('SIGTERM');
+    });
+    this.monitorWorkers.delete(key);
   }
 
   /**
@@ -464,7 +492,7 @@ class StorageManager {
   ): Promise<any> {
     // Ensure storage (and therefore the STAS migrations) have run.
     await this.getOrCreateStorage(identityKey, chain);
-    const key = `${identityKey}-${chain}`;
+    const key = walletStorageKey(identityKey, chain);
     const db = this.databases.get(key);
     if (!db) {
       throw new Error(`No database connection for ${key}`);

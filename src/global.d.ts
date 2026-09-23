@@ -1,6 +1,11 @@
 // Global type declarations for Electron IPC API
 
 export interface ElectronAPI {
+  walletData: {
+    call: (action: string, data: Record<string, unknown>) => Promise<any>;
+    onProgress: (callback: (message: string) => void) => () => void;
+  };
+
   isFocused: () => Promise<boolean>;
   requestFocus: () => Promise<void>;
   relinquishFocus: () => Promise<void>;

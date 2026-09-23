@@ -25,6 +25,7 @@ const Recovery: React.FC<any> = ({ history }) => {
         <Typography variant='body1' paragraph>
           {t('recovery_page_description')}
         </Typography>
+        <Button onClick={() => history.push('/recovery/wallet-data')}>Recover from wallet data file</Button>
         <List style={{ marginTop: '1rem', marginBottom: '1rem' }}>
           <ListItem disablePadding>
             <ListItemButton onClick={() => history.push('/recovery/presentation-key')}>

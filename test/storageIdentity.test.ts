@@ -2,10 +2,24 @@ import knex, { type Knex } from 'knex';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createLocalStorageIdentityKey, ensureUniqueLocalStorageIdentity } from '../electron/storage-identity';
 
+// better-sqlite3 is rebuilt for Electron's ABI by postinstall; skip when plain
+// node cannot load it (see test/stas/migration.test.ts).
+async function canUseBetterSqlite3(): Promise<boolean> {
+  try {
+    const probe = knex({ client: 'better-sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+    await probe.raw('SELECT 1');
+    await probe.destroy();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const sqliteAvailable = await canUseBetterSqlite3();
 const walletIdentityKey = `02${'11'.repeat(32)}`;
 const localStorageIdentityKey = `03${'22'.repeat(32)}`;
 
-describe('local storage provider identity', () => {
+describe.skipIf(!sqliteAvailable)('local storage provider identity', () => {
   let db: Knex;
 
   beforeEach(async () => {

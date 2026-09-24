@@ -3,7 +3,9 @@
  *
  * `run` is exclusive and FIFO. `share` is for everyday storage requests: they
  * run concurrently with each other, wait for any queued exclusive operation,
- * and are drained before the next exclusive operation starts. */
+ * and are drained before the next exclusive operation starts.
+ * Not reentrant: calling run/share/close on the same instance from inside a
+ * run or close operation waits on itself forever. */
 export class WalletStorageAccess {
   private tail: Promise<void> = Promise.resolve()
   private exclusiveQueued = 0

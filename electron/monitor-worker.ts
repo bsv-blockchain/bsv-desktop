@@ -16,6 +16,10 @@ import os from 'os';
 import { createRequire } from 'module';
 import { StorageKnex, Services, Monitor, WalletStorageManager, ChaintracksServiceClient } from '@bsv/wallet-toolbox';
 import { chaintracksUrl } from './endpoints.js';
+import {
+  DEFAULT_MONITOR_FEE_RATE,
+  getConfiguredFeeRate
+} from './feeSettings.js';
 
 const require = createRequire(import.meta.url);
 
@@ -31,6 +35,9 @@ function getCreateKnex() {
 interface MonitorConfig {
   identityKey: string;
   chain: 'main' | 'test' | 'ttn';
+  databasePath: string;
+  /** Resolved by the parent process to keep this worker on its startup snapshot. */
+  feeRate?: number;
 }
 
 let monitor: Monitor | null = null;
@@ -51,7 +58,8 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     const bsvDir = path.join(homeDir, '.bsv-desktop');
     // Use same naming convention as storage.ts: wallet-<identityKey>-<chain>.db
     const dbFileName = `wallet-${key}.db`;
-    const dbPath = path.join(bsvDir, dbFileName);
+    const dbPath = config.databasePath;
+    if (!path.isAbsolute(dbPath)) throw new Error("Monitor database must be selected by main");
 
     console.log(`[Monitor Worker] Connecting to database: ${dbPath}`);
 
@@ -78,7 +86,10 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     const storage = new StorageKnex({
       knex: db,
       chain: chain,
-      feeModel: { model: 'sat/kb', value: 100 },
+      feeModel: {
+        model: 'sat/kb',
+        value: config.feeRate ?? getConfiguredFeeRate(chain, DEFAULT_MONITOR_FEE_RATE)
+      },
       commissionSatoshis: 0
     });
 

@@ -1,3 +1,4 @@
+import WalletData from './pages/WalletData'
 import React, { useContext } from 'react'
 import './i18n'
 import { LanguageProvider } from './i18n/LanguageContext'
@@ -84,6 +85,7 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
                   <Route path='/dashboard' component={Dashboard} />
                   <Route exact path='/recovery/presentation-key' component={RecoverPresentationKey} />
                   <Route exact path='/recovery/password' component={RecoverPassword} />
+                  <Route exact path='/recovery/wallet-data' component={WalletData} />
                   <Route exact path='/recovery' component={Recovery} />
                   <Route exact path='/privacy' component={PrivacyPolicy} />
                   <Route exact path='/usage' component={UsagePolicy} />

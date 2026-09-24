@@ -1,7 +1,7 @@
 /**
  * Translation Coverage Tests
  *
- * 1. Ensures every English key in translations.ts exists in all 9 other
+ * 1. Ensures every English key in translations.ts exists in all 11 other
  *    supported languages.
  * 2. Ensures every key referenced via t() in source components (including
  *    interpolated calls like t('key', { count })) exists in the English
@@ -17,7 +17,7 @@ import * as path from 'path'
 const TRANSLATIONS_PATH = path.resolve(__dirname, '../src/lib/i18n/translations.ts')
 const SRC_LIB_PATH = path.resolve(__dirname, '../src/lib')
 
-const SUPPORTED_LANGUAGES = ['es', 'fr', 'pt', 'zh', 'hi', 'bn', 'ar', 'ru', 'id']
+const SUPPORTED_LANGUAGES = ['es', 'fr', 'pt', 'zh', 'hi', 'bn', 'ar', 'ru', 'id', 'ja', 'pl']
 
 /**
  * Parse all key-value pairs from a single language section of translations.ts.
@@ -169,4 +169,18 @@ describe('translation completeness', () => {
       `Found ${stale.length} stale key(s) not present in English:\n  ${stale.join('\n  ')}`
     ).toHaveLength(0)
   })
+})
+
+// Issue #95: grouped spending authorizations are tracked per calendar month
+// (BRC-116 §7.2, WalletPermissionsManager.querySpentSince), not over 2 months.
+describe('grouped spending authorization copy', () => {
+  for (const lang of ['en', ...SUPPORTED_LANGUAGES]) {
+    test(`${lang} describes a monthly limit`, () => {
+      const line = (sections.get(lang) ?? '').match(/^\s{4}group_spending_authorization_text: '((?:[^'\\]|\\.)*)'/m)
+      expect(line, `${lang} is missing group_spending_authorization_text`).not.toBeNull()
+      expect(line![1]).toContain('{{amount}}')
+      // "2" in Latin, Devanagari or Bengali digits, or the Arabic dual "two months".
+      expect(line![1]).not.toMatch(/2|२|২|الشهرين/)
+    })
+  }
 })

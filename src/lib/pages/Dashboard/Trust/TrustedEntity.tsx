@@ -25,7 +25,8 @@ import VerifiedIcon from '@mui/icons-material/Verified'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import CustomDialog from '../../../components/CustomDialog'
-import type { Certifier } from '@bsv/wallet-toolbox-client'
+import { Certifier } from '@bsv/wallet-toolbox-client'
+import { certifierIconUrl } from './certifier'
 
 const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { history: any, classes: any, setTrustedEntities: Function, entity: Certifier, trustedEntities: Certifier[] }) => {
   const { t } = useTranslation()
@@ -116,7 +117,7 @@ const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { histo
               }}
             >
               <img
-                src={entity.iconUrl}
+                src={certifierIconUrl(entity)}
                 className={classes.entity_icon}
                 alt={`${entity.name} icon`}
                 style={{
@@ -261,7 +262,7 @@ const TrustedEntity = ({ entity, setTrustedEntities, classes, history }: { histo
           </DialogContentText>
           <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
             <img
-              src={entity.iconUrl}
+              src={certifierIconUrl(entity)}
               className={classes.entity_icon}
               alt={`${entity.name} icon`}
               style={{ width: '40px', height: '40px', borderRadius: '50%', marginRight: '16px' }}

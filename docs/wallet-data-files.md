@@ -34,10 +34,21 @@ separately validated token-engine migration. This proposal does not suppress the
 findings or claim a clean audit. BSVA retains release approval and the decision
 on that migration; the BRC-38/39 codec uses the current `@bsv/sdk`.
 
-## SDK 2.8.3 integration
+## SDK 2.8.3 compatibility changes (included in 2.8.4)
 
-The wallet pins published SDK 2.8.3, including the authenticated AES-GCM and bounded discovery fixes from 2.8.1/2.8.2. [TS Stack #587](https://github.com/bsv-blockchain/ts-stack/pull/587) also preserves explicit originators during HTTP discovery, binds browser JSON fetch correctly, and restores signed `listActions` net amounts using the historical wire bytes. Counts, lengths, individual output values, origin binding and response validation remain strict.
+SDK 2.8.3 included the authenticated AES-GCM and bounded discovery fixes from 2.8.1/2.8.2. [TS Stack #587](https://github.com/bsv-blockchain/ts-stack/pull/587) also preserves explicit originators during HTTP discovery, binds browser JSON fetch correctly, and restores signed `listActions` net amounts using the historical wire bytes. Counts, lengths, individual output values, origin binding and response validation remain strict.
 
 These are SDK compatibility repairs. No BRC100 application API, wire format or account-data migration is required. Existing older clients retain their calls and wire bytes; applications that bundle an affected 2.8.x client can take the SDK patch without rewriting calls. This does not impose an ecosystem-wide SDK upgrade. Wallet provider installation and standard BRC100 responses must remain compatible with older clients.
 
 SDK release evidence includes 7,393 passing SDK tests and an old/new signed-history matrix preserving all 32 previously valid response-byte cases; the eight known 2.8.1/2.8.2 negative-history failures are recorded separately. The dependency upgrade still requires this wallet's own checks and native acceptance before release; SDK evidence alone is not app acceptance.
+
+
+## SDK 2.8.4 history compatibility
+
+The published 2.8.4 SDK restores existing `listActions` histories containing
+empty stored descriptions and unassigned baskets. It preserves the original
+strings, signed net amounts, wire encoding and strict script/value/label checks.
+No application API or account-data migration is needed; affected hardened SDK
+clients can dependency-update without rewriting calls. Existing older clients
+remain supported. This dependency patch does not supersede upstream wallet
+portability, storage-fencing, fee-setting or identity fixes.

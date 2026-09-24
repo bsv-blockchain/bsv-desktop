@@ -9,6 +9,7 @@ import { applyPersistedProxySettings, registerNetworkIpc } from './networkSettin
 import { registerWalletPortabilityIpc } from './wallet-portability/ipc.js';
 import type { WalletPortabilityService } from './wallet-portability/service.js';
 import { integrateAppImageDesktopEntry } from './linuxDesktopIntegration.js';
+import { FeeSettingsService, registerFeeSettingsIpc } from './feeSettings.js';
 
 const require = createRequire(import.meta.url);
 
@@ -219,6 +220,14 @@ registerNetworkIpc({
     return Boolean(storageManager?.hasActiveMonitorWorkers?.());
   }
 });
+
+// Fee policy requests use Chromium's session fetch so the user's configured
+// proxy is respected. The service snapshots persisted rates at process start;
+// saved changes are picked up on the next restart.
+const feeSettingsService = new FeeSettingsService({
+  fetch: (url, options) => session.defaultSession.fetch(url, options as any) as any
+});
+registerFeeSettingsIpc(ipcMain, feeSettingsService);
 
 // Check if window is focused
 ipcMain.handle('is-focused', () => {
@@ -661,7 +670,7 @@ ipcMain.handle('secrets:delete', async (_event, name: string) => {
 ipcMain.handle('stas:query', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => {
   try {
     const manager = await getStorageManager();
-    const result = await manager.callStasQuery(identityKey, chain, method, args ?? []);
+    const result = await manager.request(identityKey, chain, () => manager.callStasQuery(identityKey, chain, method, args ?? []));
     return { success: true, result };
   } catch (error: any) {
     console.error('[IPC] stas:query error:', error);

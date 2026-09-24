@@ -23,10 +23,13 @@
 
 import type { sdk } from '@bsv/wallet-toolbox-client';
 
-export class StorageElectronIPC implements sdk.WalletStorageProvider {
+type WalletStorageProvider = sdk.WalletStorageProvider;
+type WalletServices = sdk.WalletServices;
+
+export class StorageElectronIPC implements WalletStorageProvider {
   private identityKey: string;
   private chain: 'main' | 'test' | 'ttn';
-  private services?: sdk.WalletServices;
+  private services?: WalletServices;
   private settings?: any;
 
   constructor(identityKey: string, chain: 'main' | 'test' | 'ttn') {
@@ -39,7 +42,7 @@ export class StorageElectronIPC implements sdk.WalletStorageProvider {
   /**
    * Set wallet services (required by WalletStorageProvider interface)
    */
-  setServices(v: sdk.WalletServices): void {
+  setServices(v: WalletServices): void {
     this.services = v;
   }
 
@@ -75,7 +78,7 @@ export class StorageElectronIPC implements sdk.WalletStorageProvider {
   /**
    * Get wallet services
    */
-  getServices(): sdk.WalletServices {
+  getServices(): WalletServices {
     if (!this.services) {
       throw new Error('Services not set on StorageElectronIPC');
     }

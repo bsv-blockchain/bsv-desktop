@@ -20,7 +20,7 @@ References: [BRC-38](https://github.com/bsv-blockchain/BRCs/blob/2b959b13f1f7304
 
 ## Dependency qualification for this proposal
 
-The wallet uses published SDK 2.8.1 (portable authenticated-empty AES-GCM repair),
+The wallet uses published SDK 2.8.5 (portable authenticated-empty AES-GCM repair),
 Toolbox/Client 2.14.0, Message Box Client 2.5.3, BTMS 1.2.3 and permission module
 1.2.1. DOMPurify 3.4.16, electron-updater 6.8.9 and compatible Express/transitive
 updates address the available production graph fixes without major overrides.
@@ -34,7 +34,7 @@ separately validated token-engine migration. This proposal does not suppress the
 findings or claim a clean audit. BSVA retains release approval and the decision
 on that migration; the BRC-38/39 codec uses the current `@bsv/sdk`.
 
-## SDK 2.8.3 compatibility changes (included in 2.8.4)
+## SDK 2.8.3 compatibility changes (included in 2.8.5)
 
 SDK 2.8.3 included the authenticated AES-GCM and bounded discovery fixes from 2.8.1/2.8.2. [TS Stack #587](https://github.com/bsv-blockchain/ts-stack/pull/587) also preserves explicit originators during HTTP discovery, binds browser JSON fetch correctly, and restores signed `listActions` net amounts using the historical wire bytes. Counts, lengths, individual output values, origin binding and response validation remain strict.
 
@@ -52,3 +52,11 @@ No application API or account-data migration is needed; affected hardened SDK
 clients can dependency-update without rewriting calls. Existing older clients
 remain supported. This dependency patch does not supersede upstream wallet
 portability, storage-fencing, fee-setting or identity fixes.
+
+## SDK 2.8.5 HTTP payment compatibility
+
+The published SDK patch increases HTTP client header capacity fourfold, including
+a 256 KiB aggregate request-header budget for larger valid payment proofs.
+Authentication signatures, canonical framing and existing BRC100 calls are
+unchanged. BRC-38/39 archives and wallet records need no migration. Server
+operators own HTTP transport admission and should check their complete route.

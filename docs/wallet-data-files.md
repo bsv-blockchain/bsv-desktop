@@ -34,6 +34,10 @@ separately validated token-engine migration. This proposal does not suppress the
 findings or claim a clean audit. BSVA retains release approval and the decision
 on that migration; the BRC-38/39 codec uses the current `@bsv/sdk`.
 
-## SDK 2.8.2 integration
+## SDK 2.8.3 integration
 
-The wallet now pins published SDK 2.8.2, retaining the authenticated AES-GCM fix from 2.8.1 and adding [TS Stack #581](https://github.com/bsv-blockchain/ts-stack/pull/581). Successful automatic React Native/XDM discovery no longer leaves subsequent wallet calls subject to the short probe deadline. Discovery remains bounded, explicit operation timeouts and response/origin validation are unchanged. The BRC100 API and wire contracts remain unchanged; this release does not require an ecosystem-wide application migration. SDK 2.8.2 is recommended for its client-side discovery fixes when React Native or XDM is selected. Wallets must still install their existing provider reliably before app scripts and return standard BRC100 responses so compatible older SDK bundles continue to work.
+The wallet pins published SDK 2.8.3, including the authenticated AES-GCM and bounded discovery fixes from 2.8.1/2.8.2. [TS Stack #587](https://github.com/bsv-blockchain/ts-stack/pull/587) also preserves explicit originators during HTTP discovery, binds browser JSON fetch correctly, and restores signed `listActions` net amounts using the historical wire bytes. Counts, lengths, individual output values, origin binding and response validation remain strict.
+
+These are SDK compatibility repairs. No BRC100 application API, wire format or account-data migration is required. Existing older clients retain their calls and wire bytes; applications that bundle an affected 2.8.x client can take the SDK patch without rewriting calls. This does not impose an ecosystem-wide SDK upgrade. Wallet provider installation and standard BRC100 responses must remain compatible with older clients.
+
+SDK release evidence includes 7,393 passing SDK tests and an old/new signed-history matrix preserving all 32 previously valid response-byte cases; the eight known 2.8.1/2.8.2 negative-history failures are recorded separately. The dependency upgrade still requires this wallet's own checks and native acceptance before release; SDK evidence alone is not app acceptance.

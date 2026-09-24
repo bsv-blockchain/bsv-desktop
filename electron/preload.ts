@@ -63,6 +63,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('http-request-cancelled');
   },
 
+  walletData: {
+    call: (action: string, data: Record<string, unknown>) => ipcRenderer.invoke('wallet-data:call', action, data),
+    onProgress: (callback: (message: string) => void) => {
+      const listener = (_event: unknown, message: string) => callback(message);
+      ipcRenderer.on('wallet-data:progress', listener);
+      return () => ipcRenderer.removeListener('wallet-data:progress', listener);
+    }
+  },
+
   // Storage operations
   storage: {
     isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') =>
@@ -149,6 +158,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 // Type definitions for window.electronAPI
 export interface ElectronAPI {
+  walletData: {
+    call: (action: string, data: Record<string, unknown>) => Promise<any>;
+    onProgress: (callback: (message: string) => void) => () => void;
+  };
+
   isFocused: () => Promise<boolean>;
   requestFocus: () => Promise<void>;
   relinquishFocus: () => Promise<void>;

@@ -6,6 +6,8 @@ import fs from 'fs';
 import { startHttpServer, PortInUseError } from './httpServer.js';
 import { buildApplicationMenu } from './appMenu.js';
 import { applyPersistedProxySettings, registerNetworkIpc } from './networkSettings.js';
+import { registerWalletPortabilityIpc } from './wallet-portability/ipc.js';
+import type { WalletPortabilityService } from './wallet-portability/service.js';
 import { integrateAppImageDesktopEntry } from './linuxDesktopIntegration.js';
 import { FeeSettingsService, registerFeeSettingsIpc } from './feeSettings.js';
 
@@ -20,6 +22,15 @@ async function getStorageManager() {
   }
   return storageManager;
 }
+
+let walletDataService: Promise<WalletPortabilityService> | undefined;
+registerWalletPortabilityIpc(() => mainWindow, () => walletDataService ??= (async () => {
+  const [{ WalletArchiveRepository }, { WalletPortabilityService }, { walletDataDirectory }] = await Promise.all([
+    import('./wallet-portability/repository.js'), import('./wallet-portability/service.js'), import('./wallet-portability/bindings.js')
+  ]);
+  const repository = new WalletArchiveRepository(walletDataDirectory()); await repository.ready();
+  return new WalletPortabilityService(repository, await getStorageManager());
+})().catch(error => { walletDataService = undefined; throw error; }));
 
 // Lazy load updater to avoid loading electron-updater at startup
 let updaterModule: any = null;
@@ -59,6 +70,7 @@ async function cleanupBeforeExit(): Promise<void> {
   if (cleanupStarted) return;
   cleanupStarted = true;
 
+  if (walletDataService) await (await walletDataService).close();
   if (storageManager) {
     try {
       await storageManager.cleanup();
@@ -515,7 +527,7 @@ ipcMain.on('http-response', (_event, response) => {
 ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn') => {
   try {
     const manager = await getStorageManager();
-    return await manager.isAvailable(identityKey, chain);
+    return await manager.request(identityKey, chain, () => manager.isAvailable(identityKey, chain));
   } catch (error) {
     console.error('[IPC] storage:is-available error:', error);
     throw error;
@@ -526,7 +538,7 @@ ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain
 ipcMain.handle('storage:make-available', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn') => {
   try {
     const manager = await getStorageManager();
-    const settings = await manager.makeAvailable(identityKey, chain);
+    const settings = await manager.request(identityKey, chain, () => manager.makeAvailable(identityKey, chain));
     return { success: true, settings };
   } catch (error: any) {
     console.error('[IPC] storage:make-available error:', error);
@@ -538,7 +550,7 @@ ipcMain.handle('storage:make-available', async (_event, identityKey: string, cha
 ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => {
   try {
     const manager = await getStorageManager();
-    const result = await manager.callStorageMethod(identityKey, chain, method, args);
+    const result = await manager.request(identityKey, chain, () => manager.callStorageMethod(identityKey, chain, method, args));
     return { success: true, result };
   } catch (error: any) {
     console.error('[IPC] storage:call-method error:', error);
@@ -550,7 +562,7 @@ ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain:
 ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn') => {
   try {
     const manager = await getStorageManager();
-    await manager.initializeServices(identityKey, chain);
+    await manager.request(identityKey, chain, () => manager.initializeServices(identityKey, chain));
     return { success: true };
   } catch (error: any) {
     console.error('[IPC] storage:initialize-services error:', error);
@@ -658,7 +670,7 @@ ipcMain.handle('secrets:delete', async (_event, name: string) => {
 ipcMain.handle('stas:query', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => {
   try {
     const manager = await getStorageManager();
-    const result = await manager.callStasQuery(identityKey, chain, method, args ?? []);
+    const result = await manager.request(identityKey, chain, () => manager.callStasQuery(identityKey, chain, method, args ?? []));
     return { success: true, result };
   } catch (error: any) {
     console.error('[IPC] stas:query error:', error);

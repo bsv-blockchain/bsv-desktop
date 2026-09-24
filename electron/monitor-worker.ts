@@ -35,6 +35,7 @@ function getCreateKnex() {
 interface MonitorConfig {
   identityKey: string;
   chain: 'main' | 'test' | 'ttn';
+  databasePath: string;
   /** Resolved by the parent process to keep this worker on its startup snapshot. */
   feeRate?: number;
 }
@@ -57,7 +58,8 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     const bsvDir = path.join(homeDir, '.bsv-desktop');
     // Use same naming convention as storage.ts: wallet-<identityKey>-<chain>.db
     const dbFileName = `wallet-${key}.db`;
-    const dbPath = path.join(bsvDir, dbFileName);
+    const dbPath = config.databasePath;
+    if (!path.isAbsolute(dbPath)) throw new Error("Monitor database must be selected by main");
 
     console.log(`[Monitor Worker] Connecting to database: ${dbPath}`);
 

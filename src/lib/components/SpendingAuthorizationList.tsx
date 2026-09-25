@@ -13,6 +13,7 @@ import { createServices } from '../services/createServices';
 // NOTE: rely on the same exchange-rate provider used by AmountDisplay
 import { useAmountUnit } from './AmountInput';
 import AppLogo from './AppLogo';
+import { spendingProgress } from '../utils/spendingProgress';
 import { useTranslation } from 'react-i18next';
 
 type Props = {
@@ -73,14 +74,16 @@ export const SpendingAuthorizationList: FC<Props> = ({
   //   HELPERS
   // --------------------------------------------------------------------------
   const refreshAuthorizations = useCallback(async () => {
+    // Show the cached figure straight away, then query again: spends the app
+    // made without a prompt never clear the cache, so it can be stale.
     // Skip cache when waiting for authorization to ensure we fetch fresh data
-    if (!busy.waitingForAuth && !busy.renewLimit && SPENDING_CACHE.has(cacheKey)) {
+    const showedCache = !busy.waitingForAuth && !busy.renewLimit && SPENDING_CACHE.has(cacheKey);
+    if (showedCache) {
       const { auth, spent } = SPENDING_CACHE.get(cacheKey)!;
       setAuthorization(auth);
       setCurrentSpending(spent);
       setAuthorizedAmount(auth?.authorizedAmount ?? 0);
       setBusy(b => ({ ...b, list: false }));
-      return;
     }
 
     try {
@@ -102,7 +105,8 @@ export const SpendingAuthorizationList: FC<Props> = ({
         SPENDING_CACHE.set(cacheKey, { auth, spent });
       }
     } catch {
-      if (!busy.waitingForAuth && !busy.renewLimit) {
+      // Keep a cached authorization on screen if only the refresh failed
+      if (!busy.waitingForAuth && !busy.renewLimit && !showedCache) {
         onEmptyList();
       }
     } finally {
@@ -339,12 +343,12 @@ export const SpendingAuthorizationList: FC<Props> = ({
                 <Typography variant="body1" gutterBottom>{t('spending_auth_list_current_spending')}</Typography>
                 <LinearProgress
                   variant="determinate"
-                  value={Math.min(((currentSpending * -1) / authorization.authorizedAmount) * 100, 100)}
+                  value={spendingProgress(currentSpending, authorization.authorizedAmount).percent}
                   sx={{ height: 8, borderRadius: 4, mb: 1 }}
                 />
                 <Box display="flex" justifyContent="space-between" alignItems="center">
                   <Typography variant="body2" color="text.secondary">
-                    <AmountDisplay showFiatAsInteger>{currentSpending * -1}</AmountDisplay> {t('spending_auth_list_spent')}
+                    <AmountDisplay showFiatAsInteger>{spendingProgress(currentSpending, authorization.authorizedAmount).spent}</AmountDisplay> {t('spending_auth_list_spent')}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     <AmountDisplay showFiatAsInteger>{authorization.authorizedAmount}</AmountDisplay> {t('spending_auth_list_limit_label')}

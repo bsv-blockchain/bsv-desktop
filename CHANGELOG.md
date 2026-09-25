@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+- Manage App shows monthly spending as a positive amount that updates after silent spends. The meter was negating `querySpentSince`, which is already a positive total, so current spending rendered negative and the bar stayed empty. A cached figure is still shown immediately, then refreshed, so spends under an existing grant are no longer frozen on screen.
 - Upgrade Wallet Toolbox core/client to 2.14.1 so internal exact-spend metadata cannot invalidate a public `createAction` response after wallet work. Service-charge approvals, SDK 2.8.6 BRC-29 payment/refund behavior, BRC100 calls and BRC39/account-recovery formats remain compatible. Reconcile wallet history before retrying an older failed response.
 - Broadcast, prove and track transactions through Arcade the same way the mobile wallet does, on mainnet, testnet and teratestnet: the toolbox's own Arcade provider is primary (Extended Format to `/tx`, with the wallet's callback token and full status updates), TAAL, GorillaPool, WhatsOnChain and Bitails follow as fallbacks that can accept a transaction but never condemn one, and proofs come from Arcade first. The monitor now subscribes to Arcade's SSE status stream, so sends, confirmations and proofs appear as they happen and the UI refreshes on each change.
 - Preserve byte arrays across every BRC-100 and app-specific Electron HTTP wallet route, including current typed arrays and historical numeric-key objects, so payment, send/receive, token, cryptographic, and transaction-review flows remain compatible across wallet and app versions.

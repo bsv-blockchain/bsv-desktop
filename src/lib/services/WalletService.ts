@@ -30,6 +30,8 @@ import {
   WABClient,
   Wallet,
   PrivilegedKeyManager,
+  WalletSettingsManager,
+  type WalletSettings,
 } from '@bsv/wallet-toolbox-client'
 import { createServices } from './createServices'
 import {
@@ -40,7 +42,6 @@ import {
   WalletInterface,
   CachedKeyDeriver,
 } from '@bsv/sdk'
-import { WalletSettingsManager, WalletSettings } from '@bsv/wallet-toolbox-client'
 import { toast } from 'react-toastify'
 import { EventEmittable } from './EventEmittable'
 import { PermissionQueueManager } from './PermissionQueueManager'
@@ -65,6 +66,8 @@ import { StasTokenSettlementAdapter } from './tokens/peer/StasTokenSettlementAda
 import { Bsv21TokenSettlementAdapter } from './tokens/peer/Bsv21TokenSettlementAdapter'
 import { DstasTokenSettlementAdapter } from './tokens/peer/DstasTokenSettlementAdapter'
 import { StorageElectronIPC } from '../StorageElectronIPC'
+import { WalletDataStorageManager } from '../walletPortability/WalletDataStorageManager'
+import { WalletDataSession, walletDataCall } from '../walletPortability/session'
 import * as secrets from './secrets'
 import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB, DEFAULT_SETTINGS, MESSAGEBOX_HOST } from '../config'
 import type { LoginType, WABConfig } from '../WalletContext'
@@ -179,6 +182,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   private _adminOriginator = ADMIN_ORIGINATOR
 
   // ---- Runtime state ----
+  walletData?: WalletDataSession
+  private _walletDataGeneration = 0
   private _managers: WalletServiceSnapshot['managers'] = {}
   private _wallet?: WalletInterface
   private _stas?: StasServices
@@ -514,6 +519,10 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     primaryKey: number[],
     privilegedKeyManager: any
   ): Promise<any> {
+    const generation = ++this._walletDataGeneration
+    let candidate: WalletDataSession | undefined
+    await this.walletData?.close()
+    this.walletData = undefined
     console.log('[WalletService] Building wallet...')
     this._initializingBackendServices = true
     this._emitState()
@@ -523,6 +532,20 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey))
       const services = createServices(chain)
 
+      let binding: { preferLocal: boolean } | undefined
+      try {
+        binding = await walletDataCall('binding', { identity: keyDeriver.identityKey, chain })
+      } catch (error) {
+        // Local storage cannot open without its binding, but a remote wallet can.
+        if (!this._useRemoteStorage) throw error
+        console.warn('[WalletService] Wallet data binding unavailable; continuing with remote storage:', error)
+        toast.warning(`Saved wallet data selection could not be read, so remote storage is used: ${error instanceof Error ? error.message : String(error)}`)
+      }
+      if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while opening storage')
+      if (binding?.preferLocal) {
+        this._useRemoteStorage = false
+        this._backupStorageUrls = this._backupStorageUrls.filter(url => url !== 'LOCAL_STORAGE')
+      }
       let activeStorage: any
 
       if (this._useRemoteStorage) {
@@ -535,7 +558,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         activeStorage = electronStorage
       }
 
-      const storageManager = new WalletStorageManager(keyDeriver.identityKey, activeStorage, [])
+      const storageManager = new WalletDataStorageManager(keyDeriver.identityKey, activeStorage, [])
+      candidate = new WalletDataSession(keyDeriver.identityKey, chain, storageManager, !this._useRemoteStorage)
       const signer = new WalletSigner(chain, keyDeriver as any, storageManager)
       const wallet = new Wallet(signer, services, undefined, privilegedKeyManager)
       // Set default settings including "Who I Am" certifier before first get().
@@ -573,6 +597,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         await storageManager.setActive(stores[0].storageIdentityKey)
       }
 
+      if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while opening storage')
+      this.walletData = candidate
       const permissionsManager = this.permissionQueue.createPermissionsManager(wallet)
       this.permissionQueue.setPermissionsManager(permissionsManager)
 
@@ -682,9 +708,10 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       // Load settings
       try {
         const userSettings = await (wallet as any).settingsManager?.get()
-        if (userSettings) this._settings = userSettings
+        if (generation === this._walletDataGeneration && userSettings) this._settings = userSettings
       } catch { }
 
+      if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while loading settings')
       // Update active profile
       await this._updateActiveProfile()
 
@@ -693,6 +720,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         await this.peerPay.createClient(permissionsManager, this._messageBoxUrl, this._adminOriginator)
       }
 
+      if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while starting services')
       // Clear the initializing flag BEFORE the ready emit so React (e.g. Greeter)
       // does not stay stuck on the non-interactive initializingBackendServices screen.
       // Previously this was only cleared in `finally` without an emit, so the UI
@@ -704,6 +732,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       this._emitState()
       return permissionsManager
     } catch (error: any) {
+      await candidate?.close().catch(() => {})
+      if (generation !== this._walletDataGeneration) return null
+      if (this.walletData === candidate) this.walletData = undefined
       console.error('[WalletService] _buildWallet failed:', error)
       toast.error('Failed to build wallet: ' + error.message)
       this._initializingBackendServices = false
@@ -997,6 +1028,11 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       })
     }
 
+    if (this.walletData) {
+      await walletDataCall('preference', { identity: this.walletData.identityKey, chain: this.walletData.chain, preferLocal: isLocal })
+      this.walletData = new WalletDataSession(this.walletData.identityKey, this.walletData.chain, storageManager as WalletDataStorageManager, isLocal)
+    }
+
     // Reconcile the snapshot from the manager's authoritative store list. Always run
     // this — even on the no-op path — because the snapshot may have drifted out of
     // sync from a prior operation (e.g., a swap that completed in the manager but
@@ -1080,6 +1116,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   // ------------------------------------------------------------------
 
   logout() {
+    this._walletDataGeneration++
+    void this.walletData?.close().catch(() => {})
+    this.walletData = undefined
     const preservedKeys: Record<string, string> = {}
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)

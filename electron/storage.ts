@@ -23,6 +23,14 @@ import { installArcadeServices } from './arcade.js';
 import { patchListCertificates } from './optimized-queries.js';
 import { stasMigrationSource } from './stas-migrations/index.js';
 import { StasQueries } from './stas-queries.js';
+import { WalletStorageAccess } from './wallet-portability/access.js';
+import { WalletDataBindings, walletStorageKey, assertRecoveryBinding } from './wallet-portability/bindings.js';
+import {
+  DEFAULT_MONITOR_FEE_RATE,
+  DEFAULT_STORAGE_FEE_RATE,
+  getConfiguredFeeRate
+} from './feeSettings.js';
+import { ensureUniqueLocalStorageIdentity } from './storage-identity.js';
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
@@ -85,8 +93,44 @@ function getCreateKnex() {
  * Maintains a map of storage instances keyed by identityKey
  */
 class StorageManager {
+  readonly bindings = new WalletDataBindings();
+  private access = new Map<string, WalletStorageAccess>();
+  private storageAccess(identityKey: string, chain: 'main' | 'test' | 'ttn'): WalletStorageAccess {
+    const key = walletStorageKey(identityKey, chain);
+    if (!this.access.has(key)) this.access.set(key, new WalletStorageAccess());
+    return this.access.get(key)!;
+  }
+  /** Everyday storage IPC: concurrent, but fenced by quiesce/activation. */
+  request<T>(identityKey: string, chain: 'main' | 'test' | 'ttn', operation: () => Promise<T>): Promise<T> {
+    return this.storageAccess(identityKey, chain).share(operation);
+  }
+  async quiesce<T>(identityKey: string, chain: 'main' | 'test' | 'ttn', operation: () => Promise<T>): Promise<T> {
+    return this.storageAccess(identityKey, chain).run(async () => {
+      const running = this.monitorWorkers.has(walletStorageKey(identityKey, chain));
+      await this.stopMonitorWorker(identityKey, chain);
+      try { return await operation(); }
+      finally {
+        // A failed restart must not mask the operation's own result.
+        if (running) await this.startMonitorWorker(identityKey, chain).catch(error =>
+          console.error(`[Monitor Worker] Failed to restart for ${walletStorageKey(identityKey, chain)}:`, error));
+      }
+    });
+  }
+  async closeForActivation(identityKey: string, chain: 'main' | 'test' | 'ttn', commit: () => Promise<void>): Promise<void> {
+    await this.storageAccess(identityKey, chain).close(async seal => {
+      // If the monitor cannot be stopped nothing has changed yet, so storage stays usable.
+      await this.stopMonitorWorker(identityKey, chain);
+      seal();
+      const key = walletStorageKey(identityKey, chain);
+      const db = this.databases.get(key);
+      if (db) await db.destroy();
+      this.databases.delete(key); this.storages.delete(key);
+      await commit();
+    });
+  }
   private storages: Map<string, StorageKnex> = new Map();
   private databases: Map<string, any> = new Map();
+  private storageInitializations: Map<string, Promise<StorageKnex>> = new Map();
   // Separate storage managers for backend monitoring (independent from renderer)
   private monitorStorageManagers: Map<string, WalletStorageManager> = new Map();
   private monitors: Map<string, Monitor> = new Map();
@@ -102,11 +146,31 @@ class StorageManager {
    * Get or create a storage instance for the given identity key
    */
   async getOrCreateStorage(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<StorageKnex> {
-    const key = `${identityKey}-${chain}`;
+    const key = walletStorageKey(identityKey, chain);
 
     if (this.storages.has(key)) {
       return this.storages.get(key)!;
     }
+
+    const pending = this.storageInitializations.get(key);
+    if (pending) return await pending;
+
+    const initialization = this.createStorage(identityKey, chain, key);
+    this.storageInitializations.set(key, initialization);
+    try {
+      return await initialization;
+    } finally {
+      if (this.storageInitializations.get(key) === initialization) {
+        this.storageInitializations.delete(key);
+      }
+    }
+  }
+
+  private async createStorage(
+    identityKey: string,
+    chain: 'main' | 'test' | 'ttn',
+    key: string
+  ): Promise<StorageKnex> {
 
     // Create new storage instance
     const homeDir = os.homedir();
@@ -119,8 +183,7 @@ class StorageManager {
 
     // Use separate database files for different identities and chains
     // Format: wallet-<identityKey>-<chain>.db
-    const dbFileName = `wallet-${key}.db`;
-    const dbPath = path.join(bsvDir, dbFileName);
+    const dbPath = this.bindings.databasePath(identityKey, chain);
 
     console.log(`[Storage] Creating storage at: ${dbPath}`);
 
@@ -147,6 +210,15 @@ class StorageManager {
       }
     });
 
+    // A recovered database must still match its binding before any migrations
+    // or monitor can write to it. A substituted file never becomes a new wallet.
+    const binding = this.bindings.get(identityKey, chain);
+    if (binding) {
+      try {
+        assertRecoveryBinding(binding, chain, await db('settings').first(), await db('users').where({ identityKey }).first(), identityKey);
+      } catch (error) { await db.destroy(); throw error; }
+    }
+
     // Run database migrations to create tables
     console.log(`[Storage] Running database migrations for ${key}...`);
     const migrations = new KnexMigrations(
@@ -158,6 +230,8 @@ class StorageManager {
     await db.migrate.latest({
       migrationSource: migrations
     });
+    const storageIdentityKey = await ensureUniqueLocalStorageIdentity(db, identityKey);
+    console.log(`[Storage] Local provider identity ready: ${storageIdentityKey.slice(0, 10)}...`);
     console.log(`[Storage] Migrations complete`);
 
     // Run STAS extension migrations (bsv-desktop-owned). A separate tracking
@@ -169,21 +243,16 @@ class StorageManager {
     });
     console.log(`[Storage] STAS migrations complete`);
 
-    // Create StorageKnex instance.
-    //
-    // feeModel: TAAL and GorillaPool both advertise a miningFee of 100 sat/1000
-    // bytes (`GET /v1/policy`), i.e. 0.1 sat/byte. Paying exactly 100 sat/kb put
-    // us *on* that floor with zero headroom, which is fine for a standalone tx
-    // but not for tokens: miners price the whole unconfirmed ancestor package,
-    // and a token transfer's package includes engine-signed txs that pay less.
-    // One underpriced ancestor then drags the package average below policy and
-    // the entire chain stalls — observed on a 21-tx mint package that settled at
-    // 0.095 sat/b and needed a CPFP bump to confirm. 250 sat/kb buys margin for
-    // pennies: a 500-byte transfer costs 125 sat instead of 50.
+    // Keep the existing 250 sat/kB default, introduced as a margin for reported
+    // underfunded token ancestors. This is a fixed transaction rate, not an
+    // ancestor-fee calculation. A per-chain override takes effect after restart.
     const storage = new StorageKnex({
       knex: db,
       chain: chain,
-      feeModel: { model: 'sat/kb', value: 250 },
+      feeModel: {
+        model: 'sat/kb',
+        value: getConfiguredFeeRate(chain, DEFAULT_STORAGE_FEE_RATE)
+      },
       commissionSatoshis: 0
     });
 
@@ -228,7 +297,7 @@ class StorageManager {
     chain: 'main' | 'test' | 'ttn'
   ): Promise<void> {
     const storage = await this.getOrCreateStorage(identityKey, chain);
-    const key = `${identityKey}-${chain}`;
+    const key = walletStorageKey(identityKey, chain);
 
     // Check if already initialized to prevent duplicates
     if (this.monitorWorkers.has(key)) {
@@ -274,7 +343,7 @@ class StorageManager {
     identityKey: string,
     chain: 'main' | 'test' | 'ttn'
   ): Promise<void> {
-    const key = `${identityKey}-${chain}`;
+    const key = walletStorageKey(identityKey, chain);
 
     // Don't start if already running
     if (this.monitorWorkers.has(key)) {
@@ -371,7 +440,11 @@ class StorageManager {
         type: 'start',
         config: {
           identityKey,
-          chain
+          chain,
+          databasePath: this.bindings.databasePath(identityKey, chain),
+          // Resolve in the main process so a preference saved during this
+          // session cannot alter a worker started before the next restart.
+          feeRate: getConfiguredFeeRate(chain, DEFAULT_MONITOR_FEE_RATE)
         }
       });
 
@@ -387,38 +460,27 @@ class StorageManager {
    * Stop Monitor worker process
    */
   async stopMonitorWorker(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<void> {
-    const key = `${identityKey}-${chain}`;
+    const key = walletStorageKey(identityKey, chain);
     const worker = this.monitorWorkers.get(key);
 
     if (!worker) {
       return;
     }
 
-    console.log(`[Monitor Worker] Stopping worker for ${key}`);
-
-    try {
-      // Send stop command
-      worker.send({ type: 'stop' });
-
-      // Wait for graceful shutdown
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          console.warn(`[Monitor Worker] Timeout waiting for ${key} to stop, forcing kill`);
-          worker.kill('SIGKILL');
-          resolve();
-        }, 5000);
-
-        worker.once('exit', () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-      });
-
-      this.monitorWorkers.delete(key);
-      console.log(`[Monitor Worker] Stopped successfully for ${key}`);
-    } catch (error) {
-      console.error(`[Monitor Worker] Error stopping for ${key}:`, error);
-    }
+    // Resolve only after the child is actually gone. Sending SIGKILL is not
+    // evidence that the old writer has exited.
+    if (worker.exitCode !== null || worker.signalCode !== null) { this.monitorWorkers.delete(key); return; }
+    await new Promise<void>((resolve, reject) => {
+      let forceTimer: ReturnType<typeof setTimeout>;
+      const timeout = setTimeout(() => {
+        worker.kill('SIGKILL');
+        forceTimer = setTimeout(() => reject(new Error('Monitor did not exit; storage was not switched')), 5000);
+      }, 5000);
+      worker.once('exit', () => { clearTimeout(timeout); clearTimeout(forceTimer); resolve(); });
+      if (worker.connected) worker.send({ type: 'stop' }, error => { if (error) worker.kill('SIGTERM'); });
+      else worker.kill('SIGTERM');
+    });
+    this.monitorWorkers.delete(key);
   }
 
   /**
@@ -470,7 +532,7 @@ class StorageManager {
   ): Promise<any> {
     // Ensure storage (and therefore the STAS migrations) have run.
     await this.getOrCreateStorage(identityKey, chain);
-    const key = `${identityKey}-${chain}`;
+    const key = walletStorageKey(identityKey, chain);
     const db = this.databases.get(key);
     if (!db) {
       throw new Error(`No database connection for ${key}`);
@@ -497,7 +559,10 @@ class StorageManager {
         this.stopMonitorWorker(identityKey, chain as 'main' | 'test' | 'ttn')
       );
     }
-    await Promise.all(workerStopPromises);
+    // One stuck worker must not stop the database connections below from closing.
+    for (const result of await Promise.allSettled(workerStopPromises)) {
+      if (result.status === 'rejected') console.error('[Storage] Monitor worker did not stop during cleanup:', result.reason);
+    }
     this.monitorWorkers.clear();
 
     // Stop all Monitors (legacy, should be empty now)

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { FeeSettingsView } from './feeSettings.js';
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -35,6 +36,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
+  // Transaction fee settings
+  fees: {
+    get: (chain: 'main' | 'test' | 'ttn') =>
+      ipcRenderer.invoke('fees:get', chain),
+    set: (chain: 'main' | 'test' | 'ttn', rate: number | null) =>
+      ipcRenderer.invoke('fees:set', chain, rate)
+  },
+
   app: {
     restart: () => ipcRenderer.invoke('app:restart')
   },
@@ -52,6 +61,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeHttpRequestListener: () => {
     ipcRenderer.removeAllListeners('http-request');
     ipcRenderer.removeAllListeners('http-request-cancelled');
+  },
+
+  walletData: {
+    call: (action: string, data: Record<string, unknown>) => ipcRenderer.invoke('wallet-data:call', action, data),
+    onProgress: (callback: (message: string) => void) => {
+      const listener = (_event: unknown, message: string) => callback(message);
+      ipcRenderer.on('wallet-data:progress', listener);
+      return () => ipcRenderer.removeListener('wallet-data:progress', listener);
+    }
   },
 
   // Storage operations
@@ -140,6 +158,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 // Type definitions for window.electronAPI
 export interface ElectronAPI {
+  walletData: {
+    call: (action: string, data: Record<string, unknown>) => Promise<any>;
+    onProgress: (callback: (message: string) => void) => () => void;
+  };
+
   isFocused: () => Promise<boolean>;
   requestFocus: () => Promise<void>;
   relinquishFocus: () => Promise<void>;
@@ -153,6 +176,14 @@ export interface ElectronAPI {
     setProxySettings: (settings: { mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }) => Promise<{ success: boolean; settings?: { mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string }; restartRequired?: boolean; error?: string }>;
     onOpenSettings: (callback: () => void) => void;
     removeOpenSettingsListener: (callback: () => void) => void;
+  };
+  fees: {
+    get: (chain: 'main' | 'test' | 'ttn') => Promise<FeeSettingsView>;
+    set: (chain: 'main' | 'test' | 'ttn', rate: number | null) => Promise<{
+      success: boolean;
+      settings?: FeeSettingsView;
+      error?: string;
+    }>;
   };
   app: {
     /** Relaunches the app; the process exits and the Promise does not resolve. */

@@ -139,6 +139,9 @@ const App: React.FC<AppsProps> = ({ history }) => {
 
   /* ---------- Refs to avoid stale closures ---------------------- */
   const abortRef = useRef<AbortController | null>(null)
+  // Set when a status refresh resets the page, so the page effect below does not
+  // fetch page 0 a second time.
+  const refreshResetPageRef = useRef(false)
 
   /* ---------- Derived values ------------------------------------ */
   const url = useMemo(
@@ -247,6 +250,10 @@ const App: React.FC<AppsProps> = ({ history }) => {
 
   /* ---------- Initial load & page changes ----------------------- */
   useEffect(() => {
+    if (refreshResetPageRef.current) {
+      refreshResetPageRef.current = false
+      return
+    }
     /* If we already have cached data for this page, skip fetch */
     const cachedPageCount =
       Math.ceil(APP_PAGE_CACHE.get(appDomain)?.actions.length ?? 0 / LIMIT) - 1
@@ -257,14 +264,19 @@ const App: React.FC<AppsProps> = ({ history }) => {
   /* ---------- Refresh when a transaction's status changes -------- */
   // Dispatched by the host when its monitor sees a change (e.g. an Arcade SSE
   // event), so a send moves on from "sending" without the page being revisited.
+  // It fetches page 0 itself; if that also moves the page, the page effect is
+  // told to stand down, or it could fetch page 0 again when the cache is gone.
   useEffect(() => {
     const refresh = () => {
-      setPage(0)
+      if (page !== 0) {
+        refreshResetPageRef.current = true
+        setPage(0)
+      }
       fetchPage(0)
     }
     window.addEventListener('tx-status-changed', refresh)
     return () => window.removeEventListener('tx-status-changed', refresh)
-  }, [fetchPage])
+  }, [fetchPage, page])
 
   /* ---------- Handle domain change via router ------------------- */
   useEffect(() => {

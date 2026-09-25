@@ -57,13 +57,19 @@ let stopping = false;
 /**
  * Message the parent, if it is still there. Once the IPC channel has closed,
  * a bare process.send() emits an 'error' event on process, which is fatal when
- * unhandled — and SSE status events can arrive at any moment.
+ * unhandled — and SSE status events can arrive at any moment. The channel can
+ * also close between the check and the send, so a synchronous throw is caught
+ * as well as a callback error.
  */
 function tellParent(message: Record<string, unknown>): void {
   if (!process.send || !process.connected) return;
-  process.send(message, (error: Error | null) => {
-    if (error) console.warn(`[Monitor Worker] Could not message parent (${message.type}):`, error.message);
-  });
+  const warn = (error: unknown) =>
+    console.warn(`[Monitor Worker] Could not message parent (${message.type}):`, error instanceof Error ? error.message : error);
+  try {
+    process.send(message, (error: Error | null) => { if (error) warn(error); });
+  } catch (error) {
+    warn(error);
+  }
 }
 
 /**

@@ -13,13 +13,13 @@ export const TX_STATUS_CHANGED_EVENT = 'tx-status-changed'
 const COALESCE_MS = 250
 
 let unsubscribe: (() => void) | undefined
+let timer: ReturnType<typeof setTimeout> | undefined
 
 export function installTxStatusBridge(target: Window = window): void {
   if (unsubscribe) return
   const subscribe = target.electronAPI?.onTxStatusChanged
   if (typeof subscribe !== 'function') return
 
-  let timer: ReturnType<typeof setTimeout> | undefined
   unsubscribe = subscribe(() => {
     if (timer !== undefined) clearTimeout(timer)
     timer = setTimeout(() => {
@@ -30,8 +30,10 @@ export function installTxStatusBridge(target: Window = window): void {
   })
 }
 
-/** For tests. */
+/** Stop listening, and drop a refresh that is still waiting to fire. For tests. */
 export function uninstallTxStatusBridge(): void {
   unsubscribe?.()
   unsubscribe = undefined
+  if (timer !== undefined) clearTimeout(timer)
+  timer = undefined
 }

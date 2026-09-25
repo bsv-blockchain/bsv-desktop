@@ -32,6 +32,18 @@ describe('installTxStatusBridge', () => {
     expect(w.heard).toEqual(['balance-changed', TX_STATUS_CHANGED_EVENT])
   })
 
+  it('drops a pending refresh when uninstalled', async () => {
+    vi.useFakeTimers()
+    const w = fakeWindow()
+    installTxStatusBridge(w.target)
+    w.push({ txid: 'a', status: 'MINED' })
+
+    uninstallTxStatusBridge()
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(w.heard).toEqual([])
+  })
+
   it('installs once, and does nothing outside Electron', () => {
     const w = fakeWindow()
     installTxStatusBridge(w.target)

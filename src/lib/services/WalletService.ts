@@ -34,6 +34,7 @@ import {
   type WalletSettings,
 } from '@bsv/wallet-toolbox-client'
 import { createServices } from './createServices'
+import { setTxStatusScope } from '../txStatusScope'
 import {
   PrivateKey,
   SHIPBroadcaster,
@@ -531,6 +532,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       const chain = this._selectedNetwork
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey))
       const services = createServices(chain, keyDeriver.identityKey)
+      setTxStatusScope({ identityKey: keyDeriver.identityKey, chain })
 
       let binding: { preferLocal: boolean } | undefined
       try {
@@ -1116,6 +1118,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   // ------------------------------------------------------------------
 
   logout() {
+    setTxStatusScope(undefined)
     this._walletDataGeneration++
     void this.walletData?.close().catch(() => {})
     this.walletData = undefined

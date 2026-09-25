@@ -8,6 +8,8 @@
  * of the wallet's transactions at once) are coalesced into one refresh.
  */
 
+import { isInTxStatusScope } from './lib/txStatusScope'
+
 export const TX_STATUS_CHANGED_EVENT = 'tx-status-changed'
 
 const COALESCE_MS = 250
@@ -20,7 +22,9 @@ export function installTxStatusBridge(target: Window = window): void {
   const subscribe = target.electronAPI?.onTxStatusChanged
   if (typeof subscribe !== 'function') return
 
-  unsubscribe = subscribe(() => {
+  unsubscribe = subscribe(event => {
+    // Workers for other identities and chains opened this session report too.
+    if (!isInTxStatusScope(event)) return
     if (timer !== undefined) clearTimeout(timer)
     timer = setTimeout(() => {
       timer = undefined

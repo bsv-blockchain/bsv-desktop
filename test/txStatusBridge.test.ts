@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { installTxStatusBridge, TX_STATUS_CHANGED_EVENT, uninstallTxStatusBridge } from '../src/txStatusBridge'
+import { setTxStatusScope } from '../src/lib/txStatusScope'
 import { createServices } from '../src/lib/services/createServices'
 import { arcadeUrl, chaintracksUrl } from '../src/lib/constants/endpoints'
 
@@ -15,6 +16,7 @@ function fakeWindow() {
 }
 
 afterEach(() => {
+  setTxStatusScope(undefined)
   uninstallTxStatusBridge()
   vi.useRealTimers()
 })
@@ -29,6 +31,23 @@ describe('installTxStatusBridge', () => {
     expect(w.heard).toEqual([])
     await vi.advanceTimersByTimeAsync(300)
 
+    expect(w.heard).toEqual(['balance-changed', TX_STATUS_CHANGED_EVENT])
+  })
+
+  it('ignores status changes from wallets other than the open one', async () => {
+    vi.useFakeTimers()
+    const open = { identityKey: '02' + 'aa'.repeat(32), chain: 'main' }
+    setTxStatusScope(open)
+    const w = fakeWindow()
+    installTxStatusBridge(w.target)
+
+    w.push({ ...open, chain: 'test', txid: 'a', status: 'MINED' })
+    w.push({ identityKey: '03' + 'bb'.repeat(32), chain: 'main', txid: 'b', status: 'MINED' })
+    await vi.advanceTimersByTimeAsync(300)
+    expect(w.heard).toEqual([])
+
+    w.push({ ...open, txid: 'c', status: 'MINED' })
+    await vi.advanceTimersByTimeAsync(300)
     expect(w.heard).toEqual(['balance-changed', TX_STATUS_CHANGED_EVENT])
   })
 

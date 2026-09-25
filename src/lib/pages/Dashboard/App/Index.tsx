@@ -210,6 +210,9 @@ const App: React.FC<AppsProps> = ({ history }) => {
             },
             adminOriginator
           )
+        // listActions cannot be cancelled, so aborting only marks this call
+        // superseded; a newer call (a status refresh, a later page) owns the list.
+        if (abortRef.current !== controller) return
 
         const transformed = transformActions(actions)
 
@@ -242,7 +245,7 @@ const App: React.FC<AppsProps> = ({ history }) => {
         if ((err as Error).name !== 'AbortError')
           console.error('listActions error', err)
       } finally {
-        setIsFetching(false)
+        if (abortRef.current === controller) setIsFetching(false)
       }
     },
     [appDomain, adminOriginator, cacheKey, permissionsManager],

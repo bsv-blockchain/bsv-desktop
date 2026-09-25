@@ -10,6 +10,7 @@ import {
   createArcadeMonitorOptions,
   createSseCursorStore,
   isTransientArcadeRejection,
+  renameReplacing,
   startArcadeSsePump,
   tolerateTransientArcadeRejections
 } from '../electron/arcadeSse'
@@ -163,6 +164,36 @@ describe('createSseCursorStore', () => {
 
     expect(await store.load()).toBe('25')
     expect(fs.readdirSync(tmp)).toEqual(['cursor.json'])
+  })
+
+  it('replaces an existing cursor, retrying a Windows sharing violation', async () => {
+    const file = path.join(tmp, 'cursor.json')
+    await createSseCursorStore(file).save('1')
+    const rename = fs.promises.rename.bind(fs.promises)
+    const locked = Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' })
+    const spy = vi.spyOn(fs.promises, 'rename')
+      .mockRejectedValueOnce(locked)
+      .mockRejectedValueOnce(locked)
+      .mockImplementation(rename)
+
+    await createSseCursorStore(file).save('2')
+
+    expect(spy).toHaveBeenCalledTimes(3)
+    expect(await createSseCursorStore(file).load()).toBe('2')
+    spy.mockRestore()
+  })
+
+  it('gives up on a rename that keeps failing, or fails for any other reason', async () => {
+    const spy = vi.spyOn(fs.promises, 'rename')
+    spy.mockRejectedValue(Object.assign(new Error('EBUSY'), { code: 'EBUSY' }))
+    await expect(renameReplacing('a', 'b', 3)).rejects.toMatchObject({ code: 'EBUSY' })
+    expect(spy).toHaveBeenCalledTimes(3)
+
+    spy.mockClear()
+    spy.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))
+    await expect(renameReplacing('a', 'b', 3)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(spy).toHaveBeenCalledTimes(1)
+    spy.mockRestore()
   })
 
   it('treats an unreadable cursor as none (a replay, which the task applies idempotently)', async () => {

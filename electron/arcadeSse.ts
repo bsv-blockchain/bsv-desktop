@@ -73,6 +73,25 @@ export function arcadeSseCursorPath(
 }
 
 /**
+ * Rename over an existing file. Node replaces the destination on every platform
+ * (libuv uses MoveFileExW with MOVEFILE_REPLACE_EXISTING on Windows), but
+ * Windows refuses briefly with EPERM/EACCES/EBUSY while another process — an
+ * antivirus scanner, the search indexer — holds the file open. Those are
+ * retried a few times; anything else fails at once.
+ */
+export async function renameReplacing(from: string, to: string, attempts = 6): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await fs.promises.rename(from, to)
+      return
+    } catch (error: any) {
+      if (attempt >= attempts || !['EPERM', 'EACCES', 'EBUSY'].includes(error?.code)) throw error
+      await new Promise(resolve => setTimeout(resolve, 25 * 2 ** attempt))
+    }
+  }
+}
+
+/**
  * Persists the id of the last status event applied, so a restart resumes the
  * stream rather than replaying it. bsv-wallet keeps the same value in its wallet
  * store; a missing or unreadable file only costs a replay, which the task
@@ -92,7 +111,7 @@ export function createSseCursorStore(filePath: string): {
     await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
     const pending = `${filePath}.${process.pid}.tmp`
     await fs.promises.writeFile(pending, JSON.stringify({ lastEventId }))
-    await fs.promises.rename(pending, filePath)
+    await renameReplacing(pending, filePath)
   }
   return {
     load: async () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback } from 'react'
+import { useState, useEffect, useContext, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import AmountDisplay from './AmountDisplay'
 import { Skeleton, Stack, Typography } from '@mui/material'
@@ -9,8 +9,12 @@ const Profile = () => {
   const { managers, adminOriginator } = useContext(WalletContext)
   const [accountBalance, setAccountBalance] = useState<number | null>(null)
   const [balanceLoading, setBalanceLoading] = useState(true)
+  // Refreshes overlap (status pushes, payment pages, a click, a wallet switch)
+  // and can finish out of order; only the latest one may set the balance.
+  const latestRefresh = useRef(0)
 
   const refreshBalance = useCallback(async () => {
+    const refresh = ++latestRefresh.current
     try {
       if (!managers?.permissionsManager) {
         return
@@ -33,10 +37,11 @@ const Profile = () => {
       }
 
       const total = allOutputs.reduce((acc, output) => acc + output.satoshis, 0)
+      if (refresh !== latestRefresh.current) return
       setAccountBalance(total)
       setBalanceLoading(false)
     } catch (e) {
-      setBalanceLoading(false)
+      if (refresh === latestRefresh.current) setBalanceLoading(false)
     }
   }, [managers, adminOriginator])
 

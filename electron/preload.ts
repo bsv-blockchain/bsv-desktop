@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { FeeSettingsView } from './feeSettings.js';
 
+/** Mirrors TxStatusChangedEvent in storage.ts (not imported: preload must not pull in storage). */
+export interface TxStatusChangedEvent {
+  identityKey: string;
+  chain: 'main' | 'test' | 'ttn';
+  txid: string;
+  status: string;
+}
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -57,6 +65,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   sendHttpResponse: (response: any) => {
     ipcRenderer.send('http-response', response);
+  },
+
+  // Transaction status changes seen by the monitor (Arcade SSE events among them)
+  onTxStatusChanged: (callback: (event: TxStatusChangedEvent) => void) => {
+    const listener = (_event: unknown, payload: TxStatusChangedEvent) => callback(payload);
+    ipcRenderer.on('wallet:tx-status-changed', listener);
+    return () => { ipcRenderer.removeListener('wallet:tx-status-changed', listener); };
   },
   removeHttpRequestListener: () => {
     ipcRenderer.removeAllListeners('http-request');
@@ -193,6 +208,8 @@ export interface ElectronAPI {
   onHttpRequestCancelled: (callback: (event: { request_id: number; reason?: string }) => void) => void;
   sendHttpResponse: (response: any) => void;
   removeHttpRequestListener: () => void;
+  /** Returns an unsubscribe function. */
+  onTxStatusChanged: (callback: (event: TxStatusChangedEvent) => void) => () => void;
   storage: {
     isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<boolean>;
     makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<{ success: boolean; settings?: any; error?: string }>;

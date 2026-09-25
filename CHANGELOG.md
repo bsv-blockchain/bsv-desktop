@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+- Broadcast, prove and track transactions through Arcade the same way the mobile wallet does, on mainnet, testnet and teratestnet: the toolbox's own Arcade provider is primary (Extended Format to `/tx`, with the wallet's callback token and full status updates), TAAL, GorillaPool, WhatsOnChain and Bitails follow as fallbacks that can accept a transaction but never condemn one, and proofs come from Arcade first. The monitor now subscribes to Arcade's SSE status stream, so sends, confirmations and proofs appear as they happen and the UI refreshes on each change.
 - Preserve byte arrays across every BRC-100 and app-specific Electron HTTP wallet route, including current typed arrays and historical numeric-key objects, so payment, send/receive, token, cryptographic, and transaction-review flows remain compatible across wallet and app versions.
 
 ## [2.1.0] - 2026-04-08

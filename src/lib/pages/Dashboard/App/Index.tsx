@@ -254,6 +254,18 @@ const App: React.FC<AppsProps> = ({ history }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, appDomain]) // fetchPage excluded on purpose
 
+  /* ---------- Refresh when a transaction's status changes -------- */
+  // Dispatched by the host when its monitor sees a change (e.g. an Arcade SSE
+  // event), so a send moves on from "sending" without the page being revisited.
+  useEffect(() => {
+    const refresh = () => {
+      setPage(0)
+      fetchPage(0)
+    }
+    window.addEventListener('tx-status-changed', refresh)
+    return () => window.removeEventListener('tx-status-changed', refresh)
+  }, [fetchPage])
+
   /* ---------- Handle domain change via router ------------------- */
   useEffect(() => {
     if (state?.domain && state.domain !== appDomain) {

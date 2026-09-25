@@ -17,9 +17,10 @@ import os from 'os';
 import { createRequire } from 'module';
 import { fork, ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
-import { StorageKnex, KnexMigrations, Services, Monitor, WalletStorageManager, ChaintracksServiceClient } from '@bsv/wallet-toolbox';
-import { chaintracksUrl } from './endpoints.js';
-import { installArcadeServices } from './arcade.js';
+import { StorageKnex, KnexMigrations, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
+import { arcadeUrl } from './endpoints.js';
+import { createArcadeServices } from './arcade.js';
+import { arcadeSseCursorPath } from './arcadeSse.js';
 import { patchListCertificates } from './optimized-queries.js';
 import { stasMigrationSource } from './stas-migrations/index.js';
 import { StasQueries } from './stas-queries.js';
@@ -88,6 +89,14 @@ function getCreateKnex() {
   return createKnex;
 }
 
+/** A transaction status change seen by a monitor worker, e.g. from an Arcade SSE event. */
+export interface TxStatusChangedEvent {
+  identityKey: string;
+  chain: 'main' | 'test' | 'ttn';
+  txid: string;
+  status: string;
+}
+
 /**
  * Storage instance manager
  * Maintains a map of storage instances keyed by identityKey
@@ -136,6 +145,23 @@ class StorageManager {
   private monitors: Map<string, Monitor> = new Map();
   // Monitor worker processes
   private monitorWorkers: Map<string, ChildProcess> = new Map();
+  private txStatusListeners = new Set<(event: TxStatusChangedEvent) => void>();
+
+  /** Subscribe to transaction status changes seen by any monitor worker. */
+  onTxStatusChanged(listener: (event: TxStatusChangedEvent) => void): () => void {
+    this.txStatusListeners.add(listener);
+    return () => { this.txStatusListeners.delete(listener); };
+  }
+
+  /**
+   * Ask every monitor worker to reopen a dropped Arcade SSE stream. Cheap to
+   * call often: an open stream is left alone.
+   */
+  requestArcadeEvents(): void {
+    for (const worker of this.monitorWorkers.values()) {
+      if (worker.connected) worker.send({ type: 'fetch-sse' }, () => { /* worker may be exiting */ });
+    }
+  }
 
   /** True when any forked monitor worker is still running (inherits env at fork time). */
   hasActiveMonitorWorkers(): boolean {
@@ -307,17 +333,11 @@ class StorageManager {
 
     console.log(`[Storage] Initializing services for ${key}`);
 
-    // Create Services instance in the backend
-    const options = Services.createDefaultOptions(chain);
-    // Point ChainTracks at the Arcade deployments for every chain; the toolbox
-    // defaults still resolve main/test to the retired babbage.systems hosts.
-    options.chaintracks = new ChaintracksServiceClient(chain, chaintracksUrl(chain))
-    const services = new Services(options);
-    // Broadcasting has to follow the same chain as ChainTracks. The toolbox
-    // defaults post to TAAL ARC hosts for other networks, which rejects every
-    // transaction as invalidTx while the balance and height still look correct.
-    const arcade = installArcadeServices(services, chain);
-    console.log(`[Storage] Broadcasting and proofs via Arcade at ${arcade}`);
+    // Arcade first for broadcasting and proofs, ChainTracks on the Arcade
+    // deployment, and the wallet's callback token on every broadcast so Arcade
+    // reports its status to the monitor worker's SSE subscription.
+    const services = createArcadeServices(chain, identityKey);
+    console.log(`[Storage] Broadcasting and proofs via Arcade at ${arcadeUrl(chain)}`);
 
     // Type assertion to access setServices method
     const storageAny = storage as any;
@@ -372,6 +392,11 @@ class StorageManager {
 
         if (message.type === 'monitor-error') {
           console.error(`[Monitor Worker] Error in ${key}:`, message.error);
+        } else if (message.type === 'tx-status-changed' && typeof message.txid === 'string') {
+          const event: TxStatusChangedEvent = { identityKey, chain, txid: message.txid, status: String(message.status ?? '') };
+          for (const listener of this.txStatusListeners) {
+            try { listener(event); } catch (error) { console.error('[Storage] tx status listener failed:', error); }
+          }
         }
       });
 
@@ -444,7 +469,8 @@ class StorageManager {
           databasePath: this.bindings.databasePath(identityKey, chain),
           // Resolve in the main process so a preference saved during this
           // session cannot alter a worker started before the next restart.
-          feeRate: getConfiguredFeeRate(chain, DEFAULT_MONITOR_FEE_RATE)
+          feeRate: getConfiguredFeeRate(chain, DEFAULT_MONITOR_FEE_RATE),
+          sseCursorPath: arcadeSseCursorPath(identityKey, chain)
         }
       });
 

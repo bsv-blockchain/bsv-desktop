@@ -14,9 +14,15 @@
 import path from 'path';
 import os from 'os';
 import { createRequire } from 'module';
-import { StorageKnex, Services, Monitor, WalletStorageManager, ChaintracksServiceClient } from '@bsv/wallet-toolbox';
-import { chaintracksUrl } from './endpoints.js';
-import { installArcadeServices } from './arcade.js';
+import { StorageKnex, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
+import { arcadeUrl } from './endpoints.js';
+import { arcadeCallbackToken, createArcadeServices } from './arcade.js';
+import {
+  arcadeSseCursorPath,
+  createArcadeMonitorOptions,
+  startArcadeSsePump,
+  tolerateTransientArcadeRejections
+} from './arcadeSse.js';
 import {
   DEFAULT_MONITOR_FEE_RATE,
   getConfiguredFeeRate
@@ -39,10 +45,26 @@ interface MonitorConfig {
   databasePath: string;
   /** Resolved by the parent process to keep this worker on its startup snapshot. */
   feeRate?: number;
+  /** Where the Arcade SSE resume cursor is kept; chosen by the parent process. */
+  sseCursorPath?: string;
 }
 
 let monitor: Monitor | null = null;
 let storageManager: WalletStorageManager | null = null;
+let stopSsePump: (() => void) | null = null;
+let stopping = false;
+
+/**
+ * Message the parent, if it is still there. Once the IPC channel has closed,
+ * a bare process.send() emits an 'error' event on process, which is fatal when
+ * unhandled — and SSE status events can arrive at any moment.
+ */
+function tellParent(message: Record<string, unknown>): void {
+  if (!process.send || !process.connected) return;
+  process.send(message, (error: Error | null) => {
+    if (error) console.warn(`[Monitor Worker] Could not message parent (${message.type}):`, error.message);
+  });
+}
 
 /**
  * Initialize and start the Monitor
@@ -96,16 +118,12 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
 
     console.log(`[Monitor Worker] StorageKnex created`);
 
-    // Create Services, with ChainTracks pointed at the Arcade deployments
-    // (toolbox defaults still resolve main/test to retired babbage.systems hosts).
-    const serviceOptions = Services.createDefaultOptions(chain);
-    serviceOptions.chaintracks = new ChaintracksServiceClient(chain, chaintracksUrl(chain));
-    const services = new Services(serviceOptions);
     // The Monitor re-broadcasts unconfirmed transactions and collects their
-    // merkle proofs, so it needs the same Arcade routing as the main process.
-    // Left on the defaults it would neither resend nor ever prove anything.
-    const arcade = installArcadeServices(services, chain);
-    console.log(`[Monitor Worker] Broadcasting and proofs via Arcade at ${arcade}`);
+    // merkle proofs, so it needs the same Arcade-first Services as the main
+    // process — and the same callback token, or it would subscribe to a stream
+    // the main process's broadcasts never report into.
+    const services = createArcadeServices(chain, identityKey);
+    console.log(`[Monitor Worker] Broadcasting, proofs and SSE via Arcade at ${arcadeUrl(chain)}`);
 
     // Set services on storage
     const storageAny = storage as any;
@@ -123,14 +141,15 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     await storageManager.addWalletStorageProvider(storage);
     console.log(`[Monitor Worker] Storage provider added`);
 
-    // Create Monitor with default options
-    const monitorOptions = Monitor.createDefaultWalletMonitorOptions(
-      chain,
-      storageManager
-    );
-
-    // Override services
-    monitorOptions.services = services;
+    // Monitor options on the same Services (and so the same ChainTracks client),
+    // with live status events from Arcade (TaskArcadeSSE, one of the default tasks).
+    const monitorOptions = createArcadeMonitorOptions(chain, storageManager, services, {
+      callbackToken: arcadeCallbackToken(identityKey),
+      cursorPath: config.sseCursorPath ?? arcadeSseCursorPath(identityKey, chain),
+      onStatusChanged: (txid, status) => {
+        tellParent({ type: 'tx-status-changed', txid, status });
+      }
+    });
 
     monitor = new Monitor(monitorOptions);
     console.log(`[Monitor Worker] Monitor created`);
@@ -138,6 +157,11 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     // Add default wallet monitoring tasks
     monitor.addDefaultTasks();
     console.log(`[Monitor Worker] Default tasks added`);
+    if (!tolerateTransientArcadeRejections(monitor)) {
+      console.warn(`[Monitor Worker] ArcadeSSE task not found; live status events are unavailable`);
+    }
+    // startTasks() below does not return while the monitor runs.
+    stopSsePump = startArcadeSsePump(monitor);
 
     // Start monitoring tasks (runs continuous loop)
     console.log(`[Monitor Worker] Starting tasks...`);
@@ -145,21 +169,17 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     console.log(`[Monitor Worker] Monitor started successfully for ${key}`);
 
     // Notify parent process
-    if (process.send) {
-      process.send({ type: 'monitor-started', key });
-    }
+    tellParent({ type: 'monitor-started', key });
   } catch (error: any) {
     console.error(`[Monitor Worker] Failed to start:`, error);
     console.error(`[Monitor Worker] Stack:`, error.stack);
 
     // Notify parent process of failure
-    if (process.send) {
-      process.send({
-        type: 'monitor-error',
-        error: error.message,
-        stack: error.stack
-      });
-    }
+    tellParent({
+      type: 'monitor-error',
+      error: error.message,
+      stack: error.stack
+    });
 
     process.exit(1);
   }
@@ -169,7 +189,12 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
  * Stop the Monitor
  */
 async function stopMonitor(): Promise<void> {
+  if (stopping) return;
+  stopping = true;
   console.log('[Monitor Worker] Stopping monitor...');
+
+  stopSsePump?.();
+  stopSsePump = null;
 
   if (monitor) {
     try {
@@ -181,9 +206,7 @@ async function stopMonitor(): Promise<void> {
   }
 
   // Notify parent and exit
-  if (process.send) {
-    process.send({ type: 'monitor-stopped' });
-  }
+  tellParent({ type: 'monitor-stopped' });
 
   process.exit(0);
 }
@@ -201,6 +224,11 @@ process.on('message', async (message: any) => {
       await stopMonitor();
       break;
 
+    case 'fetch-sse':
+      // Reopens a dropped Arcade SSE stream; does nothing to an open one.
+      monitor?.fetchSSEEvents().catch(() => {});
+      break;
+
     default:
       console.log('[Monitor Worker] Unknown message type:', message.type);
   }
@@ -212,6 +240,13 @@ process.on('SIGTERM', async () => {
   await stopMonitor();
 });
 
+// The parent is gone (crashed or killed without stopping us). An orphaned
+// monitor only holds the wallet database open, so shut down.
+process.on('disconnect', async () => {
+  console.log('[Monitor Worker] Parent disconnected');
+  await stopMonitor();
+});
+
 process.on('SIGINT', async () => {
   console.log('[Monitor Worker] Received SIGINT');
   await stopMonitor();
@@ -219,6 +254,4 @@ process.on('SIGINT', async () => {
 
 // Notify parent that worker is ready
 console.log('[Monitor Worker] Worker process started, waiting for start command');
-if (process.send) {
-  process.send({ type: 'ready' });
-}
+tellParent({ type: 'ready' });

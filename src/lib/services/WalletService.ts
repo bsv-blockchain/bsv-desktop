@@ -530,7 +530,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     try {
       const chain = this._selectedNetwork
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey))
-      const services = createServices(chain)
+      const services = createServices(chain, keyDeriver.identityKey)
 
       let binding: { preferLocal: boolean } | undefined
       try {
@@ -910,7 +910,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       const identityKey = (storageManager as any)?._authId?.identityKey
       if (!identityKey) throw new Error('Could not get identity key from wallet')
       const electronStorage = new StorageElectronIPC(identityKey, this._selectedNetwork)
-      const services = createServices(this._selectedNetwork)
+      const services = createServices(this._selectedNetwork, identityKey)
       electronStorage.setServices(services as any)
       await electronStorage.makeAvailable()
       backupProvider = electronStorage

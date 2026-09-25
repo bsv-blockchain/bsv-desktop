@@ -362,3 +362,18 @@ Open BSV License
 - [wallet-toolbox](https://github.com/bsv-blockchain/wallet-toolbox) - Core wallet functionality
 - [ts-sdk](https://github.com/bsv-blockchain/ts-sdk) - BSV TypeScript SDK
 - [overlay-services](https://github.com/bsv-blockchain/overlay-express-examples) - Overlay network infrastructure
+
+### Binary createAction compatibility hotfix
+
+Upgrade Wallet Toolbox core and client together to 2.14.1. Internal exact-spend
+metadata no longer escapes into binary BRC-100 responses after an action is
+created or signed; spending authorization still includes storage service charges.
+The SDK remains 2.8.6, with its BRC-29 payment correction. No app, database,
+BRC-38/39 file or account-recovery migration is needed. Before repeating an
+older host's failed creation, inspect wallet history because it may have completed.
+The offline regression suite covers completed/partial binary responses and
+permission denial, without contacting a wallet service or spending funds.
+
+The core package also advances its middleware floors to the already published
+auth middleware 2.2.8 and payment middleware 2.1.8, removing the earlier
+application-layer payment-header ceilings. SDK 2.8.6 satisfies their peer floor.

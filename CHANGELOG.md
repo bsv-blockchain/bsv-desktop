@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+- Upgrade Wallet Toolbox core/client to 2.14.1 so internal exact-spend metadata cannot invalidate a public `createAction` response after wallet work. Service-charge approvals, SDK 2.8.6 BRC-29 payment/refund behavior, BRC100 calls and BRC39/account-recovery formats remain compatible. Reconcile wallet history before retrying an older failed response.
 - Preserve byte arrays across every BRC-100 and app-specific Electron HTTP wallet route, including current typed arrays and historical numeric-key objects, so payment, send/receive, token, cryptographic, and transaction-review flows remain compatible across wallet and app versions.
 
 ## [2.1.0] - 2026-04-08

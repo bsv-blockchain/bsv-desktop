@@ -82,6 +82,18 @@ export function createSseCursorStore(filePath: string): {
   load: () => Promise<string | undefined>
   save: (lastEventId: string) => Promise<void>
 } {
+  // TaskArcadeSSE awaits each save before acknowledging the next event, but the
+  // store does not rely on that: saves run one at a time, in call order, so
+  // overlapping calls can neither collide on the temp file nor move the cursor
+  // backwards.
+  let writes: Promise<void> = Promise.resolve()
+  const write = async (lastEventId: string): Promise<void> => {
+    // Written aside and renamed, so a crash mid-write cannot leave a torn cursor.
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
+    const pending = `${filePath}.${process.pid}.tmp`
+    await fs.promises.writeFile(pending, JSON.stringify({ lastEventId }))
+    await fs.promises.rename(pending, filePath)
+  }
   return {
     load: async () => {
       try {
@@ -91,12 +103,11 @@ export function createSseCursorStore(filePath: string): {
         return undefined
       }
     },
-    save: async lastEventId => {
-      // Written aside and renamed, so a crash mid-write cannot leave a torn cursor.
-      await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
-      const pending = `${filePath}.${process.pid}.tmp`
-      await fs.promises.writeFile(pending, JSON.stringify({ lastEventId }))
-      await fs.promises.rename(pending, filePath)
+    save: lastEventId => {
+      const saved = writes.then(() => write(lastEventId))
+      // A failed write rejects its own caller only; later saves still run.
+      writes = saved.catch(() => {})
+      return saved
     }
   }
 }

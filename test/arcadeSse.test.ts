@@ -155,6 +155,16 @@ describe('createSseCursorStore', () => {
     expect(fs.readdirSync(path.join(tmp, 'nested'))).toEqual(['cursor.json'])
   })
 
+  it('applies overlapping saves one at a time, in call order', async () => {
+    const store = createSseCursorStore(path.join(tmp, 'cursor.json'))
+    const ids = Array.from({ length: 25 }, (_, i) => String(i + 1))
+
+    await Promise.all(ids.map(id => store.save(id)))
+
+    expect(await store.load()).toBe('25')
+    expect(fs.readdirSync(tmp)).toEqual(['cursor.json'])
+  })
+
   it('treats an unreadable cursor as none (a replay, which the task applies idempotently)', async () => {
     const file = path.join(tmp, 'cursor.json')
     fs.writeFileSync(file, '{not json')

@@ -159,7 +159,13 @@ class StorageManager {
    */
   requestArcadeEvents(): void {
     for (const worker of this.monitorWorkers.values()) {
-      if (worker.connected) worker.send({ type: 'fetch-sse' }, () => { /* worker may be exiting */ });
+      if (!worker.connected) continue;
+      // The channel can close between the check and the send (a worker exiting),
+      // and this runs from window-focus and resume handlers, so neither a
+      // synchronous throw nor a callback error may escape.
+      try {
+        worker.send({ type: 'fetch-sse' }, () => { /* worker may be exiting */ });
+      } catch { /* worker exiting; the next focus or resume asks again */ }
     }
   }
 

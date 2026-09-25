@@ -15,17 +15,19 @@ const require = createRequire(import.meta.url);
 
 // Lazy load storage to avoid loading knex/better-sqlite3 at startup
 let storageManager: any = null;
+// One load shared by concurrent callers, so the listener below is added once.
+let storageManagerLoad: Promise<any> | null = null;
 async function getStorageManager() {
-  if (!storageManager) {
-    const module = await import('./storage.js');
-    storageManager = module.storageManager;
+  storageManagerLoad ??= import('./storage.js').then(module => {
     // Push monitor-observed status changes (Arcade SSE events among them) to
     // the renderer, so the UI refreshes as they happen rather than on its next poll.
-    storageManager.onTxStatusChanged((event: unknown) => {
+    module.storageManager.onTxStatusChanged((event: unknown) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('wallet:tx-status-changed', event);
     });
-  }
-  return storageManager;
+    storageManager = module.storageManager;
+    return storageManager;
+  });
+  return storageManagerLoad;
 }
 
 /**

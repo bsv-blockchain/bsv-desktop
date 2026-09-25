@@ -532,7 +532,6 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       const chain = this._selectedNetwork
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey))
       const services = createServices(chain, keyDeriver.identityKey)
-      setTxStatusScope({ identityKey: keyDeriver.identityKey, chain })
 
       let binding: { preferLocal: boolean } | undefined
       try {
@@ -611,6 +610,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         storageManager,
       }
       this._wallet = wallet
+      // Only now does this wallet replace the previous one; a build that fails
+      // before here leaves the UI following the wallet it still shows.
+      setTxStatusScope({ identityKey: keyDeriver.identityKey, chain })
 
       // Token indexers (WhatsOnChain, 1Sat, Back-to-Genesis) only exist for
       // mainnet and testnet. Upstream widened `chain` to include TeraTestNet

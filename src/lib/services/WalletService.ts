@@ -34,6 +34,7 @@ import {
   type WalletSettings,
 } from '@bsv/wallet-toolbox-client'
 import { createServices } from './createServices'
+import { setTxStatusScope } from '../txStatusScope'
 import {
   PrivateKey,
   SHIPBroadcaster,
@@ -530,7 +531,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     try {
       const chain = this._selectedNetwork
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey))
-      const services = createServices(chain)
+      const services = createServices(chain, keyDeriver.identityKey)
 
       let binding: { preferLocal: boolean } | undefined
       try {
@@ -609,6 +610,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         storageManager,
       }
       this._wallet = wallet
+      // Only now does this wallet replace the previous one; a build that fails
+      // before here leaves the UI following the wallet it still shows.
+      setTxStatusScope({ identityKey: keyDeriver.identityKey, chain })
 
       // Token indexers (WhatsOnChain, 1Sat, Back-to-Genesis) only exist for
       // mainnet and testnet. Upstream widened `chain` to include TeraTestNet
@@ -910,7 +914,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       const identityKey = (storageManager as any)?._authId?.identityKey
       if (!identityKey) throw new Error('Could not get identity key from wallet')
       const electronStorage = new StorageElectronIPC(identityKey, this._selectedNetwork)
-      const services = createServices(this._selectedNetwork)
+      const services = createServices(this._selectedNetwork, identityKey)
       electronStorage.setServices(services as any)
       await electronStorage.makeAvailable()
       backupProvider = electronStorage
@@ -1116,6 +1120,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   // ------------------------------------------------------------------
 
   logout() {
+    setTxStatusScope(undefined)
     this._walletDataGeneration++
     void this.walletData?.close().catch(() => {})
     this.walletData = undefined

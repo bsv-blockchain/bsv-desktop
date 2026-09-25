@@ -139,6 +139,9 @@ const App: React.FC<AppsProps> = ({ history }) => {
 
   /* ---------- Refs to avoid stale closures ---------------------- */
   const abortRef = useRef<AbortController | null>(null)
+  // Set when a status refresh resets the page, so the page effect below does not
+  // fetch page 0 a second time.
+  const refreshResetPageRef = useRef(false)
 
   /* ---------- Derived values ------------------------------------ */
   const url = useMemo(
@@ -207,6 +210,9 @@ const App: React.FC<AppsProps> = ({ history }) => {
             },
             adminOriginator
           )
+        // listActions cannot be cancelled, so aborting only marks this call
+        // superseded; a newer call (a status refresh, a later page) owns the list.
+        if (abortRef.current !== controller) return
 
         const transformed = transformActions(actions)
 
@@ -239,7 +245,7 @@ const App: React.FC<AppsProps> = ({ history }) => {
         if ((err as Error).name !== 'AbortError')
           console.error('listActions error', err)
       } finally {
-        setIsFetching(false)
+        if (abortRef.current === controller) setIsFetching(false)
       }
     },
     [appDomain, adminOriginator, cacheKey, permissionsManager],
@@ -247,12 +253,33 @@ const App: React.FC<AppsProps> = ({ history }) => {
 
   /* ---------- Initial load & page changes ----------------------- */
   useEffect(() => {
+    if (refreshResetPageRef.current) {
+      refreshResetPageRef.current = false
+      return
+    }
     /* If we already have cached data for this page, skip fetch */
     const cachedPageCount =
       Math.ceil(APP_PAGE_CACHE.get(appDomain)?.actions.length ?? 0 / LIMIT) - 1
     if (page > cachedPageCount) fetchPage(page)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, appDomain]) // fetchPage excluded on purpose
+
+  /* ---------- Refresh when a transaction's status changes -------- */
+  // Dispatched by the host when its monitor sees a change (e.g. an Arcade SSE
+  // event), so a send moves on from "sending" without the page being revisited.
+  // It fetches page 0 itself; if that also moves the page, the page effect is
+  // told to stand down, or it could fetch page 0 again when the cache is gone.
+  useEffect(() => {
+    const refresh = () => {
+      if (page !== 0) {
+        refreshResetPageRef.current = true
+        setPage(0)
+      }
+      fetchPage(0)
+    }
+    window.addEventListener('tx-status-changed', refresh)
+    return () => window.removeEventListener('tx-status-changed', refresh)
+  }, [fetchPage, page])
 
   /* ---------- Handle domain change via router ------------------- */
   useEffect(() => {

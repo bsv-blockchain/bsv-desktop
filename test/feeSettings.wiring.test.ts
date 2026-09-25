@@ -84,9 +84,10 @@ describe.skipIf(!sqliteAvailable)('fee rate wiring', () => {
 
     const configs = forked.map(worker => worker.send.mock.calls[0][0])
     const databasePath = (chain: string) => path.join(home, '.bsv-desktop', `wallet-${identityKey}-${chain}.db`)
+    const sseCursorPath = (chain: string) => path.join(home, '.bsv-desktop', 'arcade-sse', `${identityKey}-${chain}.json`)
     expect(configs).toEqual([
-      { type: 'start', config: { identityKey, chain: 'test', databasePath: databasePath('test'), feeRate: 321 } },
-      { type: 'start', config: { identityKey, chain: 'main', databasePath: databasePath('main'), feeRate: 100 } }
+      { type: 'start', config: { identityKey, chain: 'test', databasePath: databasePath('test'), feeRate: 321, sseCursorPath: sseCursorPath('test') } },
+      { type: 'start', config: { identityKey, chain: 'main', databasePath: databasePath('main'), feeRate: 100, sseCursorPath: sseCursorPath('main') } }
     ])
   })
 })

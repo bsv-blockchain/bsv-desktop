@@ -7,6 +7,9 @@ import { electronFunctions } from './electronFunctions';
 import packageJson from '../package.json';
 import { btmsPermissionModule } from './lib/permissionModules/btms';
 import VaultGate from './lib/components/VaultGate';
+import { installTxStatusBridge } from './txStatusBridge';
+
+installTxStatusBridge();
 
 // Create the root and render
 const rootElement = document.getElementById('root');

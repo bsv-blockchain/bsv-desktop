@@ -16,6 +16,7 @@ const require = createRequire(import.meta.url);
 // Lazy load storage to avoid loading knex/better-sqlite3 at startup
 let storageManager: any = null;
 // One load shared by concurrent callers, so the listener below is added once.
+// A failed load is forgotten, so the next caller tries again.
 let storageManagerLoad: Promise<any> | null = null;
 async function getStorageManager() {
   storageManagerLoad ??= import('./storage.js').then(module => {
@@ -26,6 +27,9 @@ async function getStorageManager() {
     });
     storageManager = module.storageManager;
     return storageManager;
+  }).catch(error => {
+    storageManagerLoad = null;
+    throw error;
   });
   return storageManagerLoad;
 }

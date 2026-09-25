@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, session } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, session, powerMonitor } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -15,12 +15,31 @@ const require = createRequire(import.meta.url);
 
 // Lazy load storage to avoid loading knex/better-sqlite3 at startup
 let storageManager: any = null;
+// One load shared by concurrent callers, so the listener below is added once.
+// A failed load is forgotten, so the next caller tries again.
+let storageManagerLoad: Promise<any> | null = null;
 async function getStorageManager() {
-  if (!storageManager) {
-    const module = await import('./storage.js');
+  storageManagerLoad ??= import('./storage.js').then(module => {
+    // Push monitor-observed status changes (Arcade SSE events among them) to
+    // the renderer, so the UI refreshes as they happen rather than on its next poll.
+    module.storageManager.onTxStatusChanged((event: unknown) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('wallet:tx-status-changed', event);
+    });
     storageManager = module.storageManager;
-  }
-  return storageManager;
+    return storageManager;
+  }).catch(error => {
+    storageManagerLoad = null;
+    throw error;
+  });
+  return storageManagerLoad;
+}
+
+/**
+ * The desktop counterpart of bsv-wallet fetching Arcade events on return to the
+ * foreground: reopen any SSE stream that dropped while the user was away.
+ */
+function requestArcadeEvents() {
+  storageManager?.requestArcadeEvents?.();
 }
 
 let walletDataService: Promise<WalletPortabilityService> | undefined;
@@ -167,6 +186,8 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  mainWindow.on('focus', requestArcadeEvents);
 
   // Open external links in the default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -747,6 +768,8 @@ app.whenReady().then(async () => {
 
   buildApplicationMenu({ getMainWindow: () => mainWindow });
   createWindow();
+  powerMonitor.on('resume', requestArcadeEvents);
+  powerMonitor.on('unlock-screen', requestArcadeEvents);
 
   // Start HTTPS server on port 2121
   if (mainWindow) {

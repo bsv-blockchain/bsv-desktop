@@ -63,31 +63,50 @@ const Transactions: React.FC = () => {
     )
   }, [managers.permissionsManager, adminOriginator])
 
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      setLoading(true)
-      // Fetch page 1 just to get totalActions, then fetch the last page
-      const probe = await fetchActions(0)
-      if (cancelled || !probe) return
-      const total = probe.totalActions
-      const lastPageOffset = Math.max(0, total - PAGE_SIZE)
-      const result = lastPageOffset === 0 ? probe : await fetchActions(lastPageOffset)
-      if (cancelled || !result) return
-      setActions([...result.actions].reverse())
-      oldestOffsetRef.current = lastPageOffset
-      setHasMore(lastPageOffset > 0)
-      setLoading(false)
-    })()
-    return () => { cancelled = true }
+  // Each load of the newest page supersedes any before it: status pushes can
+  // arrive while one is in flight, and listActions cannot be cancelled.
+  const latestLoad = useRef(0)
+
+  const loadLatest = useCallback(async (showSpinner: boolean) => {
+    const load = ++latestLoad.current
+    if (showSpinner) setLoading(true)
+    // Fetch page 1 just to get totalActions, then fetch the last page
+    const probe = await fetchActions(0)
+    if (load !== latestLoad.current || !probe) return
+    const total = probe.totalActions
+    const lastPageOffset = Math.max(0, total - PAGE_SIZE)
+    const result = lastPageOffset === 0 ? probe : await fetchActions(lastPageOffset)
+    if (load !== latestLoad.current || !result) return
+    setActions([...result.actions].reverse())
+    oldestOffsetRef.current = lastPageOffset
+    setHasMore(lastPageOffset > 0)
+    setLoading(false)
   }, [fetchActions])
+
+  useEffect(() => {
+    void loadLatest(true)
+    // Unmount (or a new wallet): drop whatever is still in flight.
+    return () => { latestLoad.current++ }
+  }, [loadLatest])
+
+  // Refresh when the host reports a status change (e.g. an Arcade SSE event),
+  // so a send moves on from "broadcasting" without the page being revisited.
+  useEffect(() => {
+    const refresh = () => {
+      loadLatest(false).catch(error => console.error('Failed to refresh transactions:', error))
+    }
+    window.addEventListener('tx-status-changed', refresh)
+    return () => window.removeEventListener('tx-status-changed', refresh)
+  }, [loadLatest])
 
   const loadMore = async () => {
     if (loadingMore || !hasMore) return
     setLoadingMore(true)
+    const load = latestLoad.current
     const nextOffset = Math.max(0, oldestOffsetRef.current - PAGE_SIZE)
     const result = await fetchActions(nextOffset)
-    if (result) {
+    // A refresh that landed meanwhile has replaced the list this page extends.
+    if (result && load === latestLoad.current) {
       setActions(prev => [...prev, ...[...result.actions].reverse()])
       oldestOffsetRef.current = nextOffset
       setHasMore(nextOffset > 0)

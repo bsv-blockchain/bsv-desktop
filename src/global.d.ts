@@ -10,6 +10,14 @@ export interface FeeSettingsView {
   restartRequired: boolean;
 }
 
+/** A transaction status change seen by the monitor worker (e.g. an Arcade SSE event). */
+export interface TxStatusChangedEvent {
+  identityKey: string;
+  chain: 'main' | 'test' | 'ttn';
+  txid: string;
+  status: string;
+}
+
 export interface ElectronAPI {
   walletData: {
     call: (action: string, data: Record<string, unknown>) => Promise<any>;
@@ -42,6 +50,8 @@ export interface ElectronAPI {
   onHttpRequestCancelled: (callback: (event: { request_id: number; reason?: string }) => void) => void;
   sendHttpResponse: (response: any) => void;
   removeHttpRequestListener: () => void;
+  /** Transaction status changes seen by the monitor worker. Returns an unsubscribe function. */
+  onTxStatusChanged?: (callback: (event: TxStatusChangedEvent) => void) => () => void;
   storage: {
     isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<boolean>;
     makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<{ success: boolean; settings?: any; error?: string }>;

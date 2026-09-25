@@ -19,7 +19,13 @@ describe('default service endpoints', () => {
 
   it('has no retired babbage.systems or bsvb.tech hosts', () => {
     for (const chain of CHAINS) {
-      const urls = [electronEndpoints.arcadeUrl(chain), electronEndpoints.chaintracksUrl(chain)]
+      const urls = [
+        electronEndpoints.arcadeUrl(chain),
+        electronEndpoints.chaintracksUrl(chain),
+        electronEndpoints.WHATSONCHAIN_URLS[chain],
+        electronEndpoints.TAAL_ARC_URLS[chain],
+        electronEndpoints.GORILLAPOOL_ARC_URLS[chain]
+      ].filter((url): url is string => url !== undefined)
       for (const url of urls) {
         expect(url).not.toContain('babbage')
         expect(url).not.toContain('bsvb.tech')

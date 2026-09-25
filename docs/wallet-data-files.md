@@ -60,3 +60,26 @@ a 256 KiB aggregate request-header budget for larger valid payment proofs.
 Authentication signatures, canonical framing and existing BRC100 calls are
 unchanged. BRC-38/39 archives and wallet records need no migration. Server
 operators own HTTP transport admission and should check their complete route.
+
+
+## SDK 2.8.6 payment ownership correction
+
+This release pins the published SDK 2.8.6 package, including its recipient-side
+BRC-29 child-key derivation correction (`forSelf: true`). Existing PeerPay
+acceptance and refund paths receive the correction through the dependency.
+BRC100 public APIs and encodings, stored permissions, account snapshots and
+BRC-38/39 archives are unchanged; no application or archive migration is needed.
+Prior-version native evidence above remains identified by its tested version.
+
+
+### Existing dependency audit boundary
+
+The SDK 2.8.6 lock update changes only `@bsv/sdk`; a production audit on the
+pre-update lock and the new lock returns the same nine findings (five moderate,
+two high, two critical). They originate in the existing STAS/legacy `bsv` chain
+(`stas-js`, `bsv`, `elliptic`, old `axios`, `bn.js`, `qs` and test-reporting
+dependencies), not SDK 2.8.6. The wallet build, current tests, wallet-file tests
+and real-key payment/refund regression pass. This PR does not claim a clean
+production audit or replace the STAS implementation: its maintainers must
+review and remediate that separate dependency boundary before declaring the
+complete wallet dependency tree free of known advisories.

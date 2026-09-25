@@ -20,7 +20,7 @@ References: [BRC-38](https://github.com/bsv-blockchain/BRCs/blob/2b959b13f1f7304
 
 ## Dependency qualification for this proposal
 
-The wallet uses published SDK 2.8.1 (portable authenticated-empty AES-GCM repair),
+The wallet uses published SDK 2.8.5 (portable authenticated-empty AES-GCM repair),
 Toolbox/Client 2.14.0, Message Box Client 2.5.3, BTMS 1.2.3 and permission module
 1.2.1. DOMPurify 3.4.16, electron-updater 6.8.9 and compatible Express/transitive
 updates address the available production graph fixes without major overrides.
@@ -34,6 +34,52 @@ separately validated token-engine migration. This proposal does not suppress the
 findings or claim a clean audit. BSVA retains release approval and the decision
 on that migration; the BRC-38/39 codec uses the current `@bsv/sdk`.
 
-## SDK 2.8.2 integration
+## SDK 2.8.3 compatibility changes (included in 2.8.5)
 
-The wallet now requires published SDK 2.8.2 or later, retaining the authenticated AES-GCM fix from 2.8.1 and adding [TS Stack #581](https://github.com/bsv-blockchain/ts-stack/pull/581). Successful automatic React Native/XDM discovery no longer leaves subsequent wallet calls subject to the short probe deadline. Discovery remains bounded, explicit operation timeouts and response/origin validation are unchanged. Web applications must also update their own SDK bundle; upgrading a wallet alone cannot repair an older application bundle.
+SDK 2.8.3 included the authenticated AES-GCM and bounded discovery fixes from 2.8.1/2.8.2. [TS Stack #587](https://github.com/bsv-blockchain/ts-stack/pull/587) also preserves explicit originators during HTTP discovery, binds browser JSON fetch correctly, and restores signed `listActions` net amounts using the historical wire bytes. Counts, lengths, individual output values, origin binding and response validation remain strict.
+
+These are SDK compatibility repairs. No BRC100 application API, wire format or account-data migration is required. Existing older clients retain their calls and wire bytes; applications that bundle an affected 2.8.x client can take the SDK patch without rewriting calls. This does not impose an ecosystem-wide SDK upgrade. Wallet provider installation and standard BRC100 responses must remain compatible with older clients.
+
+SDK release evidence includes 7,393 passing SDK tests and an old/new signed-history matrix preserving all 32 previously valid response-byte cases; the eight known 2.8.1/2.8.2 negative-history failures are recorded separately. The dependency upgrade still requires this wallet's own checks and native acceptance before release; SDK evidence alone is not app acceptance.
+
+
+## SDK 2.8.4 history compatibility
+
+The published 2.8.4 SDK restores existing `listActions` histories containing
+empty stored descriptions and unassigned baskets. It preserves the original
+strings, signed net amounts, wire encoding and strict script/value/label checks.
+No application API or account-data migration is needed; affected hardened SDK
+clients can dependency-update without rewriting calls. Existing older clients
+remain supported. This dependency patch does not supersede upstream wallet
+portability, storage-fencing, fee-setting or identity fixes.
+
+## SDK 2.8.5 HTTP payment compatibility
+
+The published SDK patch increases HTTP client header capacity fourfold, including
+a 256 KiB aggregate request-header budget for larger valid payment proofs.
+Authentication signatures, canonical framing and existing BRC100 calls are
+unchanged. BRC-38/39 archives and wallet records need no migration. Server
+operators own HTTP transport admission and should check their complete route.
+
+
+## SDK 2.8.6 payment ownership correction
+
+This release pins the published SDK 2.8.6 package, including its recipient-side
+BRC-29 child-key derivation correction (`forSelf: true`). Existing PeerPay
+acceptance and refund paths receive the correction through the dependency.
+BRC100 public APIs and encodings, stored permissions, account snapshots and
+BRC-38/39 archives are unchanged; no application or archive migration is needed.
+Prior-version native evidence above remains identified by its tested version.
+
+
+### Existing dependency audit boundary
+
+The SDK 2.8.6 lock update changes only `@bsv/sdk`; a production audit on the
+pre-update lock and the new lock returns the same nine findings (five moderate,
+two high, two critical). They originate in the existing STAS/legacy `bsv` chain
+(`stas-js`, `bsv`, `elliptic`, old `axios`, `bn.js`, `qs` and test-reporting
+dependencies), not SDK 2.8.6. The wallet build, current tests, wallet-file tests
+and real-key payment/refund regression pass. This PR does not claim a clean
+production audit or replace the STAS implementation: its maintainers must
+review and remediate that separate dependency boundary before declaring the
+complete wallet dependency tree free of known advisories.

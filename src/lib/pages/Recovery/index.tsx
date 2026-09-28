@@ -37,34 +37,36 @@ const Recovery: React.FC<any> = ({ history }) => {
             {t('recovery_unavailable_for_login_type')}
           </Typography>
         )}
-        <List style={{ marginTop: '1rem', marginBottom: '1rem' }}>
-          {options.includes('presentation-key') && (
-            <ListItem disablePadding>
-              <ListItemButton onClick={() => history.push('/recovery/presentation-key')}>
-                <ListItemIcon>
-                  <KeyIcon />
-                </ListItemIcon>
-                <ListItemText
-                  primary={t('recovery_option_presentation_key_title')}
-                  secondary={t('recovery_option_presentation_key_desc')}
-                />
-              </ListItemButton>
-            </ListItem>
-          )}
-          {options.includes('password') && (
-            <ListItem disablePadding>
-              <ListItemButton onClick={() => history.push('/recovery/password')}>
-                <ListItemIcon>
-                  <LockIcon />
-                </ListItemIcon>
-                <ListItemText
-                  primary={t('recovery_option_password_title')}
-                  secondary={t('recovery_option_password_desc')}
-                />
-              </ListItemButton>
-            </ListItem>
-          )}
-        </List>
+        {options.length > 0 && (
+          <List style={{ marginTop: '1rem', marginBottom: '1rem' }}>
+            {options.includes('presentation-key') && (
+              <ListItem disablePadding>
+                <ListItemButton onClick={() => history.push('/recovery/presentation-key')}>
+                  <ListItemIcon>
+                    <KeyIcon />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={t('recovery_option_presentation_key_title')}
+                    secondary={t('recovery_option_presentation_key_desc')}
+                  />
+                </ListItemButton>
+              </ListItem>
+            )}
+            {options.includes('password') && (
+              <ListItem disablePadding>
+                <ListItemButton onClick={() => history.push('/recovery/password')}>
+                  <ListItemIcon>
+                    <LockIcon />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={t('recovery_option_password_title')}
+                    secondary={t('recovery_option_password_desc')}
+                  />
+                </ListItemButton>
+              </ListItem>
+            )}
+          </List>
+        )}
         <Button
           className={classes.back_button}
           onClick={() => history.go(-1)}

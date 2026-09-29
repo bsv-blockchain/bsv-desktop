@@ -14,19 +14,10 @@
 import path from 'path';
 import os from 'os';
 import { createRequire } from 'module';
-import { StorageKnex, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
-import { arcadeUrl } from './endpoints.js';
-import { arcadeCallbackToken, createArcadeServices } from './arcade.js';
-import {
-  arcadeSseCursorPath,
-  createArcadeMonitorOptions,
-  startArcadeSsePump,
-  tolerateTransientArcadeRejections
-} from './arcadeSse.js';
-import {
-  DEFAULT_MONITOR_FEE_RATE,
-  getConfiguredFeeRate
-} from './feeSettings.js';
+// Types only: the toolbox and everything built on it load inside startMonitor.
+// Evaluating @bsv/wallet-toolbox can take tens of seconds on a cold disk cache,
+// and the parent gives up if 'ready' does not arrive within 10s.
+import type { Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
 
 const require = createRequire(import.meta.url);
 
@@ -82,6 +73,21 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
   console.log(`[Monitor Worker] Starting for ${key}`);
 
   try {
+    const [
+      { StorageKnex, Monitor, WalletStorageManager },
+      { arcadeUrl },
+      { arcadeCallbackToken, createArcadeServices },
+      { arcadeSseCursorPath, createArcadeMonitorOptions, startArcadeSsePump, tolerateTransientArcadeRejections },
+      { DEFAULT_MONITOR_FEE_RATE, getConfiguredFeeRate }
+    ] = await Promise.all([
+      import('@bsv/wallet-toolbox'),
+      import('./endpoints.js'),
+      import('./arcade.js'),
+      import('./arcadeSse.js'),
+      import('./feeSettings.js')
+    ]);
+    if (stopping) return;
+
     // Create database path
     const homeDir = os.homedir();
     const bsvDir = path.join(homeDir, '.bsv-desktop');

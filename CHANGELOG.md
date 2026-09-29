@@ -4,6 +4,8 @@
 
 ### Bug Fixes
 
+- Upgrade `@bsv/sdk` to 2.8.11, Wallet Toolbox core/client to 2.14.4 and `@bsv/message-box-client` to 2.5.4.
+- Monitor worker no longer fails wallet startup with "Monitor worker timeout waiting for ready signal". The worker now signals ready before loading Wallet Toolbox, which can take longer than the 10s ready timeout on a cold disk cache.
 - Manage App shows monthly spending as a positive amount that updates after silent spends. The meter was negating `querySpentSince`, which is already a positive total, so current spending rendered negative and the bar stayed empty. A cached figure is still shown immediately, then refreshed, so spends under an existing grant are no longer frozen on screen.
 - Upgrade Wallet Toolbox core/client to 2.14.1 so internal exact-spend metadata cannot invalidate a public `createAction` response after wallet work. Service-charge approvals, SDK 2.8.6 BRC-29 payment/refund behavior, BRC100 calls and BRC39/account-recovery formats remain compatible. Reconcile wallet history before retrying an older failed response.
 - Broadcast, prove and track transactions through Arcade the same way the mobile wallet does, on mainnet, testnet and teratestnet: the toolbox's own Arcade provider is primary (Extended Format to `/tx`, with the wallet's callback token and full status updates), TAAL, GorillaPool, WhatsOnChain and Bitails follow as fallbacks that can accept a transaction but never condemn one, and proofs come from Arcade first. The monitor now subscribes to Arcade's SSE status stream, so sends, confirmations and proofs appear as they happen and the UI refreshes on each change.

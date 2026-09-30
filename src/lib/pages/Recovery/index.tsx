@@ -1,3 +1,4 @@
+import { useContext } from 'react'
 import { useTranslation } from 'react-i18next'
 import style from './style'
 import { makeStyles } from '@mui/styles'
@@ -8,6 +9,8 @@ import {
 import {
   List, ListItem, ListItemButton, ListItemIcon, ListItemText, Button, Typography
 } from '@mui/material'
+import { WalletContext } from '../../WalletContext'
+import { recoveryOptionsFor } from './recoveryOptions'
 
 const useStyles = makeStyles(style as any, {
   name: 'Recovery'
@@ -16,6 +19,9 @@ const useStyles = makeStyles(style as any, {
 const Recovery: React.FC<any> = ({ history }) => {
   const { t } = useTranslation()
   const classes = useStyles()
+  const { loginType } = useContext(WalletContext)
+  // Only offer flows the current wallet manager can run (#88).
+  const options = recoveryOptionsFor(loginType)
   return (
     <div className={classes.content_wrap}>
       <div className={classes.panel_body}>
@@ -26,30 +32,41 @@ const Recovery: React.FC<any> = ({ history }) => {
           {t('recovery_page_description')}
         </Typography>
         <Button onClick={() => history.push('/recovery/wallet-data')}>Recover from wallet data file</Button>
-        <List style={{ marginTop: '1rem', marginBottom: '1rem' }}>
-          <ListItem disablePadding>
-            <ListItemButton onClick={() => history.push('/recovery/presentation-key')}>
-              <ListItemIcon>
-                <KeyIcon />
-              </ListItemIcon>
-              <ListItemText
-                primary={t('recovery_option_presentation_key_title')}
-                secondary={t('recovery_option_presentation_key_desc')}
-              />
-            </ListItemButton>
-          </ListItem>
-          <ListItem disablePadding>
-            <ListItemButton onClick={() => history.push('/recovery/password')}>
-              <ListItemIcon>
-                <LockIcon />
-              </ListItemIcon>
-              <ListItemText
-                primary={t('recovery_option_password_title')}
-                secondary={t('recovery_option_password_desc')}
-              />
-            </ListItemButton>
-          </ListItem>
-        </List>
+        {options.length === 0 && (
+          <Typography variant='body1' paragraph>
+            {t('recovery_unavailable_for_login_type')}
+          </Typography>
+        )}
+        {options.length > 0 && (
+          <List style={{ marginTop: '1rem', marginBottom: '1rem' }}>
+            {options.includes('presentation-key') && (
+              <ListItem disablePadding>
+                <ListItemButton onClick={() => history.push('/recovery/presentation-key')}>
+                  <ListItemIcon>
+                    <KeyIcon />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={t('recovery_option_presentation_key_title')}
+                    secondary={t('recovery_option_presentation_key_desc')}
+                  />
+                </ListItemButton>
+              </ListItem>
+            )}
+            {options.includes('password') && (
+              <ListItem disablePadding>
+                <ListItemButton onClick={() => history.push('/recovery/password')}>
+                  <ListItemIcon>
+                    <LockIcon />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={t('recovery_option_password_title')}
+                    secondary={t('recovery_option_password_desc')}
+                  />
+                </ListItemButton>
+              </ListItem>
+            )}
+          </List>
+        )}
         <Button
           className={classes.back_button}
           onClick={() => history.go(-1)}

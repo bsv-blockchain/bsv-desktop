@@ -1,9 +1,15 @@
 import { Utils } from '@bsv/sdk'
-import { Mnemonic } from '@bsv/sdk/compat'
+import { HD, Mnemonic } from '@bsv/sdk/compat'
 import * as secrets from '../services/secrets'
 
 export const normalizeMnemonic = (phrase: string): string =>
   phrase.trim().replace(/\s+/g, ' ')
+
+/** Preserve the presentation-key derivation used by mnemonic login and recovery. */
+export const derivePresentationKeyFromMnemonic = (phrase: string): number[] => {
+  const mnemonic = Mnemonic.fromString(normalizeMnemonic(phrase))
+  return HD.fromSeed(mnemonic.toSeed()).derive("m/0'/0/0").privKey.toArray()
+}
 
 const mnemonicToEntropy = (m: Mnemonic): number[] => {
   const mnemonic = m.toString()

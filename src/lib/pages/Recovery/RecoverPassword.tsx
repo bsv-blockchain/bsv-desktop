@@ -29,7 +29,8 @@ import { makeStyles } from '@mui/styles'
 import { toast } from 'react-toastify'
 import { WalletContext } from '../../WalletContext.js'
 import PhoneEntry from '../../components/PhoneEntry.js'
-import { Utils, Mnemonic, HD, LookupResolver, Hash } from '@bsv/sdk'
+import { Utils, LookupResolver, Hash } from '@bsv/sdk'
+import { derivePresentationKeyFromMnemonic } from '../../utils/keyMaterial.js'
 
 const useStyles = makeStyles(style as any, { name: 'RecoverPassword' })
 
@@ -113,12 +114,7 @@ const RecoverPassword: React.FC<any> = ({ history }) => {
     try {
       setLoading(true)
 
-      // Derive presentation key from mnemonic
-      const mnemonicObj = Mnemonic.fromString(mnemonic.trim())
-      const seed = mnemonicObj.toSeed()
-      const hdKey = HD.fromSeed(seed)
-      const derivedKey = hdKey.derive("m/0'/0/0")
-      const presentationKey = derivedKey.privKey.toArray()
+      const presentationKey = derivePresentationKeyFromMnemonic(mnemonic)
 
       await managers.walletManager!.providePresentationKey(presentationKey)
       setAccordianView('recovery-key-final')

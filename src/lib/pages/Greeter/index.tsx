@@ -48,11 +48,11 @@ import { saveMnemonic, savePrivateKey } from '../../../electronFunctions.js'
 import { WalletContext, createDisabledPrivilegedManager } from '../../WalletContext.js'
 import { UserContext } from '../../UserContext.js'
 import PageLoading from '../../components/PageLoading.js'
-import { Utils, Mnemonic, HD, PrivateKey } from '@bsv/sdk'
+import { Utils, Mnemonic, PrivateKey } from '@bsv/sdk'
 import { Link as RouterLink } from 'react-router-dom'
 import WalletConfig from '../../components/WalletConfig.js'
 import { DEFAULT_CHAIN } from '../../config.js'
-import { deriveKeyMaterialFromMnemonic, persistKeyMaterial } from '../../utils/keyMaterial.js'
+import { deriveKeyMaterialFromMnemonic, derivePresentationKeyFromMnemonic, persistKeyMaterial } from '../../utils/keyMaterial.js'
 
 // Helper functions for the Stepper will be defined inside the component
 
@@ -671,12 +671,7 @@ const Greeter: React.FC<any> = ({ history }) => {
     try {
       setLoading(true)
 
-      // Derive presentation key from mnemonic using HD path m/0'/0/0
-      const mnemonicObj = Mnemonic.fromString(mnemonic.trim())
-      const seed = mnemonicObj.toSeed()
-      const hdKey = HD.fromSeed(seed)
-      const derivedKey = hdKey.derive("m/0'/0/0")
-      const presentationKey = derivedKey.privKey.toArray()
+      const presentationKey = derivePresentationKeyFromMnemonic(mnemonic)
 
       await (walletManager as any).providePresentationKey(presentationKey)
       if ((walletManager as any).authenticationFlow === 'new-user') {

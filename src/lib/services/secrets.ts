@@ -141,6 +141,11 @@ function clear(name: string): void {
 
 export const getSnapshot = (): string | null => get(SNAP)
 export const setSnapshot = (v: string): void => set(SNAP, v)
+/** Use for configuration changes whose success depends on durable vault storage. */
+export const persistSnapshot = async (v: string): Promise<void> => {
+  await window.electronAPI.secrets.set(SNAP, v)
+  cache.set(SNAP, v)
+}
 export const clearSnapshot = (): void => clear(SNAP)
 
 export const getKeyHex = (): string | null => get(KEY)

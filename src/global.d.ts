@@ -1,7 +1,7 @@
 // Global type declarations for Electron IPC API
 
 export interface FeeSettingsView {
-  chain: 'main' | 'test' | 'ttn';
+  chain: 'main' | 'test' | 'ttn' | 'tstn';
   customRate: number | null;
   effectiveRate: number;
   floorRate: number | null;
@@ -13,7 +13,7 @@ export interface FeeSettingsView {
 /** A transaction status change seen by the monitor worker (e.g. an Arcade SSE event). */
 export interface TxStatusChangedEvent {
   identityKey: string;
-  chain: 'main' | 'test' | 'ttn';
+  chain: 'main' | 'test' | 'ttn' | 'tstn';
   txid: string;
   status: string;
 }
@@ -25,8 +25,8 @@ export interface ElectronAPI {
   };
 
   fees: {
-    get: (chain: 'main' | 'test' | 'ttn') => Promise<FeeSettingsView>;
-    set: (chain: 'main' | 'test' | 'ttn', rate: number | null) => Promise<{ success: boolean; settings?: FeeSettingsView; error?: string }>;
+    get: (chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<FeeSettingsView>;
+    set: (chain: 'main' | 'test' | 'ttn' | 'tstn', rate: number | null) => Promise<{ success: boolean; settings?: FeeSettingsView; error?: string }>;
   };
   isFocused: () => Promise<boolean>;
   requestFocus: () => Promise<void>;
@@ -53,10 +53,11 @@ export interface ElectronAPI {
   /** Transaction status changes seen by the monitor worker. Returns an unsubscribe function. */
   onTxStatusChanged?: (callback: (event: TxStatusChangedEvent) => void) => () => void;
   storage: {
-    isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<boolean>;
-    makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<{ success: boolean; settings?: any; error?: string }>;
-    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
-    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<{ success: boolean; error?: string }>;
+    releaseNetwork: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<{ success: boolean; error?: string }>;
+    isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<boolean>;
+    makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<{ success: boolean; settings?: any; error?: string }>;
+    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings?: import('./lib/networkConfig').NetworkSettings) => Promise<{ success: boolean; error?: string }>;
   };
   secrets: {
     getAll: () => Promise<Record<string, string>>;
@@ -87,7 +88,7 @@ export interface ElectronAPI {
     set: (config: any) => Promise<void>;
   };
   stas: {
-    query: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+    query: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
   };
   updates: {
     check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;

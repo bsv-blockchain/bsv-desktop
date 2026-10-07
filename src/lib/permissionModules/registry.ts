@@ -19,10 +19,20 @@ export const buildPermissionModuleRegistry = (modules: PermissionModuleDefinitio
     return ids.filter(id => registryById.has(id))
   }
 
+  // Before registry tracking, BTMS was the only shipped module. Its absence
+  // in a saved list remains a disable choice; newly shipped defaults are added.
+  const restoreEnabledPermissionModules = (ids?: string[], knownIds?: string[]) => {
+    const enabled = normalizeEnabledPermissionModules(ids)
+    if (!Array.isArray(ids)) return enabled
+    const known = new Set(Array.isArray(knownIds) ? knownIds : ['btms'])
+    return [...new Set([...enabled, ...getDefaultEnabledPermissionModules().filter(id => !known.has(id))])]
+  }
+
   return {
     registry,
     getPermissionModuleById,
     getDefaultEnabledPermissionModules,
-    normalizeEnabledPermissionModules
+    normalizeEnabledPermissionModules,
+    restoreEnabledPermissionModules
   }
 }

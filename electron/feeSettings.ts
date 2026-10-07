@@ -5,7 +5,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { arcadeUrl } from './endpoints.js'
 
-export type FeeChain = 'main' | 'test' | 'ttn'
+export type FeeChain = 'main' | 'test' | 'ttn' | 'tstn'
 
 export interface FeeSettingsView {
   chain: FeeChain
@@ -21,6 +21,7 @@ export interface FeeSettingsFile {
   main?: number | null
   test?: number | null
   ttn?: number | null
+  tstn?: number | null
 }
 
 export interface PolicyResponse {
@@ -38,13 +39,14 @@ export interface FeeSettingsServiceOptions {
   settingsPath?: string
   fetch?: PolicyFetch
   timeoutMs?: number
+  arcadeUrlForChain?: (chain: FeeChain) => string
 }
 
 export const DEFAULT_STORAGE_FEE_RATE = 250
 export const DEFAULT_MONITOR_FEE_RATE = 100
 export const POLICY_TIMEOUT_MS = 5_000
 
-const CHAINS: readonly FeeChain[] = ['main', 'test', 'ttn']
+const CHAINS: readonly FeeChain[] = ['main', 'test', 'ttn', 'tstn']
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER
 
 function isFeeChain(value: unknown): value is FeeChain {
@@ -222,6 +224,7 @@ export class FeeSettingsService {
   readonly settingsPath: string
   private readonly policyFetch: PolicyFetch
   private readonly timeoutMs: number
+  private readonly arcadeUrlForChain: (chain: FeeChain) => string
   private readonly initialSettings: FeeSettingsFile
   private writeQueue: Promise<void> = Promise.resolve()
 
@@ -229,6 +232,7 @@ export class FeeSettingsService {
     this.settingsPath = options.settingsPath ?? defaultFeeSettingsPath()
     this.policyFetch = options.fetch ?? defaultPolicyFetch
     this.timeoutMs = options.timeoutMs ?? POLICY_TIMEOUT_MS
+    this.arcadeUrlForChain = options.arcadeUrlForChain ?? arcadeUrl
     this.initialSettings = seedStartupFeeSettings(
       this.settingsPath,
       readFeeSettingsFileOrDefaults(this.settingsPath)
@@ -240,7 +244,7 @@ export class FeeSettingsService {
     assertFeeChain(chain)
     const settings = readFeeSettingsFileOrDefaults(this.settingsPath)
     const customRate = settings[chain] ?? null
-    const policyUrl = `${arcadeUrl(chain)}/policy`
+    const policyUrl = `${this.arcadeUrlForChain(chain)}/policy`
 
     try {
       const floorRate = await this.fetchPolicyFloor(policyUrl)
@@ -257,7 +261,7 @@ export class FeeSettingsService {
   async set(chain: unknown, rate: unknown): Promise<FeeSettingsView> {
     assertFeeChain(chain)
     const customRate = rate === null ? null : validateCustomFeeRate(rate)
-    const policyUrl = `${arcadeUrl(chain)}/policy`
+    const policyUrl = `${this.arcadeUrlForChain(chain)}/policy`
 
     let floorRate: number | null = null
     if (customRate !== null) {

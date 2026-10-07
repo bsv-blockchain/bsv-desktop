@@ -4,7 +4,7 @@ import type { FeeSettingsView } from './feeSettings.js';
 /** Mirrors TxStatusChangedEvent in storage.ts (not imported: preload must not pull in storage). */
 export interface TxStatusChangedEvent {
   identityKey: string;
-  chain: 'main' | 'test' | 'ttn';
+  chain: 'main' | 'test' | 'ttn' | 'tstn';
   txid: string;
   status: string;
 }
@@ -46,9 +46,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Transaction fee settings
   fees: {
-    get: (chain: 'main' | 'test' | 'ttn') =>
+    get: (chain: 'main' | 'test' | 'ttn' | 'tstn') =>
       ipcRenderer.invoke('fees:get', chain),
-    set: (chain: 'main' | 'test' | 'ttn', rate: number | null) =>
+    set: (chain: 'main' | 'test' | 'ttn' | 'tstn', rate: number | null) =>
       ipcRenderer.invoke('fees:set', chain, rate)
   },
 
@@ -89,13 +89,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Storage operations
   storage: {
-    isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') =>
+    releaseNetwork: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') =>
+      ipcRenderer.invoke('storage:release-network', identityKey, chain),
+    isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') =>
       ipcRenderer.invoke('storage:is-available', identityKey, chain),
-    makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') =>
+    makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') =>
       ipcRenderer.invoke('storage:make-available', identityKey, chain),
-    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn') =>
-      ipcRenderer.invoke('storage:initialize-services', identityKey, chain),
-    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) =>
+    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings?: import('./networkConfig.js').NetworkSettings) =>
+      ipcRenderer.invoke('storage:initialize-services', identityKey, chain, settings),
+    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) =>
       ipcRenderer.invoke('storage:call-method', identityKey, chain, method, args)
   },
 
@@ -140,7 +142,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // STAS extension queries
   stas: {
-    query: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) =>
+    query: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) =>
       ipcRenderer.invoke('stas:query', identityKey, chain, method, args)
   },
 
@@ -193,8 +195,8 @@ export interface ElectronAPI {
     removeOpenSettingsListener: (callback: () => void) => void;
   };
   fees: {
-    get: (chain: 'main' | 'test' | 'ttn') => Promise<FeeSettingsView>;
-    set: (chain: 'main' | 'test' | 'ttn', rate: number | null) => Promise<{
+    get: (chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<FeeSettingsView>;
+    set: (chain: 'main' | 'test' | 'ttn' | 'tstn', rate: number | null) => Promise<{
       success: boolean;
       settings?: FeeSettingsView;
       error?: string;
@@ -211,10 +213,11 @@ export interface ElectronAPI {
   /** Returns an unsubscribe function. */
   onTxStatusChanged: (callback: (event: TxStatusChangedEvent) => void) => () => void;
   storage: {
-    isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<boolean>;
-    makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<{ success: boolean; settings?: any; error?: string }>;
-    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn') => Promise<{ success: boolean; error?: string }>;
-    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+    releaseNetwork: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<{ success: boolean; error?: string }>;
+    isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<boolean>;
+    makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<{ success: boolean; settings?: any; error?: string }>;
+    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings?: import('./networkConfig.js').NetworkSettings) => Promise<{ success: boolean; error?: string }>;
+    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
   };
   secrets: {
     getAll: () => Promise<Record<string, string>>;
@@ -245,7 +248,7 @@ export interface ElectronAPI {
     set: (config: any) => Promise<void>;
   };
   stas: {
-    query: (identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+    query: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
   };
   updates: {
     check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;

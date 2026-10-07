@@ -148,6 +148,12 @@ export class PeerPayManager extends EventEmittable<PeerPayEvents> {
   }
 
   /** Reset all state without revoking (used on logout). */
+  async suspendClient(): Promise<void> {
+    try { await this._client?.disconnectWebSocket() }
+    finally { this.reset() }
+  }
+
+  /** Reset all state without revoking (used on logout). */
   reset() {
     this._client = null
     this._isHostAnointed = false

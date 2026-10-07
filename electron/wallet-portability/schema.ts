@@ -2,7 +2,7 @@ import { PublicKey } from '@bsv/sdk'
 
 export const ARCHIVE_TABLES = ['provenTxs', 'provenTxReqs', 'outputBaskets', 'transactions', 'commissions', 'outputs', 'outputTags', 'outputTagMaps', 'txLabels', 'txLabelMaps', 'certificates', 'certificateFields', 'syncStates'] as const
 export type ArchiveTable = typeof ARCHIVE_TABLES[number]
-export type ArchiveChain = 'main' | 'test' | 'ttn'
+export type ArchiveChain = 'main' | 'test' | 'ttn' | 'tstn'
 export type ArchiveRow = Record<string, any>
 export const MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024 - 1
 export class PortabilityError extends Error {
@@ -251,7 +251,7 @@ export function validateRow(table: ArchiveTable | 'user' | 'sourceStorage', valu
     const identity = row.identityKey
     if (!/^(02|03)[a-f0-9]{64}$/i.test(identity) || PublicKey.fromString(identity).toString() !== identity.toLowerCase()) throw new PortabilityError('identity')
   }
-  if (table === 'sourceStorage' && !['main', 'test', 'ttn'].includes(row.chain)) throw new PortabilityError('unsupported', 'network')
+  if (table === 'sourceStorage' && !['main', 'test', 'ttn', 'tstn'].includes(row.chain)) throw new PortabilityError('unsupported', 'network')
   return row
 }
 export function rowKey(table: ArchiveTable, row: ArchiveRow): string {

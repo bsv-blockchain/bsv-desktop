@@ -36,6 +36,7 @@ import { parseWalletPayload, stringifyWalletPayload } from './walletByteJson';
 import {
   beginHttpBridgeSession,
   endHttpBridgeSession,
+  isHttpBridgePaused,
 } from './lib/services/httpBridgeSession';
 
 interface HttpRequestEvent {
@@ -302,6 +303,11 @@ export function setPeerTokensForHttpRoute(
  * Update the wallet instance used by the HTTP listener.
  * First call also registers the IPC listener (once, never removed).
  */
+/** Drop the previous network's wallet before its storage session is closed. */
+export function clearWalletForHttpRoute(expectedWallet?: WalletInterface): void {
+  if (!expectedWallet || _currentWallet === expectedWallet) _currentWallet = undefined
+}
+
 export const onWalletReady = async (
   wallet: WalletInterface
 ): Promise<(() => void) | undefined> => {
@@ -332,11 +338,11 @@ export const onWalletReady = async (
     let sessionStarted = false;
 
     const wallet = _currentWallet;
-    if (!wallet) {
+    if (!wallet || isHttpBridgePaused()) {
       response = {
         request_id: req.request_id,
         status: 503,
-        body: stringifyWalletPayload({ message: 'Wallet not ready' })
+        body: stringifyWalletPayload({ message: isHttpBridgePaused() ? 'Wallet network is changing. Retry shortly.' : 'Wallet not ready' })
       };
       window.electronAPI.sendHttpResponse(response);
       return;

@@ -1,4 +1,4 @@
-import { useState, useContext } from 'react'
+import { useState, useContext, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Typography,
@@ -25,6 +25,8 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import { WalletContext } from '../../WalletContext'
+import { beginUserWalletOperation } from '../../services/httpBridgeSession'
+import { MESSAGEBOX_HOST } from '../../config'
 
 interface MessageBoxConfigProps {
   showTitle?: boolean
@@ -42,49 +44,47 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
     anointedHosts,
     anointmentLoading,
     anointCurrentHost,
-    revokeHostAnointment
+    revokeHostAnointment,
+    switchingNetwork
   } = useContext(WalletContext)
 
   const [showMessageBoxDialog, setShowMessageBoxDialog] = useState(false)
   const [newMessageBoxUrl, setNewMessageBoxUrl] = useState('')
   const [messageBoxLoading, setMessageBoxLoading] = useState(false)
   const [showAnointedHosts, setShowAnointedHosts] = useState(false)
+  const [operationError, setOperationError] = useState('')
+  const mutationLock = useRef(false)
+  const mutationBusy = messageBoxLoading || anointmentLoading || switchingNetwork
+
+  const mutate = async (operation: () => Promise<void>) => {
+    if (mutationLock.current || switchingNetwork) return
+    mutationLock.current = true
+    setMessageBoxLoading(true)
+    setOperationError('')
+    let release: (() => void) | undefined
+    try {
+      release = beginUserWalletOperation()
+      await operation()
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error))
+    } finally {
+      release?.()
+      mutationLock.current = false
+      setMessageBoxLoading(false)
+    }
+  }
 
   const handleSetupMessageBox = async () => {
-    if (!newMessageBoxUrl) {
-      return;
-    }
-
-    try {
-      setMessageBoxLoading(true);
-      await updateMessageBoxUrl(newMessageBoxUrl);
-      setShowMessageBoxDialog(false);
-      setNewMessageBoxUrl('');
-    } catch (e) {
-      // Error already shown by updateMessageBoxUrl
-    } finally {
-      setMessageBoxLoading(false);
-    }
+    await mutate(async () => {
+      await updateMessageBoxUrl(newMessageBoxUrl.trim())
+      setShowMessageBoxDialog(false)
+      setNewMessageBoxUrl('')
+    })
   }
 
-  const handleRemoveMessageBox = async () => {
-    try {
-      setMessageBoxLoading(true);
-      await removeMessageBoxUrl();
-    } catch (e) {
-      // Error already shown by removeMessageBoxUrl
-    } finally {
-      setMessageBoxLoading(false);
-    }
-  }
-
-  const handleAnointHost = async () => {
-    try {
-      await anointCurrentHost();
-    } catch (e) {
-      // Error already shown by anointCurrentHost
-    }
-  }
+  const handleRemoveMessageBox = () => mutate(() => removeMessageBoxUrl())
+  const handleAnointHost = () => mutate(() => anointCurrentHost())
+  const handleRevokeHost = (token: (typeof anointedHosts)[number]) => mutate(() => revokeHostAnointment(token))
 
   const content = (
     <>
@@ -98,6 +98,8 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
           </Typography>
         </>
       )}
+
+      {operationError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setOperationError('')}>{operationError}</Alert>}
 
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {/* Display current URL if configured */}
@@ -137,7 +139,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
                   variant="contained"
                   size="small"
                   onClick={handleAnointHost}
-                  disabled={anointmentLoading}
+                  disabled={mutationBusy}
                   startIcon={anointmentLoading ? <CircularProgress size={16} /> : null}
                 >
                   {anointmentLoading ? t('msgbox_anointing') : t('msgbox_anoint_button')}
@@ -178,8 +180,8 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
                             <IconButton
                               edge="end"
                               size="small"
-                              onClick={() => revokeHostAnointment(token)}
-                              disabled={anointmentLoading}
+                              onClick={() => void handleRevokeHost(token)}
+                              disabled={mutationBusy}
                             >
                               {anointmentLoading ? <CircularProgress size={16} /> : <DeleteIcon fontSize="small" />}
                             </IconButton>
@@ -196,7 +198,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
               <Button
                 variant="outlined"
                 onClick={() => setShowMessageBoxDialog(true)}
-                disabled={messageBoxLoading || anointmentLoading}
+                disabled={mutationBusy}
               >
                 {t('msgbox_update_url_button')}
               </Button>
@@ -204,7 +206,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
                 variant="outlined"
                 color="error"
                 onClick={handleRemoveMessageBox}
-                disabled={messageBoxLoading || anointmentLoading}
+                disabled={mutationBusy}
               >
                 {t('msgbox_remove_button')}
               </Button>
@@ -215,7 +217,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
             variant="contained"
             size="large"
             onClick={() => setShowMessageBoxDialog(true)}
-            disabled={messageBoxLoading}
+            disabled={mutationBusy}
             fullWidth
           >
             {t('msgbox_enter_url_button')}
@@ -234,10 +236,11 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
           <TextField
             fullWidth
             label={t('msgbox_url_field_label')}
-            placeholder="https://messagebox.example.com"
+            placeholder={MESSAGEBOX_HOST}
+            helperText={`Leave empty to use ${MESSAGEBOX_HOST}`}
             value={newMessageBoxUrl}
             onChange={(e) => setNewMessageBoxUrl(e.target.value)}
-            disabled={messageBoxLoading}
+            disabled={mutationBusy}
             sx={{ mt: 2 }}
             autoFocus
           />
@@ -252,7 +255,7 @@ export default function MessageBoxConfig({ showTitle = true, embedded = false }:
           <Button
             onClick={handleSetupMessageBox}
             variant="contained"
-            disabled={messageBoxLoading || !newMessageBoxUrl}
+            disabled={mutationBusy}
           >
             {messageBoxLoading ? t('msgbox_saving') : t('msgbox_save')}
           </Button>

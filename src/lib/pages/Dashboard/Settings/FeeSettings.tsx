@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { FeeSettingsView } from '../../../../global'
 
 interface Props {
-  chain: 'main' | 'test' | 'ttn'
+  chain: 'main' | 'test' | 'ttn' | 'tstn'
   remote: boolean
 }
 

@@ -15,6 +15,21 @@ export type HttpBridgeSession = {
 }
 
 const sessions = new Map<number, HttpBridgeSession>()
+let bridgePaused = false
+let userOperations = 0
+
+/** A network change cannot straddle an app request or a permission decision. */
+export function activeHttpBridgeRequests(): number { return sessions.size }
+export function setHttpBridgePaused(paused: boolean): void { bridgePaused = paused }
+export function isHttpBridgePaused(): boolean { return bridgePaused }
+export function activeUserWalletOperations(): number { return userOperations }
+/** Hold a network switch until a first-party payment has finished. */
+export function beginUserWalletOperation(): () => void {
+  if (bridgePaused) throw new Error('The wallet network is changing. Try again shortly.')
+  userOperations++
+  let released = false
+  return () => { if (!released) { released = true; userOperations-- } }
+}
 
 export function normalizeBridgeOrigin(originator: string): string {
   return String(originator || '')
@@ -77,4 +92,6 @@ export function trackPermissionForHttpBridge(
 /** Test-only: clear module state */
 export function _test_resetHttpBridgeSessions(): void {
   sessions.clear()
+  bridgePaused = false
+  userOperations = 0
 }

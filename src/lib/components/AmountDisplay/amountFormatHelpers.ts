@@ -152,42 +152,19 @@ export const formatSatoshis = (
     format = satsFormat
   }
   format ??= satoshisOptions.satsFormats[0]
-  let s: any = (Number.isInteger(Number(satoshis))) ? Number(satoshis) : null
-  if (s === null) { return '---' }
-  const sign = s < 0 ? '-' : showPlus ? '+' : ''
-  s = Math.abs(s).toFixed(0)
-  // There are at most 21 some odd million hundred million satoshis.
-  // We format this with the following separators.
-  // Note that the decimal only appears after a hundred million satoshis.
-  // 21_000_000.000_000_00
-  const g = format.group ?? groupDefault
-  const d = format.decimal ?? decimalDefault
-  let p, sMinLen
-  switch (format.unit) {
-    case 'BSV': sMinLen = 9; p = [[2, g], [3, g], [3, d], [3, g], [3, g]]; break
-    case 'mBSV': sMinLen = 6; p = [[2, g], [3, d], [3, g], [3, g], [3, g]]; break
-    default:
-      sMinLen = 0; p = [[3, g], [3, g], [3, g], [3, g], [3, g]]; break
-  }
-  let r = ''
-  while (s.length < sMinLen) s = '0' + s
-  while (s.length > 0) {
-    if (p.length === 0) {
-      r = s + r
-      s = ''
-    } else {
-      const q = p.shift()!
-      r = s.substring(s.length - q[0]) + r
-      if (s.length > q[0]) {
-        r = q[1] + r
-        s = s.substring(0, s.length - q[0])
-      } else {
-        s = ''
-      }
-    }
-  }
-  r = `${sign}${r}`
-  const label = abbreviate ? format.abbrev : format.label
-  if (label && label.length > 0) { r = `${r} ${label}` }
-  return r
+  const amount = Number(satoshis)
+  if (!Number.isSafeInteger(amount)) return '---'
+  const sign = amount < 0 ? '-' : showPlus ? '+' : ''
+  const decimals = format.unit === 'BSV' ? 8 : format.unit === 'mBSV' ? 5 : 0
+  const digits = Math.abs(amount).toFixed(0).padStart(decimals + 1, '0')
+  const whole = decimals ? digits.slice(0, -decimals) : digits
+  const fraction = decimals ? digits.slice(-decimals).replace(/0+$/, '').padEnd(2, '0') : ''
+  const group = format.group ?? groupDefault
+  const decimal = format.decimal ?? decimalDefault
+  // Group only the integer part. Separators inside decimal places make a
+  // familiar currency amount look like an unrelated number.
+  const integer = whole.replace(/\B(?=(\d{3})+(?!\d))/g, group)
+  const value = `${sign}${integer}${decimals ? decimal + fraction : ''}`
+  const label = abbreviate ? (format.abbrev || format.label) : format.label
+  return label ? `${value} ${label}` : value
 }

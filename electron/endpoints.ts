@@ -9,13 +9,14 @@
  * roots compile separately, and test/endpoints.test.ts asserts they match.
  */
 
-export type EndpointChain = 'main' | 'test' | 'ttn'
+export type EndpointChain = 'main' | 'test' | 'ttn' | 'tstn'
 
 /** Arcade base URL per chain. */
 export const ARCADE_URLS: Record<EndpointChain, string> = {
   main: 'https://arcade-v2-us-1.bsvblockchain.tech',
   test: 'https://arcade-v2-testnet-us-1.bsvblockchain.tech',
-  ttn: 'https://arcade-v2-ttn-us-1.bsvblockchain.tech'
+  ttn: 'https://arcade-v2-ttn-us-1.bsvblockchain.tech',
+  tstn: ''
 }
 
 /** Arcade base URL for the chain (no trailing slash). */
@@ -25,7 +26,7 @@ export function arcadeUrl(chain: EndpointChain): string {
 
 /** ChainTracks service base URL for the chain (no trailing slash). */
 export function chaintracksUrl(chain: EndpointChain): string {
-  return `${ARCADE_URLS[chain]}/chaintracks/v1`
+  return ARCADE_URLS[chain] ? `${ARCADE_URLS[chain]}/chaintracks/v1` : ''
 }
 
 /*
@@ -42,19 +43,22 @@ export function chaintracksUrl(chain: EndpointChain): string {
 export const TAAL_ARC_URLS: Record<EndpointChain, string | undefined> = {
   main: 'https://arc.taal.com',
   test: 'https://arc-test.taal.com',
-  ttn: undefined
+  ttn: undefined,
+  tstn: undefined
 }
 
 /** GorillaPool ARC, by chain (mainnet only). Serves `POST /v1/tx`. */
 export const GORILLAPOOL_ARC_URLS: Record<EndpointChain, string | undefined> = {
   main: 'https://arc.gorillapool.io',
   test: undefined,
-  ttn: undefined
+  ttn: undefined,
+  tstn: undefined
 }
 
 /** WhatsOnChain API root, by chain. ttn has its own deployment on the test API layout. */
 export const WHATSONCHAIN_URLS: Record<EndpointChain, string> = {
   main: 'https://api.whatsonchain.com/v1/bsv/main',
   test: 'https://api.whatsonchain.com/v1/bsv/test',
-  ttn: 'https://api.woc-ttn.bsvblockchain.tech/v1/bsv/test'
+  ttn: 'https://api.woc-ttn.bsvblockchain.tech/v1/bsv/test',
+  tstn: ''
 }

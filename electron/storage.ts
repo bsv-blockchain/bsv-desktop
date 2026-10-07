@@ -18,8 +18,8 @@ import { createRequire } from 'module';
 import { fork, ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 import { StorageKnex, KnexMigrations, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
-import { arcadeUrl } from './endpoints.js';
 import { createArcadeServices } from './arcade.js';
+import { normalizeNetworkSettings, type NetworkSettings } from './networkConfig.js';
 import { arcadeSseCursorPath } from './arcadeSse.js';
 import { patchListCertificates } from './optimized-queries.js';
 import { stasMigrationSource } from './stas-migrations/index.js';
@@ -92,7 +92,7 @@ function getCreateKnex() {
 /** A transaction status change seen by a monitor worker, e.g. from an Arcade SSE event. */
 export interface TxStatusChangedEvent {
   identityKey: string;
-  chain: 'main' | 'test' | 'ttn';
+  chain: 'main' | 'test' | 'ttn' | 'tstn';
   txid: string;
   status: string;
 }
@@ -104,16 +104,16 @@ export interface TxStatusChangedEvent {
 class StorageManager {
   readonly bindings = new WalletDataBindings();
   private access = new Map<string, WalletStorageAccess>();
-  private storageAccess(identityKey: string, chain: 'main' | 'test' | 'ttn'): WalletStorageAccess {
+  private storageAccess(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn'): WalletStorageAccess {
     const key = walletStorageKey(identityKey, chain);
     if (!this.access.has(key)) this.access.set(key, new WalletStorageAccess());
     return this.access.get(key)!;
   }
   /** Everyday storage IPC: concurrent, but fenced by quiesce/activation. */
-  request<T>(identityKey: string, chain: 'main' | 'test' | 'ttn', operation: () => Promise<T>): Promise<T> {
+  request<T>(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', operation: () => Promise<T>): Promise<T> {
     return this.storageAccess(identityKey, chain).share(operation);
   }
-  async quiesce<T>(identityKey: string, chain: 'main' | 'test' | 'ttn', operation: () => Promise<T>): Promise<T> {
+  async quiesce<T>(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', operation: () => Promise<T>): Promise<T> {
     return this.storageAccess(identityKey, chain).run(async () => {
       const running = this.monitorWorkers.has(walletStorageKey(identityKey, chain));
       await this.stopMonitorWorker(identityKey, chain);
@@ -125,7 +125,7 @@ class StorageManager {
       }
     });
   }
-  async closeForActivation(identityKey: string, chain: 'main' | 'test' | 'ttn', commit: () => Promise<void>): Promise<void> {
+  async closeForActivation(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', commit: () => Promise<void>): Promise<void> {
     await this.storageAccess(identityKey, chain).close(async seal => {
       // If the monitor cannot be stopped nothing has changed yet, so storage stays usable.
       await this.stopMonitorWorker(identityKey, chain);
@@ -137,9 +137,21 @@ class StorageManager {
       await commit();
     });
   }
+  /** Close an inactive network after its renderer session has drained. */
+  async releaseNetwork(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn'): Promise<void> {
+    await this.storageAccess(identityKey, chain).run(async () => {
+      await this.stopMonitorWorker(identityKey, chain);
+      const key = walletStorageKey(identityKey, chain);
+      const database = this.databases.get(key);
+      if (database) await database.destroy();
+      this.databases.delete(key);
+      this.storages.delete(key);
+    });
+  }
   private storages: Map<string, StorageKnex> = new Map();
   private databases: Map<string, any> = new Map();
   private storageInitializations: Map<string, Promise<StorageKnex>> = new Map();
+  private serviceSettings = new Map<string, NetworkSettings>();
   // Separate storage managers for backend monitoring (independent from renderer)
   private monitorStorageManagers: Map<string, WalletStorageManager> = new Map();
   private monitors: Map<string, Monitor> = new Map();
@@ -177,7 +189,7 @@ class StorageManager {
   /**
    * Get or create a storage instance for the given identity key
    */
-  async getOrCreateStorage(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<StorageKnex> {
+  async getOrCreateStorage(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn'): Promise<StorageKnex> {
     const key = walletStorageKey(identityKey, chain);
 
     if (this.storages.has(key)) {
@@ -200,7 +212,7 @@ class StorageManager {
 
   private async createStorage(
     identityKey: string,
-    chain: 'main' | 'test' | 'ttn',
+    chain: 'main' | 'test' | 'ttn' | 'tstn',
     key: string
   ): Promise<StorageKnex> {
 
@@ -303,7 +315,7 @@ class StorageManager {
   /**
    * Check if storage is available for the given identity key
    */
-  async isAvailable(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<boolean> {
+  async isAvailable(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn'): Promise<boolean> {
     // Storage is always available once created
     await this.getOrCreateStorage(identityKey, chain);
     return true;
@@ -313,7 +325,7 @@ class StorageManager {
    * Make storage available (initialize database tables)
    * Returns TableSettings from the storage
    */
-  async makeAvailable(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<any> {
+  async makeAvailable(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn'): Promise<any> {
     const storage = await this.getOrCreateStorage(identityKey, chain);
     const settings = await storage.makeAvailable();
     console.log(`[Storage] Storage made available for ${identityKey}-${chain}`);
@@ -326,24 +338,28 @@ class StorageManager {
    */
   async initializeServices(
     identityKey: string,
-    chain: 'main' | 'test' | 'ttn'
+    chain: 'main' | 'test' | 'ttn' | 'tstn',
+    settings?: Partial<NetworkSettings>
   ): Promise<void> {
-    const storage = await this.getOrCreateStorage(identityKey, chain);
+    const resolved = normalizeNetworkSettings(chain, settings || {});
     const key = walletStorageKey(identityKey, chain);
 
     // Check if already initialized to prevent duplicates
-    if (this.monitorWorkers.has(key)) {
+    if (this.monitorWorkers.has(key) && JSON.stringify(this.serviceSettings.get(key)) === JSON.stringify(resolved)) {
       console.log(`[Storage] Services already initialized for ${key}, skipping`);
       return;
     }
+    await this.stopMonitorWorker(identityKey, chain);
+    const storage = await this.getOrCreateStorage(identityKey, chain);
+    this.serviceSettings.set(key, resolved);
 
     console.log(`[Storage] Initializing services for ${key}`);
 
     // Arcade first for broadcasting and proofs, ChainTracks on the Arcade
     // deployment, and the wallet's callback token on every broadcast so Arcade
     // reports its status to the monitor worker's SSE subscription.
-    const services = createArcadeServices(chain, identityKey);
-    console.log(`[Storage] Broadcasting and proofs via Arcade at ${arcadeUrl(chain)}`);
+    const services = createArcadeServices(chain, identityKey, resolved);
+    console.log(`[Storage] Broadcasting and proofs via Arcade at ${resolved.arcadeUrl}`);
 
     // Type assertion to access setServices method
     const storageAny = storage as any;
@@ -367,7 +383,7 @@ class StorageManager {
    */
   async startMonitorWorker(
     identityKey: string,
-    chain: 'main' | 'test' | 'ttn'
+    chain: 'main' | 'test' | 'ttn' | 'tstn'
   ): Promise<void> {
     const key = walletStorageKey(identityKey, chain);
 
@@ -476,7 +492,8 @@ class StorageManager {
           // Resolve in the main process so a preference saved during this
           // session cannot alter a worker started before the next restart.
           feeRate: getConfiguredFeeRate(chain, DEFAULT_MONITOR_FEE_RATE),
-          sseCursorPath: arcadeSseCursorPath(identityKey, chain)
+          sseCursorPath: arcadeSseCursorPath(identityKey, chain),
+          serviceSettings: this.serviceSettings.get(key)
         }
       });
 
@@ -491,7 +508,7 @@ class StorageManager {
   /**
    * Stop Monitor worker process
    */
-  async stopMonitorWorker(identityKey: string, chain: 'main' | 'test' | 'ttn'): Promise<void> {
+  async stopMonitorWorker(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn'): Promise<void> {
     const key = walletStorageKey(identityKey, chain);
     const worker = this.monitorWorkers.get(key);
 
@@ -520,7 +537,7 @@ class StorageManager {
    */
   async callStorageMethod(
     identityKey: string,
-    chain: 'main' | 'test' | 'ttn',
+    chain: 'main' | 'test' | 'ttn' | 'tstn',
     method: string,
     args: any[]
   ): Promise<any> {
@@ -558,7 +575,7 @@ class StorageManager {
    */
   async callStasQuery(
     identityKey: string,
-    chain: 'main' | 'test' | 'ttn',
+    chain: 'main' | 'test' | 'ttn' | 'tstn',
     method: string,
     args: any[]
   ): Promise<any> {
@@ -588,7 +605,7 @@ class StorageManager {
     for (const [key] of this.monitorWorkers.entries()) {
       const [identityKey, chain] = key.split('-');
       workerStopPromises.push(
-        this.stopMonitorWorker(identityKey, chain as 'main' | 'test' | 'ttn')
+        this.stopMonitorWorker(identityKey, chain as 'main' | 'test' | 'ttn' | 'tstn')
       );
     }
     // One stuck worker must not stop the database connections below from closing.

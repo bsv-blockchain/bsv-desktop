@@ -9,13 +9,15 @@
  * roots compile separately, and test/endpoints.test.ts asserts they match.
  */
 
-export type EndpointChain = 'main' | 'test' | 'ttn'
+export type EndpointChain = 'main' | 'test' | 'ttn' | 'tstn'
 
 /** Arcade base URL per chain. */
 export const ARCADE_URLS: Record<EndpointChain, string> = {
   main: 'https://arcade-v2-us-1.bsvblockchain.tech',
   test: 'https://arcade-v2-testnet-us-1.bsvblockchain.tech',
-  ttn: 'https://arcade-v2-ttn-us-1.bsvblockchain.tech'
+  ttn: 'https://arcade-v2-ttn-us-1.bsvblockchain.tech',
+  // No deployment is published by bsv-wallet yet. Configure this in Settings.
+  tstn: ''
 }
 
 /** Arcade base URL for the chain (no trailing slash). */
@@ -25,5 +27,5 @@ export function arcadeUrl(chain: EndpointChain): string {
 
 /** ChainTracks service base URL for the chain (no trailing slash). */
 export function chaintracksUrl(chain: EndpointChain): string {
-  return `${ARCADE_URLS[chain]}/chaintracks/v1`
+  return ARCADE_URLS[chain] ? `${ARCADE_URLS[chain]}/chaintracks/v1` : ''
 }

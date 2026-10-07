@@ -24,6 +24,24 @@ interface PaginationOptions {
   domainsOnly?: boolean;
 }
 
+/** Observe connected apps for one saved profile, without mixing other identities. */
+export function subscribeRecentApps(profileId: string, notify: (apps: RecentApp[]) => void): () => void {
+  const load = () => {
+    try { notify(profileId ? getRecentApps(profileId) : []) }
+    catch (error) {
+      console.warn('[ConnectedApps] Saved apps could not be read:', error)
+      notify([])
+    }
+  }
+  const changed = (event: Event) => {
+    const updatedProfile = (event as CustomEvent<{ profileId?: string }>).detail?.profileId
+    if (!updatedProfile || updatedProfile === profileId) load()
+  }
+  load()
+  window.addEventListener('recentAppsUpdated', changed)
+  return () => window.removeEventListener('recentAppsUpdated', changed)
+}
+
 /**
  * Get recently used apps from localStorage with optional pagination
  */
@@ -146,8 +164,9 @@ export async function updateRecentApp(
       app = { ...appOrDomain, timestamp: Date.now() };
     }
 
-    // Remove any previous entry for that domain
-    const filteredApps = currentApps.filter((a) => a.domain !== rawDomain);
+    // Another app may connect while metadata is being fetched. Merge with the
+    // latest saved list so the first connection is not overwritten.
+    const filteredApps = getRecentApps(profileId).filter((a) => a.domain !== rawDomain);
 
     // Insert at the top
     const updatedApps = [app, ...filteredApps];

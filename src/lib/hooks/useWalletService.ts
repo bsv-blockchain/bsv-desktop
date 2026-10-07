@@ -8,12 +8,14 @@
  * - Provides the full WalletContextValue interface for backward compatibility
  */
 
-import { useContext, useEffect, useRef, useSyncExternalStore, useCallback } from 'react'
+import { useContext, useEffect, useRef, useState, useSyncExternalStore, useCallback } from 'react'
+import { Utils } from '@bsv/sdk'
 import { UserContext } from '../UserContext'
 import { WalletService, WalletServiceSnapshot } from '../services/WalletService'
 import type { QueueSnapshot } from '../services/PermissionQueueManager'
 import type { PeerPaySnapshot } from '../services/PeerPayManager'
 import { DEFAULT_PERMISSIONS_CONFIG } from '../WalletContext'
+import { subscribeRecentApps, type RecentApp } from '../pages/Dashboard/Apps/getApps'
 
 // Module-level singleton — survives React re-renders and hot reloads
 let _walletServiceInstance: WalletService | null = null
@@ -129,6 +131,11 @@ export function useWalletService() {
   const walletState = useSyncExternalStore(subscribeToWalletService, getWalletServiceSnapshot)
   const queueState = useSyncExternalStore(subscribeToQueue, getQueueSnapshot)
   const peerPayState = useSyncExternalStore(subscribeToPeerPay, getPeerPaySnapshot)
+  const [recentAppHistory, setRecentAppHistory] = useState<{ profileKey: string; apps: RecentApp[] }>({ profileKey: '', apps: [] })
+  const profileStorageKey = walletState.activeProfile?.id ? Utils.toBase64(walletState.activeProfile.id) : ''
+  const recentApps = recentAppHistory.profileKey === profileStorageKey ? recentAppHistory.apps : []
+
+  useEffect(() => subscribeRecentApps(profileStorageKey, apps => setRecentAppHistory({ profileKey: profileStorageKey, apps })), [profileStorageKey])
 
   // Track previous queue lengths to detect first-item-arrival and queue-drain
   const prevQueueLengths = useRef({
@@ -275,6 +282,7 @@ export function useWalletService() {
   )
   const updateMessageBoxUrl = useCallback((url: string) => svc.updateMessageBoxUrl(url), [svc])
   const removeMessageBoxUrl = useCallback(() => svc.removeMessageBoxUrl(), [svc])
+  const applyNetworkSettings = useCallback((network: any, settings: any) => svc.applyNetworkSettings(network, settings), [svc])
   const updateSettings = useCallback((s: any) => svc.updateSettings(s), [svc])
   const updatePermissionsConfig = useCallback(async (config: any) => {
     // Persist first — if storage fails we don't want to silently update the
@@ -367,6 +375,9 @@ export function useWalletService() {
     // 'ttn' (TeraTestNet) uses testnet-style addresses, so it collapses to 'testnet' here.
     network: walletState.selectedNetwork === 'main' ? 'mainnet' as const : 'testnet' as const,
     chain: walletState.selectedNetwork,
+    networkSettings: walletState.networkSettings,
+    switchingNetwork: walletState.switchingNetwork,
+    applyNetworkSettings,
     // Profile
     activeProfile: walletState.activeProfile,
     setActiveProfile,
@@ -397,7 +408,7 @@ export function useWalletService() {
     useWab: walletState.loginType === 'wab',
     loginType: walletState.loginType,
     setLoginType,
-    recentApps: [] as any[],
+    recentApps,
     finalizeConfig,
     setConfigStatus,
     configStatus,

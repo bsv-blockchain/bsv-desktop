@@ -70,9 +70,14 @@ import { StorageElectronIPC } from '../StorageElectronIPC'
 import { WalletDataStorageManager } from '../walletPortability/WalletDataStorageManager'
 import { WalletDataSession, walletDataCall } from '../walletPortability/session'
 import * as secrets from './secrets'
-import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_USE_WAB, DEFAULT_SETTINGS, MESSAGEBOX_HOST } from '../config'
+import { deriveMnemonicWallet, verifyMnemonicWallet } from '../utils/mnemonicRecovery'
+import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_SETTINGS, MESSAGEBOX_HOST } from '../config'
 import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
+import { defaultNetworkSettingsMap, isWalletNetwork, normalizeMessageBoxUrl, normalizeNetworkSettings, restoreNetworkSettings, type NetworkSettings, type NetworkSettingsMap, type WalletNetwork } from '../networkConfig'
+import { setWocEndpoints } from '../utils/woc'
+import { activeHttpBridgeRequests, activeUserWalletOperations, isHttpBridgePaused, setHttpBridgePaused } from './httpBridgeSession'
+import { clearWalletForHttpRoute } from '../../onWalletReady'
 
 export type WalletLifecycle =
   | 'unconfigured'
@@ -122,7 +127,9 @@ export type WalletServiceSnapshot = {
   wabUrl: string
   wabInfo: any
   selectedAuthMethod: string
-  selectedNetwork: 'main' | 'test' | 'ttn'
+  selectedNetwork: WalletNetwork
+  networkSettings: NetworkSettingsMap
+  switchingNetwork: boolean
   selectedStorageUrl: string
   messageBoxUrl: string
   useRemoteStorage: boolean
@@ -168,17 +175,20 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   // ---- Lifecycle ----
   private _lifecycle: WalletLifecycle = 'unconfigured'
   private _initInFlight = false
+  private _startupError = ''
 
   // ---- Config state (previously multiple useState hooks) ----
-  private _loginType: LoginType = DEFAULT_USE_WAB ? 'wab' : 'direct-key'
+  private _loginType: LoginType = 'mnemonic'
   private _wabUrl = ''
   private _wabInfo: any = null
   private _selectedAuthMethod = ''
-  private _selectedNetwork: 'main' | 'test' | 'ttn' = DEFAULT_CHAIN
+  private _selectedNetwork: WalletNetwork = DEFAULT_CHAIN
+  private _networkSettings = defaultNetworkSettingsMap()
+  private _switchingNetwork = false
   private _selectedStorageUrl = ''
-  private _messageBoxUrl = ''
+  private _messageBoxUrl = MESSAGEBOX_HOST
   private _useRemoteStorage = false
-  private _useMessageBox = false
+  private _useMessageBox = true
   private _backupStorageUrls: string[] = []
   private _adminOriginator = ADMIN_ORIGINATOR
 
@@ -230,6 +240,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   get snapshotLoaded() { return this._snapshotLoaded }
   get initializingBackendServices() { return this._initializingBackendServices }
   get lifecycle() { return this._lifecycle }
+  get startupError() { return this._startupError }
 
   getSnapshot(): WalletServiceSnapshot {
     return {
@@ -239,6 +250,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       wabInfo: this._wabInfo,
       selectedAuthMethod: this._selectedAuthMethod,
       selectedNetwork: this._selectedNetwork,
+      networkSettings: this._networkSettings,
+      switchingNetwork: this._switchingNetwork,
       selectedStorageUrl: this._selectedStorageUrl,
       messageBoxUrl: this._messageBoxUrl,
       useRemoteStorage: this._useRemoteStorage,
@@ -302,7 +315,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         if (!wabUrl) { toast.error('WAB Server URL is required'); return false }
         if (!wabInfo || !method) { toast.error('Auth Method selection is required'); return false }
       }
-      if (!network) { toast.error('Network selection is required'); return false }
+      if (!isWalletNetwork(network)) { toast.error('Choose a supported BSV network'); return false }
       if (useRemoteStorage && !storageUrl) {
         toast.error('Storage URL is required when Remote Storage is enabled')
         return false
@@ -310,7 +323,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
 
       const trimmedWabUrl = (wabUrl || '').replace(/\/+$/, '')
       const trimmedStorageUrl = (storageUrl || '').replace(/\/+$/, '')
-      const trimmedMessageBoxUrl = (messageBoxUrl || '').replace(/\/+$/, '')
+      const trimmedMessageBoxUrl = normalizeMessageBoxUrl(messageBoxUrl)
 
       // If loginType changes while a wallet manager exists, clear it so initialize() can rebuild
       if (effectiveLoginType !== this._loginType && this._managers.walletManager) {
@@ -329,7 +342,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       this._selectedStorageUrl = trimmedStorageUrl
       this._messageBoxUrl = trimmedMessageBoxUrl
       this._useRemoteStorage = useRemoteStorage || false
-      this._useMessageBox = useMessageBox || false
+      this._useMessageBox = useMessageBox ?? true
+      this._captureSelectedNetworkSettings()
+      setWocEndpoints(this._networkSettings)
 
       // Sync to permissionQueue
       this.permissionQueue.adminOriginator = this._adminOriginator
@@ -358,13 +373,17 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     try {
       const snapArr = Utils.toArray(snap, 'base64')
       const { config } = this._loadEnhancedSnapshot(snapArr)
-      if (!config) return
+      if (!config) {
+        this._startupError = 'This saved wallet needs its original configuration. Its snapshot has been preserved. Recover from a wallet data file or open it with the version that created it.'
+        return
+      }
 
       console.log('[WalletService] Restoring config from V3 snapshot')
       this._wabUrl = config.wabUrl || ''
-      this._selectedNetwork = config.network || DEFAULT_CHAIN
+      this._selectedNetwork = isWalletNetwork(config.network) ? config.network : DEFAULT_CHAIN
+      this._networkSettings = restoreNetworkSettings(config.networkSettings)
       this._selectedStorageUrl = config.storageUrl || ''
-      this._messageBoxUrl = config.messageBoxUrl || ''
+      this._messageBoxUrl = normalizeMessageBoxUrl(config.messageBoxUrl?.trim() || this._networkSettings[this._selectedNetwork].messageBoxUrl)
       this._selectedAuthMethod = config.authMethod || ''
       this._loginType = config.loginType
         ? config.loginType
@@ -372,14 +391,17 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       this._useRemoteStorage = config.useRemoteStorage !== undefined
         ? config.useRemoteStorage
         : !!config.storageUrl
-      this._useMessageBox = config.useMessageBox !== undefined ? config.useMessageBox : false
+      this._useMessageBox = config.useMessageBox ?? this._networkSettings[this._selectedNetwork].useMessageBox ?? true
       this._backupStorageUrls = config.backupStorageUrls || []
+      this._captureSelectedNetworkSettings()
+      setWocEndpoints(this._networkSettings)
 
       this.permissionQueue.adminOriginator = this._adminOriginator
       this._lifecycle = 'configured'
       this._emitState()
       console.log('[WalletService] Config restored, ready to initialize')
     } catch (err) {
+      this._startupError = 'The saved wallet configuration could not be read. Your snapshot and keys have been preserved. Open wallet data files to recover.'
       console.error('[WalletService] Failed to restore config from snapshot:', err)
     }
   }
@@ -414,13 +436,142 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   // Wallet manager initialization
   // ------------------------------------------------------------------
 
+  /** Save each network independently, including its optional remote storage. */
+  private _captureSelectedNetworkSettings(overrides?: { backupStorageUrls?: string[]; messageBoxUrl?: string; useMessageBox?: boolean }) {
+    const useMessageBox = overrides?.useMessageBox ?? this._useMessageBox
+    this._networkSettings = {
+      ...this._networkSettings,
+      [this._selectedNetwork]: {
+        ...this._networkSettings[this._selectedNetwork],
+        storageUrl: this._useRemoteStorage ? this._selectedStorageUrl : '',
+        messageBoxUrl: normalizeMessageBoxUrl(overrides?.messageBoxUrl ?? this._messageBoxUrl),
+        useMessageBox,
+        backupStorageUrls: [...(overrides?.backupStorageUrls ?? this._backupStorageUrls)],
+      },
+    }
+  }
+
+  /**
+   * Rebuild from the same authenticated snapshot against another chain's data.
+   * App requests and pending permission decisions must finish before switching.
+   * If a service cannot open, restore the previous configuration and wallet.
+   */
+  async applyNetworkSettings(network: WalletNetwork, settings: NetworkSettings): Promise<void> {
+    const resolved = normalizeNetworkSettings(network, settings)
+    if (isHttpBridgePaused() || this._switchingNetwork || this._initInFlight || this._lifecycle !== 'ready' || !this._wallet) {
+      throw new Error('Wait for the wallet to finish opening before changing networks.')
+    }
+    const identityWallet = this._wallet
+    const identityKey = (await identityWallet.getPublicKey({ identityKey: true })).publicKey
+    if (isHttpBridgePaused() || this._switchingNetwork || this._lifecycle !== 'ready' || this._wallet !== identityWallet) throw new Error('The wallet is already changing. Try again when it is ready.')
+    const queues = this.permissionQueue.getSnapshot()
+    if (activeHttpBridgeRequests() || activeUserWalletOperations() || queues.groupPhase === 'pending' || Object.entries(queues).some(([key, value]) => key.endsWith('Requests') && Array.isArray(value) && value.length > 0)) {
+      throw new Error('Finish the current app request or payment approval before changing networks.')
+    }
+
+    // Pause synchronously so another app cannot start between the guard and
+    // snapshot capture. Storage close drains already-running in-app operations.
+    const previousNetwork = this._selectedNetwork
+    const previousSnapshot = this.saveEnhancedSnapshot()
+    const previousSettings = this._networkSettings
+    this._switchingNetwork = true
+    setHttpBridgePaused(true)
+    this._emitState()
+
+    const closeCurrentWallet = async () => {
+      clearWalletForHttpRoute()
+      this._walletDataGeneration++
+      const previousSession = this.walletData
+      const previousManager = this._managers.walletManager
+      const previousPeerTokens = this._stas?.peerTokens
+      this.walletData = undefined
+      this.permissionQueue.setPermissionsManager(null)
+      this._managers = {}
+      this._wallet = undefined
+      this._stas = undefined
+      this._activeProfile = null
+      this._snapshotLoaded = false
+      this._lifecycle = 'configured'
+      setWocEndpoints(this._networkSettings)
+      setTxStatusScope(undefined)
+      // Detach old balances/managers before sub-services emit the new chain.
+      this._emitState()
+      const cleanup = await Promise.allSettled([
+        this.peerPay.suspendClient(),
+        previousPeerTokens?.disconnectWebSocket(),
+        Promise.resolve().then(() => previousManager?.destroy?.()),
+        (async () => {
+          try { await previousSession?.close() }
+          finally {
+            if (previousSession && window.electronAPI?.storage?.releaseNetwork) {
+              const released = await window.electronAPI.storage.releaseNetwork(previousSession.identityKey, previousSession.chain)
+              if (!released.success) throw new Error(released.error || 'The previous network could not close safely.')
+            }
+          }
+        })(),
+      ])
+      const failed = cleanup.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+      if (failed) throw failed.reason
+    }
+    const reopen = async () => {
+      await closeCurrentWallet()
+      await this.initialize()
+      if (this.getSnapshot().lifecycle !== 'ready' || !this._wallet) {
+        throw new Error(this._startupError || 'The wallet could not open the selected network services.')
+      }
+      const reopenedIdentity = (await this._wallet.getPublicKey({ identityKey: true })).publicKey
+      if (reopenedIdentity !== identityKey) throw new Error('The wallet identity changed unexpectedly. The previous network has been retained.')
+    }
+    const select = (chain: WalletNetwork, map: NetworkSettingsMap) => {
+      this._selectedNetwork = chain
+      this._networkSettings = map
+      const current = map[chain]
+      this._selectedStorageUrl = current.storageUrl
+      this._useRemoteStorage = Boolean(current.storageUrl)
+      this._messageBoxUrl = current.messageBoxUrl
+      this._useMessageBox = current.useMessageBox !== false
+      this._backupStorageUrls = [...current.backupStorageUrls]
+    }
+
+    try {
+      select(network, { ...previousSettings, [network]: resolved })
+      // Persist the target configuration with the current identity snapshot
+      // before the old manager is detached. Secrets stay inside the vault.
+      await secrets.persistSnapshot(this.saveEnhancedSnapshot())
+      await reopen()
+      await secrets.persistSnapshot(this.saveEnhancedSnapshot())
+      window.dispatchEvent(new CustomEvent('balance-changed'))
+      window.dispatchEvent(new CustomEvent('wallet-network-changed', { detail: { chain: network } }))
+    } catch (error) {
+      select(previousNetwork, previousSettings)
+      try {
+        await secrets.persistSnapshot(previousSnapshot)
+        await reopen()
+        // Also restore the nonsecret boot configuration after a failed switch.
+        await secrets.persistSnapshot(this.saveEnhancedSnapshot())
+      } catch (restoreError) {
+        console.error('[WalletService] Previous network could not reopen:', restoreError)
+        // A vault failure can happen after the target wallet opened. Never
+        // expose that wallet under the restored chain's configuration.
+        await closeCurrentWallet().catch(cleanupError => console.warn('[WalletService] Failed network cleanup:', cleanupError))
+        this._startupError = 'The network change could not be saved or restored. Your wallet keys are preserved. Restart the app before continuing.'
+        this._lifecycle = 'error'
+      }
+      throw error
+    } finally {
+      this._switchingNetwork = false
+      setHttpBridgePaused(false)
+      this._emitState()
+    }
+  }
+
   /**
    * Create the wallet manager and load snapshot.
    * Replaces the massive 12-dependency useEffect in WalletContext.
    * Called explicitly when all prerequisites are met.
    */
   async initialize(): Promise<void> {
-    const directKeyMode = this._loginType === 'direct-key'
+    const directKeyMode = this._loginType === 'direct-key' || this._loginType === 'mnemonic'
     const hasCredentials = directKeyMode || (this._passwordRetriever && this._recoveryKeySaver)
 
     if (
@@ -433,6 +584,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     }
 
     this._initInFlight = true
+    this._startupError = ''
     this._lifecycle = 'initializing'
     this._emitState()
 
@@ -457,7 +609,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
           wabClient,
           phoneInteractor
         )
-      } else if (this._loginType === 'direct-key') {
+      } else if (directKeyMode) {
         walletManager = new SimpleWalletManager(
           this._adminOriginator,
           this._buildWallet.bind(this)
@@ -485,16 +637,43 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       // For direct-key returning users, auto-provide stored key.
       // NOTE: providePrimaryKey calls _buildWallet internally, which will advance
       // lifecycle to 'ready'. We must NOT overwrite that afterwards.
-      if (directKeyMode && secrets.getSnapshot() && secrets.getKeyHex()) {
-        const storedHex = secrets.getKeyHex()!.trim()
+      if (this._loginType === 'mnemonic' && secrets.getSnapshot() && secrets.getMnemonic()) {
+        try {
+          const material = deriveMnemonicWallet(secrets.getMnemonic()!)
+          const storedHex = secrets.getKeyHex()?.trim().toLowerCase()
+          if (storedHex && storedHex !== material.keyHex) {
+            throw new Error('The saved phrase does not match this wallet. Your saved wallet has been preserved.')
+          }
+          if (walletManager.primaryKey) {
+            verifyMnemonicWallet(material.mnemonic, Utils.toHex(walletManager.primaryKey))
+          }
+          if (!storedHex) secrets.setKeyHex(material.keyHex)
+          await walletManager.providePrimaryKey(material.keyBytes)
+          await walletManager.providePrivilegedKeyManager(new PrivilegedKeyManager(async () => material.privilegedKey))
+        } catch (err: any) {
+          this._startupError = err.message || 'Could not unlock the saved wallet.'
+          console.error('[WalletService] Mnemonic unlock failed:', err)
+          toast.error(err.message || 'Could not unlock the saved wallet.')
+        }
+      } else if (this._loginType === 'mnemonic' && secrets.getSnapshot()) {
+        this._startupError = 'The recovery phrase is missing from this device. Your wallet snapshot has been preserved. Recover using your phrase, backup shares, or wallet data file.'
+      } else if (this._loginType === 'direct-key' && secrets.getSnapshot()) {
+        const storedHex = secrets.getKeyHex()?.trim().toLowerCase() || (walletManager.primaryKey ? Utils.toHex(walletManager.primaryKey) : '')
         if (storedHex) {
           try {
+            if (walletManager.primaryKey && Utils.toHex(walletManager.primaryKey) !== storedHex) {
+              throw new Error('The saved key does not match this wallet snapshot. Your saved wallet has been preserved.')
+            }
             const keyBytes = Utils.toArray(storedHex, 'hex')
+            if (!secrets.getKeyHex()) secrets.setKeyHex(storedHex)
             await (walletManager as any).providePrimaryKey(keyBytes)
             await (walletManager as any).providePrivilegedKeyManager(this._createDisabledPrivilegedManager())
           } catch (err) {
+            this._startupError = (err as any)?.message || 'Could not unlock the saved wallet.'
             console.warn('[WalletService] Auto-key provision failed:', err)
           }
+        } else {
+          this._startupError = 'The saved wallet key is unavailable. Your wallet snapshot has been preserved. Open your wallet data files to recover.'
         }
       }
 
@@ -506,6 +685,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       }
       this._emitState()
     } catch (err: any) {
+      this._startupError = err.message || 'Could not open the saved wallet.'
       console.error('[WalletService] Initialization failed:', err)
       toast.error('Failed to initialize wallet: ' + err.message)
       this._lifecycle = 'error'
@@ -515,6 +695,17 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     }
   }
 
+  /** Retry a failed startup without deleting or rewriting any saved wallet material. */
+  async retrySavedWallet(): Promise<void> {
+    if (this._initInFlight || this._initializingBackendServices || this._switchingNetwork || this._wallet) return
+    this._managers.walletManager?.destroy?.()
+    this._managers = {}
+    this._startupError = ''
+    this._lifecycle = 'configured'
+    this._emitState()
+    await this.initialize()
+  }
+
   /** Internal: called by manager when user authenticates and provides primary key. */
   private async _buildWallet(
     primaryKey: number[],
@@ -522,16 +713,48 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   ): Promise<any> {
     const generation = ++this._walletDataGeneration
     let candidate: WalletDataSession | undefined
-    await this.walletData?.close()
+    let openedLocal: { identityKey: string; chain: WalletNetwork } | undefined
+    const previousSession = this.walletData
+    const previousPeerTokens = this._stas?.peerTokens
+    const walletManager = this._managers.walletManager
+    // The old storage session is about to close. Its wallet and app reference
+    // must stop being usable even if the replacement cannot be constructed.
+    clearWalletForHttpRoute()
+    this.permissionQueue.setPermissionsManager(null)
     this.walletData = undefined
+    this._managers = walletManager ? { walletManager } : {}
+    this._wallet = undefined
+    this._stas = undefined
+    this._activeProfile = null
+    this._snapshotLoaded = false
+    setTxStatusScope(undefined)
     console.log('[WalletService] Building wallet...')
     this._initializingBackendServices = true
+    this._startupError = ''
+    this._lifecycle = 'initializing'
     this._emitState()
 
     try {
+      const cleanup = await Promise.allSettled([
+        this.peerPay.suspendClient(),
+        previousPeerTokens?.disconnectWebSocket(),
+        (async () => {
+          try { await previousSession?.close() }
+          finally {
+            if (previousSession && window.electronAPI?.storage?.releaseNetwork) {
+              const released = await window.electronAPI.storage.releaseNetwork(previousSession.identityKey, previousSession.chain)
+              if (!released.success) throw new Error(released.error || 'The previous wallet could not close safely.')
+            }
+          }
+        })(),
+      ])
+      const failedCleanup = cleanup.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+      if (failedCleanup) throw failedCleanup.reason
+      if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while closing storage')
       const chain = this._selectedNetwork
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey))
-      const services = createServices(chain, keyDeriver.identityKey)
+      const serviceSettings = this._networkSettings[chain]
+      const services = createServices(chain, keyDeriver.identityKey, serviceSettings)
 
       let binding: { preferLocal: boolean } | undefined
       try {
@@ -552,8 +775,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       if (this._useRemoteStorage) {
         activeStorage = null // Created after wallet
       } else {
-        const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain)
+        const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain, serviceSettings)
         electronStorage.setServices(services as any)
+        openedLocal = { identityKey: keyDeriver.identityKey, chain }
         await electronStorage.initializeBackendServices()
         await electronStorage.makeAvailable()
         activeStorage = electronStorage
@@ -577,7 +801,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       for (const backupUrl of this._backupStorageUrls) {
         try {
           if (backupUrl === 'LOCAL_STORAGE') {
-            const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain)
+            const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain, serviceSettings)
             electronStorage.setServices(services as any)
             await electronStorage.makeAvailable()
             await storageManager.addWalletStorageProvider(electronStorage as any)
@@ -610,103 +834,104 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         storageManager,
       }
       this._wallet = wallet
-      // Only now does this wallet replace the previous one; a build that fails
-      // before here leaves the UI following the wallet it still shows.
+      // Publish only the newly constructed wallet, with no previous profile's
+      // permissions manager or payment client surviving the transition.
       setTxStatusScope({ identityKey: keyDeriver.identityKey, chain })
 
-      // Token indexers (WhatsOnChain, 1Sat, Back-to-Genesis) only exist for
-      // mainnet and testnet. Upstream widened `chain` to include TeraTestNet
-      // ('ttn'), which has no token coverage, so collapse it onto 'test' for
-      // the token services — they still initialize, they just find nothing on
-      // ttn. The full `chain` stays on the wallet/storage services above.
-      const tokenChain: 'main' | 'test' = chain === 'main' ? 'main' : 'test'
+      // Token discovery is available only on networks with token indexers.
+      // Never query testnet tokens while a Tera network wallet is open.
+      this._stas = undefined
+      if (chain === 'main' || chain === 'test') {
+        const tokenChain = chain
 
-      // STAS BRC-42 services — ownership recognition + receive-key derivation,
-      // plus the Task-4 discovery loop (WoC scan -> internalizeAction).
-      const stasKeyDeriver = new StasKeyDeriver(wallet, keyDeriver.identityKey, tokenChain)
-      const stasRegistration = new StasRegistration(wallet, keyDeriver.identityKey, tokenChain)
-      const stasTransfer = new StasTransferService(wallet, keyDeriver.identityKey, tokenChain)
+        // STAS BRC-42 services — ownership recognition + receive-key derivation,
+        // plus the Task-4 discovery loop (WoC scan -> internalizeAction).
+        const stasKeyDeriver = new StasKeyDeriver(wallet, keyDeriver.identityKey, tokenChain)
+        const stasRegistration = new StasRegistration(wallet, keyDeriver.identityKey, tokenChain)
+        const stasTransfer = new StasTransferService(wallet, keyDeriver.identityKey, tokenChain)
 
-      // DSTAS transfer service (F3) — shares the STAS BRC-42 receive
-      // namespace, builds the new output via the SDK's pure
-      // buildDstasLockingScript, and assembles the DSTAS unlocking
-      // script byte-for-byte to match the template's witness format.
-      const dstasTransfer = new DstasTransferService(wallet, keyDeriver.identityKey, tokenChain)
+        // DSTAS transfer service (F3) — shares the STAS BRC-42 receive
+        // namespace, builds the new output via the SDK's pure
+        // buildDstasLockingScript, and assembles the DSTAS unlocking
+        // script byte-for-byte to match the template's witness format.
+        const dstasTransfer = new DstasTransferService(wallet, keyDeriver.identityKey, tokenChain)
 
-      // BSV-21 services — separate BRC-42 namespace, 1Sat REST indexer,
-      // standard P2PKH unlock path.
-      const bsv21KeyDeriver = new BSV21KeyDeriver(wallet, keyDeriver.identityKey, tokenChain)
-      const bsv21Indexer = new OneSatIndexerClient({ chain: tokenChain })
-      const bsv21Registration = new BSV21Registration(wallet, keyDeriver.identityKey, tokenChain)
-      const bsv21Transfer = new BSV21TransferService({
-        wallet,
-        identityKey: keyDeriver.identityKey,
-        chain: tokenChain,
-        deriver: bsv21KeyDeriver,
-        indexer: bsv21Indexer,
-      })
+        // BSV-21 services — separate BRC-42 namespace, 1Sat REST indexer,
+        // standard P2PKH unlock path.
+        const bsv21KeyDeriver = new BSV21KeyDeriver(wallet, keyDeriver.identityKey, tokenChain)
+        const bsv21Indexer = new OneSatIndexerClient({ chain: tokenChain })
+        const bsv21Registration = new BSV21Registration(wallet, keyDeriver.identityKey, tokenChain)
+        const bsv21Transfer = new BSV21TransferService({
+          wallet,
+          identityKey: keyDeriver.identityKey,
+          chain: tokenChain,
+          deriver: bsv21KeyDeriver,
+          indexer: bsv21Indexer,
+        })
 
-      // Token-protocol adapter registry. Order matters: STAS's prefix sniff
-      // is cheap and unambiguous, DSTAS's SDK reader next, BSV-21's ord
-      // envelope last (also cheap but distinct prefix).
-      const tokens = new TokenProtocolRegistry()
-      tokens.register(new StasProtocolAdapter(stasTransfer))
-      tokens.register(new DstasProtocolAdapter(dstasTransfer))
-      tokens.register(new BSV21ProtocolAdapter(bsv21Transfer))
+        // Token-protocol adapter registry. Order matters: STAS's prefix sniff
+        // is cheap and unambiguous, DSTAS's SDK reader next, BSV-21's ord
+        // envelope last (also cheap but distinct prefix).
+        const tokens = new TokenProtocolRegistry()
+        tokens.register(new StasProtocolAdapter(stasTransfer))
+        tokens.register(new DstasProtocolAdapter(dstasTransfer))
+        tokens.register(new BSV21ProtocolAdapter(bsv21Transfer))
 
-      // Token discovery — WhatsOnChain is the single source for all three
-      // standards: STAS (by base58 address) and DSTAS (by owner hash160) ride
-      // StasDiscoveryService, BSV-21 rides BSV21DiscoveryService, all fed by
-      // the same WocTokenIndexerClient.
-      const wocIndexer = new WocTokenIndexerClient({ chain: tokenChain })
-      const backToGenesis = new BackToGenesisClient({ chain: tokenChain })
+        // Token discovery — WhatsOnChain is the single source for all three
+        // standards: STAS (by base58 address) and DSTAS (by owner hash160) ride
+        // StasDiscoveryService, BSV-21 rides BSV21DiscoveryService, all fed by
+        // the same WocTokenIndexerClient.
+        const wocIndexer = new WocTokenIndexerClient({ chain: tokenChain })
+        const backToGenesis = new BackToGenesisClient({ chain: tokenChain })
 
-      const stasDiscovery = new StasDiscoveryService({
-        deriver: stasKeyDeriver,
-        indexer: wocIndexer,
-        registration: stasRegistration,
-        wallet,
-        registry: tokens,
-      })
-      const bsv21Discovery = new BSV21DiscoveryService({
-        deriver: bsv21KeyDeriver,
-        indexer: wocIndexer,
-        registration: bsv21Registration,
-        wallet,
-      })
+        const stasDiscovery = new StasDiscoveryService({
+          deriver: stasKeyDeriver,
+          indexer: wocIndexer,
+          registration: stasRegistration,
+          wallet,
+          registry: tokens,
+        })
+        const bsv21Discovery = new BSV21DiscoveryService({
+          deriver: bsv21KeyDeriver,
+          indexer: wocIndexer,
+          registration: bsv21Registration,
+          wallet,
+        })
 
-      // Peer-token client (token analog of PeerPay). Uses the same raw
-      // `wallet` the token services use, so signing/derivation namespaces
-      // match. Each adapter reuses the existing transfer-service building
-      // blocks; the BRC-29 owner derivation lives inside the adapters.
-      const peerTokens = new PeerTokenClient({
-        messageBoxHost: this._messageBoxUrl || MESSAGEBOX_HOST,
-        walletClient: wallet,
-        originator: this._adminOriginator,
-        adapters: [
-          new StasTokenSettlementAdapter(wallet, keyDeriver.identityKey, tokenChain),
-          new Bsv21TokenSettlementAdapter({
-            wallet,
-            identityKey: keyDeriver.identityKey,
-            chain: tokenChain,
-            deriver: bsv21KeyDeriver,
-            indexer: bsv21Indexer,
-          }),
-          new DstasTokenSettlementAdapter(wallet, keyDeriver.identityKey, tokenChain),
-        ],
-      })
+        // Peer-token client (token analog of PeerPay). Uses the same raw
+        // `wallet` the token services use, so signing/derivation namespaces
+        // match. Each adapter reuses the existing transfer-service building
+        // blocks; the BRC-29 owner derivation lives inside the adapters.
+        const peerTokens = new PeerTokenClient({
+          messageBoxHost: this._messageBoxUrl || MESSAGEBOX_HOST,
+          walletClient: wallet,
+          originator: this._adminOriginator,
+          adapters: [
+            new StasTokenSettlementAdapter(wallet, keyDeriver.identityKey, tokenChain),
+            new Bsv21TokenSettlementAdapter({
+              wallet,
+              identityKey: keyDeriver.identityKey,
+              chain: tokenChain,
+              deriver: bsv21KeyDeriver,
+              indexer: bsv21Indexer,
+            }),
+            new DstasTokenSettlementAdapter(wallet, keyDeriver.identityKey, tokenChain),
+          ],
+        })
 
-      this._stas = {
-        keyDeriver: stasKeyDeriver,
-        ownership: new StasOwnershipService(stasKeyDeriver),
-        discovery: stasDiscovery,
-        transfer: stasTransfer,
-        tokens,
-        bsv21KeyDeriver,
-        bsv21Discovery,
-        bsv21Indexer,
-        backToGenesis,
-        peerTokens,
+        this._stas = {
+          keyDeriver: stasKeyDeriver,
+          ownership: new StasOwnershipService(stasKeyDeriver),
+          discovery: stasDiscovery,
+          transfer: stasTransfer,
+          tokens,
+          bsv21KeyDeriver,
+          bsv21Discovery,
+          bsv21Indexer,
+          backToGenesis,
+          peerTokens,
+        }
+
       }
 
       // Load settings
@@ -738,11 +963,23 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     } catch (error: any) {
       await candidate?.close().catch(() => {})
       if (generation !== this._walletDataGeneration) return null
+      if (openedLocal && window.electronAPI?.storage?.releaseNetwork) {
+        await window.electronAPI.storage.releaseNetwork(openedLocal.identityKey, openedLocal.chain)
+          .catch(error => console.warn('[WalletService] Failed network storage cleanup:', error))
+      }
       if (this.walletData === candidate) this.walletData = undefined
       console.error('[WalletService] _buildWallet failed:', error)
+      clearWalletForHttpRoute()
+      this.permissionQueue.setPermissionsManager(null)
+      await Promise.allSettled([this.peerPay.suspendClient(), this._stas?.peerTokens?.disconnectWebSocket()])
+      this._managers = walletManager ? { walletManager } : {}
+      this._startupError = error.message || 'Could not open the wallet services.'
+      this._wallet = undefined
+      this._stas = undefined
+      this._activeProfile = null
       toast.error('Failed to build wallet: ' + error.message)
       this._initializingBackendServices = false
-      this._lifecycle = this._managers.walletManager ? 'authenticated' : 'error'
+      this._lifecycle = 'error'
       this._emitState()
       return null
     }
@@ -759,7 +996,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       return
     }
 
-    if (this._loginType === 'direct-key') {
+    if (this._loginType === 'direct-key' || this._loginType === 'mnemonic') {
       const storedHex = secrets.getKeyHex()
       if (storedHex) {
         try {
@@ -799,8 +1036,10 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
 
     const walletSnapshot = this._managers.walletManager.saveSnapshot()
 
+    this._captureSelectedNetworkSettings(configOverrides)
     const config = {
       network: this._selectedNetwork,
+      networkSettings: this._networkSettings,
       useWab: this._loginType === 'wab',
       loginType: this._loginType,
       wabUrl: this._wabUrl,
@@ -809,7 +1048,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       storageUrl: this._selectedStorageUrl,
       backupStorageUrls: configOverrides?.backupStorageUrls ?? this._backupStorageUrls,
       useMessageBox: configOverrides?.useMessageBox ?? this._useMessageBox,
-      messageBoxUrl: configOverrides?.messageBoxUrl ?? this._messageBoxUrl,
+      messageBoxUrl: normalizeMessageBoxUrl(configOverrides?.messageBoxUrl ?? this._messageBoxUrl),
     }
 
     // Dual-write non-secret boot config for pre-unlock routing after restart.
@@ -818,6 +1057,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       version: 1,
       hasVault: true,
       network: config.network,
+      networkSettings: config.networkSettings,
       loginType: config.loginType,
       wabUrl: config.wabUrl,
       storageUrl: config.storageUrl,
@@ -881,7 +1121,6 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       await walletManager.loadSnapshot(walletSnapshot)
     } catch (err: any) {
       console.error('[WalletService] Error loading snapshot:', err)
-      secrets.clearSnapshot()
       toast.error("Couldn't load saved data: " + err.message)
     }
   }
@@ -913,8 +1152,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     if (isLocalStorage) {
       const identityKey = (storageManager as any)?._authId?.identityKey
       if (!identityKey) throw new Error('Could not get identity key from wallet')
-      const electronStorage = new StorageElectronIPC(identityKey, this._selectedNetwork)
-      const services = createServices(this._selectedNetwork, identityKey)
+      const electronStorage = new StorageElectronIPC(identityKey, this._selectedNetwork, this._networkSettings[this._selectedNetwork])
+      const services = createServices(this._selectedNetwork, identityKey, this._networkSettings[this._selectedNetwork])
       electronStorage.setServices(services as any)
       await electronStorage.makeAvailable()
       backupProvider = electronStorage
@@ -1079,9 +1318,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   }
 
   async updateMessageBoxUrl(url: string): Promise<void> {
-    if (!url?.trim()) throw new Error('Message Box URL cannot be empty')
-    const trimmedUrl = url.trim().replace(/\/+$/, '')
-    try { new URL(trimmedUrl) } catch { throw new Error('Invalid Message Box URL format') }
+    const trimmedUrl = normalizeMessageBoxUrl(url)
 
     this._messageBoxUrl = trimmedUrl
     this._useMessageBox = true
@@ -1099,7 +1336,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
 
   async removeMessageBoxUrl(): Promise<void> {
     await this.peerPay.destroyClient(this._messageBoxUrl)
-    this._messageBoxUrl = ''
+    this._messageBoxUrl = MESSAGEBOX_HOST
     this._useMessageBox = false
 
     const snapshot = this.saveEnhancedSnapshot()
@@ -1159,11 +1396,14 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   // ------------------------------------------------------------------
 
   private _tryAutoInitialize() {
-    const directKeyMode = this._loginType === 'direct-key'
+    const directKeyMode = this._loginType === 'direct-key' || this._loginType === 'mnemonic'
     if (
       this._lifecycle === 'configured' &&
       !this._managers.walletManager &&
       !this._initInFlight &&
+      // Callback registration can run after the old managers are detached.
+      // The network transition owns initialization until storage has closed.
+      !this._switchingNetwork &&
       (directKeyMode || (this._passwordRetriever && this._recoveryKeySaver))
     ) {
       this.initialize()

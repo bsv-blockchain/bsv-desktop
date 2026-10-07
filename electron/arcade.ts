@@ -18,13 +18,12 @@ import { createRequire } from 'module'
 import type { Beef } from '@bsv/sdk'
 import { ChaintracksServiceClient, Services, type sdk } from '@bsv/wallet-toolbox'
 import {
-  arcadeUrl,
-  chaintracksUrl,
   GORILLAPOOL_ARC_URLS,
   TAAL_ARC_URLS,
   WHATSONCHAIN_URLS,
   type EndpointChain
 } from './endpoints.js'
+import { normalizeNetworkSettings, type NetworkSettings } from './networkConfig.js'
 
 /*
  * The SDK ships separate ESM and CommonJS builds, and the toolbox (CommonJS)
@@ -67,13 +66,15 @@ export const ARCADE_REQUEST_HEADERS: Readonly<Record<string, string>> = Object.f
 /** Services options for one wallet on one chain. */
 export function createArcadeServiceOptions(
   chain: EndpointChain,
-  identityKey: string
+  identityKey: string,
+  settings?: Partial<NetworkSettings>
 ): sdk.WalletServicesOptions {
+  const resolved = normalizeNetworkSettings(chain, settings || {})
   const options = Services.createDefaultOptions(chain)
   // The toolbox defaults still resolve main/test ChainTracks to the retired
   // babbage.systems hosts.
-  options.chaintracks = new ChaintracksServiceClient(chain, chaintracksUrl(chain))
-  options.arcadeUrl = arcadeUrl(chain)
+  options.chaintracks = new ChaintracksServiceClient(chain, resolved.chaintracksUrl)
+  options.arcadeUrl = resolved.arcadeUrl
   options.arcadeConfig = {
     deploymentId: options.arcConfig?.deploymentId,
     callbackToken: arcadeCallbackToken(identityKey),
@@ -198,7 +199,7 @@ export function makeWocMerklePathService(baseUrl: string): MerklePathService {
  * dropped connection would otherwise route every later send to a fallback — and
  * those carry no callback token, so none of them would ever produce an SSE event.
  */
-export function installBroadcastFallbacks(services: Services, chain: EndpointChain): void {
+export function installBroadcastFallbacks(services: Services, chain: EndpointChain, whatsOnChainUrl = WHATSONCHAIN_URLS[chain]): void {
   const collection = services.postBeefServices
   const byName = new Map(collection.services.map(e => [e.name, e] as const))
   const arcade = byName.get(ARCADE_BROADCASTER)
@@ -208,8 +209,8 @@ export function installBroadcastFallbacks(services: Services, chain: EndpointCha
   for (const name of ['TaalArcBeef', 'GorillaPoolArcBeef', 'WhatsOnChain', 'Bitails']) {
     const entry = byName.get(name)
     if (entry) fallbacks.push(entry)
-    else if (name === 'WhatsOnChain' && chain === 'ttn') {
-      fallbacks.push({ name, service: makeWocPostBeefService(WHATSONCHAIN_URLS.ttn) })
+    else if (name === 'WhatsOnChain' && whatsOnChainUrl) {
+      fallbacks.push({ name, service: makeWocPostBeefService(whatsOnChainUrl) })
     }
   }
   collection.services = [arcade, ...fallbacks.map(e => ({ name: e.name, service: neverCondemns(e.service) }))]
@@ -225,17 +226,19 @@ export function installBroadcastFallbacks(services: Services, chain: EndpointCha
  * transaction it broadcast is mined), then WhatsOnChain and Bitails. The toolbox
  * builds that order itself on main and test; ttn only needs WhatsOnChain added.
  */
-export function installMerklePathFallbacks(services: Services, chain: EndpointChain): void {
-  if (chain !== 'ttn') return
+export function installMerklePathFallbacks(services: Services, chain: EndpointChain, whatsOnChainUrl = WHATSONCHAIN_URLS[chain]): void {
+  if (!whatsOnChainUrl) return
   const collection = services.getMerklePathServices
   if (collection.services.some(e => e.name === 'WhatsOnChain')) return
-  collection.add({ name: 'WhatsOnChain', service: makeWocMerklePathService(WHATSONCHAIN_URLS.ttn) })
+  collection.add({ name: 'WhatsOnChain', service: makeWocMerklePathService(whatsOnChainUrl) })
 }
 
 /** A Services instance for one wallet on one chain, Arcade first throughout. */
-export function createArcadeServices(chain: EndpointChain, identityKey: string): Services {
-  const services = new Services(createArcadeServiceOptions(chain, identityKey))
-  installBroadcastFallbacks(services, chain)
-  installMerklePathFallbacks(services, chain)
+export function createArcadeServices(chain: EndpointChain, identityKey: string, settings?: Partial<NetworkSettings>): Services {
+  const resolved = normalizeNetworkSettings(chain, settings || {})
+  const services = new Services(createArcadeServiceOptions(chain, identityKey, resolved))
+  if (resolved.whatsOnChainUrl) (services.whatsonchain as any).URL = resolved.whatsOnChainUrl
+  installBroadcastFallbacks(services, chain, resolved.whatsOnChainUrl)
+  installMerklePathFallbacks(services, chain, resolved.whatsOnChainUrl)
   return services
 }

@@ -15,7 +15,7 @@ const provider = (id: string, signal: AbortSignal) => {
 export class WalletDataSession {
   private controller = new AbortController()
   private operation?: AbortController
-  constructor(readonly identityKey: string, readonly chain: 'main' | 'test' | 'ttn', readonly manager: WalletDataStorageManager, readonly local: boolean) {}
+  constructor(readonly identityKey: string, readonly chain: 'main' | 'test' | 'ttn' | 'tstn', readonly manager: WalletDataStorageManager, readonly local: boolean) {}
   cancel(): void { this.operation?.abort(); void walletDataCall('cancel').catch(() => {}) }
   async close(): Promise<void> { this.controller.abort(); this.cancel(); await this.manager.closeForRestore(async () => {}) }
   private async run<T>(action: (signal: AbortSignal) => Promise<T>): Promise<T> {

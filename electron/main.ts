@@ -10,6 +10,8 @@ import { registerWalletPortabilityIpc } from './wallet-portability/ipc.js';
 import type { WalletPortabilityService } from './wallet-portability/service.js';
 import { integrateAppImageDesktopEntry } from './linuxDesktopIntegration.js';
 import { FeeSettingsService, registerFeeSettingsIpc } from './feeSettings.js';
+import { arcadeUrl } from './endpoints.js';
+import { getBootConfig } from './bootConfig.js';
 
 const require = createRequire(import.meta.url);
 
@@ -246,6 +248,7 @@ registerNetworkIpc({
 // proxy is respected. The service snapshots persisted rates at process start;
 // saved changes are picked up on the next restart.
 const feeSettingsService = new FeeSettingsService({
+  arcadeUrlForChain: chain => getBootConfig()?.networkSettings?.[chain]?.arcadeUrl || arcadeUrl(chain),
   fetch: (url, options) => session.defaultSession.fetch(url, options as any) as any
 });
 registerFeeSettingsIpc(ipcMain, feeSettingsService);
@@ -545,7 +548,7 @@ ipcMain.on('http-response', (_event, response) => {
 // ===== Storage IPC Handlers =====
 
 // Check if storage can be made available
-ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn') => {
+ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => {
   try {
     const manager = await getStorageManager();
     return await manager.request(identityKey, chain, () => manager.isAvailable(identityKey, chain));
@@ -556,7 +559,7 @@ ipcMain.handle('storage:is-available', async (_event, identityKey: string, chain
 });
 
 // Make storage available (initialize database)
-ipcMain.handle('storage:make-available', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn') => {
+ipcMain.handle('storage:make-available', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => {
   try {
     const manager = await getStorageManager();
     const settings = await manager.request(identityKey, chain, () => manager.makeAvailable(identityKey, chain));
@@ -568,7 +571,7 @@ ipcMain.handle('storage:make-available', async (_event, identityKey: string, cha
 });
 
 // Call a storage method
-ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => {
+ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) => {
   try {
     const manager = await getStorageManager();
     const result = await manager.request(identityKey, chain, () => manager.callStorageMethod(identityKey, chain, method, args));
@@ -580,10 +583,10 @@ ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain:
 });
 
 // Initialize services on storage
-ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn') => {
+ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings?: import('./networkConfig.js').NetworkSettings) => {
   try {
     const manager = await getStorageManager();
-    await manager.request(identityKey, chain, () => manager.initializeServices(identityKey, chain));
+    await manager.request(identityKey, chain, () => manager.initializeServices(identityKey, chain, settings));
     return { success: true };
   } catch (error: any) {
     console.error('[IPC] storage:initialize-services error:', error);
@@ -592,6 +595,13 @@ ipcMain.handle('storage:initialize-services', async (_event, identityKey: string
 });
 
 // ===== Vault + Secret IPC Handlers =====
+ipcMain.handle('storage:release-network', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => {
+  try {
+    const manager = await getStorageManager();
+    await manager.releaseNetwork(identityKey, chain);
+    return { success: true };
+  } catch (error: any) { return { success: false, error: error.message }; }
+});
 
 ipcMain.handle('vault:status', async () => {
   const vault = await getVault();
@@ -688,7 +698,7 @@ ipcMain.handle('secrets:delete', async (_event, name: string) => {
 
 // STAS extension query channel — separate from storage:call-method so STAS
 // queries do not share the StorageKnex method namespace.
-ipcMain.handle('stas:query', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn', method: string, args: any[]) => {
+ipcMain.handle('stas:query', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) => {
   try {
     const manager = await getStorageManager();
     const result = await manager.request(identityKey, chain, () => manager.callStasQuery(identityKey, chain, method, args ?? []));

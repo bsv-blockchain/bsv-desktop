@@ -1,950 +1,149 @@
-import { useTranslation } from 'react-i18next'
-import * as secrets from '../services/secrets';
-import {
-  Apps as BrowseIcon,
-  Settings as SettingsIcon,
-  Badge as IdentityIcon,
-  ExitToApp as LogoutIcon,
-  Security as SecurityIcon,
-  Add as AddIcon,
-  Delete as DeleteIcon,
-  ExpandLess,
-  ExpandMore,
-  Person as PersonIcon,
-  AccountBalanceWallet as PaymentsIcon,
-} from '@mui/icons-material'
-import SyncAltIcon from '@mui/icons-material/SyncAlt';
-import InventoryIcon from '@mui/icons-material/Inventory';
-import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
-import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
-import GridViewIcon from '@mui/icons-material/GridView'
-import ReceiptLongIcon from '@mui/icons-material/ReceiptLong'
-import QrCodeIcon from '@mui/icons-material/QrCode'
-import {
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Typography,
-  Drawer,
-  Box,
-  Divider,
-  Collapse,
-  Button,
-  IconButton,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-  TextField,
-  alpha,
-  LinearProgress,
-  Checkbox,
-  FormControlLabel
-} from '@mui/material'
-import Profile from '../components/Profile.js'
-import React, { useState, useContext, useEffect, useCallback } from 'react'
+import React, { useContext, useEffect, useState } from 'react'
+import { NavLink, useHistory } from 'react-router-dom'
+import { AccountBalanceWalletOutlined, SwapHorizRounded, ReceiptLongOutlined, AppsRounded, SettingsOutlined, UnfoldMoreRounded, AddRounded, CheckRounded, LogoutRounded, CloseRounded } from '@mui/icons-material'
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, TextField, Typography, alpha, useMediaQuery } from '@mui/material'
 import { toast } from 'react-toastify'
-import { useHistory } from 'react-router'
-import { WalletContext, LoginType } from '../WalletContext.js'
-import { UserContext } from '../UserContext.js'
-import { useBreakpoint } from '../utils/useBreakpoints.js'
-import { Utils, PushDrop, LockingScript, Transaction } from '@bsv/sdk'
-import { WalletProfile } from '../types/WalletProfile.js';
-// Custom styling for menu items
-const menuItemStyle = (isSelected) => ({
-  borderRadius: '8px',
-  margin: '4px 8px',
-  transition: 'all 0.2s ease',
-  '&:hover': {
-    backgroundColor: 'rgba(25, 118, 210, 0.1)',
-  },
-  ...(isSelected && {
-    backgroundColor: 'rgba(25, 118, 210, 0.12)',
-    '&:hover': {
-      backgroundColor: 'rgba(25, 118, 210, 0.2)',
-    },
-  }),
-})
+import { WalletContext } from '../WalletContext'
+import { UserContext } from '../UserContext'
+import AppLogo from '../components/AppLogo'
+import type { WalletProfile } from '../types/WalletProfile'
+import * as secrets from '../services/secrets'
+import { getWalletService } from '../hooks/useWalletService'
+import { activeUserWalletOperations, activeHttpBridgeRequests, beginUserWalletOperation, isHttpBridgePaused, setHttpBridgePaused } from '../services/httpBridgeSession'
 
-interface MenuProps {
-  menuOpen: boolean
-  setMenuOpen: (open: boolean) => void
-  menuRef: React.RefObject<HTMLDivElement>
-}
+export const SIDEBAR_WIDTH = 248
+const items = [
+  { label: 'Wallet', path: '/dashboard', icon: AccountBalanceWalletOutlined, exact: true },
+  { label: 'Payments', path: '/dashboard/payments', icon: SwapHorizRounded },
+  { label: 'Activity', path: '/dashboard/activity', icon: ReceiptLongOutlined },
+  { label: 'Apps', path: '/dashboard/apps', icon: AppsRounded },
+  { label: 'Settings', path: '/dashboard/settings', icon: SettingsOutlined },
+]
 
-
-export default function Menu({ menuOpen, setMenuOpen, menuRef }: MenuProps) {
-  const { t } = useTranslation()
+export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; setMenuOpen: (open: boolean) => void; menuRef?: React.RefObject<HTMLDivElement> }) {
+  const compact = useMediaQuery('(max-width:900px)')
   const history = useHistory()
-  const breakpoints = useBreakpoint()
-  const { logout, managers, activeProfile, setActiveProfile, saveEnhancedSnapshot, loginType } = useContext(WalletContext)
-  const isDirectKey = loginType === 'direct-key'
-  const { appName, appVersion } = useContext(UserContext)
-
-  // Profile management state
-  const [profilesOpen, setProfilesOpen] = useState(false)
+  const { activeProfile, managers, saveEnhancedSnapshot, setActiveProfile, switchingNetwork, basketRequests, protocolRequests, certificateRequests, spendingRequests, groupPermissionRequests, stasTransferRequests, counterpartyPermissionRequests, refreshAppWallet } = useContext(WalletContext)
+  const { appVersion } = useContext(UserContext)
+  const [profileOpen, setProfileOpen] = useState(false)
   const [profiles, setProfiles] = useState<WalletProfile[]>([])
-  const [createProfileOpen, setCreateProfileOpen] = useState(false)
-  const [newProfileName, setNewProfileName] = useState('')
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [profileToDelete, setProfileToDelete] = useState<WalletProfile>(null)
-  const [profilesLoading, setProfilesLoading] = useState(false)
-  const [fund, setFund] = useState<boolean>(false)
-
-
-  // History.push wrapper
-  const navigation = {
-    push: (path: string) => {
-      // Explicitly cast breakpoints to avoid TypeScript error
-      const { sm } = breakpoints as { sm: boolean }
-      if (sm) {
-        setMenuOpen(false)
-      }
-      history.push(path)
-    }
-  }
-
-  // First useEffect to handle breakpoint changes
-  useEffect(() => {
-    // Explicitly cast breakpoints to avoid TypeScript error
-    const { sm } = breakpoints as { sm: boolean }
-    if (!sm) {
-      setMenuOpen(true)
-    } else {
-      setMenuOpen(false)
-    }
-  }, [breakpoints])
-
-  //get Most Recent Profile Key
-  const getMRPK = async () => {
-    const listprofiles = await managers.walletManager.listProfiles()
-    const mostRecent = listprofiles.reduce((a, b) => (a.createdAt > b.createdAt ? a : b))
-    return mostRecent.identityKey
-  }
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const supportsProfiles = typeof managers.walletManager?.listProfiles === 'function'
 
   useEffect(() => {
+    if (!profileOpen) return
     let cancelled = false
-    const run = async () => {
-      if (!managers?.walletManager || !activeProfile?.name) return
-      const cacheKey = `funds_${activeProfile.name}`
-      const cached = localStorage.getItem(cacheKey)
-      if (!cached) return
-      try {
-        const funding: {
-          txid: string
-          outpoint: string
-          satoshis: number
-          lockingScript: string
-          tx: Transaction,
-          beef: number[],
-          sender: string
-        } = JSON.parse(cached)
-
-        const { signableTransaction } = await managers.walletManager.createAction({
-          description: 'claiming funds',
-          inputBEEF: funding.beef,
-          inputs: [{
-            inputDescription: 'Claim funds',
-            outpoint: funding.outpoint,
-            unlockingScriptLength: 74
-          }],
-          options: {
-            acceptDelayedBroadcast: false,
-            randomizeOutputs: false
-          }
-        })
-
-        if (!signableTransaction) {
-          throw new Error('No signable transaction returned')
-        }
-
-        const tx = Transaction.fromBEEF(signableTransaction.tx!)
-
-
-        const unlocker = new PushDrop(managers.walletManager).unlock(
-          [0, 'fundingprofile'],
-          '1',
-          funding.sender,
-          'all',
-          false,
-          5000,
-          LockingScript.fromHex(funding.lockingScript)
-        )
-
-        let unlockingScript = await unlocker.sign(tx, 0)
-        let reference = signableTransaction.reference
-        const signRes = await managers.walletManager.signAction({
-          reference,
-          spends: {
-            0: {
-              unlockingScript: unlockingScript.toHex()
-            }
-          }
-        })
-        localStorage.removeItem(cacheKey)
-      } catch (err) {
-        if (!cancelled) console.error(' Claim failed', err)
-      }
-    }
-
-    void run()
+    Promise.resolve(supportsProfiles ? managers.walletManager.listProfiles() : activeProfile ? [activeProfile] : []).then(result => {
+      if (!cancelled) setProfiles(result || [])
+    }).catch(error => toast.error(error.message))
     return () => { cancelled = true }
-  }, [activeProfile?.name, managers?.walletManager])
+  }, [profileOpen, managers.walletManager, activeProfile, supportsProfiles])
 
-  // Second useEffect to handle outside clicks
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false)
-      }
-    }
-
-    if (menuOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-    } else {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-
-    // Cleanup
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [menuOpen])
-
-  const createTokenFor = async(profile: string, amount:number) =>
-  {
-    if(amount < 0)
-    {
-      return
-    }
-    const cacheKey = `funds_${newProfileName.trim()}`
-    const pd = new PushDrop(managers.walletManager)
-    const fields = [Utils.toArray(`Funding Wallet: ${newProfileName.trim()}`)]
-    const counterparty = profile
-    const sender = activeProfile.identityKey
-    const lockingScript = await pd.lock(
-      fields,
-      [0, 'fundingprofile'],
-      '1',
-      counterparty
-    )
-
-    const createRes = await managers.walletManager.createAction({
-      description: 'funding new profile',
-      outputs: [{
-        lockingScript: lockingScript.toHex(),
-        satoshis: amount,
-        outputDescription: 'New profile funds',
-      }],
-      options: {
-        randomizeOutputs: false,
-        acceptDelayedBroadcast: false
-      }
-    }, 'Metanet-Desktop')
-
-    const beef = createRes.tx!
-    const tx = Transaction.fromAtomicBEEF(createRes.tx!)
-    const outpoint = `${createRes.txid}.0`
-    const txid = tx.id('hex')
-    const satoshis = tx.outputs[0].satoshis
-
-    localStorage.setItem(cacheKey, JSON.stringify({
-      txid,
-      tx,
-      outpoint,
-      satoshis,
-      lockingScript: lockingScript.toHex(),
-      beef,
-      sender: sender
-    }))
+  const assertIdle = () => {
+    if (isHttpBridgePaused() || switchingNetwork || activeUserWalletOperations() || activeHttpBridgeRequests() || [basketRequests, protocolRequests, certificateRequests, spendingRequests, groupPermissionRequests, stasTransferRequests, counterpartyPermissionRequests].some(queue => queue.length)) throw new Error('Finish your current payment or app request before changing or locking the wallet.')
   }
-
-  // Helper function to refresh profiles
-  const refreshProfiles = useCallback(async () => {
-    if (!managers?.walletManager || !managers.walletManager?.listProfiles) return
-
+  const switchProfile = async (profile: WalletProfile) => {
+    setBusy(true)
+    let release: (() => void) | undefined
+    let bridgeReady = false
+    let profileVerified = false
     try {
-      setProfilesLoading(true)
-      // Handle both synchronous and asynchronous listProfiles implementation
-      if (managers.walletManager.saveSnapshot) {
-        secrets.setSnapshot(saveEnhancedSnapshot())
-      }
-      const profileList = await Promise.resolve(managers.walletManager?.listProfiles())
-      setProfiles(profileList)
+      assertIdle()
+      release = beginUserWalletOperation()
+      setHttpBridgePaused(true)
+      await managers.walletManager.switchProfile(profile.id)
+      const current = getWalletService().getSnapshot()
+      if (!current.wallet || current.lifecycle !== 'ready' || !current.managers.permissionsManager) throw new Error('This profile could not be opened. Reopen your saved wallet to try again.')
+      const { publicKey } = await current.managers.permissionsManager.getPublicKey({ identityKey: true }, current.adminOriginator)
+      if (publicKey !== profile.identityKey) throw new Error('The selected profile identity could not be verified. App connections remain paused.')
+      profileVerified = true
+      setActiveProfile(profile)
+      await secrets.persistSnapshot(saveEnhancedSnapshot())
+      await refreshAppWallet()
+      bridgeReady = true
+      setProfileOpen(false)
+      history.push('/dashboard')
+      window.dispatchEvent(new Event('balance-changed'))
     } catch (error) {
-      toast.error(`Error loading profiles: ${error.message || error}`)
-    } finally {
-      setProfilesLoading(false)
-    }
-  }, [managers?.walletManager, saveEnhancedSnapshot])
-
-  // Handle profile creation
-  const handleCreateProfile = async () => {
-    if (!newProfileName.trim() || !managers?.walletManager) return
-
-    try {
-      // Close dialog first before async operation
-      setCreateProfileOpen(false)
-      setNewProfileName('')
-
-      setProfilesLoading(true)
-
-      // Then perform the async operation
-      await managers.walletManager.addProfile(newProfileName.trim())
-
-      // Then fund the new profile
-      if (fund) {
-          createTokenFor(await getMRPK(), 5000)
+      if (release && profileVerified) {
+        try { await refreshAppWallet(); bridgeReady = true }
+        catch { toast.error('App connections are paused. Reopen the wallet to reconnect safely.') }
       }
-
-      // Refresh the profile list
-      await refreshProfiles()
-    } catch (error) {
-      toast.error(`Error creating profile: ${error.message || error}`)
-      setProfilesLoading(false)
+      toast.error(error.message || 'Could not switch profiles.')
     }
-    finally{
-      setFund(false)
-    }
+    finally { if (release) { if (bridgeReady) setHttpBridgePaused(false); release() }; setBusy(false) }
   }
-
-  // Handle profile switching
-  const handleSwitchProfile = async (profileId: number[]) => {
-    if (!managers?.walletManager) return
-
+  const createProfile = async () => {
+    if (!name.trim() || busy) return
+    setBusy(true)
+    let release: (() => void) | undefined
+    let bridgeReady = false
     try {
-      // Show loading state
-      setProfilesLoading(true)
-
-      // Perform the async operation
-      await managers.walletManager.switchProfile(profileId)
-      setActiveProfile(profiles.find(profile => profile.id == profileId))
-
-      // Refresh the profile list to update active status
-      if (history.location.pathname.startsWith('/dashboard/app/')) {
-        history.push('/dashboard/apps')
+      assertIdle()
+      release = beginUserWalletOperation()
+      setHttpBridgePaused(true)
+      await managers.walletManager.addProfile(name.trim())
+      await secrets.persistSnapshot(saveEnhancedSnapshot())
+      await refreshAppWallet()
+      bridgeReady = true
+      setProfiles(await managers.walletManager.listProfiles())
+      setName('')
+    } catch (error) {
+      if (release) {
+        try { await refreshAppWallet(); bridgeReady = true }
+        catch { toast.error('App connections are paused. Reopen the wallet to reconnect safely.') }
       }
-      await refreshProfiles()
-    } catch (error) {
-      toast.error(`Error switching profile: ${error.message || error}`)
-      setProfilesLoading(false)
+      toast.error(error.message || 'Could not create a profile.')
     }
+    finally { if (release) { if (bridgeReady) setHttpBridgePaused(false); release() }; setBusy(false) }
   }
-
-  // Handle profile deletion
-  const confirmDeleteProfile = (profile: WalletProfile) => {
-    setProfileToDelete(profile)
-    setDeleteConfirmOpen(true)
-  }
-
-
-  const handleDeleteProfile = async () => {
-    if (!profileToDelete || !managers?.walletManager) return
-
+  const lockWallet = async () => {
+    setBusy(true)
+    let release: (() => void) | undefined
     try {
-      setDeleteConfirmOpen(false)
-      setProfilesLoading(true)
-
-      await managers.walletManager.deleteProfile(profileToDelete.id)
-
-      // Cleanup & refresh
-      setProfileToDelete(null)
-      await refreshProfiles()
-    } catch (error: any) {
-      toast.error(`Error deleting profile: ${error.message || error}`)
-      setProfilesLoading(false)
+      assertIdle()
+      release = beginUserWalletOperation()
+      setHttpBridgePaused(true)
+      await secrets.persistSnapshot(saveEnhancedSnapshot())
+      await secrets.lockVault()
+      window.location.reload()
+    } catch (error) {
+      if (release) { setHttpBridgePaused(false); release() }
+      toast.error(error.message || 'Could not lock wallet.')
+      setBusy(false)
     }
   }
 
-  // Render formatted profile ID (first 8 chars)
-  const formatProfileId = (id: number[]) => {
-    // Check if it's the default profile
-    if (id.every(x => x === 0)) {
-      return 'Default'
-    }
-
-    // Convert to hex and show first 8 characters
-    return id.slice(0, 4).map(byte => byte.toString(16).padStart(2, '0')).join('')
-  }
-
-  // Load profiles when wallet is initialized
-  useEffect(() => {
-    refreshProfiles()
-  }, [refreshProfiles])
-
-  return (
-    <Drawer
-      anchor='left'
-      open={menuOpen}
-      variant='persistent'
-      onClose={() => setMenuOpen(false)}
-      sx={{
-        width: 320,
-        flexShrink: 0,
-        '& .MuiDrawer-paper': {
-          width: 320,
-          boxSizing: 'border-box',
-          borderRight: '1px solid',
-          borderColor: 'divider',
-          boxShadow: 3,
-          background: 'background.paper',
-          overflowX: 'hidden',
-        },
-      }}
-    >
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100%',
-          p: 2
-        }}
-      >
-        <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
-          <Profile />
-        </Box>
-
-        <Divider sx={{ mb: 2 }} />
-
-        {/* Profile Management Section - hidden in direct-key mode */}
-        {!isDirectKey && (
-          <>
-            <List component="nav" sx={{ mb: 1 }}>
-              <ListItemButton onClick={() => setProfilesOpen(!profilesOpen)} sx={menuItemStyle(false)}>
-                <ListItemIcon sx={{ minWidth: 40 }}>
-                  <PersonIcon />
-                </ListItemIcon>
-                <ListItemText
-                  primary={
-                    <Typography variant="body1">
-                      {t('menu_profiles')}
-                    </Typography>
-                  }
-                  secondary={
-                    !profilesOpen && profiles.length > 0
-                      ? `${t('menu_profiles_active')}: ${profiles.find(p => p.active)?.name || t('menu_profiles_default')}`
-                      : undefined
-                  }
-                />
-                {profilesOpen ? <ExpandLess /> : <ExpandMore />}
-              </ListItemButton>
-
-              {/* Profile loading indicator */}
-              {profilesLoading && (
-                <LinearProgress
-                  sx={{
-                    height: 2,
-                    mt: -0.5,
-                    mb: 0.5,
-                    borderRadius: 1,
-                    mx: 1
-                  }}
-                />
-              )}
-
-              <Collapse in={profilesOpen} timeout="auto" unmountOnExit>
-                <List disablePadding sx={{ mt: 0.5 }}>
-                  {profiles.map((profile) => (
-                    <ListItemButton
-                      key={formatProfileId(profile.id)}
-                      onClick={!profile.active ? () => handleSwitchProfile(profile.id) : undefined}
-                      disableRipple={profile.active}
-                      sx={{
-                        borderRadius: '8px',
-                        mx: 1,
-                        mb: 0.5,
-                        py: 0.75,
-                        pl: 1.5,
-                        pr: 1,
-                        borderLeft: 'none',
-                        backgroundColor: profile.active ? alpha('#1976d2', 0.08) : 'transparent',
-                        cursor: profile.active ? 'default' : 'pointer',
-                        '&:hover': {
-                          backgroundColor: profile.active ? alpha('#1976d2', 0.08) : alpha('#1976d2', 0.06),
-                        },
-                        '&:hover .profile-delete': {
-                          opacity: 1,
-                        },
-                      }}
-                    >
-                      {/* Avatar circle with initial */}
-                      <Box
-                        sx={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: '50%',
-                          backgroundColor: profile.active ? 'primary.main' : alpha('#fff', 0.08),
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          mr: 1.5,
-                          flexShrink: 0,
-                        }}
-                      >
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            fontWeight: 600,
-                            fontSize: '0.8rem',
-                            color: profile.active ? '#fff' : 'text.secondary',
-                            textTransform: 'uppercase',
-                          }}
-                        >
-                          {profile.name?.charAt(0) || '?'}
-                        </Typography>
-                      </Box>
-
-                      {/* Name + truncated key */}
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            fontWeight: profile.active ? 600 : 400,
-                            lineHeight: 1.3,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {profile.name}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            color: 'text.disabled',
-                            fontFamily: 'monospace',
-                            fontSize: '0.65rem',
-                            letterSpacing: '0.02em',
-                          }}
-                        >
-                          {profile?.identityKey?.slice(0, 12)}...
-                        </Typography>
-                      </Box>
-
-                      {/* Active dot or delete button */}
-                      {profile.active ? (
-                        <Box
-                          sx={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: '50%',
-                            backgroundColor: 'primary.main',
-                            ml: 1,
-                            flexShrink: 0,
-                          }}
-                        />
-                      ) : !profile.id.every(x => x === 0) ? (
-                        <IconButton
-                          className="profile-delete"
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            confirmDeleteProfile(profile)
-                          }}
-                          sx={{
-                            opacity: 0,
-                            transition: 'opacity 0.15s',
-                            color: 'text.disabled',
-                            p: 0.5,
-                            ml: 0.5,
-                            '&:hover': {
-                              color: 'error.main',
-                              backgroundColor: alpha('#f44336', 0.08),
-                            },
-                          }}
-                        >
-                          <DeleteIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      ) : null}
-                    </ListItemButton>
-                  ))}
-
-                  {/* Add profile row */}
-                  <ListItemButton
-                    onClick={() => setCreateProfileOpen(true)}
-                    sx={{
-                      borderRadius: '8px',
-                      mx: 1,
-                      mt: 0.5,
-                      py: 0.75,
-                      pl: 1.5,
-                      opacity: 0.6,
-                      '&:hover': {
-                        opacity: 1,
-                        backgroundColor: alpha('#1976d2', 0.06),
-                      },
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: '50%',
-                        border: '1.5px dashed',
-                        borderColor: 'text.disabled',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        mr: 1.5,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <AddIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
-                    </Box>
-                    <Typography variant="body2" color="text.secondary">
-                      {t('menu_new_profile')}
-                    </Typography>
-                  </ListItemButton>
-                </List>
-              </Collapse>
-            </List>
-
-            <Divider sx={{ mb: 2 }} />
-          </>
-        )}
-
-        <List component="nav" sx={{ mb: 2 }}>
-          <ListItemButton
-            onClick={() => navigation.push('/dashboard/app-catalog')}
-            selected={history.location.pathname === '/dashboard/app-catalog'}
-            sx={menuItemStyle(history.location.pathname === '/dashboard/app-catalog')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/app-catalog' ? 'primary.main' : 'inherit' }}>
-              <GridViewIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/app-catalog' ? 600 : 400}
-                >
-                  {t('menu_apps')}
-                </Typography>
-              }
-            />
-          </ListItemButton>
-
-          <ListItemButton
-            onClick={() => navigation.push('/dashboard/apps')}
-            selected={history.location.pathname === '/dashboard/apps'}
-            sx={menuItemStyle(history.location.pathname === '/dashboard/apps')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/apps' ? 'primary.main' : 'inherit' }}>
-              <ReceiptLongIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/apps' ? 600 : 400}
-                >
-                  {t('menu_transactions')}
-                </Typography>
-              }
-            />
-          </ListItemButton>
-
-          <ListItemButton
-            onClick={() => navigation.push('/dashboard/identity')}
-            selected={history.location.pathname === '/dashboard/identity'}
-            sx={menuItemStyle(history.location.pathname === '/dashboard/identity')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/identity' ? 'primary.main' : 'inherit' }}>
-              <IdentityIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/identity' ? 600 : 400}
-                >
-                  {t('menu_identity')}
-                </Typography>
-              }
-            />
-          </ListItemButton>
-
-          <ListItemButton
-            onClick={() => navigation.push('/dashboard/trust')}
-            selected={history.location.pathname === '/dashboard/trust'}
-            sx={menuItemStyle(history.location.pathname === '/dashboard/trust')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/trust' ? 'primary.main' : 'inherit' }}>
-              <VerifiedUserIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/trust' ? 600 : 400}
-                >
-                  {t('menu_trust')}
-                </Typography>
-              }
-            />
-          </ListItemButton>
-
-          <ListItemButton
-            onClick={() => navigation.push('/dashboard/security')}
-            selected={history.location.pathname === '/dashboard/security'}
-            sx={menuItemStyle(history.location.pathname === '/dashboard/security')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/security' ? 'primary.main' : 'inherit' }}>
-              <SecurityIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/security' ? 600 : 400}
-                >
-                  {t('menu_security')}
-                </Typography>
-              }
-            />
-          </ListItemButton>
-
-          <ListItemButton
-            onClick={() => navigation.push('/dashboard/settings')}
-            selected={history.location.pathname === '/dashboard/settings'}
-            sx={menuItemStyle(history.location.pathname === '/dashboard/settings')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/settings' ? 'primary.main' : 'inherit' }}>
-              <SettingsIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/settings' ? 600 : 400}
-                >
-                  {t('menu_settings')}
-                </Typography>
-              }
-            />
-          </ListItemButton>
-
-          <ListItemButton
-            onClick={() => navigation.push('/dashboard/payments')}
-            selected={history.location.pathname === '/dashboard/payments'}
-            sx={menuItemStyle(history.location.pathname === '/dashboard/payments')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/payments' ? 'primary.main' : 'inherit' }}>
-              <SyncAltIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/payments' ? 600 : 400}
-                >
-                  {t('menu_transfers', 'Transfers')}
-                </Typography>
-              }
-            />
-          </ListItemButton>
-
-          <ListItemButton
-            onClick={() => navigation.push('/dashboard/assets')}
-            selected={history.location.pathname === '/dashboard/assets'}
-            sx={menuItemStyle(history.location.pathname === '/dashboard/assets')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/assets' ? 'primary.main' : 'inherit' }}>
-              <AccountBalanceWalletIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/assets' ? 600 : 400}
-                >
-                  Assets
-                </Typography>
-              }
-            />
-          </ListItemButton>
-
-          <ListItemButton
-            onClick={() => navigation.push('/dashboard/baskets')}
-            selected={history.location.pathname === '/dashboard/baskets'}
-            sx={menuItemStyle(history.location.pathname === '/dashboard/baskets')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/baskets' ? 'primary.main' : 'inherit' }}>
-              <InventoryIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/baskets' ? 600 : 400}
-                >
-                  Baskets
-                </Typography>
-              }
-            />
-          </ListItemButton>
-
-          <ListItemButton
-            onClick={() => navigation.push('/dashboard/legacybridge')}
-            selected={history.location.pathname === '/dashboard/legacybridge'}
-            sx={menuItemStyle(history.location.pathname === '/dashboard/legacybridge')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/legacybridge' ? 'primary.main' : 'inherit' }}>
-              <QrCodeIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/legacybridge' ? 600 : 400}
-                >
-                  {t('menu_legacy_bridge')}
-                </Typography>
-              }
-            />
-          </ListItemButton>
-        </List>
-
-
-        <Box sx={{ mt: 'auto', mb: 2 }}>
-          <ListItemButton
-            onClick={() => {
-              logout()
-              history.push('/')
-            }}
-            sx={menuItemStyle(false)}
-          >
-            <ListItemIcon sx={{ minWidth: 40 }}>
-              <LogoutIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography variant="body1">
-                  {t('menu_logout')}
-                </Typography>
-              }
-            />
-          </ListItemButton>
-
-          <Typography
-            variant='caption'
-            color='textSecondary'
-            align='center'
-            sx={{
-              display: 'block',
-              mt: 2,
-              textAlign: 'center',
-              width: '100%',
-              opacity: 0.5,
-            }}
-          >
-            {appName} v{appVersion}
-            <br />
-            <i>{t('menu_footer_tagline')}</i>
-          </Typography>
-        </Box>
+  return <>
+    <Drawer open={compact ? menuOpen : true} onClose={() => setMenuOpen(false)} variant={compact ? 'temporary' : 'permanent'} sx={{ width: compact ? 0 : SIDEBAR_WIDTH, flexShrink: 0, '& .MuiDrawer-paper': { width: SIDEBAR_WIDTH, borderRight: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' } }}>
+      <Box sx={{ p: 3, pb: 2, display: 'flex', alignItems: 'center', gap: 1.25, height: 96 }}>
+        <Box aria-hidden sx={{ width: 38, height: 38, flexShrink: 0, color: 'primary.main', display: 'grid', placeItems: 'center' }}><AppLogo size={38} color="currentColor" /></Box>
+        <Box><Typography sx={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.04em', lineHeight: 1.2 }}>BSV Desktop</Typography></Box>
+        {compact && <IconButton aria-label="Close navigation" size="small" onClick={() => setMenuOpen(false)} sx={{ ml: 'auto' }}><CloseRounded fontSize="small" /></IconButton>}
       </Box>
-
-
-      {/* Create Profile Dialog */}
-      <Dialog open={createProfileOpen} onClose={() => setCreateProfileOpen(false)}>
-        <DialogTitle>{t('menu_create_profile_title')}</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            {t('menu_create_profile_description')}
-          </DialogContentText>
-
-          <TextField
-            autoFocus
-            margin="dense"
-            label={t('menu_profile_name_label')}
-            type="text"
-            fullWidth
-            value={newProfileName}
-            onChange={(e) => setNewProfileName(e.target.value)}
-          />
-
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={fund}
-                onChange={(e) => setFund(e.target.checked)}
-                value='on'
-              />
-            }
-            label={t('menu_auto_fund_label')}
-            sx={{ mt: 1 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCreateProfileOpen(false)}>{t('menu_cancel')}</Button>
-          <Button
-            onClick={() => handleCreateProfile()}
-            color="primary"
-          >
-            {t('menu_create')}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-    <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
-      <DialogTitle>{t('menu_delete_profile_title')}</DialogTitle>
-
-      <DialogContent>
-        <DialogContentText
-          sx={{
-            textAlign: 'center',
-            '& strong': { color: 'error.main' },
-            wordBreak: 'break-word',
-          }}
-        >
-          <strong>{t('menu_delete_permanent')}</strong><br />
-          {t('menu_delete_warning')}<br />
-          {t('menu_delete_confirm', { name: profileToDelete?.name?.slice(0, 10), key: profileToDelete?.identityKey?.slice(0, 10) })}<br />
-          {t('menu_delete_undone')}
-        </DialogContentText>
-
-        {/* Center the checkbox + label */}
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-          <FormControlLabel
-            control={
-            <ListItemButton
-            onClick={() => {navigation.push('/dashboard/payments')
-              setDeleteConfirmOpen(false)
-            }}
-            selected={history.location.pathname === '/dashboard/payments'}
-            sx={menuItemStyle(history.location.pathname === '/dashboard/payments')}
-          >
-            <ListItemIcon sx={{ minWidth: 40, color: history.location.pathname === '/dashboard/payments' ? 'primary.main' : 'inherit' }}>
-              <SyncAltIcon />
-            </ListItemIcon>
-            <ListItemText
-              primary={
-                <Typography
-                  variant="body1"
-                  fontWeight={history.location.pathname === '/dashboard/payments' ? 600 : 400}
-                >
-                  {t('menu_transfer')}
-                </Typography>
-              }
-            />
-          </ListItemButton>
-            }
-            label={t('menu_transfer_funds_label')}
-            sx={{ '& .MuiFormControlLabel-label': { textAlign: 'center' } }}
-          />
+      <Typography variant="overline" color="text.secondary" sx={{ px: 3.5, mt: 3, fontSize: 10, letterSpacing: '0.12em' }}>YOUR WALLET</Typography>
+      <List sx={{ px: 2, pt: 1 }}>
+        {items.map(({ label, path, icon: Icon, exact }) => <ListItemButton key={path} component={NavLink} exact={exact} to={path} activeClassName="wallet-nav-active" onClick={() => setMenuOpen(false)} sx={{ borderRadius: 2.5, my: 0.5, py: 1.25, color: 'text.secondary', '&.wallet-nav-active': { bgcolor: theme => alpha(theme.palette.primary.main, 0.09), color: 'primary.main', '& .MuiListItemIcon-root': { color: 'primary.main' } } }}>
+          <ListItemIcon sx={{ minWidth: 38, color: 'inherit' }}><Icon sx={{ fontSize: 21 }} /></ListItemIcon><ListItemText primary={label} primaryTypographyProps={{ fontSize: 14, fontWeight: 550 }} />
+        </ListItemButton>)}
+      </List>
+      <Box sx={{ mt: 'auto', px: 2.5, pb: 2.5 }}>
+        <Box sx={{ p: 2, mb: 3, borderRadius: 3, bgcolor: 'background.default' }}>
+          <Typography variant="body2" fontWeight={600}>Your keys. Your wallet.</Typography><Typography variant="caption" color="text.secondary">Payments, identity, and apps.<br />Together on your desktop.</Typography>
         </Box>
-        
-      </DialogContent>
-
-      <DialogActions>
-        <Button onClick={() => setDeleteConfirmOpen(false)}>{t('menu_cancel')}</Button>
-        <Button onClick={handleDeleteProfile} color="error">{t('menu_delete')}</Button>
-      </DialogActions>
-    </Dialog>
+        <Button fullWidth onClick={() => setProfileOpen(true)} endIcon={<UnfoldMoreRounded />} sx={{ textAlign: 'left', color: 'text.primary', justifyContent: 'space-between', px: 0.75 }}>
+          <Box sx={{ display: 'flex', gap: 1.2, alignItems: 'center', minWidth: 0 }}><Box sx={{ width: 32, height: 32, borderRadius: '50%', bgcolor: 'primary.main', color: 'primary.contrastText', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{(activeProfile?.name || 'My wallet')[0].toUpperCase()}</Box><Box sx={{ minWidth: 0 }}><Typography variant="body2" fontWeight={600} noWrap>{activeProfile?.name || 'My wallet'}</Typography><Typography variant="caption" color="text.secondary">Wallet profile</Typography></Box></Box>
+        </Button>
+        <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 2, px: 0.75 }}>BSV Desktop{appVersion ? ` · ${appVersion}` : ''}</Typography>
+      </Box>
     </Drawer>
-  )
+    <Dialog open={profileOpen} onClose={() => !busy && setProfileOpen(false)} fullWidth maxWidth="xs">
+      <DialogTitle>Wallet profiles</DialogTitle><DialogContent>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{supportsProfiles ? 'Use a separate identity for each part of your life.' : 'Your wallet identity is protected on this device.'}</Typography>
+        <List>{profiles.map(profile => <ListItemButton key={profile.id.join(',')} disabled={busy || profile.active} onClick={() => switchProfile(profile)} sx={{ borderRadius: 2 }}><ListItemText primary={profile.name} secondary={`${profile.identityKey?.slice(0, 16)}…`} />{profile.active && <CheckRounded color="primary" />}</ListItemButton>)}</List>
+        {supportsProfiles && <Box component="form" onSubmit={event => { event.preventDefault(); void createProfile() }} sx={{ display: 'flex', gap: 1, mt: 2 }}><TextField size="small" label="New profile name" value={name} onChange={event => setName(event.target.value)} fullWidth inputProps={{ maxLength: 60 }} /><IconButton type="submit" aria-label="Create profile" disabled={!name.trim() || busy}><AddRounded /></IconButton></Box>}
+      </DialogContent><DialogActions><Button startIcon={<LogoutRounded />} onClick={lockWallet} disabled={busy} sx={{ mr: 'auto' }}>Lock wallet</Button><Button onClick={() => setProfileOpen(false)} disabled={busy}>Done</Button></DialogActions>
+    </Dialog>
+  </>
 }

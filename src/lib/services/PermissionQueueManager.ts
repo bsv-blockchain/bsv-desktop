@@ -24,6 +24,8 @@ import {
   GroupedPermissions,
 } from '../types/GroupedPermissions'
 import type { PermissionPromptHandler } from '../permissionModules/types'
+import { listMandalaTokenOutpoints } from '../permissionModules/mandala'
+import { wrapCreateActionForTokenInputs } from '../permissionModules/mandala/permissionModule'
 import {
   markHttpBridgeSessionCancelled,
   normalizeBridgeOrigin,
@@ -943,7 +945,10 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       if (!descriptor) continue
       permissionModulesMap[moduleId] = descriptor.createModule({
         wallet,
-        promptHandler: this._promptHandlers.get(moduleId),
+        adminOriginator: this.adminOriginator,
+        // Prompts may register after wallet construction or remount on a
+        // theme change. Resolve the current handler at the time of the call.
+        promptHandler: (app: string, message: string) => this._promptHandlers.get(moduleId)?.(app, message) ?? Promise.resolve(false),
       })
     }
 
@@ -952,7 +957,11 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       permissionModules: permissionModulesMap,
     }
 
-    const pm = new WalletPermissionsManager(wallet, this.adminOriginator, configWithModules as any)
+    const pm = wrapCreateActionForTokenInputs(
+      new WalletPermissionsManager(wallet, this.adminOriginator, configWithModules as any),
+      () => listMandalaTokenOutpoints(wallet, this.adminOriginator),
+      this.adminOriginator
+    )
 
     pm.bindCallback('onProtocolPermissionRequested', this.protocolPermissionCallback)
     pm.bindCallback('onBasketAccessRequested', this.basketAccessCallback)

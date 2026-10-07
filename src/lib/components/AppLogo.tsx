@@ -23,10 +23,11 @@ const AppLogo: React.FC<AppLogoProps> = ({ className, size, color = '#2196F3', r
     });
   }
 
-  // Create edges between all vertices (complete graph)
+  // Connect every pair except east–west (0, 4) and south–north (2, 6).
   const edges = [];
   for (let i = 0; i < vertices.length; i++) {
     for (let j = i + 1; j < vertices.length; j++) {
+      if ((i === 0 && j === 4) || (i === 2 && j === 6)) continue;
       edges.push({
         x1: vertices[i].x,
         y1: vertices[i].y,

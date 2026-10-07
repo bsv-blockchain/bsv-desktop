@@ -1,711 +1,209 @@
-// src/routes/PeerPayRoute.tsx
-import React, { useCallback, useEffect, useMemo, useState, useContext } from 'react'
-import {
-  Alert,
-  Avatar,
-  Box,
-  Button,
-  Chip,
-  Container,
-  Divider,
-  LinearProgress,
-  List,
-  ListItem,
-  ListItemText,
-  Paper,
-  Snackbar,
-  Stack,
-  TextField,
-  Typography,
-  Select,
-  MenuItem,
-  FormControl,
-  CircularProgress,
-  Autocomplete,
-  Card,
-  CardContent,
-  Link
-} from '@mui/material'
-import InputAdornment from '@mui/material/InputAdornment'
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { Alert, Autocomplete, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, InputAdornment, Paper, Stack, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
+import ArrowOutwardOutlined from '@mui/icons-material/ArrowOutwardOutlined'
+import ArrowDownwardOutlined from '@mui/icons-material/ArrowDownwardOutlined'
+import QrCodeScannerOutlined from '@mui/icons-material/QrCodeScannerOutlined'
+import ContentCopyOutlined from '@mui/icons-material/ContentCopyOutlined'
+import RefreshOutlined from '@mui/icons-material/RefreshOutlined'
+import CheckCircleOutline from '@mui/icons-material/CheckCircleOutline'
+import InboxOutlined from '@mui/icons-material/InboxOutlined'
+import { useHistory, useLocation } from 'react-router-dom'
+import { P2PKH } from '@bsv/sdk'
 import { IncomingPayment, IncomingPaymentRequest } from '@bsv/message-box-client'
-import RequestPaymentForm from './RequestPaymentForm'
-import IncomingRequestList from './IncomingRequestList'
-import { Utils, Script, PublicKey, WalletInterface } from '@bsv/sdk'
-import { WalletContext } from '../../../WalletContext'
-import AmountDisplay from '../../../components/AmountDisplay'
-import { toast } from 'react-toastify'
-import { CurrencyConverter } from '@bsv/amountinator'
-import useAsyncEffect from 'use-async-effect'
-import { WalletProfile } from '../../../types/WalletProfile'
-import { OutlinedInput, Tabs, Tab } from '@mui/material'
 import { useIdentitySearch } from '@bsv/identity-react'
-import MessageBoxConfig from '../../../components/MessageBoxConfig/index.tsx'
-import { useTranslation } from 'react-i18next'
+import { QRCodeSVG } from 'qrcode.react'
+import { WalletContext } from '../../../WalletContext'
+import { beginUserWalletOperation } from '../../../services/httpBridgeSession'
+import AmountInput from '../../../components/AmountInput'
+import AmountDisplay from '../../../components/AmountDisplay'
+import AddressReceive from './AddressReceive'
+import NearbyPayments from './NearbyPayments'
+import QrScanner from './QrScanner'
+import { identityKey, parsePaymentTarget, PaymentTarget, peerPayLink, validAmount } from './paymentProtocol'
+import { broadcastNearbyPayment } from './nearbyProtocol'
+import { deliverMessageBoxPayment, OutgoingPayment, prepareMessageBoxPayment } from './messageBoxPayments'
 
-/* --------------------------- Inline: Payment Form -------------------------- */
-type PaymentFormProps = {
-  onSent?: () => void
-  wallet: WalletInterface
-}
-function PaymentForm({ wallet, onSent }: PaymentFormProps) {
-  const { t } = useTranslation()
-  const {managers, activeProfile, peerPayClient, loginType, adminOriginator } = useContext(WalletContext)
-  const isDirectKey = loginType === 'direct-key'
+const card = { border: '1px solid', borderColor: 'divider', borderRadius: 4, p: { xs: 2.5, md: 4 }, boxShadow: '0 8px 30px rgba(15, 23, 42, 0.035)' }
+const short = (value: string) => `${value.slice(0, 12)}…${value.slice(-6)}`
+type Review = { target: PaymentTarget; amount: number; request?: IncomingPaymentRequest }
+
+export default function Payments() {
+  const context = useContext(WalletContext)
+  const { managers, chain, activeProfile, adminOriginator, peerPayClient, messageBoxUrl, useMessageBox, isHostAnointed, anointCurrentHost, anointmentLoading, switchingNetwork } = context
+  const wallet = managers.permissionsManager
+  const scope = useMemo(() => ({ wallet, chain }), [wallet, chain])
+  const scopeRef = useRef(scope)
+  scopeRef.current = scope
+  const location = useLocation(), history = useHistory()
+  const requestedTab = new URLSearchParams(location.search).get('tab')
+  const tab = requestedTab === 'receive' || requestedTab === 'nearby' ? requestedTab : 'send'
+  const setTab = (value: string) => history.replace({ pathname: location.pathname, search: value === 'send' ? '' : `?tab=${value}` })
+  const [identity, setIdentity] = useState(activeProfile?.identityKey || '')
   const [recipient, setRecipient] = useState('')
-  const [amount, setAmount] = useState<number>(0)
-  const [sending, setSending] = useState(false)
-  const [profiles, setProfiles] = useState<WalletProfile[]>([])
-  const [currencySymbol, setCurrencySymbol] = useState('$')
-  const currencyConverter = new CurrencyConverter(undefined, managers?.settingsManager as any)
-  const [input, setInput] = useState('')
-  const [tabValue, setTabValue] = useState(0) // 0 = profiles, 1 = anyone
-  const [publicKeyInput, setPublicKeyInput] = useState('')
+  const [recipientLabel, setRecipientLabel] = useState('')
+  const [amount, setAmount] = useState<number | null>(null)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [review, setReview] = useState<Review | null>(null)
+  const [scan, setScan] = useState(false)
+  const [nearbyRequest, setNearbyRequest] = useState('')
+  const [receiveKind, setReceiveKind] = useState('wallet')
+  const [requestAmount, setRequestAmount] = useState<number | null>(null)
+  const [requestRecipient, setRequestRecipient] = useState('')
+  const [requestDescription, setRequestDescription] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [incoming, setIncoming] = useState<IncomingPayment[]>([])
+  const [requests, setRequests] = useState<IncomingPaymentRequest[]>([])
+  const [refreshing, setRefreshing] = useState(false)
+  const [inboxError, setInboxError] = useState('')
+  const [inboxBusy, setInboxBusy] = useState('')
+  const [outgoing, setOutgoing] = useState<OutgoingPayment[]>([])
+  const [allowedKey, setAllowedKey] = useState('')
+  const refreshLock = useRef(false)
+  const mutationLock = useRef(false)
+  const outboxKey = identity ? `peerpay-outbox-v1:${identity}:${chain}` : null
+  const available = !!peerPayClient && useMessageBox && !!messageBoxUrl
+  const notify = useCallback((message: string) => { setNotice(message); setError('') }, [])
+  const closeScan = useCallback(() => setScan(false), [])
+  const identitySearch = useIdentitySearch({ wallet, originator: adminOriginator, onIdentitySelected: selected => { if (selected) { setRecipient(selected.identityKey); setRecipientLabel(selected.name || short(selected.identityKey)) } } })
 
-  // Identity search hook for "Send to Anyone" tab
-  const identitySearch = useIdentitySearch({
-    originator: adminOriginator,
-    wallet,
-    onIdentitySelected: (identity) => {
-      if (identity) {
-        setRecipient(identity.identityKey)
-      }
-    }
-  })
-
-  // Generate initials from identity info
-  const getInitials = (name: string, identityKey: string): string => {
-    if (!name || name.trim() === '') {
-      // If no name, use first 2 characters of identity key
-      return identityKey.slice(0, 2).toUpperCase()
-    }
-
-    const words = name.trim().split(/\s+/)
-    if (words.length >= 2) {
-      // First letter of first word + first letter of last word
-      return (words[0][0] + words[words.length - 1][0]).toUpperCase()
-    } else {
-      // Single word: take first 2 letters
-      return name.slice(0, 2).toUpperCase()
-    }
+  useEffect(() => { setReview(null); setRecipient(''); setRecipientLabel(''); setAmount(null); setNearbyRequest(''); setError(''); setNotice(''); }, [wallet, chain])
+  useEffect(() => { let alive = true; setIdentity(''); if (wallet) wallet.getPublicKey({ identityKey: true }, adminOriginator).then(result => { if (alive) setIdentity(result.publicKey) }).catch(error => { if (alive) setError(error.message || 'Your wallet identity could not be loaded.') }); return () => { alive = false } }, [wallet, chain, adminOriginator])
+  useEffect(() => { setOutgoing([]); if (!outboxKey) return; try { const rows = JSON.parse(localStorage.getItem(outboxKey) || '[]'); if (!Array.isArray(rows) || rows.some(row => !row || !/^[0-9a-f]{64}$/.test(row.txid) || !validAmount(row.amount) || !row.token || !Array.isArray(row.token.transaction))) throw new Error(); setOutgoing(rows) } catch { setError('Saved payments could not be read. Check Activity before sending again.'); } }, [outboxKey])
+  const saveOutgoing = useCallback((rows: OutgoingPayment[]) => { if (!outboxKey) throw new Error('Your wallet identity is still loading.'); localStorage.setItem(outboxKey, JSON.stringify(rows)); setOutgoing(rows) }, [outboxKey])
+  const target = useMemo(() => { try { return parsePaymentTarget(recipient, chain) } catch { return null } }, [recipient, chain])
+  const targetError = useMemo(() => { if (!recipient.trim()) return ''; try { parsePaymentTarget(recipient, chain); return '' } catch (error) { return (error as Error).message } }, [recipient, chain])
+  const looksLikeCode = /^[a-z][a-z0-9+.-]*:/i.test(recipient) || /^(0[23][a-f0-9]{10,}|[1mn][1-9A-HJ-NP-Za-km-z]{24,})$/i.test(recipient)
+  const changeRecipient = (_event: React.SyntheticEvent, value: string, reason: string) => {
+    if (reason === 'clear') { setRecipient(''); setRecipientLabel(''); identitySearch.handleInputChange(null, '', 'clear'); return }
+    if (reason !== 'input') return
+    if (value.startsWith('bsvpay1:')) { identitySearch.handleInputChange(null, '', 'clear'); adoptCode(value); return }
+    setRecipient(value); setRecipientLabel(''); setError('')
+    let direct = false
+    try { parsePaymentTarget(value, chain); direct = true } catch { direct = /^[a-z][a-z0-9+.-]*:/i.test(value) || /^(0[23][a-f0-9]{10,}|[1mn][1-9A-HJ-NP-Za-km-z]{24,})$/i.test(value) }
+    identitySearch.handleInputChange(null, direct ? '' : value, direct ? 'clear' : 'input')
   }
+  const fixedAmount = target?.amount
+  const sendAmount = fixedAmount ?? amount
+  const receiveLink = useMemo(() => { try { return useMessageBox && identity && messageBoxUrl ? peerPayLink(identity, messageBoxUrl, requestAmount ?? undefined) : '' } catch { return '' } }, [useMessageBox, identity, messageBoxUrl, requestAmount])
+  const adoptCode = useCallback((value: string) => { setError(''); setNotice(''); if (value.startsWith('bsvpay1:')) { setNearbyRequest(value); history.replace({ pathname: location.pathname, search: '?tab=nearby' }); return } setRecipient(value); setRecipientLabel(''); try { const parsed = parsePaymentTarget(value, chain); if (parsed.amount !== undefined) setAmount(parsed.amount) } catch (error) { setError((error as Error).message) } }, [history, location.pathname, chain])
 
-  useAsyncEffect(async () => {
-    // Note: Handle errors at a higher layer!
-    await currencyConverter.initialize()
-    setCurrencySymbol(currencyConverter.getCurrencySymbol())
-  }, [])
+  const refresh = useCallback(async () => {
+    if (!peerPayClient || !available || switchingNetwork || refreshLock.current) return
+    refreshLock.current = true; setRefreshing(true)
+    try {
+      const results = await Promise.allSettled([peerPayClient.listIncomingPayments(messageBoxUrl), peerPayClient.listIncomingPaymentRequests(messageBoxUrl)])
+      if (scopeRef.current !== scope) return
+      if (results[0].status === 'fulfilled') setIncoming(results[0].value)
+      if (results[1].status === 'fulfilled') setRequests(results[1].value)
+      const failed = results.find(result => result.status === 'rejected') as PromiseRejectedResult | undefined
+      setInboxError(failed ? failed.reason?.message || 'The message box could not be reached. Try refreshing.' : '')
+    } finally { refreshLock.current = false; setRefreshing(false) }
+  }, [peerPayClient, available, messageBoxUrl, switchingNetwork, scope])
+  useEffect(() => { setIncoming([]); setRequests([]); void refresh(); const timer = setInterval(() => { if (!document.hidden) void refresh() }, 20_000); return () => clearInterval(timer) }, [refresh])
 
-  const otherProfiles = useMemo(
-    () => profiles.filter(p => p.identityKey !== activeProfile?.identityKey),
-    [profiles, activeProfile?.identityKey]
-  )
-
-  const handleAmountChange = useCallback(async (event) => {
-    const input = event.target.value.replace(/[^0-9.]/g, '')
-    if (input !== amount) {
-      setInput(input)
-      const satoshis = await currencyConverter.convertToSatoshis(input)
-      setAmount(satoshis)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (isDirectKey) return // No profiles in direct-key mode
-    let alive = true
-      ; (async () => {
-        try {
-          if (!managers?.walletManager || !managers.walletManager.listProfiles) return
-          const list: WalletProfile[] = await managers.walletManager.listProfiles()
-          if (!alive) return
-          const cloned = list.map(p => ({
-            id: [...p.id],
-            name: String(p.name),
-            createdAt: p.createdAt ?? null,
-            active: !!p.active,
-            identityKey: p.identityKey
-          }))
-          setProfiles(cloned)
-        } catch (e) {
-          toast.error('[PaymentForm] listProfiles error:', e as any)
-        }
-      })()
-    return () => { alive = false }
-  }, [managers, isDirectKey])
-
-  const canSend = recipient.trim().length > 0 && amount > 0 && !sending
-
+  const deliver = async (payment: OutgoingPayment, rows = outgoing) => {
+    if (!wallet || !peerPayClient) throw new Error('Connect a message box in Settings before sending.')
+    const release = beginUserWalletOperation()
+    try {
+      await broadcastNearbyPayment(wallet, payment.txid, adminOriginator)
+      await deliverMessageBoxPayment(peerPayClient, payment)
+      if (payment.request) {
+        await peerPayClient.sendMessage({ recipient: payment.recipient, messageBox: 'payment_request_responses', body: JSON.stringify({ requestId: payment.request.requestId, status: 'paid', amountPaid: payment.amount }) }, payment.host)
+        await peerPayClient.acknowledgeMessage({ messageIds: [payment.request.messageId], host: messageBoxUrl })
+      }
+      saveOutgoing(rows.map(row => row.txid === payment.txid ? { ...row, delivered: true } : row))
+      window.dispatchEvent(new CustomEvent('balance-changed'))
+    } finally { release() }
+  }
   const send = async () => {
-    console.log({ canSend, peerPayClient, amount , recipient, sending })
-    if (!canSend || !peerPayClient) throw new Error('peerPayClient is not initialized')
+    if (!review || !wallet || mutationLock.current || switchingNetwork) return
+    mutationLock.current = true; setBusy(true); setError(''); setNotice('')
+    let prepared = false
+    let release: (() => void) | undefined
     try {
-      setSending(true)
-      await peerPayClient.sendPayment({
-        recipient: recipient.trim(),
-        amount
-      })
-      onSent?.()
-      toast.success(t('payments_payment_success'))
-      setInput('0')
-      // Dispatch custom event to refresh balance
-      window.dispatchEvent(new CustomEvent('balance-changed'))
-    } catch (e) {
-      toast.error('[PaymentForm] sendPayment error:', e as any)
-      alert((e as Error)?.message ?? t('payments_failed_to_send'))
-    } finally {
-      setSending(false)
-    }
-  }
-
-  type IdentityOption = {
-    identityKey: string
-    name?: string
-    avatarURL?: string
-    badgeLabel?: string
-  } | string
-
-  type StrictIdentityOption = {
-    identityKey: string
-  }
-
-  return (
-    <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
-      <Typography variant="h6" sx={{ mb: 1 }}>
-        {t('payments_create_new_payment')}
-      </Typography>
-      <Stack spacing={2}>
-        {!isDirectKey && (
-          <Tabs value={tabValue} onChange={(e, newValue) => {
-            setTabValue(newValue)
-            setRecipient('')
-          }}>
-            <Tab label={t('payments_tab_pay_someone')} />
-            <Tab label={t('payments_tab_internal_transfer')} />
-          </Tabs>
-        )}
-
-        {(tabValue === 0 || isDirectKey) ? (
-          <>
-            <Autocomplete
-              options={identitySearch.identities}
-              loading={identitySearch.isLoading}
-              inputValue={identitySearch.inputValue}
-              value={identitySearch.selectedIdentity}
-              onInputChange={identitySearch.handleInputChange}
-              onChange={(event, value) => {
-                identitySearch.handleSelect(event, value as any);
-                if (value && typeof value !== 'string') {
-                  setRecipient(value.identityKey);
-                  setPublicKeyInput(value.identityKey); // show selected identity key
-                } else {
-                  setRecipient('');
-                  setPublicKeyInput('');
-                }
-              }}
-              filterOptions={(options: IdentityOption[]) => options.filter((identity: IdentityOption, index, array) => array.findIndex((i: StrictIdentityOption) => i.identityKey === (identity as StrictIdentityOption).identityKey) === index)}
-              getOptionLabel={(option) => {
-                if (typeof option === 'string') return option
-                return option.name || option.identityKey.slice(0, 16)
-              }}
-              isOptionEqualToValue={(option, value) => {
-                if (typeof option === 'string' || typeof value === 'string') return false
-                return option.identityKey === value.identityKey
-              }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label={t('payments_search_for_recipient')}
-                  placeholder={t('payments_search_placeholder')}
-                  InputProps={{
-                    ...params.InputProps,
-                    endAdornment: (
-                      <>
-                        {identitySearch.isLoading ? <CircularProgress size={20} /> : null}
-                        {params.InputProps.endAdornment}
-                      </>
-                    )
-                  }}
-                />
-              )}
-              renderOption={(props, option) => {
-                if (typeof option === 'string') return null
-                const { key, ...otherProps } = props
-                return (
-                  <li key={key + option.identityKey} {...otherProps}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
-                      {option.avatarURL ? (
-                        <Avatar
-                          src={option.avatarURL}
-                          alt={option.name}
-                          sx={{ width: 40, height: 40 }}
-                        />
-                      ) : (
-                        <Avatar
-                          sx={{
-                            width: 40,
-                            height: 40,
-                            bgcolor: 'primary.main',
-                            fontSize: '0.875rem',
-                            fontWeight: 600
-                          }}
-                        >
-                          {getInitials(option.name, option.identityKey)}
-                        </Avatar>
-                      )}
-                      <Box sx={{ flexGrow: 1 }}>
-                        <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                          {option.name || t('payments_unknown')}
-                        </Typography>
-                        <Typography variant="caption" color="textSecondary" sx={{ fontFamily: 'monospace' }}>
-                          {option.identityKey.slice(0, 20)}...
-                        </Typography>
-                      </Box>
-                      {option.badgeLabel && (
-                        <Chip
-                          size="small"
-                          label={option.badgeLabel}
-                          sx={{ ml: 1 }}
-                        />
-                      )}
-                    </Box>
-                  </li>
-                )
-              }}
-              noOptionsText={identitySearch.inputValue ? t('payments_no_identities_found') : t('payments_start_typing_to_search')}
-              fullWidth
-            />
-            <TextField
-              fullWidth
-              label={identitySearch.selectedIdentity ? t('payments_selected_recipient_key') : t('payments_enter_recipient_public_key')}
-              value={publicKeyInput}
-              onChange={(e) => {
-                const val = e.target.value.trim();
-                setPublicKeyInput(val);
-                if (val) {
-                  try {
-                    PublicKey.fromString(val);
-                    setRecipient(val);
-                    // Clear the autocomplete selection
-                    identitySearch.handleSelect(null, null);
-                  } catch (error) {
-                    setRecipient('');
-                  }
-                } else {
-                  setRecipient('');
-                }
-              }}
-              disabled={!!identitySearch.selectedIdentity}
-              error={Boolean(publicKeyInput && !recipient && !identitySearch.selectedIdentity)}
-              helperText={publicKeyInput && !recipient && !identitySearch.selectedIdentity ? t('payments_invalid_public_key') : ''}
-              sx={{ mt: 1 }}
-            />
-          </>
-        ) : (
-          <FormControl fullWidth>
-            <Select
-              label={t('payments_destination_profile')}
-              value={recipient || ''}
-              displayEmpty
-              onChange={(e) => setRecipient(e.target.value as string)}
-              renderValue={(val) => {
-                if (!val) return t('payments_select_a_profile')
-                const p = profiles.find(p => p.identityKey === val)
-                return p ? `${p.name} — ${p.identityKey.slice(0, 10)}` : ''
-              }}
-              input={<OutlinedInput notched={false} />}
-            >
-              {otherProfiles.map((p) => (
-                <MenuItem key={p.identityKey} value={p.identityKey}>
-                  {p.name} — {p.identityKey.slice(0, 10)}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        )}
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-          <TextField
-            label={t('payments_enter_amount')}
-            variant="outlined"
-            value={input}
-            onChange={handleAmountChange}
-            InputProps={{
-              startAdornment: <InputAdornment position="start">{currencySymbol}</InputAdornment>
-            }}
-            fullWidth
-          />
-
-        </Stack>
-
-        <Box>
-          <Button variant="contained" disabled={!canSend} onClick={send}>
-            {sending ? t('payments_sending') : t('payments_send')}
-          </Button>
-        </Box>
-      </Stack>
-    </Paper>
-  )
-}
-
-/* --------------------------- Inline: Payment List -------------------------- */
-type PaymentListProps = {
-  payments: IncomingPayment[]
-  onRefresh: () => void
-}
-
-function PaymentList({ payments, onRefresh }: PaymentListProps) {
-  const { t } = useTranslation()
-  // Track loading per messageId so buttons aren't linked
-  const { messageBoxUrl, useMessageBox, peerPayClient } = useContext(WalletContext)
-
-  const [loadingById, setLoadingById] = useState<Record<string, boolean>>({})
-
-  const setLoadingFor = (id: string, on: boolean) => {
-    setLoadingById(prev => {
-      if (on) return { ...prev, [id]: true }
-      const next = { ...prev }
-      delete next[id]
-      return next
-    })
-  }
-
-  const acceptWithRetry = async (p: IncomingPayment) => {
-    if (!peerPayClient) return false
-    const id = String(p.messageId)
-    setLoadingFor(id, true)
-    try {
-      await peerPayClient.acceptPayment(p)
-      return true
-    } catch (e1) {
-      toast.error('[PaymentList] acceptPayment raw failed → refetching by id', e1 as any)
-      try {
-        const list = await peerPayClient.listIncomingPayments(messageBoxUrl)
-        const fresh = list.find(x => String(x.messageId) === id)
-        if (!fresh) throw new Error('Payment not found on refresh')
-        await peerPayClient.acceptPayment(fresh)
-        return true
-      } catch (e2) {
-        toast.error('[PaymentList] acceptPayment refresh retry failed', e2 as any)
-        return false
-      } finally {
-        setLoadingFor(id, false)
+      release = beginUserWalletOperation()
+      const verifiedTarget = parsePaymentTarget(review.target.recipient, chain)
+      if (verifiedTarget.kind !== review.target.kind || !validAmount(review.amount)) throw new Error('Check the recipient and amount again before sending.')
+      if (review.target.kind === 'identity') {
+        if (!available) throw new Error('Connect a message box in Settings before sending to a wallet identity.')
+        let nextRows = outgoing
+        if (review.request) {
+          const fresh = (await peerPayClient!.listIncomingPaymentRequests(messageBoxUrl)).find(request => request.messageId === review.request!.messageId)
+          if (!fresh || fresh.sender !== review.target.recipient || fresh.amount !== review.amount || fresh.requestId !== review.request.requestId || fresh.expiresAt <= Date.now()) throw new Error('This request has changed or expired. Refresh your inbox before paying.')
+          if (outgoing.some(payment => payment.request?.requestId === fresh.requestId && payment.recipient === fresh.sender)) throw new Error('You have already prepared this payment. Retry its delivery from Saved payments.')
+        }
+        let payment = await prepareMessageBoxPayment(wallet, review.target.recipient, review.amount, adminOriginator, review.target.host, original => { const saved = review.request ? { ...original, request: { requestId: review.request.requestId, messageId: review.request.messageId } } : original; nextRows = [...outgoing, saved]; saveOutgoing(nextRows); prepared = true })
+        payment = nextRows[nextRows.length - 1]
+        await deliver(payment, nextRows)
+      } else {
+        await wallet.createAction({ description: 'Sent BSV to address', outputs: [{ lockingScript: new P2PKH().lock(review.target.recipient).toHex(), satoshis: review.amount, outputDescription: 'BSV payment' }], labels: ['legacy', 'outbound', `to-address:${review.target.recipient}`] }, adminOriginator)
       }
-    } finally {
-      // Ensure we clear loading even on the success path
-      setLoadingFor(id, false)
-    }
+      setReview(null); setRecipient(''); setRecipientLabel(''); setAmount(null); notify('Payment sent.'); window.dispatchEvent(new CustomEvent('balance-changed')); void refresh()
+    } catch (error) { setError(prepared ? `Your payment is saved below. Retry its delivery; do not send a new payment. ${(error as Error).message}` : (error as Error).message || 'The payment could not be sent.'); if (prepared) setReview(null) } finally { release?.(); mutationLock.current = false; setBusy(false) }
   }
-
-  const accept = async (p: IncomingPayment) => {
+  const receivePayment = async (payment: IncomingPayment) => {
+    if (!peerPayClient || inboxBusy || switchingNetwork) return
+    setInboxBusy(payment.messageId); setError('')
+    let release: (() => void) | undefined
+    try { release = beginUserWalletOperation(); await peerPayClient.acceptPayment(payment); notify('Payment added to your wallet.'); window.dispatchEvent(new CustomEvent('balance-changed')); void refresh() } catch (error) { setError((error as Error).message || 'This payment could not be received. Try again.') } finally { release?.(); setInboxBusy('') }
+  }
+  const sendRequest = async () => {
+    if (!peerPayClient || !validAmount(requestAmount) || busy) return
+    setBusy(true); setError('')
+    let release: (() => void) | undefined
     try {
-      const ok = await acceptWithRetry(p)
-      if (!ok) throw new Error('Accept failed')
-      // Dispatch custom event to refresh balance on successful payment
-      window.dispatchEvent(new CustomEvent('balance-changed'))
-    } catch (e) {
-      toast.error('[PaymentList] acceptPayment error (final):', e as any)
-      alert((e as Error)?.message ?? t('payments_failed_to_accept'))
-    } finally {
-      onRefresh()
-    }
+      release = beginUserWalletOperation()
+      const key = identityKey(requestRecipient)
+      await peerPayClient.requestPayment({ recipient: key, amount: requestAmount, description: requestDescription.trim() || 'BSV payment request', expiresAt: Date.now() + 86400_000 })
+      notify('Payment request sent. It expires in 24 hours.'); setRequestRecipient(''); setRequestDescription('')
+    } catch (error) { setError((error as Error).message || 'The request could not be sent.') } finally { release?.(); setBusy(false) }
   }
-
-  if (!useMessageBox || !messageBoxUrl) {
-    return null
-  }
-
-  return (
-    <Paper elevation={2} sx={{ p: 2, width: '100%' }}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-        <Typography variant="h6">{t('payments_pending_payments')}</Typography>
-        <Button onClick={onRefresh}>{t('payments_refresh')}</Button>
-      </Box>
-
-      {payments.length === 0 ? (
-        <Typography color="text.secondary">{t('payments_no_pending_payments')}</Typography>
-      ) : (
-        <List sx={{ width: '100%' }}>
-          {payments.map((p) => {
-            const id = String(p.messageId)
-            const isLoading = !!loadingById[id]
-            return (
-              <React.Fragment key={id}>
-                <ListItem
-                  secondaryAction={
-                    <Stack direction="row" spacing={1}>
-                      <Button
-                        size="small"
-                        variant="contained"
-                        startIcon={
-                          isLoading ? <CircularProgress size={16} sx={{ color: 'black' }} /> : null
-                        }
-                        disabled={isLoading}
-                        onClick={() => accept(p)}
-                      >
-                        {isLoading ? t('payments_receiving') : t('payments_receive')}
-                      </Button>
-                    </Stack>
-                  }
-                >
-                  <ListItemText
-                    primary={
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Chip size="small" label={<AmountDisplay>{p.token.amount}</AmountDisplay>} />
-                        <Typography fontFamily="monospace" fontSize="0.9rem">
-                          {id.slice(0, 10)}…
-                        </Typography>
-                      </Stack>
-                    }
-                    secondary={
-                      <Typography variant="body2" color="text.secondary">
-                        {t('payments_from')}: {p.sender?.slice?.(0, 14) ?? t('payments_unknown')}…
-                      </Typography>
-                    }
-                  />
-                </ListItem>
-                <Divider component="li" />
-              </React.Fragment>
-            )
-          })}
-        </List>
-      )}
-    </Paper>
-  )
-}
-
-/* ------------------------------- Route View -------------------------------- */
-export default function PeerPayRoute() {
-  const { t } = useTranslation()
-  const {
-    messageBoxUrl,
-    managers,
-    useMessageBox,
-    peerPayClient,
-    isHostAnointed,
-    anointCurrentHost,
-    anointmentLoading,
-    adminOriginator,
-    activeProfile
-  } = useContext(WalletContext)
-  const wallet = managers?.permissionsManager || null
-  const idSuffix = activeProfile?.identityKey ? `_${activeProfile.identityKey}` : ''
-
-  const [payments, setPayments] = useState<IncomingPayment[]>([])
-  const [incomingRequests, setIncomingRequests] = useState<IncomingPaymentRequest[]>([])
-  const [activeTab, setActiveTab] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [transactions, setTransactions] = useState([])
-  const [snack, setSnack] = useState<{ open: boolean; msg: string; severity: 'success' | 'info' | 'warning' | 'error' }>({
-    open: false,
-    msg: '',
-    severity: 'info',
-  })
-
-  const fetchPayments = useCallback(async () => {
-    try {
-      if (!peerPayClient || !messageBoxUrl) return
-      setLoading(true)
-      const list = await peerPayClient.listIncomingPayments(messageBoxUrl)
-      setPayments(list)
-    } catch (e) {
-      setSnack({ open: true, msg: (e as Error)?.message ?? t('payments_failed_to_load'), severity: 'error' })
-    } finally {
-      setLoading(false)
-    }
-  }, [peerPayClient, messageBoxUrl])
-
-  const fetchRequests = useCallback(async () => {
-    try {
-      if (!peerPayClient || !messageBoxUrl) return
-      const min = parseInt(localStorage.getItem(`payReq_minAmount${idSuffix}`) ?? '1000', 10)
-      const max = parseInt(localStorage.getItem(`payReq_maxAmount${idSuffix}`) ?? '10000000', 10)
-      const list = await peerPayClient.listIncomingPaymentRequests(messageBoxUrl, {
-        minAmount: isNaN(min) ? 1000 : min,
-        maxAmount: isNaN(max) ? 10000000 : max
-      })
-      setIncomingRequests(list)
-    } catch (e) {
-      setSnack({ open: true, msg: (e as Error)?.message ?? t('payments_failed_to_load_requests'), severity: 'error' })
-    }
-  }, [peerPayClient, messageBoxUrl, idSuffix])
-
-  const getPastTransactions = async () => {
-    if (!wallet) return
-
-    try {
-      const response = await wallet.listActions({
-        labels: ['peerpay'],
-        labelQueryMode: 'any',
-        includeOutputLockingScripts: true,
-        includeOutputs: true,
-        limit: 100,
-      }, adminOriginator)
-
-      console.log({ response })
-
-      setTransactions((txs) => {
-        const set = new Set(txs.map((tx) => tx.txid))
-        const pastTxs = response.actions.map((action) => {
-          let address = ''
-          // Try to find BSV recipient output first
-          try {
-            address = Utils.toBase58Check(
-              Script.fromHex(action.outputs![0].lockingScript!).chunks[2].data as number[]
-            )
-          } catch (error) {
-            console.log({ error })
-            address = ''
-          }
-
-          return {
-            txid: action.txid,
-            to: address || 'unknown',
-            amount: action.satoshis,
-          }
-        })
-        const newTxs = pastTxs.filter((tx) => tx.amount !== 0 && !set.has(tx.txid))
-        return [...txs, ...newTxs]
-      })
-    } catch (error) {
-      console.error('Error fetching transactions:', error)
-    }
-  }
-
-  // If Message Box is not configured, show configuration UI instead
-  if (!useMessageBox || !messageBoxUrl || !peerPayClient) {
-    return (
-      <Container maxWidth="sm">
-        <Box sx={{ minHeight: '100vh', py: 5 }}>
-          <Typography variant="h5" sx={{ mb: 2 }}>
-            {t('payments_setup_required')}
-          </Typography>
-          <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>
-            {t('payments_setup_description')}
-          </Typography>
-          <MessageBoxConfig embedded showTitle={false} />
-        </Box>
-      </Container>
-    )
-  }
-
-  return (
-    <Container maxWidth="sm">
-      <Box sx={{ minHeight: '100vh', py: 5 }}>
-        <Typography variant="h5" sx={{ mb: 2 }}>
-          {t('payments_title')}
-        </Typography>
-
-        {!isHostAnointed && (
-          <Alert severity="info" sx={{ mb: 2 }}>
-            {t('payments_host_not_anointed')}
-          </Alert>
-        )}
-
-        <Tabs
-          value={activeTab}
-          onChange={(_, v) => {
-            setActiveTab(v)
-            if (v === 2) fetchRequests()
-            if (v === 3) fetchPayments()
-          }}
-          variant="fullWidth"
-          sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
-        >
-          <Tab label={t('payments_tab_send_payment')} />
-          <Tab label={t('payments_tab_request_payment')} />
-          <Tab label={t('payments_tab_incoming_requests')} />
-          <Tab label={t('payments_tab_pending_payments')} />
-        </Tabs>
-
-        {/* Tab 0: Send Payment */}
-        {activeTab === 0 && (
-          <Stack spacing={2}>
-            <PaymentForm
-              onSent={fetchPayments}
-              wallet={wallet}
-            />
-
-            {loading && <LinearProgress />}
-
-            {/* Transaction History Section */}
-            <Paper elevation={2} sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 500 }}>
-                {t('payments_transaction_history')}
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-
-              <Button variant="outlined" onClick={getPastTransactions} fullWidth sx={{ mb: 2 }}>
-                {t('payments_refresh_transactions')}
-              </Button>
-
-              {transactions.length === 0 ? (
-                <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-                  {t('payments_no_transactions_yet')}
-                </Typography>
-              ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {transactions.map((tx, index) => (
-                    <Card key={index} variant="outlined">
-                      <CardContent>
-                        <Typography variant="body2" color="textSecondary">
-                          <strong>{t('payments_txid')}:</strong>{' '}
-                          <Link
-                            href={`https://whatsonchain.com/tx/${tx.txid}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {tx.txid}
-                          </Link>
-                        </Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          <strong>{t('payments_to')}:</strong> {tx.to || t('payments_na')}
-                        </Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          <strong>{t('payments_amount')}:</strong> {tx.amount ? <AmountDisplay>{tx.amount}</AmountDisplay> : t('payments_na')}
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </Box>
-              )}
-            </Paper>
-          </Stack>
-        )}
-
-        {/* Tab 1: Request Payment */}
-        {activeTab === 1 && (
-          <RequestPaymentForm
-            wallet={wallet}
-            onRequestSent={fetchPayments}
-          />
-        )}
-
-        {/* Tab 2: Incoming Requests */}
-        {activeTab === 2 && (
-          <IncomingRequestList
-            requests={incomingRequests}
-            onRefresh={fetchRequests}
-            wallet={wallet}
-          />
-        )}
-
-        {/* Tab 3: Pending Payments */}
-        {activeTab === 3 && (
-          <Stack spacing={2}>
-            {loading && <LinearProgress />}
-            <PaymentList payments={payments} onRefresh={fetchPayments} />
-          </Stack>
-        )}
-
-        <Snackbar
-          open={snack.open}
-          autoHideDuration={3500}
-          onClose={() => setSnack((s) => ({ ...s, open: false }))}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        >
-          <Alert severity={snack.severity} onClose={() => setSnack((s) => ({ ...s, open: false }))} variant="filled" sx={{ width: '100%' }}>
-            {snack.msg}
-          </Alert>
-        </Snackbar>
-      </Box>
-    </Container>
-  )
+  const pending = outgoing.filter(row => !row.delivered)
+  if (!wallet) return <Alert severity="info">Unlock your wallet to make payments.</Alert>
+  return <Box sx={{ maxWidth: 1100, mx: 'auto', pb: 5 }}>
+    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 3 }}><Box><Typography variant="h1" sx={{ fontWeight: 750, letterSpacing: '-.04em' }}>Payments</Typography><Typography color="text.secondary" sx={{ mt: .75 }}>Pay an address, a wallet, or someone nearby.</Typography></Box><Chip size="small" label={chain === 'main' ? 'Mainnet' : chain === 'test' ? 'Testnet' : chain === 'ttn' ? 'TeraTestnet' : 'TeraScaling Testnet'} variant="outlined" /></Stack>
+    {notice && <Alert severity="success" onClose={() => setNotice('')} sx={{ mb: 2 }}>{notice}</Alert>}
+    {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
+    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.3fr) minmax(0, .9fr)' }, gap: 3, alignItems: 'start' }}>
+      <Paper elevation={0} sx={card}>
+        <Tabs value={tab} onChange={(_, value) => { setTab(value); setError('') }} variant="fullWidth" sx={{ mb: 3, borderBottom: '1px solid', borderColor: 'divider' }} aria-label="Payment options"><Tab label="Send" value="send" icon={<ArrowOutwardOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /><Tab label="Receive" value="receive" icon={<ArrowDownwardOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /><Tab label="Nearby" value="nearby" icon={<QrCodeScannerOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /></Tabs>
+        {tab === 'send' && <Stack spacing={3}>
+          <Box><Typography variant="h6" sx={{ fontWeight: 700 }}>Who are we paying?</Typography><Typography color="text.secondary" variant="body2" sx={{ mt: .5 }}>A wallet identity, payment link, or BSV address.</Typography></Box>
+          <Autocomplete freeSolo options={identitySearch.identities} loading={identitySearch.isLoading} inputValue={recipientLabel || recipient} value={null} filterOptions={options => options} getOptionLabel={(option: any) => typeof option === 'string' ? option : option.name || option.identityKey} onInputChange={changeRecipient} onChange={(_, value) => { if (value && typeof value !== 'string') { setRecipient(value.identityKey); setRecipientLabel(value.name || short(value.identityKey)) } }} noOptionsText="Enter an identity key or address" renderOption={(props, option) => <li {...props} key={option.identityKey}><Avatar src={option.avatarURL} sx={{ width: 34, height: 34, mr: 1.5, bgcolor: 'primary.light' }}>{(option.name || option.identityKey).slice(0, 2).toUpperCase()}</Avatar><Box><Typography variant="body2" sx={{ fontWeight: 650 }}>{option.name || 'Wallet identity'}</Typography><Typography variant="caption" color="text.secondary">{short(option.identityKey)}</Typography></Box></li>} renderInput={params => <TextField {...params} label="Recipient" placeholder="Name, identity, address, or payment link" error={!!recipient && !target && looksLikeCode} helperText={recipientLabel ? `Wallet identity · ${short(recipient)}` : target ? target.kind === 'identity' ? 'Wallet payment · delivered through the message box' : 'Address payment · sent on the BSV network' : recipient ? looksLikeCode ? targetError : 'Select a person from the search results, or paste their identity key.' : undefined} InputProps={{ ...params.InputProps, endAdornment: <>{identitySearch.isLoading && <CircularProgress size={18} />}{params.InputProps.endAdornment}</> }} />} />
+          <Button variant="outlined" startIcon={<QrCodeScannerOutlined />} onClick={() => setScan(true)}>Scan a payment code</Button>
+          <AmountInput valueSats={sendAmount} onChangeSats={setAmount} label="Amount" fullWidth disabled={fixedAmount !== undefined} helperText={fixedAmount !== undefined ? 'This amount comes from the recipient’s payment request.' : 'Network fees are added when the payment is created.'} />
+          {target?.kind === 'identity' && target.host && <Alert severity="info">Delivery server: {new URL(target.host).host}</Alert>}
+          {target?.kind === 'identity' && !available && <Alert severity="warning">Connect your message box in Settings to pay a wallet identity. Address payments are available.</Alert>}
+          <Button variant="contained" size="large" endIcon={<ArrowOutwardOutlined />} disabled={!target || !validAmount(sendAmount) || busy || switchingNetwork || !identity || target.kind === 'identity' && !available} onClick={() => { setNotice(''); setReview({ target, amount: sendAmount! }) }}>Review payment</Button>
+        </Stack>}
+        {tab === 'receive' && <Stack spacing={3}>
+          <ToggleButtonGroup fullWidth exclusive value={receiveKind} onChange={(_, value) => { if (value) setReceiveKind(value) }} aria-label="Receive payment type"><ToggleButton value="wallet">Wallet payment</ToggleButton><ToggleButton value="address">BSV address</ToggleButton></ToggleButtonGroup>
+          {receiveKind === 'address' ? identity && <AddressReceive key={`${identity}:${chain}`} identity={identity} onSuccess={notify} /> : <>
+            <Box><Typography variant="h6" sx={{ fontWeight: 700 }}>Your wallet, one scan away</Typography><Typography color="text.secondary" variant="body2" sx={{ mt: .5 }}>Share your payment link with another BSV Wallet. The sender can pay your identity directly.</Typography></Box>
+            {!available ? <Alert severity="info">Connect a message box in Settings, or receive using a BSV address above.</Alert> : <>
+              <AmountInput fullWidth label="Amount to request (optional)" valueSats={requestAmount} onChangeSats={setRequestAmount} helperText="Leave blank to let the sender choose." />
+              <Box sx={{ textAlign: 'center', py: 1 }}>{receiveLink ? <QRCodeSVG value={receiveLink} size={240} level="M" marginSize={2} /> : <Typography color="text.secondary">Enter a positive amount or leave it blank.</Typography>}</Box>
+              <Box sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 2 }}><Typography variant="body2" sx={{ wordBreak: 'break-all', fontFamily: 'monospace', fontSize: 12 }}>{identity}</Typography><Button fullWidth startIcon={<ContentCopyOutlined />} disabled={!receiveLink} onClick={async () => { try { await navigator.clipboard.writeText(receiveLink); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { setError('Copy failed. Select your identity key above and copy it.') } }}>{copied ? 'Payment link copied' : 'Copy payment link'}</Button></Box>
+              {!isHostAnointed && <Alert severity="info" action={<Button size="small" disabled={anointmentLoading || switchingNetwork} onClick={async () => { let release: (() => void) | undefined; try { release = beginUserWalletOperation(); await anointCurrentHost(); notify('Your wallet can now be discovered for payments.') } catch (error) { setError((error as Error).message) } finally { release?.() } }}>Enable</Button>}>Enable wallet discovery to receive payments from people who only have your identity key. A network fee applies.</Alert>}
+              <Divider /><Box component="details"><Typography component="summary" sx={{ cursor: 'pointer', fontWeight: 650 }}>Send someone a payment request</Typography><Stack spacing={2} sx={{ pt: 2 }}><TextField label="Their identity key" fullWidth value={requestRecipient} onChange={event => setRequestRecipient(event.target.value)} /><TextField label="What is it for?" fullWidth value={requestDescription} inputProps={{ maxLength: 200 }} onChange={event => setRequestDescription(event.target.value)} /><Button variant="outlined" disabled={!validAmount(requestAmount) || !requestRecipient || busy || switchingNetwork} onClick={sendRequest}>{busy ? 'Sending…' : 'Send request · expires in 24 hours'}</Button><Typography variant="caption" color="text.secondary">The recipient must allow payment requests from your identity. Completed payments appear in your inbox.</Typography></Stack></Box>
+            </>}
+          </>}
+        </Stack>}
+        {tab === 'nearby' && identity && <NearbyPayments key={`${identity}:${chain}:${nearbyRequest}`} identity={identity} onSuccess={notify} initialRequest={nearbyRequest || undefined} />}
+      </Paper>
+      <Stack spacing={3}>
+        {pending.length > 0 && <Paper elevation={0} sx={card}><Typography variant="h6" sx={{ fontWeight: 700 }}>Saved payments</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: .5, mb: 2 }}>Retry delivery of the original payment. Each retry uses the same transaction.</Typography>{pending.map(payment => <Box key={payment.txid} sx={{ py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}><Stack direction="row" justifyContent="space-between" alignItems="center"><Box><Typography sx={{ fontWeight: 700 }}><AmountDisplay>{payment.amount}</AmountDisplay></Typography><Typography color="text.secondary" variant="caption">To {short(payment.recipient)}</Typography></Box><Button disabled={busy || !available || switchingNetwork} onClick={async () => { if (mutationLock.current) return; mutationLock.current = true; setBusy(true); try { await deliver(payment); notify('Saved payment delivered.'); void refresh() } catch (error) { setError((error as Error).message || 'Delivery is still pending.') } finally { mutationLock.current = false; setBusy(false) } }}>Retry delivery</Button></Stack></Box>)}</Paper>}
+        <Paper elevation={0} sx={card}><Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}><Typography variant="h6" sx={{ fontWeight: 700 }}>Your inbox</Typography><Button size="small" startIcon={refreshing ? <CircularProgress size={15} /> : <RefreshOutlined />} onClick={() => void refresh()} disabled={!available || refreshing || switchingNetwork}>Refresh</Button></Stack>
+          {inboxError && <Alert severity="warning" sx={{ mb: 2 }}>{inboxError}</Alert>}
+          {!available ? <Typography color="text.secondary" variant="body2">Wallet payments will appear here when your message box is connected.</Typography> : incoming.length === 0 && requests.length === 0 ? <Box sx={{ textAlign: 'center', py: 4 }}><InboxOutlined sx={{ fontSize: 38, color: 'text.disabled' }} /><Typography sx={{ fontWeight: 650, mt: 1.5 }}>All caught up</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: .5 }}>Incoming payments and requests appear here.</Typography></Box> : <Stack spacing={2}>{incoming.map(payment => <Box key={payment.messageId} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2.5, p: 2 }}><Typography variant="caption" color="text.secondary">Payment from {short(payment.sender)}</Typography><Typography sx={{ fontSize: 20, fontWeight: 700, mt: .5 }}><AmountDisplay>{payment.token.amount}</AmountDisplay></Typography><Button variant="contained" size="small" sx={{ mt: 1.5 }} disabled={!!inboxBusy || switchingNetwork} onClick={() => void receivePayment(payment)}>{inboxBusy === payment.messageId ? 'Receiving…' : 'Add to wallet'}</Button></Box>)}{requests.map(request => <Box key={request.messageId} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2.5, p: 2 }}><Typography variant="caption" color="text.secondary">Request from {short(request.sender)}</Typography><Typography sx={{ fontSize: 20, fontWeight: 700, mt: .5 }}><AmountDisplay>{request.amount}</AmountDisplay></Typography><Typography variant="body2" sx={{ mt: .5 }}>{request.description}</Typography><Stack direction="row" spacing={1} sx={{ mt: 1.5 }}><Button size="small" variant="outlined" disabled={busy || switchingNetwork || request.expiresAt <= Date.now() || outgoing.some(payment => payment.request?.requestId === request.requestId && payment.recipient === request.sender)} onClick={() => setReview({ target: { kind: 'identity', recipient: request.sender }, amount: request.amount, request })}>Review & pay</Button><Button size="small" disabled={!!inboxBusy || switchingNetwork} onClick={async () => { setInboxBusy(request.messageId); let release: (() => void) | undefined; try { release = beginUserWalletOperation(); await peerPayClient!.declinePaymentRequest({ request }); notify('Request declined.'); void refresh() } catch (error) { setError((error as Error).message) } finally { release?.(); setInboxBusy('') } }}>Decline</Button></Stack></Box>)}</Stack>}
+          {available && <Box component="details" sx={{ mt: 2 }}><Typography component="summary" variant="body2" color="text.secondary" sx={{ cursor: 'pointer' }}>Allow payment requests from someone</Typography><Stack spacing={1.5} sx={{ mt: 2 }}><TextField size="small" label="Identity key" value={allowedKey} onChange={event => setAllowedKey(event.target.value)} /><Button size="small" variant="outlined" disabled={!allowedKey || busy || switchingNetwork} onClick={async () => { setBusy(true); let release: (() => void) | undefined; try { release = beginUserWalletOperation(); await peerPayClient!.allowPaymentRequestsFrom({ identityKey: identityKey(allowedKey) }); notify('Payment requests allowed for this identity.'); setAllowedKey('') } catch (error) { setError((error as Error).message) } finally { release?.(); setBusy(false) } }}>Allow requests</Button></Stack></Box>}
+        </Paper>
+        <Box sx={{ px: 1, display: 'flex', gap: 1.5 }}><CheckCircleOutline sx={{ color: 'primary.main', fontSize: 21, mt: .3 }} /><Typography variant="body2" color="text.secondary">You review every payment before it leaves your wallet. Switch networks and manage your message box in Settings.</Typography></Box>
+      </Stack>
+    </Box>
+    <QrScanner open={scan} onClose={closeScan} onRead={adoptCode} />
+    <Dialog open={!!review} onClose={() => { if (!busy) setReview(null) }} fullWidth maxWidth="xs"><DialogTitle>Review your payment</DialogTitle><DialogContent><Stack spacing={2.5}><Box><Typography variant="body2" color="text.secondary">You’re sending</Typography><Typography variant="h3" sx={{ fontWeight: 750, mt: .5 }}><AmountDisplay>{review?.amount || 0}</AmountDisplay></Typography><Typography variant="caption" color="text.secondary">{review?.amount.toLocaleString()} satoshis + network fee</Typography></Box><Divider /><Box><Typography variant="body2" color="text.secondary">To {review?.target.kind === 'identity' ? 'wallet identity' : 'BSV address'}</Typography><Typography variant="body2" sx={{ fontFamily: 'monospace', mt: .75, wordBreak: 'break-all' }}>{review?.target.recipient}</Typography></Box><Typography variant="body2" color="text.secondary">Network: {chain === 'main' ? 'Mainnet' : chain.toUpperCase()}. Confirm the recipient and network before sending.</Typography>{error && <Alert severity="error">{error}</Alert>}</Stack></DialogContent><DialogActions sx={{ p: 2.5 }}><Button disabled={busy} onClick={() => setReview(null)}>Back</Button><Button variant="contained" disabled={busy || switchingNetwork} onClick={send}>{busy ? 'Sending…' : 'Confirm & send'}</Button></DialogActions></Dialog>
+  </Box>
 }

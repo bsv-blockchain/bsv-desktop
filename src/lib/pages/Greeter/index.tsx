@@ -1,1102 +1,231 @@
-import { useContext, useState, useRef, useCallback, useEffect } from 'react'
-import * as secrets from '../../services/secrets';
-import { useTranslation } from 'react-i18next'
-import {
-  Typography,
-  Button,
-  TextField,
-  CircularProgress,
-  InputAdornment,
-  IconButton,
-  Paper,
-  Box,
-  Container,
-  useTheme,
-  Stepper,
-  Step,
-  StepLabel,
-  StepContent,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Alert,
-  AlertTitle,
-  Tooltip,
-} from '@mui/material'
-import {
-  SettingsPhone as PhoneIcon,
-  PermPhoneMsg as SMSIcon,
-  Lock as LockIcon,
-  Restore as RestoreIcon,
-  VpnKey as KeyIcon,
-  Visibility,
-  VisibilityOff,
-  CheckCircle as CheckCircleIcon,
-  Casino as RandomIcon,
-  ContentCopy as CopyIcon,
-  AccountBalanceWallet as WalletIcon,
-  Login as LoginIcon,
-  ArrowBack as ArrowBackIcon,
-  Settings as SettingsIcon,
-  Close as CloseIcon,
-} from '@mui/icons-material'
-import PhoneEntry from '../../components/PhoneEntry.js'
-import AppLogo from '../../components/AppLogo.js'
-import { toast } from 'react-toastify'
-import { saveMnemonic, savePrivateKey } from '../../../electronFunctions.js'
-import { WalletContext, createDisabledPrivilegedManager } from '../../WalletContext.js'
-import { UserContext } from '../../UserContext.js'
-import PageLoading from '../../components/PageLoading.js'
-import { Utils, Mnemonic, HD, PrivateKey } from '@bsv/sdk'
+import { useContext, useEffect, useRef, useState } from 'react'
+import { Alert, Box, Button, Checkbox, CircularProgress, Container, FormControlLabel, Link, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material'
+import { ArrowBack, ArrowForward, ShieldOutlined, ContentCopy, KeyOutlined, QrCodeScannerOutlined } from '@mui/icons-material'
+import { HD, Mnemonic, Utils } from '@bsv/sdk'
+import { PrivilegedKeyManager } from '@bsv/wallet-toolbox-client'
 import { Link as RouterLink } from 'react-router-dom'
-import WalletConfig from '../../components/WalletConfig.js'
-import { DEFAULT_CHAIN } from '../../config.js'
-import { deriveKeyMaterialFromMnemonic, persistKeyMaterial } from '../../utils/keyMaterial.js'
+import { WalletContext } from '../../WalletContext'
+import { UserContext } from '../../UserContext'
+import { DEFAULT_CHAIN, MESSAGEBOX_HOST } from '../../config'
+import * as secrets from '../../services/secrets'
+import { deriveMnemonicWallet, generateRecoveryPhrase, parseShare, recoverSecretFromShares, verifyMnemonicWallet } from '../../utils/mnemonicRecovery'
+import RecoveryPhrase from '../../components/RecoveryPhrase'
+import AppLogo from '../../components/AppLogo'
+import { getWalletService } from '../../hooks/useWalletService'
+import QrScanner from '../Dashboard/Payments/QrScanner'
 
-// Helper functions for the Stepper will be defined inside the component
+type EntryMode = 'welcome' | 'create' | 'import'
 
-// Phone form component to reduce cognitive complexity
-const PhoneForm = ({ phone, setPhone, loading, handleSubmitPhone, phoneFieldRef }) => {
-  const theme = useTheme();
-  const { t } = useTranslation();
-  return (
-    <form onSubmit={handleSubmitPhone}>
-      <PhoneEntry
-        value={phone}
-        onChange={setPhone}
-        ref={phoneFieldRef}
-        sx={{
-          width: '100%',
-          mb: 2
-        }}
-      />
-      <Button
-        variant='contained'
-        type='submit'
-        disabled={loading || !phone || phone.length < 10}
-        fullWidth
-        sx={{
-          mt: 2,
-          borderRadius: theme.shape.borderRadius,
-          textTransform: 'none',
-          py: 1.2
-        }}
-      >
-        {loading ? <CircularProgress size={24} /> : t('phone_continue_button')}
-      </Button>
-    </form>
-  );
-};
+/** New wallets use BSV Wallet's mnemonic scheme. Saved legacy identities keep their own unlock flow. */
+export default function Greeter({ history, initialMode = 'welcome' }: { history: any; initialMode?: EntryMode }) {
+  const { managers, loginType, finalizeConfig, saveEnhancedSnapshot, initializingBackendServices, snapshotLoaded } = useContext(WalletContext)
+  const { appVersion } = useContext(UserContext)
+  const [mode, setMode] = useState<EntryMode>(initialMode)
+  const [phrase, setPhrase] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [importMethod, setImportMethod] = useState<'phrase' | 'shares'>('phrase')
+  const [shareInputs, setShareInputs] = useState(['', '', ''])
+  const currentShares = useRef(shareInputs)
+  const [scanShares, setScanShares] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const manager: any = managers.walletManager
+  const startupError = getWalletService().startupError
+  const hasSavedWallet = !!secrets.getSnapshot()
+  const legacy = hasSavedWallet && (loginType === 'wab' || loginType === 'mnemonic-advanced')
+  useEffect(() => { currentShares.current = shareInputs }, [shareInputs])
 
-// Code verification form component
-const CodeForm = ({ code, setCode, loading, handleSubmitCode, handleResendCode, codeFieldRef }) => {
-  const theme = useTheme();
-  const { t } = useTranslation();
-  return (
-    <>
-      <form onSubmit={handleSubmitCode}>
-        <TextField
-          label={t('code_input_label')}
-          onChange={(e) => setCode(e.target.value)}
-          variant="outlined"
-          fullWidth
-          disabled={loading}
-          slotProps={{
-            input: {
-              ref: codeFieldRef,
-              endAdornment: (
-                <InputAdornment position="end">
-                  {code.length === 6 && <CheckCircleIcon color='success' />}
-                </InputAdornment>
-              ),
-            }
-          }}
-          sx={{
-            mb: 2
-          }}
-        />
-        <Button
-          variant='contained'
-          type='submit'
-          disabled={loading || code.length !== 6}
-          fullWidth
-          sx={{
-            mt: 2,
-            borderRadius: theme.shape.borderRadius,
-            textTransform: 'none',
-            py: 1.2
-          }}
-        >
-          {loading ? <CircularProgress size={24} /> : t('code_verify_button')}
-        </Button>
-      </form>
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-        <Button
-          disabled={loading}
-          onClick={handleResendCode}
-          size="small"
-          color="secondary"
-          sx={{ textTransform: 'none' }}
-        >
-          {t('code_resend_button')}
-        </Button>
-      </Box>
-    </>
-  );
-};
-
-// Presentation key form component (using mnemonic)
-const PresentationKeyForm = ({ mnemonic, setMnemonic, loading, handleSubmitMnemonic, mnemonicFieldRef, onGenerateRandom, isLocked, hideGenerate = false }) => {
-  const theme = useTheme();
-  const { t } = useTranslation();
-
-  const handleCopy = () => {
-    if (mnemonic) {
-      navigator.clipboard.writeText(mnemonic)
-      toast.success(t('mnemonic_copy_success'))
-    }
+  const collectShare = (value: string) => {
+    try {
+      const nextShare = parseShare(value)
+      const existing = currentShares.current.filter(s => s.trim()).map(parseShare)
+      if (existing.some(share => share.x === nextShare.x && share.y === nextShare.y)) return
+      if (existing.some(share => share.integrity !== nextShare.integrity || share.threshold !== nextShare.threshold)) {
+        throw new Error('This share belongs to a different backup. Scan a share from the same set.')
+      }
+      const position = currentShares.current.findIndex(share => !share.trim())
+      if (position < 0) throw new Error('Three shares are already entered. Clear a field to use another share.')
+      const next = currentShares.current.map((share, index) => index === position ? nextShare.raw : share)
+      currentShares.current = next; setShareInputs(next); setError('')
+      if (existing.length + 1 >= nextShare.threshold) setScanShares(false)
+    } catch (e: any) { setError(e.message); setScanShares(false) }
   }
-
-  return (
-    <form onSubmit={handleSubmitMnemonic}>
-      <TextField
-        label={t('mnemonic_input_label')}
-        value={mnemonic}
-        onChange={(e) => setMnemonic(e.target.value)}
-        variant="outlined"
-        fullWidth
-        multiline
-        rows={3}
-        disabled={loading || isLocked}
-        placeholder={t('mnemonic_input_placeholder')}
-        slotProps={{
-          input: {
-            ref: mnemonicFieldRef,
-            endAdornment: mnemonic && (
-              <InputAdornment position="end">
-                <IconButton
-                  onClick={handleCopy}
-                  edge="end"
-                  size="small"
-                  sx={{ alignSelf: 'flex-start', mt: 1 }}
-                >
-                  <CopyIcon />
-                </IconButton>
-              </InputAdornment>
-            )
-          }
-        }}
-        sx={{ mb: 2 }}
-      />
-      {!isLocked && !hideGenerate && (
-        <Button
-          variant='outlined'
-          onClick={onGenerateRandom}
-          disabled={loading}
-          fullWidth
-          startIcon={<RandomIcon />}
-          sx={{
-            borderRadius: theme.shape.borderRadius,
-            textTransform: 'none',
-            py: 1.2,
-            mb: 2
-          }}
-        >
-          {t('mnemonic_generate_button')}
-        </Button>
-      )}
-      <Button
-        variant='contained'
-        type='submit'
-        disabled={loading || !mnemonic}
-        fullWidth
-        sx={{
-          borderRadius: theme.shape.borderRadius,
-          textTransform: 'none',
-          py: 1.2
-        }}
-      >
-        {loading ? <CircularProgress size={24} /> : t('mnemonic_continue_button')}
-      </Button>
-    </form>
-  );
-};
-
-// Password form component
-const PasswordForm = ({ password, setPassword, confirmPassword, setConfirmPassword, showPassword, setShowPassword, loading, handleSubmitPassword, accountStatus, passwordFieldRef }) => {
-  const theme = useTheme();
-  const { t } = useTranslation();
-  return (
-    <form onSubmit={handleSubmitPassword}>
-      <TextField
-        label={t('password_input_label')}
-        onChange={(e) => setPassword(e.target.value)}
-        type={showPassword ? 'text' : 'password'}
-        variant="outlined"
-        fullWidth
-        disabled={loading}
-        slotProps={{
-          input: {
-            ref: passwordFieldRef,
-            endAdornment: (
-              <InputAdornment position="end">
-                <IconButton
-                  aria-label={t('password_toggle_aria_label')}
-                  onClick={() => setShowPassword(!showPassword)}
-                  edge="end"
-                >
-                  {showPassword ? <VisibilityOff /> : <Visibility />}
-                </IconButton>
-              </InputAdornment>
-            ),
-          }
-        }}
-        sx={{
-          mb: 2
-        }}
-      />
-
-      {accountStatus === 'new-user' && (
-        <TextField
-          label={t('confirm_password_input_label')}
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          type={showPassword ? 'text' : 'password'}
-          variant="outlined"
-          fullWidth
-          disabled={loading}
-          slotProps={{
-            input: {
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    aria-label={t('password_toggle_aria_label')}
-                    onClick={() => setShowPassword(!showPassword)}
-                    edge="end"
-                  >
-                    {showPassword ? <VisibilityOff /> : <Visibility />}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }
-          }}
-          sx={{
-            mb: 2
-          }}
-        />
-      )}
-
-      <Button
-        variant='contained'
-        type='submit'
-        disabled={loading || !password || (accountStatus === 'new-user' && !confirmPassword)}
-        fullWidth
-        sx={{
-          borderRadius: theme.shape.borderRadius,
-          mt: 2,
-          textTransform: 'none',
-          py: 1.2
-        }}
-      >
-        {loading ? <CircularProgress size={24} /> : (accountStatus === 'new-user' ? t('password_create_account_button') : t('password_login_button'))}
-      </Button>
-    </form>
-  );
-};
-
-// Direct key form component for SimpleWalletManager login
-// keyInput, keyMode, isLocked are lifted to the parent to survive re-renders
-const DirectKeyForm = ({ loading, handleSubmitDirectKey, onGenerateRandomMnemonic, hideGenerate = false, keyInput, setKeyInput, isLocked, setIsLocked }) => {
-  const theme = useTheme();
-  const { t } = useTranslation();
-
-  // Detect whether the input looks like a raw hex private key (exactly 64 hex chars)
-  const isHexKey = (val: string) => /^[0-9a-fA-F]{64}$/.test(val.trim())
-
-  const handleCopy = () => {
-    if (keyInput) {
-      navigator.clipboard.writeText(keyInput)
-      toast.success(isHexKey(keyInput) ? t('private_key_copy_success') : t('mnemonic_copy_success'))
-    }
-  }
-
-  const handleGenerate = async () => {
-    const result = await onGenerateRandomMnemonic()
-    if (result) {
-      setKeyInput(result)
-      setIsLocked(true)
-    }
-  }
-
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    handleSubmitDirectKey(keyInput)
-  }
-
-  const looksLikeHex = isHexKey(keyInput)
-
-  return (
-    <form onSubmit={onSubmit}>
-      <TextField
-        label={t('primary_key_input_label')}
-        value={keyInput}
-        onChange={(e) => setKeyInput(e.target.value)}
-        variant="outlined"
-        fullWidth
-        multiline={!looksLikeHex}
-        rows={!looksLikeHex ? 3 : 1}
-        disabled={loading || isLocked}
-        placeholder={t('primary_key_input_placeholder')}
-        slotProps={{
-          input: {
-            endAdornment: keyInput && (
-              <InputAdornment position="end">
-                <IconButton
-                  onClick={handleCopy}
-                  edge="end"
-                  size="small"
-                  sx={!looksLikeHex ? { alignSelf: 'flex-start', mt: 1 } : undefined}
-                >
-                  <CopyIcon />
-                </IconButton>
-              </InputAdornment>
-            )
-          }
-        }}
-        sx={{ mb: 1.5 }}
-      />
-
-      {!isLocked && !hideGenerate && (
-        <Button
-          variant='outlined'
-          onClick={handleGenerate}
-          disabled={loading}
-          fullWidth
-          startIcon={<RandomIcon />}
-          sx={{
-            borderRadius: theme.shape.borderRadius,
-            textTransform: 'none',
-            py: 1,
-            mb: 1.5
-          }}
-        >
-          {t('primary_key_create_button')}
-        </Button>
-      )}
-
-      <Button
-        variant='contained'
-        type='submit'
-        disabled={loading || !keyInput}
-        fullWidth
-        sx={{
-          borderRadius: theme.shape.borderRadius,
-          textTransform: 'none',
-          py: 1
-        }}
-      >
-        {loading ? <CircularProgress size={24} /> : t('primary_key_login_button')}
-      </Button>
-    </form>
-  );
-};
-
-// Main Greeter component with reduced complexity
-type EntryMode = 'choose' | 'create' | 'login'
-
-const Greeter: React.FC<any> = ({ history }) => {
-  const { managers, configStatus, useWab, loginType, saveEnhancedSnapshot, initializingBackendServices, finalizeConfig } = useContext(WalletContext)
-  const { appVersion, appName, pageLoaded } = useContext(UserContext)
-  const theme = useTheme()
-  const { t } = useTranslation()
-
-  // Entry mode: 'choose' shows Create Wallet / Login buttons,
-  // 'create' auto-configures for direct-key and shows the key form,
-  // 'login' shows the full WalletConfig with all options.
-  const [entryMode, setEntryMode] = useState<EntryMode>('choose')
-
-  const viewToStepIndex = loginType === 'wab'
-    ? { phone: 0, code: 1, password: 2 }
-    : loginType === 'direct-key'
-    ? { directkey: 0 }
-    : { presentation: 0, password: 1 }
-
-  const steps = loginType === 'wab'
-    ? [
-        {
-          label: 'Phone Number',
-          icon: <PhoneIcon />,
-          description: t('phone_entry_label')
-        },
-        {
-          label: 'Verification Code',
-          icon: <SMSIcon />,
-          description: t('verification_code_label')
-        },
-        {
-          label: 'Password',
-          icon: <LockIcon />,
-          description: t('password_step_label')
-        }
-      ]
-    : loginType === 'direct-key'
-    ? [
-        {
-          label: t('privately_managed_key_label'),
-          icon: <KeyIcon />,
-          description: ''
-        }
-      ]
-    : [
-        {
-          label: t('presentation_key_label'),
-          icon: <KeyIcon />,
-          description: t('presentation_key_description')
-        },
-        {
-          label: 'Password',
-          icon: <LockIcon />,
-          description: t('password_step_label')
-        }
-      ]
-
-  const getInitialStep = () => {
-    if (loginType === 'wab') return 'phone'
-    if (loginType === 'direct-key') return 'directkey'
-    return 'presentation'
-  }
-
-  const [step, setStep] = useState(getInitialStep())
-  const [phone, setPhone] = useState('')
-  const [code, setCode] = useState('')
-  const [mnemonic, setMnemonic] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [accountStatus, setAccountStatus] = useState<string | undefined>(undefined)
-  const [loading, setLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [showMnemonicDialog, setShowMnemonicDialog] = useState(false)
-  const [mnemonicLocked, setMnemonicLocked] = useState(false)
-
-  // DirectKeyForm state lifted to Greeter level to survive re-renders
-  // (AuthStepper is an inline component; internal state resets on every Greeter re-render)
-  const [directKeyInput, setDirectKeyInput] = useState('')
-  const [directKeyLocked, setDirectKeyLocked] = useState(false)
-
-  const [showConfig, setShowConfig] = useState(false)
-
-  const phoneFieldRef = useRef(null)
-  const codeFieldRef = useRef(null)
-  const mnemonicFieldRef = useRef(null)
-  const passwordFieldRef = useRef(null)
-
-  const walletManager = managers?.walletManager
-
-  // When the user clicks "Create Wallet", auto-finalize with direct-key defaults
-  const handleCreateWallet = useCallback(() => {
-    setEntryMode('create')
-    finalizeConfig({
-      wabUrl: '',
-      wabInfo: null,
-      method: '',
-      network: DEFAULT_CHAIN as 'main' | 'test' | 'ttn',
-      storageUrl: '',
-      messageBoxUrl: '',
-      loginType: 'direct-key',
-      useWab: false,
-      useRemoteStorage: false,
-      useMessageBox: false,
-    })
-  }, [finalizeConfig])
-
-  // When the user clicks "Login", auto-finalize with mnemonic-advanced defaults and go straight to stepper
-  const handleLogin = useCallback(() => {
-    setEntryMode('login')
-    finalizeConfig({
-      wabUrl: '',
-      wabInfo: null,
-      method: '',
-      network: DEFAULT_CHAIN as 'main' | 'test' | 'ttn',
-      storageUrl: '',
-      messageBoxUrl: '',
-      loginType: 'direct-key',
-      useWab: false,
-      useRemoteStorage: false,
-      useMessageBox: false,
-    })
-  }, [finalizeConfig])
-
-  // Go back to the choose screen
-  const handleBack = useCallback(() => {
-    setEntryMode('choose')
-    setShowConfig(false)
-  }, [])
 
   useEffect(() => {
-    setStep(getInitialStep())
-  }, [loginType])
+    if (manager?.authenticated && managers.permissionsManager && snapshotLoaded) history.replace('/dashboard')
+  }, [manager?.authenticated, managers.permissionsManager, snapshotLoaded, history])
 
-  // Step 1: The user enters a phone number, we call manager.startAuth(...)
-  const handleSubmitPhone = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!walletManager) {
-      toast.error(t('phone_error_wallet_not_ready'))
-      return
-    }
-    try {
-      setLoading(true)
-      await (walletManager as any).startAuth({ phoneNumber: phone })
-      setStep('code')
-      toast.success(t('phone_success_code_sent'))
-      // Move focus to code field
-      if (codeFieldRef.current) {
-        codeFieldRef.current.focus()
-      }
-    } catch (err: any) {
-      console.error(err)
-      toast.error(err.message || "Failed to send code")
-    } finally {
-      setLoading(false)
-    }
-  }, [walletManager, phone])
-
-  // Step 2: The user enters the OTP code, we call manager.completeAuth(...)
-  const handleSubmitCode = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!walletManager) {
-      toast.error(t('code_error_wallet_not_ready'))
-      return
-    }
-    try {
-      setLoading(true)
-      await (walletManager as any).completeAuth({ phoneNumber: phone, otp: code })
-
-      if ((walletManager as any).authenticationFlow === 'new-user') {
-        setAccountStatus('new-user')
-      } else {
-        setAccountStatus('existing-user')
-      }
-
-      setStep('password')
-      if (passwordFieldRef.current) {
-        passwordFieldRef.current.focus()
-      }
-    } catch (err: any) {
-      console.error(err)
-      toast.error(err.message || t('code_error_failed'))
-    } finally {
-      setLoading(false)
-    }
-  }, [walletManager, phone, code])
-
-  // Optional "resend code" that just calls startAuth again
-  const handleResendCode = useCallback(async () => {
-    if (!walletManager) return
-    try {
-      setLoading(true)
-      await (walletManager as any).startAuth({ phoneNumber: phone })
-      toast.success(t('resend_code_success'))
-    } catch (e: any) {
-      console.error(e)
-      toast.error(e.message)
-    } finally {
-      // small delay to avoid spam
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      setLoading(false)
-    }
-  }, [walletManager, phone])
-
-  // Generate random mnemonic — saves to file and returns the string.
-  // Callers are responsible for updating their own state from the return value.
-  const handleGenerateRandomMnemonic = useCallback(async () => {
-    try {
-      const randomMnemonic = Mnemonic.fromRandom(256)
-      const mnemonicStr = randomMnemonic.toString()
-
-      // Save mnemonic to file
-      const result = await saveMnemonic(mnemonicStr)
-      if (result.success) {
-        toast.success(t('mnemonic_file_save_success', { path: result.path }))
-      } else {
-        toast.error(t('mnemonic_file_save_error', { error: result.error }))
-      }
-      return mnemonicStr
-    } catch (err: any) {
-      console.error(err)
-      toast.error(t('mnemonic_generate_error'))
-      return null
-    }
-  }, [])
-
-  // Wrapper used by PresentationKeyForm: generates, sets Greeter-level mnemonic state, and shows the dialog
-  const handleGenerateRandomMnemonicForPresentation = useCallback(async () => {
-    const mnemonicStr = await handleGenerateRandomMnemonic()
-    if (mnemonicStr) {
-      setMnemonic(mnemonicStr)
-      setMnemonicLocked(true)
-      setShowMnemonicDialog(true)
-    }
-    return mnemonicStr
-  }, [handleGenerateRandomMnemonic])
-
-  // Generate random hex key for direct-key mode
-  const handleGenerateRandomHex = useCallback(async () => {
-    try {
-      const randomKey = PrivateKey.fromRandom()
-      const hexStr = randomKey.toHex()
-
-      // Save private key to file
-      const result = await savePrivateKey(hexStr)
-      if (result.success) {
-        toast.success(t('private_key_generate_success', { path: result.path }))
-      } else {
-        toast.error(t('private_key_generate_error', { error: result.error }))
-      }
-      return hexStr
-    } catch (err: any) {
-      console.error(err)
-      toast.error(t('private_key_generate_fail'))
-      return null
-    }
-  }, [])
-
-  // Step for providing mnemonic when not using WAB
-  const handleSubmitMnemonic = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!walletManager) {
-      toast.error(t('mnemonic_error_wallet_not_ready'))
-      return
-    }
-    try {
-      setLoading(true)
-
-      // Derive presentation key from mnemonic using HD path m/0'/0/0
-      const mnemonicObj = Mnemonic.fromString(mnemonic.trim())
-      const seed = mnemonicObj.toSeed()
-      const hdKey = HD.fromSeed(seed)
-      const derivedKey = hdKey.derive("m/0'/0/0")
-      const presentationKey = derivedKey.privKey.toArray()
-
-      await (walletManager as any).providePresentationKey(presentationKey)
-      if ((walletManager as any).authenticationFlow === 'new-user') {
-        setAccountStatus('new-user')
-      } else {
-        setAccountStatus('existing-user')
-      }
-      setStep('password')
-      if (passwordFieldRef.current) {
-        passwordFieldRef.current.focus()
-      }
-    } catch (err: any) {
-      console.error(err)
-      toast.error(err.message || t('mnemonic_error_failed'))
-    } finally {
-      setLoading(false)
-    }
-  }, [walletManager, mnemonic])
-
-  // Step 3: Provide a password for the final step.
-  const handleSubmitPassword = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!walletManager) {
-      toast.error(t('password_error_wallet_not_ready'))
-      return
-    }
-
-    // If new-user, confirm password match
-    if (accountStatus === 'new-user' && password !== confirmPassword) {
-      toast.error(t('password_error_mismatch'))
-      return
-    }
-
-    setLoading(true)
-    try {
-      await (walletManager as any).providePassword(password)
-      if (walletManager.authenticated) {
-        // Save snapshot to local storage
-        secrets.setSnapshot(saveEnhancedSnapshot())
-        toast.success(t('password_success_authenticated'))
-        history.push('/dashboard/apps')
-      } else {
-        throw new Error(t('password_error_auth_failed'))
-      }
-    } catch (err: any) {
-      console.error(err)
-      toast.error(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [walletManager, password, confirmPassword, saveEnhancedSnapshot])
-
-  // Direct key login: provide primary key + disabled privileged manager, no password
-  // Auto-detects input type: 64-char hex string = raw private key, otherwise treated as mnemonic
-  const handleSubmitDirectKey = useCallback(async (keyInput: string) => {
-    if (!walletManager) {
-      toast.error(t('direct_key_error_wallet_not_ready'))
-      return
-    }
-    try {
-      setLoading(true)
-
-      const trimmed = keyInput.trim()
-      const isHexKey = /^[0-9a-fA-F]{64}$/.test(trimmed)
-
-      let keyBytes: number[]
-      let keyHex: string
-      let mnemonic: string | undefined
-      if (isHexKey) {
-        keyBytes = Utils.toArray(trimmed, 'hex')
-        keyHex = trimmed
-      } else {
-        const derived = deriveKeyMaterialFromMnemonic(trimmed)
-        keyBytes = derived.keyBytes
-        keyHex = derived.keyHex
-        mnemonic = derived.mnemonic
-      }
-
-      if (keyBytes.length !== 32) {
-        throw new Error(t('direct_key_error_invalid_length', { bytes: keyBytes.length }))
-      }
-
-      // Persist key material so the Security page can reveal it later
-      persistKeyMaterial(keyHex, mnemonic)
-
-      // SimpleWalletManager flow: provide primary key then disabled privileged manager
-      await (walletManager as any).providePrimaryKey(keyBytes)
-      await (walletManager as any).providePrivilegedKeyManager(createDisabledPrivilegedManager())
-
-      if (walletManager.authenticated) {
-        secrets.setSnapshot(saveEnhancedSnapshot())
-        toast.success(t('password_success_authenticated'))
-        history.push('/dashboard/apps')
-      } else {
-        throw new Error('Authentication failed')
-      }
-    } catch (err: any) {
-      console.error(err)
-      toast.error(err.message || t('password_error_direct_key'))
-    } finally {
-      setLoading(false)
-    }
-  }, [walletManager, saveEnhancedSnapshot])
-
-  if (!pageLoaded) {
-    return <PageLoading />
+  const configure = () => {
+    if (hasSavedWallet) return
+    const ok = finalizeConfig({
+      wabUrl: '', wabInfo: null, method: '', network: DEFAULT_CHAIN,
+      storageUrl: '', messageBoxUrl: MESSAGEBOX_HOST,
+      loginType: 'mnemonic', useWab: false, useRemoteStorage: false, useMessageBox: true,
+    })
+    if (!ok) throw new Error('Could not prepare your wallet. Please try again.')
   }
 
-  // JSX variables (not component functions) so React never treats them as new
-  // component types on re-render, which would unmount/remount and wipe field state.
+  useEffect(() => {
+    if (initialMode === 'import' && !hasSavedWallet) configure()
+  }, [])
 
-  const header = (
-    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 4 }}>
-      <Box sx={{ mb: 2, width: '100px', height: '100px' }}>
-        <AppLogo rotate size="100px" color="#2196F3" />
-      </Box>
-      <Typography
-        variant='h2'
-        fontFamily='Helvetica'
-        fontSize='2em'
-        sx={{
-          mb: 1,
-          fontWeight: 'bold',
-          background: theme.palette.mode === 'dark'
-            ? 'linear-gradient(90deg, #FFFFFF 0%, #F5F5F5 100%)'
-            : 'linear-gradient(90deg, #2196F3 0%, #4569E5 100%)',
-          backgroundClip: 'text',
-          WebkitTextFillColor: 'transparent'
-        }}
-      >
-        {appName}
-      </Typography>
-      <Typography variant="caption" color="text.secondary" align="center">
-        <i>v{appVersion}</i>
-      </Typography>
-    </Box>
-  )
-
-  // Show simplified non-interactive version when initializing backend services
-  if (initializingBackendServices) {
-    return (
-    <Container maxWidth="sm" sx={{ height: '100vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ my: 'auto', py: 3, width: '100%' }}>
-        <Paper elevation={4} sx={{ p: 3, borderRadius: 2, bgcolor: 'background.paper', boxShadow: theme.shadows[3] }}>
-          {header}
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
-          </Box>
-        </Paper>
-      </Box>
-    </Container>
-    )
+  const begin = (next: EntryMode) => {
+    setError('')
+    try {
+      configure()
+      setMode(next)
+      if (next === 'create') {
+        setPhrase(generateRecoveryPhrase())
+        setSaved(false)
+      }
+    } catch (e: any) { setError(e.message) }
   }
 
-  const authStepper = (
-    <Stepper activeStep={viewToStepIndex[step]} orientation="vertical">
-      {steps.map((stepDef, index) => (
-        <Step key={stepDef.label}>
-          <StepLabel
-            icon={stepDef.icon}
-            optional={stepDef.description ? (
-              <Typography variant="caption" color="text.secondary">
-                {stepDef.description}
-              </Typography>
-            ) : undefined}
-          >
-            <Typography variant="body2" fontWeight={500}>
-              {stepDef.label}
-            </Typography>
-          </StepLabel>
-          <StepContent>
-            {/* WAB flow: Phone -> Code -> Password */}
-            {loginType === 'wab' && index === 0 && (
-              <PhoneForm
-                phone={phone}
-                setPhone={setPhone}
-                loading={loading}
-                handleSubmitPhone={handleSubmitPhone}
-                phoneFieldRef={phoneFieldRef}
-              />
-            )}
-            {loginType === 'wab' && index === 1 && (
-              <CodeForm
-                code={code}
-                setCode={setCode}
-                loading={loading}
-                handleSubmitCode={handleSubmitCode}
-                handleResendCode={handleResendCode}
-                codeFieldRef={codeFieldRef}
-              />
-            )}
-            {loginType === 'wab' && index === 2 && (
-              <PasswordForm
-                password={password}
-                setPassword={setPassword}
-                confirmPassword={confirmPassword}
-                setConfirmPassword={setConfirmPassword}
-                showPassword={showPassword}
-                setShowPassword={setShowPassword}
-                loading={loading}
-                handleSubmitPassword={handleSubmitPassword}
-                accountStatus={accountStatus}
-                passwordFieldRef={passwordFieldRef}
-              />
-            )}
-            {/* Direct key flow: single step */}
-            {loginType === 'direct-key' && index === 0 && (
-              <DirectKeyForm
-                loading={loading}
-                handleSubmitDirectKey={handleSubmitDirectKey}
-                onGenerateRandomMnemonic={handleGenerateRandomMnemonic}
-                hideGenerate={entryMode === 'login'}
-                keyInput={directKeyInput}
-                setKeyInput={setDirectKeyInput}
-                isLocked={directKeyLocked}
-                setIsLocked={setDirectKeyLocked}
-              />
-            )}
-            {/* Mnemonic-advanced flow: Presentation Key -> Password */}
-            {loginType === 'mnemonic-advanced' && index === 0 && (
-              <PresentationKeyForm
-                mnemonic={mnemonic}
-                setMnemonic={setMnemonic}
-                loading={loading}
-                handleSubmitMnemonic={handleSubmitMnemonic}
-                mnemonicFieldRef={mnemonicFieldRef}
-                onGenerateRandom={handleGenerateRandomMnemonicForPresentation}
-                isLocked={mnemonicLocked}
-                hideGenerate={entryMode === 'login'}
-              />
-            )}
-            {loginType === 'mnemonic-advanced' && index === 1 && (
-              <PasswordForm
-                password={password}
-                setPassword={setPassword}
-                confirmPassword={confirmPassword}
-                setConfirmPassword={setConfirmPassword}
-                showPassword={showPassword}
-                setShowPassword={setShowPassword}
-                loading={loading}
-                handleSubmitPassword={handleSubmitPassword}
-                accountStatus={accountStatus}
-                passwordFieldRef={passwordFieldRef}
-              />
-            )}
-          </StepContent>
-        </Step>
-      ))}
-    </Stepper>
-  )
+  const enterWallet = async () => {
+    setError('')
+    setBusy(true)
+    try {
+      if (!manager || loginType !== 'mnemonic') throw new Error('Your wallet is still getting ready. Try again in a moment.')
+      let recoveryPhrase = phrase
+      if (mode === 'import' && importMethod === 'shares') {
+        const recovered = recoverSecretFromShares(shareInputs)
+        if (recovered.kind === 'legacy') {
+          throw new Error('These shares contain an older private-key backup. They cannot restore a recovery phrase. Use the app that created them to access that wallet; your backup has not been changed.')
+        }
+        recoveryPhrase = recovered.mnemonic
+      }
+      const material = deriveMnemonicWallet(recoveryPhrase)
+      // Saved-wallet recovery may repair missing material only for the same identity.
+      if (hasSavedWallet) {
+        const snapshotHex = manager.primaryKey ? Utils.toHex(manager.primaryKey) : ''
+        const storedHex = secrets.getKeyHex() || ''
+        if (!snapshotHex && !storedHex) throw new Error('The saved identity could not be verified. Recover from a wallet data file to preserve the current wallet.')
+        if (snapshotHex) verifyMnemonicWallet(material.mnemonic, snapshotHex)
+        if (storedHex) verifyMnemonicWallet(material.mnemonic, storedHex)
+      }
+      if (manager.authenticated && manager.underlying) {
+        verifyMnemonicWallet(material.mnemonic, Utils.toHex(manager.primaryKey))
+      }
+      secrets.setKeyHex(material.keyHex)
+      secrets.setMnemonic(material.mnemonic)
+      if (!manager.authenticated || !manager.underlying) {
+        // A failed service build can leave SimpleWalletManager authenticated with
+        // no underlying wallet. Reset only that in-memory manager for a retry.
+        if (manager.authenticated) manager.destroy()
+        await manager.providePrimaryKey(material.keyBytes)
+        await manager.providePrivilegedKeyManager(new PrivilegedKeyManager(async () => material.privilegedKey))
+      }
+      if (!manager.authenticated || !manager.underlying) throw new Error('Could not open your wallet. Your recovery phrase is still shown here; please try again.')
+      secrets.setSnapshot(saveEnhancedSnapshot())
+      setPhrase('')
+      setShareInputs(['', '', ''])
+      history.replace('/dashboard')
+    } catch (e: any) { setError(e.message || 'Could not open your wallet.') }
+    finally { setBusy(false) }
+  }
 
-  const accountRecoveryLink = (
-    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, mb: 1 }}>
-      <RouterLink to='/recovery' style={{ textDecoration: 'none', pointerEvents: configStatus !== 'configured' ? 'none' : 'auto' }}>
-        <Button
-          variant="text"
-          color='secondary'
-          size="small"
-          startIcon={<RestoreIcon />}
-          disabled={configStatus !== 'configured'}
-        >
-          {t('account_recovery_button')}
-        </Button>
-      </RouterLink>
-    </Box>
-  )
-
-  const legalFooter = (
-    <Typography
-      variant='caption'
-      color='textSecondary'
-      align='center'
-      sx={{ display: 'block', px: 5, mt: 3, mb: 0, fontSize: '0.75rem', opacity: 0.7 }}
-    >
-      {t('legal_footer_text')}{' '}
-      <RouterLink to='/privacy' style={{ color: theme.palette.primary.main, textDecoration: 'none' }}>
-        {t('legal_privacy_link')}
-      </RouterLink> and {' '}
-      <RouterLink to='/usage' style={{ color: theme.palette.primary.main, textDecoration: 'none' }}>
-        {t('legal_usage_link')}
-      </RouterLink> {' '}
-      {t('legal_footer_policies')}
-    </Typography>
-  )
-
-  const mnemonicDialog = (
-    <Dialog open={showMnemonicDialog} onClose={() => setShowMnemonicDialog(false)} maxWidth="sm" fullWidth>
-      <DialogTitle>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <LockIcon color="warning" />
-          <Typography variant="h6">{t('mnemonic_dialog_title')}</Typography>
-        </Box>
-      </DialogTitle>
-      <DialogContent>
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          <AlertTitle>{t('mnemonic_dialog_warning_title')}</AlertTitle>
-          {t('mnemonic_dialog_warning_text')}
-        </Alert>
-        <Paper
-          elevation={0}
-          sx={{
-            p: 2,
-            bgcolor: theme.palette.mode === 'dark' ? 'grey.900' : 'grey.100',
-            border: 1,
-            borderColor: 'divider',
-            borderRadius: 1,
-            mb: 2
-          }}
-        >
-          <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-word', userSelect: 'all' }}>
-            {mnemonic}
-          </Typography>
-        </Paper>
-        <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<CopyIcon />}
-            onClick={() => { navigator.clipboard.writeText(mnemonic); toast.success(t('mnemonic_copy_success')) }}
-            fullWidth
-          >
-            {t('mnemonic_dialog_copy_button')}
-          </Button>
-        </Box>
-        <Alert severity="info">
-          <AlertTitle>{t('mnemonic_dialog_info_title')}</AlertTitle>
-          <Typography variant="body2" component="div" style={{ whiteSpace: 'pre-line' }}>
-            {t('mnemonic_dialog_security_tips')}
-          </Typography>
-        </Alert>
-      </DialogContent>
-      <DialogActions sx={{ p: 2 }}>
-        <Button onClick={() => setShowMnemonicDialog(false)} variant="contained" fullWidth>
-          {t('mnemonic_dialog_confirm_button')}
-        </Button>
-      </DialogActions>
-    </Dialog>
-  )
-
+  const isWorking = busy || initializingBackendServices
   return (
-    <Container maxWidth="sm" sx={{ height: '100vh', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ my: 'auto', py: 3, width: '100%' }}>
-      <Paper
-        elevation={4}
-        sx={{ p: 3, borderRadius: 2, bgcolor: 'background.paper', boxShadow: theme.shadows[3] }}
-      >
-        {entryMode === 'choose' && header}
-
-        {/* ===== CHOOSE MODE: Initial screen with Create Wallet / Login buttons ===== */}
-        {entryMode === 'choose' && (
-          <>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
-              <Button
-                variant="contained"
-                size="large"
-                startIcon={<WalletIcon />}
-                onClick={handleCreateWallet}
-                sx={{ textTransform: 'none', py: 1, fontSize: '1rem' }}
-              >
-                {t('create_wallet_button')}
-              </Button>
-              <Button
-                variant="outlined"
-                size="large"
-                startIcon={<LoginIcon />}
-                onClick={handleLogin}
-                sx={{ textTransform: 'none', py: 1, fontSize: '1rem' }}
-              >
-                {t('login_button')}
-              </Button>
-            </Box>
-          </>
-        )}
-
-        {/* ===== CREATE MODE: Direct-key flow with optional advanced config ===== */}
-        {entryMode === 'create' && (
-          <>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Button size="small" startIcon={<ArrowBackIcon />} onClick={handleBack} sx={{ textTransform: 'none' }}>
-                {t('back_button')}
-              </Button>
-              <Tooltip title={showConfig ? t('config_hide_tooltip') : t('config_show_tooltip')} placement="left">
-                <IconButton size="small" onClick={() => setShowConfig(s => !s)} color={showConfig ? 'secondary' : 'default'}>
-                  {showConfig ? <CloseIcon fontSize="small" /> : <SettingsIcon fontSize="small" />}
-                </IconButton>
-              </Tooltip>
-            </Box>
-            {/* Advanced config for power users (network, storage, message box — no login type) */}
-            <WalletConfig hideLoginType open={showConfig} onToggle={() => setShowConfig(s => !s)} />
-            {/* Direct key stepper — shown once config is finalized */}
-            {!showConfig && configStatus === 'configured' && authStepper}
-          </>
-        )}
-
-        {/* ===== LOGIN MODE: Stepper shown immediately, config panel available but collapsed ===== */}
-        {entryMode === 'login' && (
-          <>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Button size="small" startIcon={<ArrowBackIcon />} onClick={handleBack} sx={{ textTransform: 'none' }}>
-                {t('back_button')}
-              </Button>
-              <Tooltip title={showConfig ? t('config_hide_tooltip') : t('config_show_tooltip')} placement="left">
-                <IconButton size="small" onClick={() => setShowConfig(s => !s)} color={showConfig ? 'secondary' : 'default'}>
-                  {showConfig ? <CloseIcon fontSize="small" /> : <SettingsIcon fontSize="small" />}
-                </IconButton>
-              </Tooltip>
-            </Box>
-            <WalletConfig open={showConfig} onToggle={() => setShowConfig(s => !s)} />
-            {!showConfig && configStatus === 'configured' && authStepper}
-            {!showConfig && accountRecoveryLink}
-          </>
-        )}
-
-        {legalFooter}
-      </Paper>
+    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
+      <Box sx={{ px: { xs: 3, sm: 5 }, py: 3, display: 'flex', alignItems: 'center', gap: 1.25 }}>
+        <Box aria-hidden sx={{ display: 'grid', placeItems: 'center', height: 38, width: 38, flexShrink: 0, color: 'primary.main' }}><AppLogo size={38} color="currentColor" /></Box>
+        <Typography fontWeight={750} letterSpacing={-0.4}>BSV Desktop</Typography>
       </Box>
-
-      {mnemonicDialog}
-    </Container>
+      <Container maxWidth="sm" sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', py: 5 }}>
+        <Paper elevation={0} sx={{ p: { xs: 3, sm: 4.5 }, border: '1px solid', borderColor: 'divider', borderRadius: 4, boxShadow: '0 20px 70px rgba(15, 23, 42, 0.045)' }}>
+          {mode !== 'welcome' && !legacy && <Button size="small" startIcon={<ArrowBack />} onClick={() => { setMode('welcome'); setPhrase(''); setError('') }} disabled={isWorking} sx={{ mb: 3, ml: -1 }}>Back</Button>}
+          {legacy ? <LegacyUnlock onReady={() => history.replace('/dashboard')} /> : hasSavedWallet && mode === 'welcome' ? (
+            <Stack spacing={2.5} alignItems="center" sx={{ py: 3, textAlign: 'center' }}>
+              {!startupError && <CircularProgress size={32} />}<Typography variant="h5">{startupError ? 'Your wallet needs attention' : 'Opening your wallet'}</Typography>
+              <Typography color="text.secondary">Your saved wallet and recovery material are kept on this device.</Typography>
+              {startupError && <><Alert severity="error">{startupError}</Alert><Button variant="contained" onClick={() => getWalletService().retrySavedWallet()}>Try again</Button>{loginType === 'mnemonic' && <Button onClick={() => setMode('import')}>Recover with phrase or shares</Button>}<Button component={RouterLink} to="/recovery/wallet-data">Open wallet data files</Button></>}
+              {error && <Alert severity="error">{error}</Alert>}
+            </Stack>
+          ) : mode === 'welcome' ? (
+            <>
+              <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.8, bgcolor: 'action.hover', borderRadius: 20, px: 1.5, py: 0.8, mb: 3, color: 'primary.main' }}><ShieldOutlined sx={{ fontSize: 16 }} /><Typography variant="caption" fontWeight={600}>Your money. Your keys.</Typography></Box>
+              <Typography variant="h3" sx={{ fontWeight: 750, fontSize: { xs: 34, sm: 42 }, lineHeight: 1.1, letterSpacing: -1.5, mb: 2 }}>A simpler home<br />for your BSV.</Typography>
+              <Typography color="text.secondary" sx={{ lineHeight: 1.75, mb: 4 }}>Pay people, connect with apps, and keep your wallet close. Start with a recovery phrase that works with BSV Wallet.</Typography>
+              <Stack spacing={1.5}>
+                <Button fullWidth variant="contained" size="large" endIcon={<ArrowForward />} onClick={() => begin('create')} sx={{ py: 1.6 }}>Create a wallet</Button>
+                <Button fullWidth variant="outlined" size="large" onClick={() => begin('import')} sx={{ py: 1.5 }}>Import an existing wallet</Button>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 3, textAlign: 'center' }}>No account or phone number needed.</Typography>
+            </>
+          ) : (
+            <>
+              <Box sx={{ display: 'inline-flex', mb: 2, color: 'primary.main' }}><KeyOutlined /></Box>
+              <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: -0.9, mb: 1.2 }}>{mode === 'create' ? 'Your wallet starts here.' : 'Welcome back.'}</Typography>
+              <Typography color="text.secondary" sx={{ mb: 3, lineHeight: 1.7 }}>{mode === 'create' ? 'Write down these twelve words in order. They restore your wallet on any device.' : 'Restore with your BSV Wallet recovery phrase or two backup shares.'}</Typography>
+              {mode === 'create' ? (
+                <Stack spacing={2.5}>
+                  <RecoveryPhrase phrase={phrase} />
+                  <Button size="small" startIcon={<ContentCopy />} onClick={async () => { try { await navigator.clipboard.writeText(phrase) } catch { setError('Could not copy. You can write the words down instead.') } }} sx={{ alignSelf: 'flex-start' }}>Copy phrase</Button>
+                  <Alert severity="warning" icon={<ShieldOutlined />}>Keep these words private. Anyone with your phrase can spend your funds.</Alert>
+                  <FormControlLabel control={<Checkbox checked={saved} onChange={e => setSaved(e.target.checked)} />} label={<Typography variant="body2">I saved my recovery phrase somewhere safe.</Typography>} />
+                </Stack>
+              ) : (
+                <Stack spacing={2.5}>
+                  <Tabs value={importMethod} onChange={(_, value) => { setImportMethod(value); setError('') }} variant="fullWidth" sx={{ mb: 1, borderBottom: '1px solid', borderColor: 'divider' }}><Tab label="Recovery phrase" value="phrase" /><Tab label="Backup shares" value="shares" /></Tabs>
+                  {importMethod === 'phrase' ? <TextField label="Recovery phrase" value={phrase} onChange={e => setPhrase(e.target.value)} multiline minRows={3} fullWidth autoFocus placeholder="Enter your words in order" helperText="12, 15, 18, 21 or 24 words. No BIP39 passphrase." autoComplete="off" inputProps={{ spellCheck: false, autoCapitalize: 'none' }} /> : <>
+                    <Button variant="outlined" startIcon={<QrCodeScannerOutlined />} onClick={() => setScanShares(true)}>Scan backup shares</Button>
+                    {shareInputs.map((share, index) => <TextField key={index} label={`Backup share ${index + 1}${index === 2 ? ' (optional)' : ''}`} value={share} onChange={e => setShareInputs(values => values.map((v, i) => i === index ? e.target.value : v))} multiline minRows={2} fullWidth autoComplete="off" inputProps={{ spellCheck: false }} />)}
+                    <Typography variant="caption" color="text.secondary">Paste complete shares from the same backup. Any two of the three BSV Wallet shares restore your phrase.</Typography>
+                  </>}
+                </Stack>
+              )}
+              {error && <Alert severity="error" sx={{ mt: 2.5 }}>{error}</Alert>}
+              <Button variant="contained" fullWidth size="large" onClick={enterWallet} disabled={isWorking || !manager || (mode === 'create' && !saved) || (mode === 'import' && importMethod === 'phrase' && !phrase.trim()) || (mode === 'import' && importMethod === 'shares' && shareInputs.filter(v => v.trim()).length < 2)} sx={{ py: 1.6, mt: 3 }} endIcon={isWorking ? undefined : <ArrowForward />}>{isWorking ? <CircularProgress size={22} color="inherit" /> : mode === 'create' ? 'Open my wallet' : 'Restore wallet'}</Button>
+              {mode === 'import' && <Button component={RouterLink} to="/recovery/wallet-data" fullWidth sx={{ mt: 1.5 }}>Recover from a wallet data file</Button>}
+            </>
+          )}
+          {mode === 'welcome' && error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+        </Paper>
+      </Container>
+      <Stack direction="row" spacing={2} justifyContent="center" sx={{ pb: 3, color: 'text.secondary' }}><Typography variant="caption">v{appVersion}</Typography><Link component={RouterLink} to="/privacy" variant="caption" color="inherit">Privacy</Link><Link component={RouterLink} to="/usage" variant="caption" color="inherit">Terms</Link></Stack>
+      <QrScanner open={scanShares} onClose={() => setScanShares(false)} onRead={collectShare} continuous title="Scan backup shares" description="Scan the QR code on each of two different backup shares. You can also import an image of a share." progress={`${shareInputs.filter(s => s.trim()).length} shares collected`} />
+    </Box>
   )
 }
 
-export default Greeter
+function LegacyUnlock({ onReady }: { onReady: () => void }) {
+  const { managers, loginType, saveEnhancedSnapshot } = useContext(WalletContext)
+  const manager: any = managers.walletManager
+  const startupError = getWalletService().startupError
+  const [phrase, setPhrase] = useState('')
+  const [phone, setPhone] = useState('')
+  const [code, setCode] = useState('')
+  const [password, setPassword] = useState('')
+  const [step, setStep] = useState<'key' | 'code' | 'password'>('key')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const wab = loginType === 'wab'
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setBusy(true); setError('')
+    try {
+      if (!manager) throw new Error('The wallet is still getting ready.')
+      if (step === 'key') {
+        if (wab) { await manager.startAuth({ phoneNumber: phone }); setStep('code') }
+        else { await manager.providePresentationKey(HD.fromSeed(Mnemonic.fromString(phrase.trim()).toSeed()).derive("m/0'/0/0").privKey.toArray()); setStep('password') }
+      } else if (step === 'code') { await manager.completeAuth({ phoneNumber: phone, otp: code }); setStep('password') }
+      else {
+        await manager.providePassword(password)
+        if (!manager.authenticated) throw new Error('Could not unlock this wallet.')
+        secrets.setSnapshot(saveEnhancedSnapshot()); onReady()
+      }
+    } catch (e: any) { setError(e.message) } finally { setBusy(false) }
+  }
+  return <Stack component="form" onSubmit={submit} spacing={2.5}>
+    <Typography variant="h4" fontWeight={700}>Unlock your saved wallet</Typography>
+    <Typography color="text.secondary">This wallet uses an earlier recovery method. Your identity and funds stay available with the credentials you used before.</Typography>
+    {step === 'key' && (wab ? <TextField label="Phone number" value={phone} onChange={e => setPhone(e.target.value)} autoComplete="tel" required /> : <TextField label="Presentation recovery phrase" value={phrase} onChange={e => setPhrase(e.target.value)} multiline rows={3} autoComplete="off" required />)}
+    {step === 'code' && <TextField label="Verification code" value={code} onChange={e => setCode(e.target.value)} autoComplete="one-time-code" required />}
+    {step === 'password' && <TextField label="Wallet password" value={password} onChange={e => setPassword(e.target.value)} type="password" autoComplete="current-password" required />}
+    {(error || startupError) && <Alert severity="error">{error || startupError}</Alert>}
+    {startupError && <Button onClick={() => getWalletService().retrySavedWallet()} disabled={busy}>Try opening the saved wallet again</Button>}
+    <Button variant="contained" type="submit" disabled={busy || !manager} size="large">{busy ? <CircularProgress size={20} /> : step === 'password' ? 'Unlock wallet' : 'Continue'}</Button>
+    <Stack direction="row" spacing={1} justifyContent="center"><Button component={RouterLink} to="/recovery/password" size="small">Recover original password</Button><Button component={RouterLink} to="/recovery/presentation-key" size="small">Recover original credentials</Button></Stack>
+    <Button component={RouterLink} to="/recovery/wallet-data" size="small">Open wallet data files</Button>
+  </Stack>
+}

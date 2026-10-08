@@ -19,13 +19,14 @@ export const buildPermissionModuleRegistry = (modules: PermissionModuleDefinitio
     return ids.filter(id => registryById.has(id))
   }
 
-  // Before registry tracking, BTMS was the only shipped module. Its absence
-  // in a saved list remains a disable choice; newly shipped defaults are added.
-  const restoreEnabledPermissionModules = (ids?: string[], knownIds?: string[]) => {
+  // The settings UI no longer offers a way to disable a module, so a saved
+  // list can only ever lose a default module by accident (e.g. a build that
+  // did not ship it normalized it away, which then left Mandala calls failing
+  // with "Unsupported P-module scheme: p mandala"). Default-enabled modules are
+  // therefore always restored; `knownIds` is kept for signature compatibility.
+  const restoreEnabledPermissionModules = (ids?: string[], _knownIds?: string[]) => {
     const enabled = normalizeEnabledPermissionModules(ids)
-    if (!Array.isArray(ids)) return enabled
-    const known = new Set(Array.isArray(knownIds) ? knownIds : ['btms'])
-    return [...new Set([...enabled, ...getDefaultEnabledPermissionModules().filter(id => !known.has(id))])]
+    return [...new Set([...enabled, ...getDefaultEnabledPermissionModules()])]
   }
 
   return {

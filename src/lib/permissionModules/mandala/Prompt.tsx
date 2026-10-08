@@ -202,7 +202,7 @@ export const MandalaPermissionPrompt: React.FC<PermissionPromptProps> = (props) 
       : isRemoval
         ? 'This app wants to remove this token holding from your wallet.'
         : type === 'mandala_access'
-          ? 'This app wants to view your Mandala token balance and activity. Approval lasts for one minute.'
+          ? 'This app wants to view your Mandala token balance and activity. Approval lasts for 30 minutes.'
           : type === 'mandala_signature'
             ? 'This app wants to sign with one of your token keys. Only approve if you just asked this app to move tokens. This approves one signature.'
             : prompt?.context === 'credit'

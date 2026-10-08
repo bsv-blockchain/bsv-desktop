@@ -3,7 +3,7 @@
  * `'p mandala'` basket (schemeID `'mandala'`).
  *
  * Mirrors `@bsv/btms-permission-module`'s `BasicTokenModule` shape and file
- * organization exactly (admin pass-through, a 60s session-authorization
+ * organization exactly (admin pass-through, a 30-minute session-authorization
  * cache keyed by originator, a JSON-encoded prompt message, a generic
  * fallback that never throws on a decode failure) — but decodes Mandala's
  * BRC-162 VALUE output layout via the local `MandalaToken.decode` boundary
@@ -43,7 +43,7 @@ import type { PermissionsModule } from '@bsv/wallet-toolbox-client'
 import { MandalaToken } from './token'
 import { MANDALA_BASKET } from './types'
 
-const SESSION_TIMEOUT_MS = 60_000
+const SESSION_TIMEOUT_MS = 30 * 60_000
 const SESSION_CLEANUP_INTERVAL_MS = 30_000
 /** Approved transactions remembered per originator. A token send signs right
  * after its createAction, so a handful covers any honest app; the cap keeps
@@ -403,7 +403,7 @@ export class MandalaTokenModule implements PermissionsModule {
 
   /**
    * Session-authorization cache — same shape as BasicTokenModule's: a
-   * time-limited (60s) grant per originator, refreshed by every prompt this
+   * time-limited (30-minute) grant per originator, refreshed by every prompt this
    * module shows (spend/credit/access alike), consulted only by the
    * once-per-session access checks (`listOutputs`/`listActions`).
    * `relinquishOutput` deliberately does NOT read or write this cache —
@@ -554,7 +554,7 @@ export class MandalaTokenModule implements PermissionsModule {
     }
   }
 
-  /** listOutputs / listActions — once per 60s session, like BTMS's promptForBTMSAccess. */
+  /** listOutputs / listActions — once per 30-minute session (BTMS uses 60s)'s promptForBTMSAccess. */
   private async promptOnceForAccess(originator: string, action: 'listOutputs' | 'listActions'): Promise<void> {
     if (this.hasSessionAuthorization(originator)) return
 

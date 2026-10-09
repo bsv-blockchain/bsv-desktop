@@ -307,8 +307,24 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   // ---- Permission prompt handlers (registered by module Prompt components) ----
   const permissionPromptHandlersRef = useRef<Map<string, PermissionPromptHandler>>(new Map())
 
+  // An app that fires several identical requests at once (e.g. parallel
+  // listOutputs calls before the first approval lands) would otherwise stack
+  // copies of the same prompt, so each approve click only revealed the next
+  // copy. While a prompt is unanswered, an identical request (same module,
+  // app and message) joins it and receives the same answer. Prompts that
+  // differ (e.g. spends with different amounts) are never merged.
   const registerPermissionPromptHandler = useCallback((id: string, handler: PermissionPromptHandler) => {
-    permissionPromptHandlersRef.current.set(id, handler)
+    const pending = new Map<string, Promise<boolean>>()
+    const deduped: PermissionPromptHandler = (app, message) => {
+      const key = `${app}\u0000${message}`
+      let prompt = pending.get(key)
+      if (prompt === undefined) {
+        prompt = handler(app, message).finally(() => { pending.delete(key) })
+        pending.set(key, prompt)
+      }
+      return prompt
+    }
+    permissionPromptHandlersRef.current.set(id, deduped)
   }, [])
   const unregisterPermissionPromptHandler = useCallback((id: string) => {
     permissionPromptHandlersRef.current.delete(id)

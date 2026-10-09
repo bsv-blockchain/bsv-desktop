@@ -413,6 +413,11 @@ export class MandalaTokenModule implements PermissionsModule {
   /** Per originator: the input sighashes of each transaction the user
    * approved through `promptForSpend`/`promptGeneric`, newest last. */
   private readonly authorizedTransactions: Map<string, { digests: Set<string>; timestamp: number }[]> = new Map()
+  /** Per originator: the access prompt currently awaiting the user. An app
+   * that fires several listOutputs/listActions calls at once (the console
+   * loads assets, history and balances in parallel) joins this one prompt
+   * instead of queueing a copy per call. */
+  private readonly pendingAccessPrompts: Map<string, Promise<boolean>> = new Map()
   private readonly cleanupTimer: ReturnType<typeof setInterval>
 
   constructor(deps: MandalaTokenModuleDeps) {
@@ -558,12 +563,20 @@ export class MandalaTokenModule implements PermissionsModule {
   private async promptOnceForAccess(originator: string, action: 'listOutputs' | 'listActions'): Promise<void> {
     if (this.hasSessionAuthorization(originator)) return
 
-    const message = JSON.stringify({ type: 'mandala_access', action })
-    const approved = await this.deps.requestTokenAccess(originator, message)
-    if (!approved) {
+    let pending = this.pendingAccessPrompts.get(originator)
+    if (pending === undefined) {
+      const message = JSON.stringify({ type: 'mandala_access', action })
+      pending = this.deps.requestTokenAccess(originator, message)
+        .then(approved => {
+          if (approved) this.grantSessionAuthorization(originator)
+          return approved
+        })
+        .finally(() => { this.pendingAccessPrompts.delete(originator) })
+      this.pendingAccessPrompts.set(originator, pending)
+    }
+    if (!(await pending)) {
       throw new Error('User denied permission to access Mandala tokens')
     }
-    this.grantSessionAuthorization(originator)
   }
 
   /**

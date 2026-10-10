@@ -209,5 +209,11 @@
       "node-fetch": "npm:empty-npm-package@1.0.0",
       "test": "npm:empty-npm-package@1.0.0"
     }
+  },
+  "allowScripts": {
+    "better-sqlite3": true,
+    "electron": true,
+    "electron-winstaller": true,
+    "esbuild": true
   }
 }

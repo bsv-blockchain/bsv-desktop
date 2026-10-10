@@ -191,6 +191,8 @@ export interface WalletContextValue {
   updateMessageBoxUrl: (url: string) => Promise<void>;
   removeMessageBoxUrl: () => Promise<void>;
   initializingBackendServices: boolean;
+  /** Wallet built and backend services started: app requests can be served. */
+  appWalletReady: boolean;
   permissionsConfig: PermissionsConfig;
   updatePermissionsConfig: (config: PermissionsConfig) => Promise<void>;
   peerPayClient: PeerPayClient | null;
@@ -259,6 +261,7 @@ export const WalletContext = createContext<WalletContextValue>({
   updateMessageBoxUrl: async () => {},
   removeMessageBoxUrl: async () => {},
   initializingBackendServices: false,
+  appWalletReady: false,
   permissionsConfig: DEFAULT_PERMISSIONS_CONFIG,
   updatePermissionsConfig: async () => {},
   peerPayClient: null,
@@ -413,7 +416,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   }, [enqueueStasTransferRequest])
 
   // ---- HTTP bridge integration ----
-  const { managers, activeProfile } = walletServiceValues
+  const { managers, activeProfile, appWalletReady } = walletServiceValues
   const recentOriginsRef = useRef<Map<string, number>>(new Map())
   const profileStorageKey = activeProfile?.id ? Utils.toBase64(activeProfile.id) : ''
   const updateRecentAppWrapper = useCallback(async (profileId: string, origin: string): Promise<void> => {
@@ -469,10 +472,13 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     }
   }, [svc, onWalletReady, updateRecentAppWrapper])
 
+  // The permissions manager exists before backend services finish starting, so
+  // wait for the wallet to be ready. Until onWalletReady runs, the renderer has
+  // no HTTP listener and every app request hangs.
   useEffect(() => {
-    if (!managers.permissionsManager || !profileStorageKey) return
+    if (!appWalletReady || !managers.permissionsManager || !profileStorageKey) return
     void refreshAppWallet().catch(error => console.error('[WalletContext] App bridge refresh failed:', error))
-  }, [managers.permissionsManager, profileStorageKey, refreshAppWallet])
+  }, [appWalletReady, managers.permissionsManager, profileStorageKey, refreshAppWallet])
 
   // ---- Context value ----
   const contextValue = useMemo<WalletContextValue>(() => ({

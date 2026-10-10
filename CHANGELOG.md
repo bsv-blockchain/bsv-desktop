@@ -4,6 +4,8 @@
 
 ### Bug Fixes
 
+- App requests over the HTTP bridge (ports 3321/2121) no longer hang forever after unlock. The bridge was connected once, when the permissions manager appeared, which is before backend services finish starting; that attempt failed and was never retried, so the renderer never registered its HTTP listener. It now connects when the wallet is ready.
+- The "SSL Certificate Trust" prompt no longer appears on every launch on macOS. Every generated certificate used serial 01 with the same issuer, and the keychain identifies certificates by issuer + serial, so a regenerated certificate was never stored even though its trust setting was. Chromium could not find it and rejected the HTTPS bridge. Certificates now get a random serial, and a certificate with the old fixed serial is replaced once.
 - Upgrade `@bsv/sdk` to 2.8.11, Wallet Toolbox core/client to 2.14.4 and `@bsv/message-box-client` to 2.5.4.
 - Monitor worker no longer fails wallet startup with "Monitor worker timeout waiting for ready signal". The worker now signals ready before loading Wallet Toolbox, which can take longer than the 10s ready timeout on a cold disk cache.
 - Manage App shows monthly spending as a positive amount that updates after silent spends. The meter was negating `querySpentSince`, which is already a positive total, so current spending rendered negative and the bar stayed empty. A cached figure is still shown immediately, then refreshed, so spends under an existing grant are no longer frozen on screen.

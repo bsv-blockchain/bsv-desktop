@@ -4,6 +4,13 @@ import type { WalletServiceSnapshot } from './WalletService'
 type SnapshotSource = { getSnapshot(): WalletServiceSnapshot }
 const notReady = () => new Error('The wallet is not ready for app requests.')
 
+/** Whether the wallet has finished building and can serve app requests. */
+export function isAppWalletReady(snapshot: WalletServiceSnapshot): boolean {
+  const { wallet, managers, activeProfile } = snapshot
+  return snapshot.lifecycle === 'ready' && !snapshot.initializingBackendServices && !!wallet && !!managers.permissionsManager &&
+    !!activeProfile?.id?.length && !!activeProfile.identityKey
+}
+
 /** A previous profile's permission manager must never be registered as current. */
 export function isAppWalletSnapshotCurrent(source: SnapshotSource, snapshot: WalletServiceSnapshot): boolean {
   const current = source.getSnapshot()
@@ -17,7 +24,7 @@ export function isAppWalletSnapshotCurrent(source: SnapshotSource, snapshot: Wal
 export async function getReadyAppWalletSnapshot(source: SnapshotSource): Promise<WalletServiceSnapshot> {
   const snapshot = source.getSnapshot()
   const { wallet, managers, activeProfile, adminOriginator } = snapshot
-  if (snapshot.lifecycle !== 'ready' || snapshot.initializingBackendServices || !wallet || !managers.permissionsManager || !activeProfile?.id?.length || !activeProfile.identityKey) throw notReady()
+  if (!isAppWalletReady(snapshot)) throw notReady()
   const rawIdentity = (await wallet.getPublicKey({ identityKey: true })).publicKey
   if (!isAppWalletSnapshotCurrent(source, snapshot)) throw notReady()
   const appIdentity = (await managers.permissionsManager.getPublicKey({ identityKey: true }, adminOriginator)).publicKey

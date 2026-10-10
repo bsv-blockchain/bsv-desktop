@@ -15,6 +15,7 @@ import { WalletService, WalletServiceSnapshot } from '../services/WalletService'
 import type { QueueSnapshot } from '../services/PermissionQueueManager'
 import type { PeerPaySnapshot } from '../services/PeerPayManager'
 import { DEFAULT_PERMISSIONS_CONFIG } from '../WalletContext'
+import { isAppWalletReady } from '../services/appWalletBridge'
 import { subscribeRecentApps, type RecentApp } from '../pages/Dashboard/Apps/getApps'
 
 // Module-level singleton — survives React re-renders and hot reloads
@@ -427,6 +428,7 @@ export function useWalletService() {
     updateMessageBoxUrl,
     removeMessageBoxUrl,
     initializingBackendServices: walletState.initializingBackendServices,
+    appWalletReady: isAppWalletReady(walletState),
     // Permissions config
     permissionsConfig: queueState.permissionsConfig,
     updatePermissionsConfig,

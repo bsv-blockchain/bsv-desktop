@@ -54,6 +54,26 @@ interface CertificateKeyPair {
   certPath: string;
 }
 
+/** Serial number every certificate was generated with before randomSerial. */
+const LEGACY_SERIAL = '01';
+
+/**
+ * A random positive 128-bit serial, as hex.
+ *
+ * Keychains identify certificates by issuer + serial. With a fixed serial and a
+ * fixed issuer name, a regenerated certificate collides with the first one ever
+ * installed: `add-trusted-cert` records trust for it but does not store it, and
+ * Chromium, which finds trust anchors through the keychain, rejects the HTTPS
+ * bridge with ERR_CERT_AUTHORITY_INVALID while `security verify-cert` passes.
+ */
+function randomSerial(): string {
+  const bytes = forge.random.getBytesSync(16);
+  // Clear the top bit so the DER INTEGER is positive; set the next one so the
+  // leading byte is never zero (a zero byte would be dropped on encoding).
+  const first = (bytes.charCodeAt(0) & 0x7f) | 0x40;
+  return forge.util.bytesToHex(String.fromCharCode(first) + bytes.slice(1));
+}
+
 /**
  * Generates or loads a self-signed certificate for HTTPS server
  * Certificate is cached in user data directory for reuse
@@ -74,7 +94,11 @@ export async function generateSelfSignedCert(): Promise<CertificateKeyPair> {
       const forgeCert = forge.pki.certificateFromPem(cert);
       const now = new Date();
 
-      if (forgeCert.validity.notAfter > now) {
+      if (forgeCert.serialNumber === LEGACY_SERIAL) {
+        // Shares issuer + serial with every earlier BSV Desktop certificate, so
+        // the macOS keychain may have refused to store it (see randomSerial).
+        console.log('Existing certificate has the legacy fixed serial, generating new one');
+      } else if (forgeCert.validity.notAfter > now) {
         console.log('Using existing SSL certificate');
         return { cert, key, certPath };
       } else {
@@ -99,7 +123,7 @@ export async function generateSelfSignedCert(): Promise<CertificateKeyPair> {
   // Create certificate
   const cert = forge.pki.createCertificate();
   cert.publicKey = keys.publicKey;
-  cert.serialNumber = '01';
+  cert.serialNumber = randomSerial();
 
   // Valid for 1 year
   cert.validity.notBefore = new Date();

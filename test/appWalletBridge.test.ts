@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { getReadyAppWalletSnapshot, isAppWalletSnapshotCurrent } from '../src/lib/services/appWalletBridge'
+import { getReadyAppWalletSnapshot, isAppWalletReady, isAppWalletSnapshotCurrent } from '../src/lib/services/appWalletBridge'
 
 const identity = `02${'42'.repeat(32)}`
 function ready() {
@@ -50,5 +50,23 @@ describe('app wallet readiness checks', () => {
     })
     await expect(getReadyAppWalletSnapshot({ getSnapshot: () => current })).rejects.toThrow('not ready')
     expect(snapshot.managers.permissionsManager.getPublicKey).not.toHaveBeenCalled()
+  })
+
+  // The bridge is refreshed from a React effect. It used to run only when the
+  // permissions manager appeared, which happens before backend services finish
+  // initializing, so the one attempt failed and the HTTP listener was never
+  // registered: every app request hung. The effect now re-runs on this flag.
+  it('reports not ready while backend services are still initializing', () => {
+    const { snapshot } = ready()
+    snapshot.initializingBackendServices = true
+    expect(isAppWalletReady(snapshot)).toBe(false)
+    snapshot.initializingBackendServices = false
+    expect(isAppWalletReady(snapshot)).toBe(true)
+  })
+
+  it('reports not ready before the lifecycle reaches ready', () => {
+    const { snapshot } = ready()
+    snapshot.lifecycle = 'authenticated'
+    expect(isAppWalletReady(snapshot)).toBe(false)
   })
 })

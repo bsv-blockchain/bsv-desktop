@@ -62,8 +62,8 @@ export class PeerPayManager extends EventEmittable<PeerPayEvents> {
         originator: adminOriginator,
       })
 
-      // DON'T call init() — would auto-anoint and trigger spending authorization.
-      // User must explicitly anoint the host via the UI.
+      // Don't anoint here: it creates a transaction and needs spending
+      // authorization. The user anoints explicitly via anointCurrentHost().
       this._client = client
       this._emitChanged()
 
@@ -96,7 +96,10 @@ export class PeerPayManager extends EventEmittable<PeerPayEvents> {
     this._anointmentLoading = true
     this._emitChanged()
     try {
+      // Since message-box-client 2.x, init() only selects the host; the
+      // overlay advertisement is a separate, explicit anointHost() call.
       await this._client.init(messageBoxUrl)
+      await this._client.anointHost(messageBoxUrl)
       await this._checkAnointmentStatus(messageBoxUrl)
     } finally {
       this._anointmentLoading = false

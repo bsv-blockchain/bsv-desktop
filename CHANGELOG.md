@@ -4,6 +4,7 @@
 
 ### Bug Fixes
 
+- "Anoint Host" (Settings → Message Box, and the Payments page prompt) now advertises the host. Since `@bsv/message-box-client` 2.x, `init()` no longer anoints; the button only called `init()`, so no transaction was created and the host stayed "Not Anointed". It now calls `anointHost()`.
 - Add an `allowScripts` policy for `better-sqlite3`, `electron`, `electron-winstaller` and `esbuild`. npm 12 skips dependency install scripts that are not listed, so a clean install had no Electron binary ("Electron failed to install correctly").
 - Declare `@bsv/air-gap`, `jsqr` and `@bsv/templates` in `package.json`. They have been imported since the 3.0 overhaul but were only present as extraneous installs, so a clean `npm ci` failed to typecheck or build.
 - Resolve npm audit findings (60 → 15, no critical). `vitest` 5; `axios` 1.x for `stas-js`; `elliptic` 6.6.1 and `bn.js` 4.12.5 for `bsv`; `qs` 6.16; `@electron/get` 5 for electron-builder. `stas-js` declares test tooling (`jest-allure`, `jest-html-reporter`, `chai`, `chai-as-promised`, `node-fetch`, `test`) as runtime dependencies but never loads them; they are replaced with an empty package. Remaining findings have no fix or are not reachable: `node-forge` (RSA signature verification, which the app does not use), `@bsv/identity-react` → `@types/jest` → `braces` (types only; the fix is identity-react 2.0, which needs `@bsv/sdk` 3), and `elliptic` GHSA-848j (no fixed version).

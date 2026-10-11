@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- The wallet homepage has a "Need help?" card. Troubleshoot checks the wallet and fixes what it can by itself: network, app connections (re-connects the bridge, re-runs certificate trust), failed and stuck transactions, coins already spent on-chain, message box set-up and anointing, and waiting incoming payments. It only asks the user for things it cannot do: back up, add funds, check the internet. User Guide is a spotlight tour of the wallet that explains apps are used in the normal web browser and approved here.
+
 ### Bug Fixes
 
 - "Anoint Host" (Settings → Message Box, and the Payments page prompt) now advertises the host. Since `@bsv/message-box-client` 2.x, `init()` no longer anoints; the button only called `init()`, so no transaction was created and the host stayed "Not Anointed". It now calls `anointHost()`.

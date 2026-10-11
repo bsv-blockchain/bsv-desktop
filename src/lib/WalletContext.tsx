@@ -85,7 +85,8 @@ export const DEFAULT_PERMISSIONS_CONFIG: PermissionsConfig = {
   seekPermissionWhenListingActionsByLabel: false,
   seekProtocolPermissionsForEncrypting: false,
   seekProtocolPermissionsForHMAC: false,
-  seekProtocolPermissionsForSigning: false,
+  // Signatures can authorise actions outside the wallet, so apps must ask first.
+  seekProtocolPermissionsForSigning: true,
   seekSpendingPermissions: true,
 }
 

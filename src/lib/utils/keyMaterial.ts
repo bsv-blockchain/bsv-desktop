@@ -1,6 +1,5 @@
 import { Utils } from '@bsv/sdk'
 import { Mnemonic } from '@bsv/sdk/compat'
-import * as secrets from '../services/secrets'
 
 export const normalizeMnemonic = (phrase: string): string =>
   phrase.trim().replace(/\s+/g, ' ')
@@ -63,42 +62,4 @@ export const deriveKeyMaterialFromMnemonic = (
 export const mnemonicFromKeyHex = (keyHex: string): string => {
   const keyBytes = Utils.toArray(keyHex, 'hex')
   return Mnemonic.fromEntropy(keyBytes).toString()
-}
-
-export const persistKeyMaterial = (keyHex: string, mnemonic?: string): string => {
-  const phrase = mnemonic ? normalizeMnemonic(mnemonic) : mnemonicFromKeyHex(keyHex)
-  secrets.setKeyHex(keyHex)
-  secrets.setMnemonic(phrase)
-  return phrase
-}
-
-export const reconcileStoredKeyMaterial = (): { keyHex: string; mnemonic: string } => {
-  if (typeof window === 'undefined') {
-    return { keyHex: '', mnemonic: '' }
-  }
-
-  const storedMnemonic = (secrets.getMnemonic() || '').trim()
-  const storedHex = (secrets.getKeyHex() || '').trim()
-
-  if (storedMnemonic) {
-    try {
-      const { keyHex, mnemonic } = deriveKeyMaterialFromMnemonic(storedMnemonic)
-      persistKeyMaterial(keyHex, mnemonic)
-      return { keyHex, mnemonic }
-    } catch (err) {
-      console.error('Failed to derive key from stored mnemonic', err)
-      secrets.clearMnemonic()
-    }
-  }
-
-  if (storedHex) {
-    try {
-      const phrase = persistKeyMaterial(storedHex)
-      return { keyHex: storedHex, mnemonic: phrase }
-    } catch (err) {
-      console.error('Failed to derive mnemonic from stored key', err)
-    }
-  }
-
-  return { keyHex: '', mnemonic: '' }
 }

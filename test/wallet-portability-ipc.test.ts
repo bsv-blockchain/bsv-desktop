@@ -56,8 +56,8 @@ describe('wallet data IPC boundary', () => {
   it('routes every storage IPC handler through the storage access fence', async () => {
     const { readFileSync } = await import('node:fs')
     const main = readFileSync(new URL('../electron/main.ts', import.meta.url), 'utf8')
-    const handlers = [...main.matchAll(/ipcMain\.handle\('(storage:[\w-]+|stas:query)'[\s\S]*?\n\}\);/g)]
-    expect(handlers.map(match => match[1]).sort()).toEqual(['stas:query', 'storage:call-method', 'storage:initialize-services', 'storage:is-available', 'storage:make-available', 'storage:release-network'])
+    const handlers = [...main.matchAll(/ipcMain\.handle\('(storage:[\w-]+)'[\s\S]*?\n\}\);/g)]
+    expect(handlers.map(match => match[1]).sort()).toEqual(['storage:call-method', 'storage:initialize-services', 'storage:is-available', 'storage:make-available', 'storage:release-network'])
     for (const [source, channel] of handlers) {
       if (channel === 'storage:release-network') {
         // Release acquires exclusive access and drains existing shared calls.

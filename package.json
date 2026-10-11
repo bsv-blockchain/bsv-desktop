@@ -22,16 +22,12 @@
     "package:linux": "electron-builder --linux",
     "lint:ci": "echo 'No linting'",
     "test": "vitest run --config vitest.config.electron.ts test/translations.test.ts test/appIconFallback.test.ts test/formatReleaseNotes.test.ts test/endpoints.test.ts test/onWalletReady.test.ts test/walletByteJson.test.ts test/storageIdentity.test.ts test/storageIdentity.integration.test.ts test/trustCertifier.test.ts test/feeSettings.test.ts test/feeSettings.wiring.test.ts test/arcade.test.ts test/arcadeSse.test.ts test/txStatusBridge.test.ts test/walletCreateActionWire.test.ts test/peerPayManager.test.ts test/sslCertSerial.test.ts test/spendingProgress.test.ts test/runWalletCheck.test.ts test/backupMarker.test.ts test/certRepair.test.ts test/tour.test.ts test/walletCheckPorts.test.ts test/walletPortabilityDates.test.ts test/singleFlight.test.ts test/autoTour.test.ts test/mnemonicProfiles.test.ts test/removeWallet.test.ts test/importSecret.test.ts",
-    "test:stas": "vitest run --config vitest.config.electron.ts test/stas",
-    "test:tokens": "vitest run --config vitest.config.electron.ts test/tokens",
-    "test:stas:db": "npm rebuild better-sqlite3 && vitest run --config vitest.config.electron.ts test/stas; npm run rebuild:electron",
     "rebuild:electron": "electron-rebuild -f -o better-sqlite3 --build-from-source",
     "test:perf": "vitest run --config vitest.config.electron.ts",
     "test:wallet-files": "vitest run --config vitest.config.electron.ts test/wallet-portability.test.ts test/wallet-portability-service.test.ts test/wallet-portability-argon2.test.ts test/wallet-portability-storage.test.ts test/wallet-portability-ipc.test.ts"
   },
   "dependencies": {
     "@bsv/air-gap": "^0.1.3",
-    "@bsv/amountinator": "^2.1.6",
     "@bsv/btms": "^1.2.3",
     "@bsv/btms-permission-module": "^1.2.1",
     "@bsv/btms-permission-module-ui": "^1.0.0",
@@ -49,17 +45,13 @@
     "@mui/styles": "^6.4.8",
     "@streamparser/json": "0.0.26",
     "better-sqlite3": "^12.8.0",
-    "bsv": "^1.5.6",
     "cors": "^2.8.6",
     "date-fns": "^4.1.0",
     "dompurify": "^3.4.16",
-    "dotenv": "^17.2.4",
-    "dxs-bsv-token-sdk": "file:./vendor/dxs-bsv-token-sdk",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.9",
     "eventsource": "^5.1.2",
     "express": "^4.21.2",
-    "fuse.js": "^7.1.0",
     "hash-wasm": "4.12.0",
     "i18next": "^26.0.5",
     "iso-3166-ts": "^2.2.0",
@@ -68,22 +60,18 @@
     "knex": "^3.1.0",
     "libphonenumber-js": "^1.12.36",
     "metanet-apps": "^1.0.9",
-    "node-fetch": "^3.3.2",
     "node-forge": "^1.3.1",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-i18next": "^17.0.3",
     "react-router-dom": "^5.2.0",
-    "react-toastify": "^11.0.5",
-    "stas-js": "^3.0.3",
-    "use-async-effect": "^2.2.7"
+    "react-toastify": "^11.0.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^22.19.10",
-    "@types/node-fetch": "^2.6.13",
     "@types/node-forge": "^1.3.14",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.1",
@@ -94,7 +82,6 @@
     "electron-builder": "^26.0.12",
     "typescript": "~5.6.2",
     "vite": "^6.3.6",
-    "vite-plugin-electron": "^0.29.0",
     "vite-plugin-node-polyfills": "^0.28.0",
     "vitest": "^5.0.3"
   },
@@ -195,19 +182,6 @@
     "qs": "^6.16.0",
     "app-builder-lib": {
       "@electron/get": "^5.1.0"
-    },
-    "bsv": {
-      "elliptic": "^6.6.1",
-      "bn.js": "^4.12.3"
-    },
-    "stas-js": {
-      "axios": "^1.20.0",
-      "jest-allure": "npm:empty-npm-package@1.0.0",
-      "jest-html-reporter": "npm:empty-npm-package@1.0.0",
-      "chai": "npm:empty-npm-package@1.0.0",
-      "chai-as-promised": "npm:empty-npm-package@1.0.0",
-      "node-fetch": "npm:empty-npm-package@1.0.0",
-      "test": "npm:empty-npm-package@1.0.0"
     }
   },
   "allowScripts": {

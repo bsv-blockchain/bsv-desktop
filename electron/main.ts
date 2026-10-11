@@ -420,60 +420,6 @@ ipcMain.handle('save-file', async (_event, defaultPath: string, content: number[
   }
 });
 
-// Save mnemonic to ~/.bsv-desktop/
-ipcMain.handle('save-mnemonic', async (_event, mnemonic: string) => {
-  try {
-    const homeDir = app.getPath('home');
-    const bsvDir = path.join(homeDir, '.bsv-desktop');
-
-    // Create directory if it doesn't exist
-    if (!fs.existsSync(bsvDir)) {
-      fs.mkdirSync(bsvDir, { recursive: true });
-    }
-
-    const timestamp = Date.now();
-    const fileName = `mnemonic${timestamp}.txt`;
-    const filePath = path.join(bsvDir, fileName);
-
-    fs.writeFileSync(filePath, mnemonic, 'utf-8');
-
-    // Set file permissions to read-only (0o400 = owner read only)
-    fs.chmodSync(filePath, 0o400);
-
-    return { success: true, path: filePath };
-  } catch (error) {
-    console.error('Save mnemonic failed:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
-// Save private key to ~/.bsv-desktop/
-ipcMain.handle('save-private-key', async (_event, privateKey: string) => {
-  try {
-    const homeDir = app.getPath('home');
-    const bsvDir = path.join(homeDir, '.bsv-desktop');
-
-    // Create directory if it doesn't exist
-    if (!fs.existsSync(bsvDir)) {
-      fs.mkdirSync(bsvDir, { recursive: true });
-    }
-
-    const timestamp = Date.now();
-    const fileName = `privatekey${timestamp}.txt`;
-    const filePath = path.join(bsvDir, fileName);
-
-    fs.writeFileSync(filePath, privateKey, 'utf-8');
-
-    // Set file permissions to read-only (0o400 = owner read only)
-    fs.chmodSync(filePath, 0o400);
-
-    return { success: true, path: filePath };
-  } catch (error) {
-    console.error('Save private key failed:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
 // Proxy fetch for manifest.json files
 ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
   try {
@@ -697,19 +643,6 @@ ipcMain.handle('secrets:delete', async (_event, name: string) => {
     throw new Error('VAULT_LOCKED');
   }
   vault.deleteSecret(name);
-});
-
-// STAS extension query channel — separate from storage:call-method so STAS
-// queries do not share the StorageKnex method namespace.
-ipcMain.handle('stas:query', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) => {
-  try {
-    const manager = await getStorageManager();
-    const result = await manager.request(identityKey, chain, () => manager.callStasQuery(identityKey, chain, method, args ?? []));
-    return { success: true, result };
-  } catch (error: any) {
-    console.error('[IPC] stas:query error:', error);
-    return { success: false, error: error.message };
-  }
 });
 
 // ===== Auto-Update IPC Handlers =====

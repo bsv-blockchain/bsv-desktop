@@ -22,8 +22,6 @@ import { createArcadeServices } from './arcade.js';
 import { normalizeNetworkSettings, type NetworkSettings } from './networkConfig.js';
 import { arcadeSseCursorPath } from './arcadeSse.js';
 import { patchListCertificates } from './optimized-queries.js';
-import { stasMigrationSource } from './stas-migrations/index.js';
-import { StasQueries } from './stas-queries.js';
 import { WalletStorageAccess } from './wallet-portability/access.js';
 import { WalletDataBindings, walletStorageKey, assertRecoveryBinding } from './wallet-portability/bindings.js';
 import {
@@ -277,15 +275,6 @@ class StorageManager {
     const storageIdentityKey = await ensureUniqueLocalStorageIdentity(db, identityKey);
     console.log(`[Storage] Local provider identity ready: ${storageIdentityKey.slice(0, 10)}...`);
     console.log(`[Storage] Migrations complete`);
-
-    // Run STAS extension migrations (bsv-desktop-owned). A separate tracking
-    // table keeps them isolated from wallet-toolbox's own migration ledger.
-    console.log(`[Storage] Running STAS extension migrations for ${key}...`);
-    await db.migrate.latest({
-      migrationSource: stasMigrationSource,
-      tableName: 'knex_migrations_stas'
-    });
-    console.log(`[Storage] STAS migrations complete`);
 
     // Keep the existing 250 sat/kB default, introduced as a margin for reported
     // underfunded token ancestors. This is a fixed transaction rate, not an
@@ -566,32 +555,6 @@ class StorageManager {
       console.error(`[Storage] Error calling ${method}:`, error);
       throw error;
     }
-  }
-
-  /**
-   * Run a STAS extension query against the STAS tables for an identity/chain.
-   * Dispatched to `StasQueries` — a bounded surface, separate from the generic
-   * StorageKnex method proxy used by callStorageMethod.
-   */
-  async callStasQuery(
-    identityKey: string,
-    chain: 'main' | 'test' | 'ttn' | 'tstn',
-    method: string,
-    args: any[]
-  ): Promise<any> {
-    // Ensure storage (and therefore the STAS migrations) have run.
-    await this.getOrCreateStorage(identityKey, chain);
-    const key = walletStorageKey(identityKey, chain);
-    const db = this.databases.get(key);
-    if (!db) {
-      throw new Error(`No database connection for ${key}`);
-    }
-    const queries = new StasQueries(db);
-    const fn = (queries as any)[method];
-    if (typeof fn !== 'function') {
-      throw new Error(`Unknown STAS query: ${method}`);
-    }
-    return fn.apply(queries, args || []);
   }
 
   /**

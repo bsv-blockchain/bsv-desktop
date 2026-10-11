@@ -29,14 +29,12 @@ import 'react-toastify/dist/ReactToastify.css'
 import { ADMIN_ORIGINATOR, DEFAULT_SETTINGS, MESSAGEBOX_HOST } from './config'
 import { UserContext } from './UserContext'
 import { useWalletService, getWalletService } from './hooks/useWalletService'
-import type { StasServices } from './services/WalletService'
 import { buildPermissionModuleRegistry } from './permissionModules/registry'
 import type { PermissionModuleDefinition, PermissionPromptHandler } from './permissionModules/types'
 import type { GroupPermissionRequest, CounterpartyPermissionRequest } from './types/GroupedPermissions'
 import type { WalletProfile } from './types/WalletProfile'
-import { clearWalletForHttpRoute, setStasForHttpRoute, setStasTransferEnqueuer, setBsv21DiscoveryForHttpRoute, setPeerTokensForHttpRoute } from '../onWalletReady'
+import { clearWalletForHttpRoute } from '../onWalletReady'
 import { getReadyAppWalletSnapshot, isAppWalletSnapshotCurrent } from './services/appWalletBridge'
-import type { StasTransferRequest } from './types/StasTransferRequest'
 import { RequestInterceptorWallet } from './RequestInterceptorWallet'
 import { updateRecentApp } from './pages/Dashboard/Apps/getApps'
 import { defaultNetworkSettingsMap, type NetworkSettings, type NetworkSettingsMap, type WalletNetwork } from './networkConfig'
@@ -127,8 +125,6 @@ export interface WalletContextValue {
    * plumbing). App-originated requests must go through `managers.permissionsManager`.
    */
   wallet?: WalletInterface;
-  /** STAS BRC-42 services + discovery loop (Tasks 3/4). */
-  stas?: StasServices;
   settings: WalletSettings;
   updateSettings: (newSettings: WalletSettings) => Promise<void>;
   network: 'mainnet' | 'testnet';
@@ -149,14 +145,6 @@ export interface WalletContextValue {
   certificateRequests: any[];
   protocolRequests: any[];
   spendingRequests: any[];
-  /**
-   * Pending STAS transfer authorization requests from external apps
-   * calling `POST /stas/transfer`. Surfaced by `StasTransferPermissionHandler`.
-   * Resolves the awaiting route handler when the user clicks Approve/Deny.
-   */
-  stasTransferRequests: StasTransferRequest[];
-  /** Resolves the head of `stasTransferRequests` and removes it from the queue. */
-  advanceStasTransferQueue: (approved: boolean) => void;
   groupPermissionRequests: GroupPermissionRequest[];
   counterpartyPermissionRequests: CounterpartyPermissionRequest[];
   startPactCooldownForCounterparty: (originator: string, counterparty: string) => void;
@@ -226,8 +214,6 @@ export const WalletContext = createContext<WalletContextValue>({
   certificateRequests: [],
   protocolRequests: [],
   spendingRequests: [],
-  stasTransferRequests: [],
-  advanceStasTransferQueue: () => {},
   groupPermissionRequests: [],
   counterpartyPermissionRequests: [],
   startPactCooldownForCounterparty: () => {},
@@ -381,40 +367,6 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   // ---- React adapter hook — provides all the context values ----
   const walletServiceValues = useWalletService()
 
-  // ---- STAS transfer authorization queue (Apps API permission prompts) ----
-  // External apps hitting POST /stas/transfer get gated by a user prompt
-  // here. enqueueStasTransferRequest is exposed to the HTTP route handler
-  // via setStasTransferEnqueuer (parallel to setStasForHttpRoute).
-  const [stasTransferRequests, setStasTransferRequests] = useState<StasTransferRequest[]>([])
-
-  const enqueueStasTransferRequest = useCallback(
-    (
-      args: Omit<StasTransferRequest, 'requestId' | 'resolve'>
-    ): Promise<boolean> => {
-      return new Promise<boolean>((resolve) => {
-        const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36)
-        setStasTransferRequests((q) => [
-          ...q,
-          { ...args, requestId, resolve },
-        ])
-      })
-    },
-    []
-  )
-
-  const advanceStasTransferQueue = useCallback((approved: boolean) => {
-    setStasTransferRequests((q) => {
-      if (q.length === 0) return q
-      const [head, ...rest] = q
-      try { head.resolve(approved) } catch { /* ignore */ }
-      return rest
-    })
-  }, [])
-
-  useEffect(() => {
-    setStasTransferEnqueuer(enqueueStasTransferRequest)
-    return () => setStasTransferEnqueuer(null)
-  }, [enqueueStasTransferRequest])
 
   // ---- HTTP bridge integration ----
   const { managers, activeProfile, appWalletReady } = walletServiceValues
@@ -447,23 +399,6 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
       if (!isAppWalletSnapshotCurrent(svc, current)) {
         throw new Error('The wallet changed while reconnecting apps. Try again when it is ready.')
       }
-      const stas = current.stas
-      setStasForHttpRoute(stas?.keyDeriver && stas.discovery && stas.transfer ? {
-        discovery: stas.discovery,
-        transfer: stas.transfer,
-        keyDeriver: stas.keyDeriver,
-        identityKey: stas.keyDeriver.identityKey,
-        chain: stas.keyDeriver.chain,
-      } : null)
-      setBsv21DiscoveryForHttpRoute(stas?.bsv21Discovery ?? null)
-      setPeerTokensForHttpRoute(stas?.peerTokens && stas.keyDeriver ? {
-        client: stas.peerTokens,
-        wallet: permissionsManager,
-        identityKey: stas.keyDeriver.identityKey,
-        chain: stas.keyDeriver.chain,
-        originator: current.adminOriginator,
-        tokens: stas.tokens,
-      } : null)
     } catch (error) {
       // A superseded refresh must not disconnect the newer profile's bridge.
       const latest = svc.getSnapshot()
@@ -484,10 +419,8 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   // ---- Context value ----
   const contextValue = useMemo<WalletContextValue>(() => ({
     ...walletServiceValues,
-    stasTransferRequests,
-    advanceStasTransferQueue,
     refreshAppWallet,
-  }), [walletServiceValues, stasTransferRequests, advanceStasTransferQueue, refreshAppWallet])
+  }), [walletServiceValues, refreshAppWallet])
 
   return (
     <WalletContext.Provider value={contextValue}>

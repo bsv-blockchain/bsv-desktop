@@ -15,15 +15,13 @@ function existingProfile() {
   const state = service as any
   const manager = { authenticated: true, underlying: { oldProfile: true } }
   const previousSession = { identityKey: 'old-identity', chain: 'main', close: vi.fn(async () => {}) }
-  const previousTokens = { disconnectWebSocket: vi.fn(async () => {}) }
   state._lifecycle = 'ready'
   state._wallet = { oldProfile: true }
   state._managers = { walletManager: manager, permissionsManager: { oldProfile: true }, settingsManager: {}, storageManager: {} }
   state._activeProfile = { id: [1], identityKey: 'old-identity' }
-  state._stas = { peerTokens: previousTokens }
   state.walletData = previousSession
   service.permissionQueue.setPermissionsManager(state._managers.permissionsManager)
-  return { service, state, manager, previousSession, previousTokens }
+  return { service, state, manager, previousSession }
 }
 
 beforeEach(() => {
@@ -36,7 +34,7 @@ beforeEach(() => {
 
 describe('failed profile construction', () => {
   it('detaches previous profile services before storage lookup and rejects bridge readiness after a resolved legacy switch', async () => {
-    const { service, state, manager, previousSession, previousTokens } = existingProfile()
+    const { service, state, manager, previousSession } = existingProfile()
     const snapshots: any[] = []
     service.on('stateChanged', snapshot => snapshots.push(snapshot))
     // Legacy managers assign null and resolve when walletBuilder fails.
@@ -45,7 +43,6 @@ describe('failed profile construction', () => {
     expect(snapshots[0].managers.permissionsManager).toBeUndefined()
     expect(snapshots[0].wallet).toBeUndefined()
     expect(previousSession.close).toHaveBeenCalledOnce()
-    expect(previousTokens.disconnectWebSocket).toHaveBeenCalledOnce()
     expect(window.electronAPI.storage.releaseNetwork).toHaveBeenCalledWith('old-identity', 'main')
     expect(service.getSnapshot().managers).toEqual({ walletManager: manager })
     expect((service.permissionQueue as any)._permissionsManager).toBeNull()

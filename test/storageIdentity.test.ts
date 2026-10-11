@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createLocalStorageIdentityKey, ensureUniqueLocalStorageIdentity } from '../electron/storage-identity';
 
 // better-sqlite3 is rebuilt for Electron's ABI by postinstall; skip when plain
-// node cannot load it (see test/stas/migration.test.ts).
+// node cannot load it.
 async function canUseBetterSqlite3(): Promise<boolean> {
   try {
     const probe = knex({ client: 'better-sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });

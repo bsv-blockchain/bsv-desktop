@@ -33,8 +33,6 @@ export interface ElectronAPI {
   relinquishFocus: () => Promise<void>;
   downloadFile: (fileName: string, content: number[]) => Promise<{ success: boolean; path?: string; error?: string }>;
   saveFile: (defaultPath: string, content: number[]) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>;
-  saveMnemonic: (mnemonic: string) => Promise<{ success: boolean; path?: string; error?: string }>;
-  savePrivateKey: (privateKey: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   proxyFetchManifest: (url: string) => Promise<{ status: number; headers: [string, string][]; body: string }>;
   network: {
     getProxySettings: () => Promise<{ mode: 'direct' | 'fixed_servers'; proxyRules: string; lastProxyRules?: string; restartRequired?: boolean }>;
@@ -89,9 +87,6 @@ export interface ElectronAPI {
   bootConfig: {
     get: () => Promise<any>;
     set: (config: any) => Promise<void>;
-  };
-  stas: {
-    query: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
   };
   updates: {
     check: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;

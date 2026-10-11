@@ -25,7 +25,7 @@ const items = [
 export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; setMenuOpen: (open: boolean) => void; menuRef?: React.RefObject<HTMLDivElement> }) {
   const compact = useMediaQuery('(max-width:900px)')
   const history = useHistory()
-  const { activeProfile, loginType, managers, saveEnhancedSnapshot, setActiveProfile, switchingNetwork, basketRequests, protocolRequests, certificateRequests, spendingRequests, groupPermissionRequests, stasTransferRequests, counterpartyPermissionRequests, refreshAppWallet } = useContext(WalletContext)
+  const { activeProfile, loginType, managers, saveEnhancedSnapshot, setActiveProfile, switchingNetwork, basketRequests, protocolRequests, certificateRequests, spendingRequests, groupPermissionRequests, counterpartyPermissionRequests, refreshAppWallet } = useContext(WalletContext)
   const { appVersion } = useContext(UserContext)
   const [profileOpen, setProfileOpen] = useState(false)
   const [profiles, setProfiles] = useState<WalletProfile[]>([])
@@ -48,7 +48,7 @@ export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; set
   }, [profileOpen, managers.walletManager, activeProfile, supportsProfiles])
 
   const assertIdle = () => {
-    if (isHttpBridgePaused() || switchingNetwork || activeUserWalletOperations() || activeHttpBridgeRequests() || [basketRequests, protocolRequests, certificateRequests, spendingRequests, groupPermissionRequests, stasTransferRequests, counterpartyPermissionRequests].some(queue => queue.length)) throw new Error('Finish your current payment or app request before changing or locking the wallet.')
+    if (isHttpBridgePaused() || switchingNetwork || activeUserWalletOperations() || activeHttpBridgeRequests() || [basketRequests, protocolRequests, certificateRequests, spendingRequests, groupPermissionRequests, counterpartyPermissionRequests].some(queue => queue.length)) throw new Error('Finish your current payment or app request before changing or locking the wallet.')
   }
   const switchProfile = async (profile: WalletProfile) => {
     setBusy(true)

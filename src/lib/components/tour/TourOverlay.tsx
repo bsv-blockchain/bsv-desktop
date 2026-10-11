@@ -18,12 +18,13 @@ function measure(target?: string): Rect | null {
 
 function cardPosition(hole: Rect | null): { top: number; left: number } {
   const vw = window.innerWidth, vh = window.innerHeight
+  // Every branch clamps left to 16px so the card never runs off a narrow window.
   if (!hole) return { top: Math.max(16, vh / 2 - 120), left: Math.max(16, vw / 2 - CARD_WIDTH / 2) }
-  const left = Math.min(Math.max(16, hole.left), vw - CARD_WIDTH - 16)
+  const left = Math.max(16, Math.min(Math.max(16, hole.left), vw - CARD_WIDTH - 16))
   const below = hole.top + hole.height + 12
   if (below + 200 < vh) return { top: below, left }
   const right = hole.left + hole.width + 12
-  if (right + CARD_WIDTH + 16 < vw) return { top: Math.max(16, Math.min(hole.top, vh - 220)), left: right }
+  if (right + CARD_WIDTH + 16 < vw) return { top: Math.max(16, Math.min(hole.top, vh - 220)), left: Math.max(16, right) }
   return { top: Math.max(16, hole.top - 212), left }
 }
 
@@ -40,7 +41,7 @@ export default function TourOverlay() {
     const update = () => setHole(measure(step.target))
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
-    document.querySelector(`[data-tour="${step.target}"]`)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+    if (step.target) document.querySelector(`[data-tour="${step.target}"]`)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
     return () => { window.clearInterval(timer); window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true) }
   }, [step.target])
 
@@ -56,7 +57,7 @@ export default function TourOverlay() {
 
   const pos = cardPosition(hole)
   const last = index === TOUR_STEPS.length - 1
-  return createPortal(<Box role="dialog" aria-modal="true" aria-label={`User guide, step ${index + 1} of ${TOUR_STEPS.length}: ${step.title}`} sx={{ position: 'fixed', inset: 0, zIndex: theme => theme.zIndex.modal + 1 }}>
+  return createPortal(<Box role="dialog" aria-modal="true" aria-label={`User guide, step ${index + 1} of ${TOUR_STEPS.length}: ${step.title}`} sx={{ position: 'fixed', inset: 0, zIndex: theme => theme.zIndex.drawer + 1 }}>
     {hole
       ? <Box aria-hidden sx={{ position: 'fixed', top: hole.top, left: hole.left, width: hole.width, height: hole.height, borderRadius: 3, boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.6)', transition: 'all 200ms ease', pointerEvents: 'none' }} />
       : <Box aria-hidden sx={{ position: 'fixed', inset: 0, bgcolor: 'rgba(15, 23, 42, 0.6)' }} />}

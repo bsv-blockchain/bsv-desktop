@@ -7,22 +7,28 @@ interface TourApi { active: boolean; index: number; start(): void; stop(): void;
 const noop = () => {}
 const TourContext = createContext<TourApi>({ active: false, index: 0, start: noop, stop: noop, next: noop, back: noop })
 
-export function TourProvider({ children }: { children: React.ReactNode }) {
+/** Below 900px the menu is a closed temporary drawer: open it for nav-* steps so their targets exist. */
+export function TourProvider({ children, setMenuOpen, compact }: { children: React.ReactNode; setMenuOpen?: (open: boolean) => void; compact?: boolean }) {
   const history = useHistory()
   const [index, setIndex] = useState<number | null>(null)
   const go = useCallback((i: number) => {
     const step = TOUR_STEPS[i]
     if (history.location.pathname !== step.route) history.push(step.route)
+    if (compact) setMenuOpen?.(Boolean(step.target?.startsWith('nav-')))
     setIndex(i)
-  }, [history])
+  }, [history, compact, setMenuOpen])
+  const end = useCallback(() => {
+    if (compact) setMenuOpen?.(false)
+    setIndex(null)
+  }, [compact, setMenuOpen])
   const api = useMemo<TourApi>(() => ({
     active: index !== null,
     index: index ?? 0,
     start: () => go(0),
-    stop: () => setIndex(null),
-    next: () => { if (index === null) return; index + 1 < TOUR_STEPS.length ? go(index + 1) : setIndex(null) },
+    stop: end,
+    next: () => { if (index === null) return; index + 1 < TOUR_STEPS.length ? go(index + 1) : end() },
     back: () => { if (index !== null && index > 0) go(index - 1) },
-  }), [index, go])
+  }), [index, go, end])
   return <TourContext.Provider value={api}>{children}{index !== null && <TourOverlay />}</TourContext.Provider>
 }
 

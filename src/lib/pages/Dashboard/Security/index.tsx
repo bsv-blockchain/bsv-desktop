@@ -11,6 +11,7 @@ import { useExportDataToFile } from '../../../utils/exportDataToFile'
 import RecoveryPhrase from '../../../components/RecoveryPhrase'
 import ChangePassword from '../Settings/Password'
 import RecoveryKey from '../Settings/RecoveryKey'
+import { markWalletBackedUp } from '../../../services/walletCheck/backupMarker'
 
 export default function Security() {
   const history = useHistory()
@@ -27,9 +28,10 @@ export default function Security() {
   const keyHex = secrets.getKeyHex()?.trim() || ''
   const identityKey = activeProfile?.identityKey || (keyHex ? new PrivateKey(Utils.toArray(keyHex, 'hex')).toPublicKey().toString() : '')
   const wordCount = mnemonic ? mnemonic.split(/\s+/).length : 0
+  const noteBackup = () => { if (activeProfile?.id?.length) markWalletBackedUp(activeProfile.id) }
 
   const copy = async (text: string, label: string) => {
-    try { await navigator.clipboard.writeText(text); setCopied(label) }
+    try { await navigator.clipboard.writeText(text); setCopied(label); if (label === 'phrase') noteBackup() }
     catch { setError('Could not copy to the clipboard. You can save the backup to a file instead.') }
   }
   const createShares = () => {
@@ -39,11 +41,13 @@ export default function Security() {
       verifyMnemonicWallet(mnemonic, keyHex, identityKey)
       setShares(generateEntropyShares(mnemonic))
       setRevealed(true)
+      noteBackup()
     } catch (e: any) { setError(e.message) }
   }
   const savePhrase = async () => {
     const data = `${modern ? 'BSV Wallet recovery phrase' : 'BSV Desktop original recovery material'}\n\n${mnemonic || keyHex}\n\nWallet identity: ${identityKey}\n\nKeep this file private. Anyone with this recovery material can spend your funds.`
-    if (!await exportFile({ data, filename: 'BSV Wallet recovery phrase.txt', type: 'text/plain' })) setError('The recovery file was not saved.')
+    if (await exportFile({ data, filename: 'BSV Wallet recovery phrase.txt', type: 'text/plain' })) noteBackup()
+    else setError('The recovery file was not saved.')
   }
   const saveShare = async (share: string, index: number) => {
     const data = `BSV Wallet backup share ${index + 1} of 3\n\n${share}\n\nWallet identity: ${identityKey}\n\nAny two different shares from this set recover your twelve-word phrase and wallet. Store each share in a separate secure location.\nRestore in BSV Wallet: Import existing wallet > Backup shares.`

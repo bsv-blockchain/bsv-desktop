@@ -7,6 +7,7 @@ import { UserContext } from '../../UserContext'
 import Menu, { SIDEBAR_WIDTH } from '../../navigation/Menu'
 import PageLoading from '../../components/PageLoading'
 import ErrorBoundary from '../../components/ErrorBoundary'
+import { TourProvider } from '../../components/tour/TourContext'
 import WalletHome from './WalletHome'
 import Activity from './Activity'
 const Payments = lazy(() => import('./Payments'))
@@ -37,7 +38,7 @@ export default function Dashboard() {
   if (!pageLoaded) return <PageLoading />
   if (!managers.permissionsManager && !switchingNetwork) return <Redirect to="/" />
 
-  return <Box sx={{ minHeight: '100vh' }}>
+  return <TourProvider setMenuOpen={setMenuOpen} compact={compact}><Box sx={{ minHeight: '100vh' }}>
     <Backdrop open={switchingNetwork} sx={{ zIndex: theme => theme.zIndex.drawer + 1, bgcolor: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(3px)' }}><PaperStatus /></Backdrop>
     <Menu menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
     <Box sx={{ ml: compact ? 0 : `${SIDEBAR_WIDTH}px` }}>
@@ -75,7 +76,7 @@ export default function Dashboard() {
         </Switch></Suspense></ErrorBoundary>
       </Box>
     </Box>
-  </Box>
+  </Box></TourProvider>
 }
 
 function PaperStatus() { return <Stack alignItems="center" gap={2} sx={{ bgcolor: 'background.paper', color: 'text.primary', p: 4, borderRadius: 4 }}><CircularProgress size={28} /><Typography variant="body2">Opening your wallet on this network…</Typography></Stack> }

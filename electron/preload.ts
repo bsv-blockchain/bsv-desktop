@@ -56,6 +56,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     restart: () => ipcRenderer.invoke('app:restart')
   },
 
+  // Troubleshoot: re-run the HTTPS bridge certificate trust flow
+  cert: {
+    checkAndRepair: () => ipcRenderer.invoke('cert:check-and-repair')
+  },
+
   // HTTP request/response handling
   onHttpRequest: (callback: (event: any) => void) => {
     ipcRenderer.on('http-request', (_event, request) => callback(request));
@@ -205,6 +210,9 @@ export interface ElectronAPI {
   app: {
     /** Relaunches the app; the process exits and the Promise does not resolve. */
     restart: () => Promise<void>;
+  };
+  cert: {
+    checkAndRepair: () => Promise<{ trusted: boolean | null; repaired: boolean }>;
   };
   onHttpRequest: (callback: (event: any) => void) => void;
   onHttpRequestCancelled: (callback: (event: { request_id: number; reason?: string }) => void) => void;

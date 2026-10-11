@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+### Features
+
+- The wallet homepage has a "Need help?" card. Troubleshoot checks the wallet and fixes what it can by itself: network, app connections (re-connects the bridge, re-runs certificate trust when needed), failed transactions, coins already spent on-chain, message box anointing, and waiting incoming payments. It only asks the user for things it cannot do: back up, add funds, check the internet. Tour is a spotlight walkthrough of the wallet that explains apps are used in the normal web browser and approved here; it starts by itself once per profile the first time the wallet loads with a 0 sat balance.
+
 ### Bug Fixes
 
+- Export wallet data no longer fails with "Check: timestamp" for wallets whose database stores dates as SQLite timestamps or epoch milliseconds; dates are normalised to ISO in the export.
 - "Anoint Host" (Settings → Message Box, and the Payments page prompt) now advertises the host. Since `@bsv/message-box-client` 2.x, `init()` no longer anoints; the button only called `init()`, so no transaction was created and the host stayed "Not Anointed". It now calls `anointHost()`.
 - Add an `allowScripts` policy for `better-sqlite3`, `electron`, `electron-winstaller` and `esbuild`. npm 12 skips dependency install scripts that are not listed, so a clean install had no Electron binary ("Electron failed to install correctly").
 - Declare `@bsv/air-gap`, `jsqr` and `@bsv/templates` in `package.json`. They have been imported since the 3.0 overhaul but were only present as extraneous installs, so a clean `npm ci` failed to typecheck or build.

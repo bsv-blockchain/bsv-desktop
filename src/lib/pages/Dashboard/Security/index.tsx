@@ -25,7 +25,9 @@ export default function Security() {
   // Read only: viewing a backup must never rewrite keys or change the wallet identity.
   const mnemonic = secrets.getMnemonic()?.trim() || ''
   const keyHex = secrets.getKeyHex()?.trim() || ''
-  const identityKey = activeProfile?.identityKey || (keyHex ? new PrivateKey(Utils.toArray(keyHex, 'hex')).toPublicKey().toString() : '')
+  // The saved key is the phrase's first profile, whichever profile is open now.
+  const identityKey = (keyHex ? new PrivateKey(Utils.toArray(keyHex, 'hex')).toPublicKey().toString() : '') || activeProfile?.identityKey || ''
+  const profilesNote = modern ? '\n\nThis phrase also restores every wallet profile created from it. On a new device, add profiles in the same order to bring them back.' : ''
   const wordCount = mnemonic ? mnemonic.split(/\s+/).length : 0
 
   const copy = async (text: string, label: string) => {
@@ -42,7 +44,7 @@ export default function Security() {
     } catch (e: any) { setError(e.message) }
   }
   const savePhrase = async () => {
-    const data = `${modern ? 'BSV Wallet recovery phrase' : 'BSV Desktop original recovery material'}\n\n${mnemonic || keyHex}\n\nWallet identity: ${identityKey}\n\nKeep this file private. Anyone with this recovery material can spend your funds.`
+    const data = `${modern ? 'BSV Wallet recovery phrase' : 'BSV Desktop original recovery material'}\n\n${mnemonic || keyHex}\n\nWallet identity: ${identityKey}${profilesNote}\n\nKeep this file private. Anyone with this recovery material can spend your funds.`
     if (!await exportFile({ data, filename: 'BSV Wallet recovery phrase.txt', type: 'text/plain' })) setError('The recovery file was not saved.')
   }
   const saveShare = async (share: string, index: number) => {

@@ -107,7 +107,11 @@ The React app uses two primary contexts:
 [wallet snapshot bytes from WalletManager]
 ```
 
-**Config includes**: `wabUrl`, `network`, `storageUrl`, `messageBoxUrl`, `authMethod`, `useWab`, `useRemoteStorage`, `useMessageBox`
+**Config includes**: `wabUrl`, `network`, `storageUrl`, `messageBoxUrl`, `authMethod`, `useWab`, `useRemoteStorage`, `useMessageBox`, and for recovery-phrase wallets `mnemonicProfiles` (`{ active, profiles: [{ index, name, identityKey }] }`)
+
+### Wallet Profiles (recovery-phrase wallets)
+
+`loginType: 'mnemonic'` wallets use `MnemonicProfileWalletManager` (`src/lib/services/`), which gives the existing profile dialog in `Menu.tsx` its `listProfiles` / `addProfile` / `switchProfile`. Profile n derives primary `m/0'/n'` and privileged `m/1'/n'`, the same scheme as BSV Wallet; profile 0 is the original wallet. The saved `primaryKeyHex` secret is always profile 0 (it anchors the phrase); the wallet snapshot holds the key of the profile that was open. Indices are append-only, so adding profiles in the same order on a new device restores the same identities. WAB and `mnemonic-advanced` wallets keep `CWIStyleWalletManager`'s own profiles.
 
 **Critical Implementation**:
 - Config restoration happens in **early useEffect** (before wallet manager creation)
@@ -282,7 +286,7 @@ Worker Process
 **Local (Electron)**:
 - Modify `electron/storage.ts` for IPC handlers
 - Update `src/StorageElectronIPC.ts` for proxy methods
-- Database files at `~/.bsv-desktop/wallet-<identityKeyHex>-main.db` (mainnet) or `…-test.db` (testnet). One file per identity key; the bare `wallet.db` is legacy and empty on new installs.
+- Database files at `~/.bsv-desktop/wallet-<identityKeyHex>-main.db` (mainnet) or `…-test.db` (testnet). One file per identity key (each wallet profile is its own identity key, so its own file); the bare `wallet.db` is legacy and empty on new installs.
 
 **Remote (WAB)**:
 - Uses `StorageClient` from `@bsv/wallet-toolbox`

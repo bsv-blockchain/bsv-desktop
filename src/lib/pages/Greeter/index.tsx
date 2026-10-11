@@ -9,6 +9,7 @@ import { UserContext } from '../../UserContext'
 import { DEFAULT_CHAIN, MESSAGEBOX_HOST } from '../../config'
 import * as secrets from '../../services/secrets'
 import { deriveMnemonicWallet, generateRecoveryPhrase, parseShare, recoverSecretFromShares, verifyMnemonicWallet } from '../../utils/mnemonicRecovery'
+import { MnemonicProfileWalletManager } from '../../services/MnemonicProfileWalletManager'
 import RecoveryPhrase from '../../components/RecoveryPhrase'
 import AppLogo from '../../components/AppLogo'
 import { getWalletService } from '../../hooks/useWalletService'
@@ -94,17 +95,20 @@ export default function Greeter({ history, initialMode = 'welcome' }: { history:
         }
         recoveryPhrase = recovered.mnemonic
       }
+      // Profile 0 anchors the phrase (the saved key); the snapshot holds the open profile's key.
       const material = deriveMnemonicWallet(recoveryPhrase)
+      const profileIndex = manager instanceof MnemonicProfileWalletManager ? manager.activeProfileIndex : 0
+      const active = profileIndex === 0 ? material : deriveMnemonicWallet(recoveryPhrase, profileIndex)
       // Saved-wallet recovery may repair missing material only for the same identity.
       if (hasSavedWallet) {
         const snapshotHex = manager.primaryKey ? Utils.toHex(manager.primaryKey) : ''
         const storedHex = secrets.getKeyHex() || ''
         if (!snapshotHex && !storedHex) throw new Error('The saved identity could not be verified. Recover from a wallet data file to preserve the current wallet.')
-        if (snapshotHex) verifyMnemonicWallet(material.mnemonic, snapshotHex)
+        if (snapshotHex) verifyMnemonicWallet(active.mnemonic, snapshotHex, undefined, profileIndex)
         if (storedHex) verifyMnemonicWallet(material.mnemonic, storedHex)
       }
       if (manager.authenticated && manager.underlying) {
-        verifyMnemonicWallet(material.mnemonic, Utils.toHex(manager.primaryKey))
+        verifyMnemonicWallet(active.mnemonic, Utils.toHex(manager.primaryKey), undefined, profileIndex)
       }
       secrets.setKeyHex(material.keyHex)
       secrets.setMnemonic(material.mnemonic)
@@ -112,8 +116,12 @@ export default function Greeter({ history, initialMode = 'welcome' }: { history:
         // A failed service build can leave SimpleWalletManager authenticated with
         // no underlying wallet. Reset only that in-memory manager for a retry.
         if (manager.authenticated) manager.destroy()
-        await manager.providePrimaryKey(material.keyBytes)
-        await manager.providePrivilegedKeyManager(new PrivilegedKeyManager(async () => material.privilegedKey))
+        if (manager instanceof MnemonicProfileWalletManager) {
+          await manager.unlockActiveProfile(active).catch(() => {})
+        } else {
+          await manager.providePrimaryKey(material.keyBytes)
+          await manager.providePrivilegedKeyManager(new PrivilegedKeyManager(async () => material.privilegedKey))
+        }
       }
       if (!manager.authenticated || !manager.underlying) throw new Error('Could not open your wallet. Your recovery phrase is still shown here; please try again.')
       secrets.setSnapshot(saveEnhancedSnapshot())

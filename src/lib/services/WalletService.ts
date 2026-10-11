@@ -71,6 +71,7 @@ import { WalletDataStorageManager } from '../walletPortability/WalletDataStorage
 import { WalletDataSession, walletDataCall } from '../walletPortability/session'
 import * as secrets from './secrets'
 import { deriveMnemonicWallet, verifyMnemonicWallet } from '../utils/mnemonicRecovery'
+import { MnemonicProfileWalletManager, defaultMnemonicProfiles, parseMnemonicProfiles, type MnemonicProfilesState } from './MnemonicProfileWalletManager'
 import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_SETTINGS, MESSAGEBOX_HOST } from '../config'
 import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
@@ -175,6 +176,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   // ---- Lifecycle ----
   private _lifecycle: WalletLifecycle = 'unconfigured'
   private _initInFlight = false
+  /** Set while the wallet is being removed, so nothing reopens it from the old snapshot. */
+  private _removingWallet = false
   private _startupError = ''
 
   // ---- Config state (previously multiple useState hooks) ----
@@ -191,6 +194,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   private _useMessageBox = true
   private _backupStorageUrls: string[] = []
   private _adminOriginator = ADMIN_ORIGINATOR
+  /** Profiles of a modern recovery-phrase wallet (m/0'/n'). Saved in the snapshot config. */
+  private _mnemonicProfiles: MnemonicProfilesState = defaultMnemonicProfiles()
 
   // ---- Runtime state ----
   walletData?: WalletDataSession
@@ -393,6 +398,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         : !!config.storageUrl
       this._useMessageBox = config.useMessageBox ?? this._networkSettings[this._selectedNetwork].useMessageBox ?? true
       this._backupStorageUrls = config.backupStorageUrls || []
+      this._mnemonicProfiles = parseMnemonicProfiles(config.mnemonicProfiles)
       this._captureSelectedNetworkSettings()
       setWocEndpoints(this._networkSettings)
 
@@ -464,8 +470,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     const identityWallet = this._wallet
     const identityKey = (await identityWallet.getPublicKey({ identityKey: true })).publicKey
     if (isHttpBridgePaused() || this._switchingNetwork || this._lifecycle !== 'ready' || this._wallet !== identityWallet) throw new Error('The wallet is already changing. Try again when it is ready.')
-    const queues = this.permissionQueue.getSnapshot()
-    if (activeHttpBridgeRequests() || activeUserWalletOperations() || queues.groupPhase === 'pending' || Object.entries(queues).some(([key, value]) => key.endsWith('Requests') && Array.isArray(value) && value.length > 0)) {
+    if (this._hasPendingWalletWork()) {
       throw new Error('Finish the current app request or payment approval before changing networks.')
     }
 
@@ -478,41 +483,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     setHttpBridgePaused(true)
     this._emitState()
 
-    const closeCurrentWallet = async () => {
-      clearWalletForHttpRoute()
-      this._walletDataGeneration++
-      const previousSession = this.walletData
-      const previousManager = this._managers.walletManager
-      const previousPeerTokens = this._stas?.peerTokens
-      this.walletData = undefined
-      this.permissionQueue.setPermissionsManager(null)
-      this._managers = {}
-      this._wallet = undefined
-      this._stas = undefined
-      this._activeProfile = null
-      this._snapshotLoaded = false
-      this._lifecycle = 'configured'
-      setWocEndpoints(this._networkSettings)
-      setTxStatusScope(undefined)
-      // Detach old balances/managers before sub-services emit the new chain.
-      this._emitState()
-      const cleanup = await Promise.allSettled([
-        this.peerPay.suspendClient(),
-        previousPeerTokens?.disconnectWebSocket(),
-        Promise.resolve().then(() => previousManager?.destroy?.()),
-        (async () => {
-          try { await previousSession?.close() }
-          finally {
-            if (previousSession && window.electronAPI?.storage?.releaseNetwork) {
-              const released = await window.electronAPI.storage.releaseNetwork(previousSession.identityKey, previousSession.chain)
-              if (!released.success) throw new Error(released.error || 'The previous network could not close safely.')
-            }
-          }
-        })(),
-      ])
-      const failed = cleanup.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-      if (failed) throw failed.reason
-    }
+    const closeCurrentWallet = () => this._closeOpenWallet()
     const reopen = async () => {
       await closeCurrentWallet()
       await this.initialize()
@@ -565,6 +536,49 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     }
   }
 
+  /** Detach and close the open wallet: app route, payment clients, manager and storage. */
+  private async _closeOpenWallet(): Promise<void> {
+    clearWalletForHttpRoute()
+    this._walletDataGeneration++
+    const previousSession = this.walletData
+    const previousManager = this._managers.walletManager
+    const previousPeerTokens = this._stas?.peerTokens
+    this.walletData = undefined
+    this.permissionQueue.setPermissionsManager(null)
+    this._managers = {}
+    this._wallet = undefined
+    this._stas = undefined
+    this._activeProfile = null
+    this._snapshotLoaded = false
+    this._lifecycle = 'configured'
+    setWocEndpoints(this._networkSettings)
+    setTxStatusScope(undefined)
+    // Detach old balances/managers before sub-services emit the new chain.
+    this._emitState()
+    const cleanup = await Promise.allSettled([
+      this.peerPay.suspendClient(),
+      previousPeerTokens?.disconnectWebSocket(),
+      Promise.resolve().then(() => previousManager?.destroy?.()),
+      (async () => {
+        try { await previousSession?.close() }
+        finally {
+          if (previousSession && window.electronAPI?.storage?.releaseNetwork) {
+            const released = await window.electronAPI.storage.releaseNetwork(previousSession.identityKey, previousSession.chain)
+            if (!released.success) throw new Error(released.error || 'The previous network could not close safely.')
+          }
+        }
+      })(),
+    ])
+    const failed = cleanup.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (failed) throw failed.reason
+  }
+
+  /** An app request, payment or permission decision that a wallet change would cut off. */
+  private _hasPendingWalletWork(): boolean {
+    const queues = this.permissionQueue.getSnapshot()
+    return !!(activeHttpBridgeRequests() || activeUserWalletOperations() || queues.groupPhase === 'pending' || Object.entries(queues).some(([key, value]) => key.endsWith('Requests') && Array.isArray(value) && value.length > 0))
+  }
+
   /**
    * Create the wallet manager and load snapshot.
    * Replaces the massive 12-dependency useEffect in WalletContext.
@@ -609,6 +623,13 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
           wabClient,
           phoneInteractor
         )
+      } else if (this._loginType === 'mnemonic') {
+        walletManager = new MnemonicProfileWalletManager(
+          this._adminOriginator,
+          this._buildWallet.bind(this),
+          () => secrets.getMnemonic(),
+          this._mnemonicProfiles
+        )
       } else if (directKeyMode) {
         walletManager = new SimpleWalletManager(
           this._adminOriginator,
@@ -639,21 +660,27 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       // lifecycle to 'ready'. We must NOT overwrite that afterwards.
       if (this._loginType === 'mnemonic' && secrets.getSnapshot() && secrets.getMnemonic()) {
         try {
-          const material = deriveMnemonicWallet(secrets.getMnemonic()!)
+          // The saved key is always profile 0's: it anchors the phrase to this wallet.
+          const anchor = deriveMnemonicWallet(secrets.getMnemonic()!)
           const storedHex = secrets.getKeyHex()?.trim().toLowerCase()
-          if (storedHex && storedHex !== material.keyHex) {
+          if (storedHex && storedHex !== anchor.keyHex) {
             throw new Error('The saved phrase does not match this wallet. Your saved wallet has been preserved.')
           }
+          const profiles = walletManager as MnemonicProfileWalletManager
+          const material = profiles.activeProfileIndex === 0 ? anchor : profiles.deriveProfile(profiles.activeProfileIndex)
+          // The snapshot holds the key of the profile that was open when it was saved.
           if (walletManager.primaryKey) {
-            verifyMnemonicWallet(material.mnemonic, Utils.toHex(walletManager.primaryKey))
+            verifyMnemonicWallet(material.mnemonic, Utils.toHex(walletManager.primaryKey), undefined, material.profileIndex)
           }
-          if (!storedHex) secrets.setKeyHex(material.keyHex)
-          await walletManager.providePrimaryKey(material.keyBytes)
-          await walletManager.providePrivilegedKeyManager(new PrivilegedKeyManager(async () => material.privilegedKey))
+          if (!storedHex) secrets.setKeyHex(anchor.keyHex)
+          await profiles.unlockActiveProfile(material)
         } catch (err: any) {
-          this._startupError = err.message || 'Could not unlock the saved wallet.'
-          console.error('[WalletService] Mnemonic unlock failed:', err)
-          toast.error(err.message || 'Could not unlock the saved wallet.')
+          // A failed service build has already reported its own error.
+          if ((this._lifecycle as WalletLifecycle) !== 'error') {
+            this._startupError = err.message || 'Could not unlock the saved wallet.'
+            console.error('[WalletService] Mnemonic unlock failed:', err)
+            toast.error(err.message || 'Could not unlock the saved wallet.')
+          }
         }
       } else if (this._loginType === 'mnemonic' && secrets.getSnapshot()) {
         this._startupError = 'The recovery phrase is missing from this device. Your wallet snapshot has been preserved. Recover using your phrase, backup shares, or wallet data file.'
@@ -698,6 +725,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   /** Retry a failed startup without deleting or rewriting any saved wallet material. */
   async retrySavedWallet(): Promise<void> {
     if (this._initInFlight || this._initializingBackendServices || this._switchingNetwork || this._wallet) return
+    if (this._managers.walletManager instanceof MnemonicProfileWalletManager) {
+      this._mnemonicProfiles = this._managers.walletManager.profileState
+    }
     this._managers.walletManager?.destroy?.()
     this._managers = {}
     this._startupError = ''
@@ -996,6 +1026,21 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       return
     }
 
+    if (walletManager instanceof MnemonicProfileWalletManager && walletManager.openPrimaryKey) {
+      // The key being built, not the saved key: profile n is not profile 0.
+      const identityKey = new PrivateKey(walletManager.openPrimaryKey).toPublicKey().toString()
+      // The manager marks the target profile active before building it.
+      const record = walletManager.activeProfileRecord
+      this._activeProfile = {
+        id: Utils.toArray(identityKey, 'hex'),
+        name: record.identityKey === identityKey ? record.name : 'Default',
+        createdAt: null,
+        active: true,
+        identityKey,
+      }
+      return
+    }
+
     if (this._loginType === 'direct-key' || this._loginType === 'mnemonic') {
       const storedHex = secrets.getKeyHex()
       if (storedHex) {
@@ -1035,6 +1080,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     }
 
     const walletSnapshot = this._managers.walletManager.saveSnapshot()
+    if (this._managers.walletManager instanceof MnemonicProfileWalletManager) {
+      this._mnemonicProfiles = this._managers.walletManager.profileState
+    }
 
     this._captureSelectedNetworkSettings(configOverrides)
     const config = {
@@ -1049,6 +1097,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       backupStorageUrls: configOverrides?.backupStorageUrls ?? this._backupStorageUrls,
       useMessageBox: configOverrides?.useMessageBox ?? this._useMessageBox,
       messageBoxUrl: normalizeMessageBoxUrl(configOverrides?.messageBoxUrl ?? this._messageBoxUrl),
+      ...(this._loginType === 'mnemonic' ? { mnemonicProfiles: this._mnemonicProfiles } : {}),
     }
 
     // Dual-write non-secret boot config for pre-unlock routing after restart.
@@ -1361,6 +1410,62 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     this._walletDataGeneration++
     void this.walletData?.close().catch(() => {})
     this.walletData = undefined
+    // Clear wallet secrets and lock the vault, but KEEP enrollment (passphrase +
+    // biometrics wraps). Destroying the vault forced "Create vault" on every logout.
+    void secrets.endSession().catch((err) =>
+      console.warn('[WalletService] endSession on logout failed:', err)
+    )
+    this._clearLocalWalletState()
+    this._lifecycle = 'configured'
+    this._emitState()
+  }
+
+  /**
+   * Remove this wallet from the device so another one can be created or imported.
+   *
+   * Closes the open wallet first (app route, payment clients, storage and its
+   * monitor), then deletes the snapshot, recovery phrase and key from the vault
+   * and clears per-wallet local state. The vault's passphrase and biometrics stay
+   * enrolled, and the wallet's database files stay on disk: importing the same
+   * phrase reconnects to its history. The caller reloads the app afterwards.
+   */
+  async removeWalletFromDevice(): Promise<void> {
+    if (this._removingWallet || isHttpBridgePaused() || this._switchingNetwork || this._initInFlight || this._lifecycle !== 'ready' || !this._wallet) {
+      throw new Error('Wait for the wallet to finish opening before removing it.')
+    }
+    if (this._hasPendingWalletWork()) {
+      throw new Error('Finish the current app request or payment approval before removing this wallet.')
+    }
+
+    this._removingWallet = true
+    setHttpBridgePaused(true)
+    try {
+      try {
+        await this._closeOpenWallet()
+      } catch (error) {
+        // The files stay on disk either way; the secrets must still go.
+        console.warn('[WalletService] Wallet did not close cleanly before removal:', error)
+      }
+      try {
+        await secrets.endSession()
+      } catch (error) {
+        console.error('[WalletService] Vault wipe failed:', error)
+        // Nothing was deleted: reopen the same wallet from its saved snapshot.
+        this._removingWallet = false
+        this._emitState()
+        this._tryAutoInitialize()
+        throw new Error('The wallet could not be removed from this device. It is unchanged and will reopen.')
+      }
+      this._clearLocalWalletState()
+      this._lifecycle = 'unconfigured'
+      this._emitState()
+    } finally {
+      setHttpBridgePaused(false)
+    }
+  }
+
+  /** Forget the wallet in this renderer: local storage (payment requests aside), secret cache and runtime state. */
+  private _clearLocalWalletState() {
     const preservedKeys: Record<string, string> = {}
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
@@ -1375,20 +1480,14 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       localStorage.setItem(key, value)
     }
 
-    // Clear wallet secrets and lock the vault, but KEEP enrollment (passphrase +
-    // biometrics wraps). Destroying the vault forced "Create vault" on every logout.
-    void secrets.endSession().catch((err) =>
-      console.warn('[WalletService] endSession on logout failed:', err)
-    )
     secrets.clearCache()
 
     this._managers = {}
     this._wallet = undefined
-    this._lifecycle = 'configured'
     this._snapshotLoaded = false
     this._activeProfile = null
+    this._mnemonicProfiles = defaultMnemonicProfiles()
     this.peerPay.reset()
-    this._emitState()
   }
 
   // ------------------------------------------------------------------
@@ -1401,6 +1500,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       this._lifecycle === 'configured' &&
       !this._managers.walletManager &&
       !this._initInFlight &&
+      !this._removingWallet &&
       // Callback registration can run after the old managers are detached.
       // The network transition owns initialization until storage has closed.
       !this._switchingNetwork &&

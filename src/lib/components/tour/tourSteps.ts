@@ -1,4 +1,4 @@
-/** User Guide tour content. Targets are `data-tour` attribute values. */
+/** Tour content. Targets are `data-tour` attribute values. */
 export const TOUR_TARGETS = ['balance', 'pay-get-paid', 'nav-payments', 'nav-activity', 'nav-apps', 'nav-settings', 'need-help'] as const
 export type TourTarget = typeof TOUR_TARGETS[number]
 export interface TourStep { id: string; route: string; target?: TourTarget; title: string; body: string }

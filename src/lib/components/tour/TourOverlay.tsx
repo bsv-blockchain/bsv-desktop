@@ -57,7 +57,7 @@ export default function TourOverlay() {
 
   const pos = cardPosition(hole)
   const last = index === TOUR_STEPS.length - 1
-  return createPortal(<Box role="dialog" aria-modal="true" aria-label={`User guide, step ${index + 1} of ${TOUR_STEPS.length}: ${step.title}`} sx={{ position: 'fixed', inset: 0, zIndex: theme => theme.zIndex.drawer + 1 }}>
+  return createPortal(<Box role="dialog" aria-modal="true" aria-label={`Tour, step ${index + 1} of ${TOUR_STEPS.length}: ${step.title}`} sx={{ position: 'fixed', inset: 0, zIndex: theme => theme.zIndex.drawer + 1 }}>
     {hole
       ? <Box aria-hidden sx={{ position: 'fixed', top: hole.top, left: hole.left, width: hole.width, height: hole.height, borderRadius: 3, boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.6)', transition: 'all 200ms ease', pointerEvents: 'none' }} />
       : <Box aria-hidden sx={{ position: 'fixed', inset: 0, bgcolor: 'rgba(15, 23, 42, 0.6)' }} />}

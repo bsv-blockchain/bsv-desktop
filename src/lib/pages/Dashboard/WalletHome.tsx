@@ -28,7 +28,7 @@ export default function WalletHome() {
       </Paper>
       <Paper data-tour="need-help" sx={{ p: 3.5, border: '1px solid', borderColor: 'divider', borderRadius: 4, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
         <Box sx={{ width: 44, height: 44, borderRadius: 3, bgcolor: 'background.default', color: 'primary.main', display: 'grid', placeItems: 'center', mb: 2.5 }}><HelpOutlineRounded /></Box><Typography variant="h3">Need help?</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 2 }}>Something not working, or new here?</Typography>
-        <Stack direction="row" gap={1.5} sx={{ mt: 'auto' }}><Button variant="contained" onClick={() => setCheckOpen(true)}>Troubleshoot</Button><Button variant="outlined" onClick={tour.start}>User Guide</Button></Stack>
+        <Stack direction="row" gap={1.5} sx={{ mt: 'auto' }}><Button variant="contained" onClick={() => setCheckOpen(true)}>Troubleshoot</Button><Button variant="outlined" onClick={tour.start}>Tour</Button></Stack>
       </Paper>
     </Box>
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.7fr) minmax(260px, 1fr)' }, gap: 3 }}>

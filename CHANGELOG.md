@@ -4,7 +4,7 @@
 
 ### Features
 
-- The wallet homepage has a "Need help?" card. Troubleshoot checks the wallet and fixes what it can by itself: network, app connections (re-connects the bridge, re-runs certificate trust when needed), failed transactions, coins already spent on-chain, message box anointing, and waiting incoming payments. It only asks the user for things it cannot do: back up, add funds, check the internet. User Guide is a spotlight tour of the wallet that explains apps are used in the normal web browser and approved here.
+- The wallet homepage has a "Need help?" card. Troubleshoot checks the wallet and fixes what it can by itself: network, app connections (re-connects the bridge, re-runs certificate trust when needed), failed transactions, coins already spent on-chain, message box anointing, and waiting incoming payments. It only asks the user for things it cannot do: back up, add funds, check the internet. Tour is a spotlight walkthrough of the wallet that explains apps are used in the normal web browser and approved here.
 
 ### Bug Fixes
 

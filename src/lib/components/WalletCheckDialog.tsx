@@ -7,6 +7,7 @@ import { getWalletService } from '../hooks/useWalletService'
 import { beginUserWalletOperation } from '../services/httpBridgeSession'
 import { CHECK_STEPS, runWalletCheck, type CheckStepId, type StepOutcome, type WalletCheckResult } from '../services/walletCheck/runWalletCheck'
 import { createWalletCheckPorts, walletCheckDepsFromService } from '../services/walletCheck/ports'
+import { createSingleFlight } from '../services/walletCheck/singleFlight'
 
 function StatusIcon({ outcome, active }: { outcome?: StepOutcome; active: boolean }) {
   if (active) return <CircularProgress size={20} aria-label="Checking" />
@@ -18,7 +19,7 @@ function StatusIcon({ outcome, active }: { outcome?: StepOutcome; active: boolea
 }
 
 /** Shared by every dialog instance: WalletHome unmounts on navigation, but a check keeps running. */
-let checkInFlight = false
+const checkInFlight = createSingleFlight()
 
 export default function WalletCheckDialog({ open, onClose }: { open: boolean; onClose(): void }) {
   const history = useHistory()
@@ -30,6 +31,7 @@ export default function WalletCheckDialog({ open, onClose }: { open: boolean; on
   const [result, setResult] = useState<WalletCheckResult | null>(null)
   const [failure, setFailure] = useState('')
   const [running, setRunning] = useState(false)
+  const [finishing, setFinishing] = useState(false)
   // One check at a time: StrictMode's double effect, re-opening, and "Run again"
   // must never start a second set of repairs while one is still going.
   const runningRef = useRef(false)
@@ -38,9 +40,8 @@ export default function WalletCheckDialog({ open, onClose }: { open: boolean; on
 
   const run = useCallback(async () => {
     if (runningRef.current) return
-    if (checkInFlight) { setFailure('A check is already running in the background. Give it a minute, then open Troubleshoot again.'); return }
+    if (!checkInFlight.tryStart()) { setFailure('A check is already running in the background. Give it a minute, then open Troubleshoot again.'); return }
     runningRef.current = true
-    checkInFlight = true
     setRunning(true)
     skipResolvers.current.clear(); skippedIds.current.clear()
     setOutcomes({}); setResult(null); setFailure(''); setActive(null)
@@ -57,13 +58,20 @@ export default function WalletCheckDialog({ open, onClose }: { open: boolean; on
         whenSkipped: id => new Promise<void>(resolve => skipResolvers.current.set(id, resolve)),
       })
       setResult(res)
+      // A skipped or timed-out step may still be mid-repair: hold the wallet
+      // lock (and keep "Run again" hidden) until it actually finishes.
+      if (res.pending.length) {
+        setFinishing(true)
+        await Promise.allSettled(res.pending)
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setFailure(message.startsWith('Your wallet is busy') ? message : `The check couldn't run: ${message}`)
     } finally {
       release?.()
       runningRef.current = false
-      checkInFlight = false
+      checkInFlight.finish()
+      setFinishing(false)
       setRunning(false)
       setActive(null)
     }
@@ -99,6 +107,10 @@ export default function WalletCheckDialog({ open, onClose }: { open: boolean; on
         {result.needsYou.length === 0 && result.fixed.length > 0 && `Fixed ${result.fixed.length} thing${result.fixed.length === 1 ? '' : 's'}.`}
         {result.needsYou.length > 0 && `${result.needsYou.length} thing${result.needsYou.length === 1 ? ' needs' : 's need'} you — use the buttons above.`}
       </Alert>}
+      {finishing && <Stack direction="row" gap={1} alignItems="center" sx={{ mt: 2 }}>
+        <CircularProgress size={16} />
+        <Typography variant="body2" color="text.secondary">Finishing a step in the background…</Typography>
+      </Stack>}
     </DialogContent>
     <DialogActions>
       {!running && <Button onClick={() => void run()}>Run again</Button>}

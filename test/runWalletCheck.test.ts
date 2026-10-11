@@ -67,4 +67,28 @@ describe('runWalletCheck', () => {
     expect(done).toHaveBeenCalledTimes(CHECK_STEPS.length)
     expect(done).toHaveBeenCalledWith('network', { status: 'ok', message: 'fine' })
   })
+
+  it('a normal run has no pending steps', async () => {
+    const result = await runWalletCheck(ports())
+    expect(result.pending).toEqual([])
+  })
+
+  it("keeps a step skipped mid-flight in pending as the port's own promise", async () => {
+    let skip!: () => void
+    const skipped = new Promise<void>(r => { skip = r })
+    let finish!: (o: StepOutcome) => void
+    const own = new Promise<StepOutcome>(r => { finish = r })
+    const p = ports({ coins: () => own })
+    const result = await runWalletCheck(p, { onStepStart: id => { if (id === 'coins') setTimeout(skip, 0) } }, { isSkipped: () => false, whenSkipped: id => id === 'coins' ? skipped : new Promise(() => {}) })
+    expect(result.pending).toHaveLength(1)
+    expect(result.pending[0]).toBe(own)
+    finish(ok())
+  })
+
+  it("keeps a timed-out step in pending as the port's own promise", async () => {
+    const own = new Promise<StepOutcome>(() => {})
+    const result = await runWalletCheck(ports({ network: () => own }), {}, undefined, 20)
+    expect(result.pending).toHaveLength(1)
+    expect(result.pending[0]).toBe(own)
+  })
 })

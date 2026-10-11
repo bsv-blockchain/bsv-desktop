@@ -27,6 +27,8 @@ export interface WalletCheckResult {
   needsYou: Array<{ id: CheckStepId; message: string; action?: CheckAction }>
   allOk: boolean
   allClear: boolean
+  /** Port promises still running when the runner moved on (skipped or timed out). */
+  pending: Promise<unknown>[]
 }
 
 export const STEP_TIMEOUT_MS = 60_000
@@ -39,6 +41,7 @@ export async function runWalletCheck(
   timeoutMs = STEP_TIMEOUT_MS
 ): Promise<WalletCheckResult> {
   const steps: WalletCheckResult['steps'] = {}
+  const pending: Promise<unknown>[] = []
   for (const { id } of CHECK_STEPS) {
     let outcome: StepOutcome
     if (skips?.isSkipped(id)) {
@@ -48,10 +51,16 @@ export async function runWalletCheck(
       let timer: ReturnType<typeof setTimeout> | undefined
       const timeout = new Promise<StepOutcome>(resolve => { timer = setTimeout(() => resolve({ status: 'error', message: 'Took too long' }), timeoutMs) })
       const skipped = skips ? skips.whenSkipped(id).then(() => SKIPPED) : new Promise<StepOutcome>(() => {})
-      const run = Promise.resolve().then(() => ports[id]()).catch((error: unknown): StepOutcome =>
+      let own: Promise<StepOutcome>
+      try { own = Promise.resolve(ports[id]()) } catch (error) { own = Promise.reject(error) }
+      let settled = false
+      own.then(() => { settled = true }, () => { settled = true })
+      const run = own.catch((error: unknown): StepOutcome =>
         ({ status: 'error', message: error instanceof Error ? error.message : String(error) }))
       outcome = await Promise.race([run, timeout, skipped])
       clearTimeout(timer)
+      // The port keeps running after a skip or timeout; callers wait for it before unlocking.
+      if (!settled) pending.push(own)
     }
     steps[id] = outcome
     callbacks.onStepDone?.(id, outcome)
@@ -67,5 +76,6 @@ export async function runWalletCheck(
     allOk: outcomes.every(({ outcome }) => outcome.status !== 'error'),
     allClear: outcomes.every(({ outcome }) => outcome.status === 'ok' || outcome.status === 'skipped') &&
       outcomes.some(({ outcome }) => outcome.status === 'ok'),
+    pending,
   }
 }

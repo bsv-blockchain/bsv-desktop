@@ -9,6 +9,7 @@ import AppLogo from '../components/AppLogo'
 import type { WalletProfile } from '../types/WalletProfile'
 import * as secrets from '../services/secrets'
 import { getWalletService } from '../hooks/useWalletService'
+import RemoveWalletDialog from '../components/RemoveWalletDialog'
 import { activeUserWalletOperations, activeHttpBridgeRequests, beginUserWalletOperation, isHttpBridgePaused, setHttpBridgePaused } from '../services/httpBridgeSession'
 
 export const SIDEBAR_WIDTH = 248
@@ -23,12 +24,13 @@ const items = [
 export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; setMenuOpen: (open: boolean) => void; menuRef?: React.RefObject<HTMLDivElement> }) {
   const compact = useMediaQuery('(max-width:900px)')
   const history = useHistory()
-  const { activeProfile, managers, saveEnhancedSnapshot, setActiveProfile, switchingNetwork, basketRequests, protocolRequests, certificateRequests, spendingRequests, groupPermissionRequests, stasTransferRequests, counterpartyPermissionRequests, refreshAppWallet } = useContext(WalletContext)
+  const { activeProfile, loginType, managers, saveEnhancedSnapshot, setActiveProfile, switchingNetwork, basketRequests, protocolRequests, certificateRequests, spendingRequests, groupPermissionRequests, stasTransferRequests, counterpartyPermissionRequests, refreshAppWallet } = useContext(WalletContext)
   const { appVersion } = useContext(UserContext)
   const [profileOpen, setProfileOpen] = useState(false)
   const [profiles, setProfiles] = useState<WalletProfile[]>([])
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [removeOpen, setRemoveOpen] = useState(false)
   const supportsProfiles = typeof managers.walletManager?.listProfiles === 'function'
 
   useEffect(() => {
@@ -66,7 +68,8 @@ export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; set
       history.push('/dashboard')
       window.dispatchEvent(new Event('balance-changed'))
     } catch (error) {
-      if (release && profileVerified) {
+      // A phrase wallet reopens the previous profile after a failed switch; reconnect apps to it.
+      if (release && (profileVerified || getWalletService().getSnapshot().lifecycle === 'ready')) {
         try { await refreshAppWallet(); bridgeReady = true }
         catch { toast.error('App connections are paused. Reopen the wallet to reconnect safely.') }
       }
@@ -142,8 +145,10 @@ export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; set
       <DialogTitle>Wallet profiles</DialogTitle><DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{supportsProfiles ? 'Use a separate identity for each part of your life.' : 'Your wallet identity is protected on this device.'}</Typography>
         <List>{profiles.map(profile => <ListItemButton key={profile.id.join(',')} disabled={busy || profile.active} onClick={() => switchProfile(profile)} sx={{ borderRadius: 2 }}><ListItemText primary={profile.name} secondary={`${profile.identityKey?.slice(0, 16)}…`} />{profile.active && <CheckRounded color="primary" />}</ListItemButton>)}</List>
+        {supportsProfiles && loginType === 'mnemonic' && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Every profile comes from your recovery phrase. On a new device, add profiles in the same order to bring them back.</Typography>}
         {supportsProfiles && <Box component="form" onSubmit={event => { event.preventDefault(); void createProfile() }} sx={{ display: 'flex', gap: 1, mt: 2 }}><TextField size="small" label="New profile name" value={name} onChange={event => setName(event.target.value)} fullWidth inputProps={{ maxLength: 60 }} /><IconButton type="submit" aria-label="Create profile" disabled={!name.trim() || busy}><AddRounded /></IconButton></Box>}
-      </DialogContent><DialogActions><Button startIcon={<LogoutRounded />} onClick={lockWallet} disabled={busy} sx={{ mr: 'auto' }}>Lock wallet</Button><Button onClick={() => setProfileOpen(false)} disabled={busy}>Done</Button></DialogActions>
+      </DialogContent><DialogActions><Button startIcon={<LogoutRounded />} onClick={lockWallet} disabled={busy}>Lock wallet</Button><Button color="error" onClick={() => { setProfileOpen(false); setRemoveOpen(true) }} disabled={busy} sx={{ mr: 'auto' }}>Remove wallet…</Button><Button onClick={() => setProfileOpen(false)} disabled={busy}>Done</Button></DialogActions>
     </Dialog>
+    <RemoveWalletDialog open={removeOpen} onClose={() => setRemoveOpen(false)} />
   </>
 }

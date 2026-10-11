@@ -1,11 +1,12 @@
 import { useContext, useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
 import { Box, Button, IconButton, MenuItem, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
-import { ArrowForwardRounded, BackupOutlined, BadgeOutlined, DarkModeOutlined, DevicesOutlined, LanguageRounded, LightModeOutlined, PublicOutlined, SettingsOutlined, ShieldOutlined, TuneRounded } from '@mui/icons-material'
+import { ArrowForwardRounded, BackupOutlined, BadgeOutlined, DarkModeOutlined, DevicesOutlined, LanguageRounded, LightModeOutlined, LogoutRounded, PublicOutlined, SettingsOutlined, ShieldOutlined, TuneRounded } from '@mui/icons-material'
 import { toast } from 'react-toastify'
 import { WalletContext } from '../../../WalletContext'
 import { UserContext } from '../../../UserContext'
 import { useLanguage, languageNames } from '../../../i18n/LanguageContext'
+import RemoveWalletDialog from '../../../components/RemoveWalletDialog'
 
 const networks = { main: 'Mainnet', test: 'Testnet', ttn: 'TeraTestNet', tstn: 'TSTN' }
 const row = { display: 'flex', alignItems: 'center', gap: 2, p: 2.5, width: '100%', borderRadius: 2.5, color: 'text.primary', textAlign: 'left', justifyContent: 'flex-start' }
@@ -20,6 +21,7 @@ export default function Settings() {
   const { currentLanguage, setCurrentLanguage, supportedLanguages } = useLanguage()
   const [busy, setBusy] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [removeOpen, setRemoveOpen] = useState(false)
   const save = async (change: any) => {
     setBusy(true)
     try { await updateSettings({ ...settings, ...change }) }
@@ -45,7 +47,9 @@ export default function Settings() {
       <SettingsLink to="/recovery/wallet-data" icon={BackupOutlined} title="Wallet data files" description="Export, import, or move your encrypted wallet data" />
       <SettingsLink to="/dashboard/settings/identity" icon={BadgeOutlined} title="Your identity" description="Manage your identity and certificates" />
       <SettingsLink to="/dashboard/settings/trust" icon={DevicesOutlined} title="Trust network" description="Choose who you trust with your identity" />
+      <Button sx={row} onClick={() => setRemoveOpen(true)}><LogoutRounded sx={{ color: 'error.main' }} /><Box sx={{ flex: 1 }}><Typography variant="body2" fontWeight={600} color="error.main">Remove wallet from this device</Typography><Typography variant="caption" color="text.secondary">Start over, or import a different wallet</Typography></Box><ArrowForwardRounded sx={{ fontSize: 18, color: 'text.secondary' }} /></Button>
     </Paper>
+    <RemoveWalletDialog open={removeOpen} onClose={() => setRemoveOpen(false)} />
     <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: '0.1em', fontSize: 11 }}>PREFERENCES</Typography>
     <Paper sx={{ mt: 1.25, mb: 4, p: 3, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ mb: 3 }}><Box><Typography variant="body2" fontWeight={600}>Appearance</Typography><Typography variant="caption" color="text.secondary">Set the mood for your wallet.</Typography></Box><ToggleButtonGroup size="small" exclusive value={settings?.theme?.mode || 'system'} onChange={(_, mode) => mode && void save({ theme: { mode } })} disabled={busy} aria-label="Appearance"><ToggleButton value="light" aria-label="Light appearance"><LightModeOutlined sx={{ fontSize: 18, mr: 0.75 }} />Light</ToggleButton><ToggleButton value="dark" aria-label="Dark appearance"><DarkModeOutlined sx={{ fontSize: 18, mr: 0.75 }} />Dark</ToggleButton><ToggleButton value="system" aria-label="System appearance">System</ToggleButton></ToggleButtonGroup></Stack>

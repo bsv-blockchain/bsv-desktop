@@ -15,7 +15,7 @@ import { markWalletBackedUp } from '../../../services/walletCheck/backupMarker'
 
 export default function Security() {
   const history = useHistory()
-  const { loginType, activeProfile } = useContext(WalletContext)
+  const { loginType, activeProfile, managers } = useContext(WalletContext)
   const [revealed, setRevealed] = useState(false)
   const [shares, setShares] = useState<string[]>([])
   const [error, setError] = useState('')
@@ -26,9 +26,18 @@ export default function Security() {
   // Read only: viewing a backup must never rewrite keys or change the wallet identity.
   const mnemonic = secrets.getMnemonic()?.trim() || ''
   const keyHex = secrets.getKeyHex()?.trim() || ''
-  const identityKey = activeProfile?.identityKey || (keyHex ? new PrivateKey(Utils.toArray(keyHex, 'hex')).toPublicKey().toString() : '')
+  // The saved key is the phrase's first profile, whichever profile is open now.
+  const identityKey = (keyHex ? new PrivateKey(Utils.toArray(keyHex, 'hex')).toPublicKey().toString() : '') || activeProfile?.identityKey || ''
+  const profilesNote = modern ? '\n\nThis phrase also restores every wallet profile created from it. On a new device, add profiles in the same order to bring them back.' : ''
   const wordCount = mnemonic ? mnemonic.split(/\s+/).length : 0
-  const noteBackup = () => { if (activeProfile?.id?.length) markWalletBackedUp(activeProfile.id) }
+  // One phrase backs up every profile derived from it.
+  const noteBackup = () => {
+    let ids: number[][] = activeProfile?.id?.length ? [activeProfile.id] : []
+    if (modern) {
+      try { ids = managers.walletManager?.listProfiles?.().map((profile: any) => profile.id) || ids } catch { }
+    }
+    ids.forEach(id => markWalletBackedUp(id))
+  }
 
   const copy = async (text: string, label: string) => {
     try { await navigator.clipboard.writeText(text); setCopied(label); if (label === 'phrase') noteBackup() }
@@ -45,7 +54,7 @@ export default function Security() {
     } catch (e: any) { setError(e.message) }
   }
   const savePhrase = async () => {
-    const data = `${modern ? 'BSV Wallet recovery phrase' : 'BSV Desktop original recovery material'}\n\n${mnemonic || keyHex}\n\nWallet identity: ${identityKey}\n\nKeep this file private. Anyone with this recovery material can spend your funds.`
+    const data = `${modern ? 'BSV Wallet recovery phrase' : 'BSV Desktop original recovery material'}\n\n${mnemonic || keyHex}\n\nWallet identity: ${identityKey}${profilesNote}\n\nKeep this file private. Anyone with this recovery material can spend your funds.`
     if (await exportFile({ data, filename: 'BSV Wallet recovery phrase.txt', type: 'text/plain' })) noteBackup()
     else setError('The recovery file was not saved.')
   }

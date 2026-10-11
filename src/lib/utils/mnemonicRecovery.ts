@@ -10,16 +10,30 @@ export function normalizeRecoveryPhrase(phrase: string): string {
   return phrase.normalize('NFKD').trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
-export function deriveMnemonicWallet(phrase: string) {
+/**
+ * The hardened paths of wallet profile `n`, the same scheme as BSV Wallet
+ * (expo-wallet-toolbox `profilePaths`). Profile 0 is MNEMONIC_PRIMARY_PATH and
+ * MNEMONIC_PRIVILEGED_PATH, so existing wallets keep their keys.
+ */
+export function profilePaths(n: number): { primary: string; privileged: string } {
+  if (!Number.isInteger(n) || n < 0 || n >= 2 ** 31) {
+    throw new Error(`Invalid profile index: ${n}`)
+  }
+  return { primary: `m/0'/${n}'`, privileged: `m/1'/${n}'` }
+}
+
+export function deriveMnemonicWallet(phrase: string, profileIndex = 0) {
+  const paths = profilePaths(profileIndex)
   const mnemonic = normalizeRecoveryPhrase(phrase)
   const parsed = Mnemonic.fromString(mnemonic)
   const root = HD.fromSeed(parsed.toSeed())
-  const primary = root.derive(MNEMONIC_PRIMARY_PATH).privKey
+  const primary = root.derive(paths.primary).privKey
   return {
     mnemonic,
+    profileIndex,
     keyHex: primary.toHex().padStart(64, '0'),
     keyBytes: primary.toArray('be', 32),
-    privilegedKey: root.derive(MNEMONIC_PRIVILEGED_PATH).privKey,
+    privilegedKey: root.derive(paths.privileged).privKey,
     identityKey: primary.toPublicKey().toString(),
     entropy: parsed.toEntropy(),
   }
@@ -30,8 +44,8 @@ export function generateRecoveryPhrase(): string {
 }
 
 /** Verifying a backup is read-only. A mismatch must never change saved identity keys. */
-export function verifyMnemonicWallet(phrase: string, keyHex: string, identityKey?: string) {
-  const material = deriveMnemonicWallet(phrase)
+export function verifyMnemonicWallet(phrase: string, keyHex: string, identityKey?: string, profileIndex = 0) {
+  const material = deriveMnemonicWallet(phrase, profileIndex)
   if (material.keyHex !== keyHex.trim().toLowerCase() || (identityKey && material.identityKey !== identityKey)) {
     throw new Error('The recovery phrase does not match this wallet. Your saved keys have been preserved.')
   }

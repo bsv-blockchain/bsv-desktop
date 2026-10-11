@@ -4,12 +4,13 @@ import { ArrowBack, ArrowForward, ShieldOutlined, ContentCopy, KeyOutlined, QrCo
 import { HD, Mnemonic, Utils } from '@bsv/sdk'
 import { PrivilegedKeyManager } from '@bsv/wallet-toolbox-client'
 import { Link as RouterLink } from 'react-router-dom'
-import { WalletContext } from '../../WalletContext'
+import { WalletContext, createDisabledPrivilegedManager } from '../../WalletContext'
 import { UserContext } from '../../UserContext'
 import { DEFAULT_CHAIN, MESSAGEBOX_HOST } from '../../config'
 import * as secrets from '../../services/secrets'
 import { deriveMnemonicWallet, generateRecoveryPhrase, parseShare, recoverSecretFromShares, verifyMnemonicWallet } from '../../utils/mnemonicRecovery'
 import { MnemonicProfileWalletManager } from '../../services/MnemonicProfileWalletManager'
+import { classifyImportInput, isDesktopV2ByDefault, keySecretFromBytes, looksLikeHexKey, countWords, type ImportSecret } from '../../utils/importSecret'
 import RecoveryPhrase from '../../components/RecoveryPhrase'
 import AppLogo from '../../components/AppLogo'
 import { getWalletService } from '../../hooks/useWalletService'
@@ -23,6 +24,8 @@ export default function Greeter({ history, initialMode = 'welcome' }: { history:
   const { appVersion } = useContext(UserContext)
   const [mode, setMode] = useState<EntryMode>(initialMode)
   const [phrase, setPhrase] = useState('')
+  // null: decided by word count (see isDesktopV2ByDefault).
+  const [desktopV2, setDesktopV2] = useState<boolean | null>(null)
   const [saved, setSaved] = useState(false)
   const [importMethod, setImportMethod] = useState<'phrase' | 'shares'>('phrase')
   const [shareInputs, setShareInputs] = useState(['', '', ''])
@@ -56,14 +59,59 @@ export default function Greeter({ history, initialMode = 'welcome' }: { history:
     if (manager?.authenticated && managers.permissionsManager && snapshotLoaded) history.replace('/dashboard')
   }, [manager?.authenticated, managers.permissionsManager, snapshotLoaded, history])
 
-  const configure = () => {
+  const configure = (loginType: 'mnemonic' | 'direct-key' = 'mnemonic') => {
     if (hasSavedWallet) return
     const ok = finalizeConfig({
       wabUrl: '', wabInfo: null, method: '', network: DEFAULT_CHAIN,
       storageUrl: '', messageBoxUrl: MESSAGEBOX_HOST,
-      loginType: 'mnemonic', useWab: false, useRemoteStorage: false, useMessageBox: true,
+      loginType, useWab: false, useRemoteStorage: false, useMessageBox: true,
     })
     if (!ok) throw new Error('Could not prepare your wallet. Please try again.')
+  }
+
+  /**
+   * New wallets only: configure this login type if needed and wait for its manager.
+   * Changing the login type replaces the manager, which the service rebuilds asynchronously.
+   */
+  const walletManagerFor = (loginType: 'mnemonic' | 'direct-key'): Promise<any> => {
+    const svc = getWalletService()
+    const managerOf = (s: ReturnType<typeof svc.getSnapshot>) =>
+      s.loginType === loginType && !['unconfigured', 'configured', 'initializing'].includes(s.lifecycle) ? s.managers.walletManager : undefined
+    if (managerOf(svc.getSnapshot())) return Promise.resolve(managerOf(svc.getSnapshot()))
+    if (svc.getSnapshot().loginType !== loginType) configure(loginType)
+    return new Promise((resolve, reject) => {
+      const finish = (manager?: any, error?: Error) => {
+        clearTimeout(timer)
+        svc.off('stateChanged', check)
+        if (manager) resolve(manager); else reject(error)
+      }
+      const check = (s: ReturnType<typeof svc.getSnapshot>) => {
+        const manager = managerOf(s)
+        if (manager) finish(manager)
+        else if (s.lifecycle === 'error') finish(undefined, new Error(svc.startupError || 'Could not prepare your wallet. Please try again.'))
+      }
+      const timer = setTimeout(() => finish(undefined, new Error('Your wallet is still getting ready. Try again in a moment.')), 30_000)
+      svc.on('stateChanged', check)
+      check(svc.getSnapshot())
+    })
+  }
+
+  /** A private key, a BSV Desktop 2 phrase, or older private-key shares open as a single-key wallet like BSV Desktop 2. */
+  const openKeyWallet = async (secret: Extract<ImportSecret, { kind: 'key' }>) => {
+    const keyManager = await walletManagerFor('direct-key')
+    // A failed service build can leave the manager authenticated with no wallet; start over.
+    if (keyManager.authenticated) keyManager.destroy()
+    // Saved first: the profile and the Security page read the key and phrase from here.
+    secrets.setKeyHex(secret.keyHex)
+    if (secret.mnemonic) secrets.setMnemonic(secret.mnemonic)
+    else secrets.clearMnemonic()
+    await keyManager.providePrimaryKey(secret.keyBytes)
+    await keyManager.providePrivilegedKeyManager(createDisabledPrivilegedManager())
+    if (!keyManager.authenticated || !keyManager.underlying) throw new Error('Could not open this wallet. Please try again.')
+    secrets.setSnapshot(saveEnhancedSnapshot())
+    setPhrase('')
+    setShareInputs(['', '', ''])
+    history.replace('/dashboard')
   }
 
   useEffect(() => {
@@ -86,15 +134,30 @@ export default function Greeter({ history, initialMode = 'welcome' }: { history:
     setError('')
     setBusy(true)
     try {
-      if (!manager || loginType !== 'mnemonic') throw new Error('Your wallet is still getting ready. Try again in a moment.')
       let recoveryPhrase = phrase
+      if (mode === 'import' && importMethod === 'phrase') {
+        // A saved phrase wallet can only be repaired with its own BSV Wallet phrase.
+        const secret = classifyImportInput(phrase, hasSavedWallet ? false : desktopV2)
+        if (secret.kind === 'key') {
+          if (hasSavedWallet) throw new Error('A private key or BSV Desktop 2 phrase opens a different wallet from the one saved here. Use this wallet\'s BSV Wallet recovery phrase or backup shares; your saved wallet has not been changed.')
+          await openKeyWallet(secret)
+          return
+        }
+        recoveryPhrase = secret.mnemonic
+      }
       if (mode === 'import' && importMethod === 'shares') {
         const recovered = recoverSecretFromShares(shareInputs)
         if (recovered.kind === 'legacy') {
-          throw new Error('These shares contain an older private-key backup. They cannot restore a recovery phrase. Use the app that created them to access that wallet; your backup has not been changed.')
+          // Older shares split a raw private key rather than a phrase.
+          if (hasSavedWallet) throw new Error('These shares hold an older private-key backup, which opens a different wallet from the one saved here. Use this wallet\'s recovery phrase or newer backup shares; your saved wallet has not been changed.')
+          await openKeyWallet(keySecretFromBytes(recovered.primaryKey, 'legacy-shares'))
+          return
         }
         recoveryPhrase = recovered.mnemonic
       }
+      // An earlier key import may have switched a new wallet to direct-key; switch back.
+      const manager: any = hasSavedWallet ? managers.walletManager : await walletManagerFor('mnemonic')
+      if (!manager || (hasSavedWallet && loginType !== 'mnemonic')) throw new Error('Your wallet is still getting ready. Try again in a moment.')
       // Profile 0 anchors the phrase (the saved key); the snapshot holds the open profile's key.
       const material = deriveMnemonicWallet(recoveryPhrase)
       const profileIndex = manager instanceof MnemonicProfileWalletManager ? manager.activeProfileIndex : 0
@@ -133,6 +196,8 @@ export default function Greeter({ history, initialMode = 'welcome' }: { history:
   }
 
   const isWorking = busy || initializingBackendServices
+  const hexEntry = looksLikeHexKey(phrase)
+  const desktopV2Selected = desktopV2 ?? isDesktopV2ByDefault(phrase)
   return (
     <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
       <Box sx={{ px: { xs: 3, sm: 5 }, py: 3, display: 'flex', alignItems: 'center', gap: 1.25 }}>
@@ -164,7 +229,7 @@ export default function Greeter({ history, initialMode = 'welcome' }: { history:
             <>
               <Box sx={{ display: 'inline-flex', mb: 2, color: 'primary.main' }}><KeyOutlined /></Box>
               <Typography variant="h4" sx={{ fontWeight: 700, letterSpacing: -0.9, mb: 1.2 }}>{mode === 'create' ? 'Your wallet starts here.' : 'Welcome back.'}</Typography>
-              <Typography color="text.secondary" sx={{ mb: 3, lineHeight: 1.7 }}>{mode === 'create' ? 'Write down these twelve words in order. They restore your wallet on any device.' : 'Restore with your BSV Wallet recovery phrase or two backup shares.'}</Typography>
+              <Typography color="text.secondary" sx={{ mb: 3, lineHeight: 1.7 }}>{mode === 'create' ? 'Write down these twelve words in order. They restore your wallet on any device.' : 'Restore with your recovery phrase, a private key, or two backup shares.'}</Typography>
               {mode === 'create' ? (
                 <Stack spacing={2.5}>
                   <RecoveryPhrase phrase={phrase} />
@@ -175,15 +240,21 @@ export default function Greeter({ history, initialMode = 'welcome' }: { history:
               ) : (
                 <Stack spacing={2.5}>
                   <Tabs value={importMethod} onChange={(_, value) => { setImportMethod(value); setError('') }} variant="fullWidth" sx={{ mb: 1, borderBottom: '1px solid', borderColor: 'divider' }}><Tab label="Recovery phrase" value="phrase" /><Tab label="Backup shares" value="shares" /></Tabs>
-                  {importMethod === 'phrase' ? <TextField label="Recovery phrase" value={phrase} onChange={e => setPhrase(e.target.value)} multiline minRows={3} fullWidth autoFocus placeholder="Enter your words in order" helperText="12, 15, 18, 21 or 24 words. No BIP39 passphrase." autoComplete="off" inputProps={{ spellCheck: false, autoCapitalize: 'none' }} /> : <>
+                  {importMethod === 'phrase' ? <>
+                    <TextField label="Recovery phrase or private key" value={phrase} onChange={e => setPhrase(e.target.value)} multiline={!hexEntry} minRows={hexEntry ? undefined : 3} fullWidth autoFocus placeholder="Enter your words in order, or paste a private key" helperText={hexEntry ? 'Private key (64 hex characters). It opens as a single-key wallet, as in BSV Desktop 2.' : '12, 15, 18, 21 or 24 words, or a 64-character hex private key. No BIP39 passphrase.'} autoComplete="off" inputProps={{ spellCheck: false, autoCapitalize: 'none' }} />
+                    {!hasSavedWallet && !hexEntry && countWords(phrase) >= 12 && <Box>
+                      <FormControlLabel control={<Checkbox checked={desktopV2Selected} onChange={e => setDesktopV2(e.target.checked)} />} label={<Typography variant="body2">Created in BSV Desktop 2</Typography>} />
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 4 }}>{desktopV2Selected ? 'Opens the key BSV Desktop 2 made from these words. Wallet profiles and backup shares are not available for it.' : 'Opens these words as a BSV Wallet recovery phrase.'}</Typography>
+                    </Box>}
+                  </> : <>
                     <Button variant="outlined" startIcon={<QrCodeScannerOutlined />} onClick={() => setScanShares(true)}>Scan backup shares</Button>
                     {shareInputs.map((share, index) => <TextField key={index} label={`Backup share ${index + 1}${index === 2 ? ' (optional)' : ''}`} value={share} onChange={e => setShareInputs(values => values.map((v, i) => i === index ? e.target.value : v))} multiline minRows={2} fullWidth autoComplete="off" inputProps={{ spellCheck: false }} />)}
-                    <Typography variant="caption" color="text.secondary">Paste complete shares from the same backup. Any two of the three BSV Wallet shares restore your phrase.</Typography>
+                    <Typography variant="caption" color="text.secondary">Paste complete shares from the same backup. Any two of the three BSV Wallet shares restore your phrase. Older private-key shares open as a single-key wallet.</Typography>
                   </>}
                 </Stack>
               )}
               {error && <Alert severity="error" sx={{ mt: 2.5 }}>{error}</Alert>}
-              <Button variant="contained" fullWidth size="large" onClick={enterWallet} disabled={isWorking || !manager || (mode === 'create' && !saved) || (mode === 'import' && importMethod === 'phrase' && !phrase.trim()) || (mode === 'import' && importMethod === 'shares' && shareInputs.filter(v => v.trim()).length < 2)} sx={{ py: 1.6, mt: 3 }} endIcon={isWorking ? undefined : <ArrowForward />}>{isWorking ? <CircularProgress size={22} color="inherit" /> : mode === 'create' ? 'Open my wallet' : 'Restore wallet'}</Button>
+              <Button variant="contained" fullWidth size="large" onClick={enterWallet} disabled={isWorking || (hasSavedWallet && !manager) || (mode === 'create' && !saved) || (mode === 'import' && importMethod === 'phrase' && !phrase.trim()) || (mode === 'import' && importMethod === 'shares' && shareInputs.filter(v => v.trim()).length < 2)} sx={{ py: 1.6, mt: 3 }} endIcon={isWorking ? undefined : <ArrowForward />}>{isWorking ? <CircularProgress size={22} color="inherit" /> : mode === 'create' ? 'Open my wallet' : 'Restore wallet'}</Button>
               {mode === 'import' && <Button component={RouterLink} to="/recovery/wallet-data" fullWidth sx={{ mt: 1.5 }}>Recover from a wallet data file</Button>}
             </>
           )}

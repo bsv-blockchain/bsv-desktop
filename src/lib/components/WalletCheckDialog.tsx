@@ -20,52 +20,58 @@ function StatusIcon({ outcome, active }: { outcome?: StepOutcome; active: boolea
 export default function WalletCheckDialog({ open, onClose }: { open: boolean; onClose(): void }) {
   const history = useHistory()
   const { refreshAppWallet } = useContext(WalletContext)
+  const refreshRef = useRef(refreshAppWallet)
+  refreshRef.current = refreshAppWallet
   const [outcomes, setOutcomes] = useState<Partial<Record<CheckStepId, StepOutcome>>>({})
   const [active, setActive] = useState<CheckStepId | null>(null)
   const [result, setResult] = useState<WalletCheckResult | null>(null)
   const [failure, setFailure] = useState('')
-  const skipped = useRef(new Map<CheckStepId, () => void>())
+  const [running, setRunning] = useState(false)
+  // One check at a time: StrictMode's double effect, re-opening, and "Run again"
+  // must never start a second set of repairs while one is still going.
+  const runningRef = useRef(false)
+  const skipResolvers = useRef(new Map<CheckStepId, () => void>())
   const skippedIds = useRef(new Set<CheckStepId>())
-  const cancelled = useRef(false)
 
   const run = useCallback(async () => {
-    cancelled.current = false
-    skipped.current.clear(); skippedIds.current.clear()
+    if (runningRef.current) return
+    runningRef.current = true
+    setRunning(true)
+    skipResolvers.current.clear(); skippedIds.current.clear()
     setOutcomes({}); setResult(null); setFailure(''); setActive(null)
     let release: (() => void) | undefined
     try {
-      release = beginUserWalletOperation()
-      const ports = createWalletCheckPorts(walletCheckDepsFromService(getWalletService(), refreshAppWallet))
+      try { release = beginUserWalletOperation() }
+      catch { throw new Error('Your wallet is busy right now. Try again in a moment.') }
+      const ports = createWalletCheckPorts(walletCheckDepsFromService(getWalletService(), () => refreshRef.current()))
       const res = await runWalletCheck(ports, {
-        onStepStart: id => { if (!cancelled.current) setActive(id) },
-        onStepDone: (id, outcome) => { if (!cancelled.current) { setActive(null); setOutcomes(prev => ({ ...prev, [id]: outcome })) } },
+        onStepStart: id => setActive(id),
+        onStepDone: (id, outcome) => { setActive(null); setOutcomes(prev => ({ ...prev, [id]: outcome })) },
       }, {
         isSkipped: id => skippedIds.current.has(id),
-        whenSkipped: id => new Promise<void>(resolve => skipped.current.set(id, resolve)),
+        whenSkipped: id => new Promise<void>(resolve => skipResolvers.current.set(id, resolve)),
       })
-      if (!cancelled.current) setResult(res)
+      setResult(res)
     } catch (error) {
-      if (!cancelled.current) setFailure(error instanceof Error ? error.message : String(error))
+      const message = error instanceof Error ? error.message : String(error)
+      setFailure(message.startsWith('Your wallet is busy') ? message : `The check couldn't run: ${message}`)
     } finally {
       release?.()
-      if (!cancelled.current) setActive(null)
+      runningRef.current = false
+      setRunning(false)
+      setActive(null)
     }
-  }, [refreshAppWallet])
+  }, [])
 
-  useEffect(() => {
-    if (!open) return
-    void run()
-    return () => { cancelled.current = true }
-  }, [open, run])
+  useEffect(() => { if (open) void run() }, [open, run])
 
-  const skip = (id: CheckStepId) => { skippedIds.current.add(id); skipped.current.get(id)?.() }
+  const skip = (id: CheckStepId) => { skippedIds.current.add(id); skipResolvers.current.get(id)?.() }
   const go = (to: string) => { onClose(); history.push(to) }
-  const running = !result && !failure
 
   return <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="wallet-check-title">
     <DialogTitle id="wallet-check-title">Troubleshoot</DialogTitle>
     <DialogContent>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Checking your wallet and fixing anything we can. This can take a minute.</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Checking your wallet and fixing anything we can. This can take a minute — you can close this window and it will keep going.</Typography>
       {failure && <Alert severity="error" sx={{ mb: 2 }}>{failure}</Alert>}
       <Stack component="ul" sx={{ listStyle: 'none', p: 0, m: 0 }} gap={1.5}>
         {CHECK_STEPS.map(({ id, title }) => {
@@ -78,14 +84,14 @@ export default function WalletCheckDialog({ open, onClose }: { open: boolean; on
               {outcome?.fixed?.map(f => <Typography key={f} variant="body2" color="success.main">✓ {f}</Typography>)}
               {outcome?.action && <Button size="small" sx={{ px: 0, mt: 0.5 }} onClick={() => go(outcome.action!.to)}>{outcome.action.label}</Button>}
             </Box>
-            {active === id && <Button size="small" onClick={() => skip(id)} sx={{ color: 'text.secondary' }}>Skip</Button>}
+            {active === id && <Button size="small" aria-label={`Skip ${title}`} onClick={() => skip(id)} sx={{ color: 'text.secondary' }}>Skip</Button>}
           </Stack>
         })}
       </Stack>
       {result && <Alert sx={{ mt: 3 }} severity={result.needsYou.length ? (result.allOk ? 'warning' : 'error') : 'success'}>
         {result.needsYou.length === 0 && result.fixed.length === 0 && 'All good. Your wallet is working.'}
         {result.needsYou.length === 0 && result.fixed.length > 0 && `Fixed ${result.fixed.length} thing${result.fixed.length === 1 ? '' : 's'}.`}
-        {result.needsYou.length > 0 && `${result.needsYou.length} thing${result.needsYou.length === 1 ? ' needs' : 's need'} you — see above.`}
+        {result.needsYou.length > 0 && `${result.needsYou.length} thing${result.needsYou.length === 1 ? ' needs' : 's need'} you — use the buttons above.`}
       </Alert>}
     </DialogContent>
     <DialogActions>

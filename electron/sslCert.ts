@@ -889,9 +889,22 @@ export interface CertRepairDeps {
  * A verified store counts as trusted: Chromium in this process may not see a
  * trust setting added after it started (see ensureCertTrusted).
  */
-export async function checkAndRepairCertTrust(
+/** Concurrent callers share one run, so the user never sees two trust prompts. */
+let certRepairInFlight: Promise<CertRepairResult> | null = null
+
+export function checkAndRepairCertTrust(
   parentWindow?: BrowserWindow | null,
   deps: Partial<CertRepairDeps> = {}
+): Promise<CertRepairResult> {
+  if (!certRepairInFlight) {
+    certRepairInFlight = runCertRepair(parentWindow, deps).finally(() => { certRepairInFlight = null })
+  }
+  return certRepairInFlight
+}
+
+async function runCertRepair(
+  parentWindow: BrowserWindow | null | undefined,
+  deps: Partial<CertRepairDeps>
 ): Promise<CertRepairResult> {
   const certPath = deps.certPath !== undefined ? deps.certPath : lastCertPath
   const probe = deps.probe ?? isCertAcceptedByClients
@@ -900,6 +913,9 @@ export async function checkAndRepairCertTrust(
   if (!certPath) return { trusted: null, repaired: false }
 
   if (await probe() === true) return { trusted: true, repaired: false }
+  // Chromium in this process can't see trust added after start; the store is
+  // authoritative, so don't prompt again when it already trusts the cert.
+  if (await storeCheck(certPath)) return { trusted: true, repaired: false }
   await ensure(certPath, parentWindow ?? null)
   const trusted = (await probe()) === true || await storeCheck(certPath)
   return { trusted, repaired: trusted }

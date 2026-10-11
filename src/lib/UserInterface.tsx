@@ -36,6 +36,7 @@ const queries = {
 // Import NativeHandlers from UserContext to avoid circular dependency
 import { NativeHandlers, UserContext, UserContextProvider } from './UserContext'
 import GroupPermissionHandler from './components/GroupPermissionHandler'
+import CounterpartyPermissionHandler from './components/CounterpartyPermissionHandler'
 import { UpdateNotification } from './components/UpdateNotification'
 import PrivacyPolicy from './pages/Policies/privacy'
 import UsagePolicy from './pages/Policies/usage'
@@ -76,6 +77,7 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
                 <SpendingAuthorizationHandler />
                 <ThemedToastContainer />
                 <GroupPermissionHandler />
+                <CounterpartyPermissionHandler />
                 <UpdateNotificationWrapper />
                 <NetworkSettingsDialog />
                 <Switch>

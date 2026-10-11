@@ -6,6 +6,7 @@ import CounterpartyChip from '../CounterpartyChip'
 import ProtoChip from '../ProtoChip'
 import { WalletContext } from '../../WalletContext'
 import { UserContext } from '../../UserContext'
+import { displayProtocols } from './protocols'
 
 const CounterpartyPermissionHandler = () => {
   const {
@@ -123,11 +124,11 @@ const CounterpartyPermissionHandler = () => {
                 Protocol permissions requested:
               </Typography>
               <Stack spacing={1}>
-                {protocols.map((p, i) => (
+                {displayProtocols(protocols).map((p, i) => (
                   <ProtoChip
                     key={i}
-                    securityLevel={p.protocolID[0]}
-                    protocolID={p.protocolID[1]}
+                    securityLevel={p.securityLevel}
+                    protocolID={p.protocolName}
                     originator={currentRequest.originator}
                     counterparty={currentRequest.counterparty}
                     clickable={false}

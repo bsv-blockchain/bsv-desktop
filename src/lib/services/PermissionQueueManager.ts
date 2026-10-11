@@ -980,8 +980,10 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     const originalDismiss = (pm as any).dismissGroupedPermission?.bind(pm)
 
     if (originalGrant) {
-      ;(pm as any).grantGroupedPermission = async (requestID: string, granted: any) => {
-        const res = await originalGrant(requestID, granted)
+      // Same single-object signature as WalletPermissionsManager.grantGroupedPermission.
+      ;(pm as any).grantGroupedPermission = async (params: { requestID: string; granted: any; expiry?: number }) => {
+        const { requestID, granted } = params
+        const res = await originalGrant(params)
         try { await this._releaseDeferredAfterGroup(this._decisionFromGranted(granted)) } catch { }
         const key = this._groupRequestCooldownKeyById.get(requestID)
         if (key) {

@@ -46,6 +46,9 @@ export interface ElectronAPI {
     /** Relaunches the app; the process exits and the Promise does not resolve. */
     restart: () => Promise<void>;
   };
+  cert: {
+    checkAndRepair: () => Promise<{ trusted: boolean | null; repaired: boolean }>;
+  };
   onHttpRequest: (callback: (event: any) => void) => void;
   onHttpRequestCancelled: (callback: (event: { request_id: number; reason?: string }) => void) => void;
   sendHttpResponse: (response: any) => void;

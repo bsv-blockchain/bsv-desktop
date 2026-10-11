@@ -8,6 +8,9 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
+/** Path of the cert last returned by generateSelfSignedCert (for Troubleshoot). */
+let lastCertPath: string | null = null;
+
 // Linux trust store locations. The system store is read by OpenSSL-based
 // clients; the NSS user db is what Chrome/Chromium actually consult for
 // user-added anchors, so we write to both when the tooling is available.
@@ -100,6 +103,7 @@ export async function generateSelfSignedCert(): Promise<CertificateKeyPair> {
         console.log('Existing certificate has the legacy fixed serial, generating new one');
       } else if (forgeCert.validity.notAfter > now) {
         console.log('Using existing SSL certificate');
+        lastCertPath = certPath;
         return { cert, key, certPath };
       } else {
         console.log('Existing certificate expired, generating new one');
@@ -186,6 +190,7 @@ export async function generateSelfSignedCert(): Promise<CertificateKeyPair> {
 
   console.log('SSL certificate generated and saved');
 
+  lastCertPath = certPath;
   return {
     cert: certPem,
     key: keyPem,
@@ -868,4 +873,50 @@ async function explainVerificationFailure(
     detail,
     buttons: ['OK']
   });
+}
+
+export interface CertRepairResult { trusted: boolean | null; repaired: boolean }
+export interface CertRepairDeps {
+  certPath: string | null
+  probe: () => Promise<boolean | null>
+  ensure: (certPath: string, parent?: BrowserWindow | null) => Promise<void>
+  storeCheck: (certPath: string) => Promise<boolean>
+}
+
+/**
+ * Troubleshoot's certificate step: if clients reject the HTTPS bridge, run the
+ * normal trust flow (which may ask for the macOS password) and check again.
+ * A verified store counts as trusted: Chromium in this process may not see a
+ * trust setting added after it started (see ensureCertTrusted).
+ */
+/** Concurrent callers share one run, so the user never sees two trust prompts. */
+let certRepairInFlight: Promise<CertRepairResult> | null = null
+
+export function checkAndRepairCertTrust(
+  parentWindow?: BrowserWindow | null,
+  deps: Partial<CertRepairDeps> = {}
+): Promise<CertRepairResult> {
+  if (!certRepairInFlight) {
+    certRepairInFlight = runCertRepair(parentWindow, deps).finally(() => { certRepairInFlight = null })
+  }
+  return certRepairInFlight
+}
+
+async function runCertRepair(
+  parentWindow: BrowserWindow | null | undefined,
+  deps: Partial<CertRepairDeps>
+): Promise<CertRepairResult> {
+  const certPath = deps.certPath !== undefined ? deps.certPath : lastCertPath
+  const probe = deps.probe ?? isCertAcceptedByClients
+  const ensure = deps.ensure ?? ensureCertTrusted
+  const storeCheck = deps.storeCheck ?? isCertTrusted
+  if (!certPath) return { trusted: null, repaired: false }
+
+  if (await probe() === true) return { trusted: true, repaired: false }
+  // Chromium in this process can't see trust added after start; the store is
+  // authoritative, so don't prompt again when it already trusts the cert.
+  if (await storeCheck(certPath)) return { trusted: true, repaired: false }
+  await ensure(certPath, parentWindow ?? null)
+  const trusted = (await probe()) === true || await storeCheck(certPath)
+  return { trusted, repaired: trusted }
 }

@@ -12,6 +12,7 @@ import { integrateAppImageDesktopEntry } from './linuxDesktopIntegration.js';
 import { FeeSettingsService, registerFeeSettingsIpc } from './feeSettings.js';
 import { arcadeUrl } from './endpoints.js';
 import { getBootConfig } from './bootConfig.js';
+import { checkAndRepairCertTrust } from './sslCert.js';
 
 const require = createRequire(import.meta.url);
 
@@ -526,6 +527,8 @@ ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
     throw new Error(String(error));
   }
 });
+
+ipcMain.handle('cert:check-and-repair', async () => checkAndRepairCertTrust(mainWindow));
 
 // Process exits in this handler; the invoke Promise is not observed by the renderer.
 ipcMain.handle('app:restart', async () => {

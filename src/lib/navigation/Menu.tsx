@@ -127,7 +127,7 @@ export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; set
       </Box>
       <Typography variant="overline" color="text.secondary" sx={{ px: 3.5, mt: 3, fontSize: 10, letterSpacing: '0.12em' }}>YOUR WALLET</Typography>
       <List sx={{ px: 2, pt: 1 }}>
-        {items.map(({ label, path, icon: Icon, exact }) => <ListItemButton key={path} component={NavLink} exact={exact} to={path} activeClassName="wallet-nav-active" onClick={() => setMenuOpen(false)} sx={{ borderRadius: 2.5, my: 0.5, py: 1.25, color: 'text.secondary', '&.wallet-nav-active': { bgcolor: theme => alpha(theme.palette.primary.main, 0.09), color: 'primary.main', '& .MuiListItemIcon-root': { color: 'primary.main' } } }}>
+        {items.map(({ label, path, icon: Icon, exact }) => <ListItemButton key={path} data-tour={`nav-${label.toLowerCase()}`} component={NavLink} exact={exact} to={path} activeClassName="wallet-nav-active" onClick={() => setMenuOpen(false)} sx={{ borderRadius: 2.5, my: 0.5, py: 1.25, color: 'text.secondary', '&.wallet-nav-active': { bgcolor: theme => alpha(theme.palette.primary.main, 0.09), color: 'primary.main', '& .MuiListItemIcon-root': { color: 'primary.main' } } }}>
           <ListItemIcon sx={{ minWidth: 38, color: 'inherit' }}><Icon sx={{ fontSize: 21 }} /></ListItemIcon><ListItemText primary={label} primaryTypographyProps={{ fontSize: 14, fontWeight: 550 }} />
         </ListItemButton>)}
       </List>

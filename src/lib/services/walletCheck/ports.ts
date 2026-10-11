@@ -2,7 +2,6 @@
  * Real ports for the Troubleshoot wallet check. Each port checks one area and
  * repairs it automatically. Dependencies are injected so the logic is testable.
  */
-import { DEFAULT_MESSAGE_BOX_URL } from '../../networkConfig'
 import type { WalletService } from '../WalletService'
 import { getWalletBackupTime } from './backupMarker'
 import type { StepOutcome, WalletCheckPorts } from './runWalletCheck'
@@ -17,7 +16,7 @@ export interface WalletCheckDeps {
   walletClass: WalletClassLike | null // null in remote-storage mode
   peerPay: () => PeerPayView // read live: setting the URL creates the client
   useMessageBox: () => boolean
-  setMessageBoxUrl: (url: string) => Promise<void>
+  loginType: string // only 'mnemonic' and 'direct-key' have a phrase to save on the Back up page
   anoint: () => Promise<void> // anoints the current messageBoxUrl
   refreshAppWallet: () => Promise<void>
   repairCertTrust: () => Promise<{ trusted: boolean | null; repaired: boolean }>
@@ -87,10 +86,8 @@ export function createWalletCheckPorts(deps: WalletCheckDeps): WalletCheckPorts 
 
     async messageBox() {
       const fixed: string[] = []
-      if (!deps.useMessageBox()) {
-        await deps.setMessageBoxUrl(DEFAULT_MESSAGE_BOX_URL)
-        fixed.push('Set up your message box')
-      }
+      // Off means the user opted out (the default is on): never turn it back on.
+      if (!deps.useMessageBox()) return { status: 'skipped', message: 'Message box is turned off in Settings' }
       if (!deps.peerPay().client) return { status: 'error', message: 'Message box could not start. Run again in a moment.', fixed }
       // queryAdvertisements swallows overlay errors, so an outage looks like "not anointed"; trust the local basket first
       if (!deps.peerPay().isHostAnointed && !(await deps.hasLocalAdvertisement())) {
@@ -122,6 +119,7 @@ export function createWalletCheckPorts(deps: WalletCheckDeps): WalletCheckPorts 
     },
 
     async backup() {
+      if (deps.loginType !== 'mnemonic' && deps.loginType !== 'direct-key') return { status: 'skipped', message: 'Uses your recovery key and password' }
       if (!deps.profileId) return { status: 'skipped', message: 'No active profile' }
       if (getWalletBackupTime(deps.profileId, deps.storage)) return { status: 'ok', message: 'Wallet backed up' }
       return { status: 'attention', message: 'Back up your wallet so you can recover it if this computer is lost.', action: { label: 'Back up now', to: '/dashboard/settings/backup' } }
@@ -137,7 +135,7 @@ export function walletCheckDepsFromService(svc: WalletService, refreshAppWallet:
     walletClass: svc.useRemoteStorage ? null : wallet,
     peerPay: () => { const s = svc.peerPay.getSnapshot(); return { client: s.peerPayClient as any, isHostAnointed: s.isHostAnointed } },
     useMessageBox: () => svc.useMessageBox,
-    setMessageBoxUrl: url => svc.updateMessageBoxUrl(url),
+    loginType: svc.loginType,
     anoint: () => svc.peerPay.anointCurrentHost(svc.messageBoxUrl),
     refreshAppWallet,
     repairCertTrust: async () => window.electronAPI?.cert?.checkAndRepair ? window.electronAPI.cert.checkAndRepair() : { trusted: null, repaired: false },

@@ -528,9 +528,9 @@ ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
   }
 });
 
-// Process exits in this handler; the invoke Promise is not observed by the renderer.
 ipcMain.handle('cert:check-and-repair', async () => checkAndRepairCertTrust(mainWindow));
 
+// Process exits in this handler; the invoke Promise is not observed by the renderer.
 ipcMain.handle('app:restart', async () => {
   try {
     await cleanupBeforeExit();

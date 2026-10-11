@@ -25,11 +25,37 @@ describe('checkAndRepairCertTrust', () => {
     expect(result).toEqual({ trusted: true, repaired: true })
   })
 
-  it('accepts a verified store when this process cannot see the new trust yet', async () => {
+  it('trusts an already-verified store without prompting again (this process cannot see new trust)', async () => {
     const { checkAndRepairCertTrust } = await import('../electron/sslCert')
     const probe = vi.fn().mockResolvedValue(false)
-    const result = await checkAndRepairCertTrust(null, { certPath: '/c.crt', probe, ensure: async () => {}, storeCheck: async () => true })
+    const ensure = vi.fn(async () => {})
+    const result = await checkAndRepairCertTrust(null, { certPath: '/c.crt', probe, ensure, storeCheck: async () => true })
+    expect(ensure).not.toHaveBeenCalled()
+    expect(result).toEqual({ trusted: true, repaired: false })
+  })
+
+  it('repairs when the store did not trust it and does after the trust flow', async () => {
+    const { checkAndRepairCertTrust } = await import('../electron/sslCert')
+    const storeCheck = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const ensure = vi.fn(async () => {})
+    const result = await checkAndRepairCertTrust(null, { certPath: '/c.crt', probe: async () => false, ensure, storeCheck })
+    expect(ensure).toHaveBeenCalledTimes(1)
     expect(result).toEqual({ trusted: true, repaired: true })
+  })
+
+  it('shares one run between concurrent calls', async () => {
+    const { checkAndRepairCertTrust } = await import('../electron/sslCert')
+    let finish!: () => void
+    const ensure = vi.fn(() => new Promise<void>(r => { finish = r }))
+    const storeCheck = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true)
+    const d = { certPath: '/c.crt', probe: async () => false, ensure, storeCheck }
+    const a = checkAndRepairCertTrust(null, d)
+    const b = checkAndRepairCertTrust(null, d)
+    await vi.waitFor(() => expect(ensure).toHaveBeenCalled())
+    finish()
+    expect(await a).toEqual({ trusted: true, repaired: true })
+    expect(await b).toEqual({ trusted: true, repaired: true })
+    expect(ensure).toHaveBeenCalledTimes(1)
   })
 
   it('reports untrusted when nothing worked', async () => {

@@ -38,7 +38,7 @@ export default function Dashboard() {
   if (!pageLoaded) return <PageLoading />
   if (!managers.permissionsManager && !switchingNetwork) return <Redirect to="/" />
 
-  return <TourProvider><Box sx={{ minHeight: '100vh' }}>
+  return <TourProvider setMenuOpen={setMenuOpen} compact={compact}><Box sx={{ minHeight: '100vh' }}>
     <Backdrop open={switchingNetwork} sx={{ zIndex: theme => theme.zIndex.drawer + 1, bgcolor: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(3px)' }}><PaperStatus /></Backdrop>
     <Menu menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
     <Box sx={{ ml: compact ? 0 : `${SIDEBAR_WIDTH}px` }}>

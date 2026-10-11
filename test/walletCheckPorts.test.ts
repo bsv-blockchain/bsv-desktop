@@ -10,7 +10,7 @@ function deps(over: Partial<WalletCheckDeps> = {}): WalletCheckDeps {
     },
     peerPay: () => ({ client: { listIncomingPayments: vi.fn(async () => []), acceptPayment: vi.fn(async () => ({})) }, isHostAnointed: true }),
     useMessageBox: () => true,
-    setMessageBoxUrl: vi.fn(async () => {}),
+    loginType: 'mnemonic',
     anoint: vi.fn(async () => {}),
     refreshAppWallet: vi.fn(async () => {}),
     repairCertTrust: vi.fn(async () => ({ trusted: true, repaired: false })),
@@ -98,17 +98,25 @@ describe('coins', () => {
 })
 
 describe('messageBox', () => {
-  it('sets the default host and anoints when nothing is configured', async () => {
-    let client: any = null
-    const d = deps({
-      useMessageBox: () => false,
-      setMessageBoxUrl: vi.fn(async () => { client = { listIncomingPayments: async () => [], acceptPayment: async () => ({}) } }),
-      peerPay: () => ({ client, isHostAnointed: false }),
-    })
+  it('is skipped when turned off in Settings, without changing anything', async () => {
+    // setMessageBoxUrl is no longer a dep; pass a spy anyway to prove nothing tries to set a host.
+    const setMessageBoxUrl = vi.fn(async () => {})
+    const peerPay = vi.fn(() => ({ client: null, isHostAnointed: false }))
+    const d = { ...deps({ useMessageBox: () => false, peerPay }), setMessageBoxUrl } as WalletCheckDeps
     const out = await createWalletCheckPorts(d).messageBox()
-    expect(d.setMessageBoxUrl).toHaveBeenCalledWith('https://messagebox.bsvblockchain.tech')
+    expect(out).toEqual({ status: 'skipped', message: 'Message box is turned off in Settings' })
+    expect(setMessageBoxUrl).not.toHaveBeenCalled()
+    expect(d.anoint).not.toHaveBeenCalled()
+  })
+  it('errors when enabled but the client did not start', async () => {
+    const out = await createWalletCheckPorts(deps({ peerPay: () => ({ client: null, isHostAnointed: false }) })).messageBox()
+    expect(out.status).toBe('error')
+  })
+  it('anoints when enabled and not yet discoverable', async () => {
+    const d = deps({ peerPay: () => ({ client: {} as any, isHostAnointed: false }) })
+    const out = await createWalletCheckPorts(d).messageBox()
     expect(d.anoint).toHaveBeenCalled()
-    expect(out.fixed).toEqual(['Set up your message box', 'Made you discoverable for payments'])
+    expect(out.fixed).toEqual(['Made you discoverable for payments'])
   })
   it('asks for funds when anointing fails for lack of them', async () => {
     const d = deps({ peerPay: () => ({ client: {} as any, isHostAnointed: false }), anoint: vi.fn(async () => { throw new Error('Insufficient funds in the available inputs') }) })
@@ -147,5 +155,13 @@ describe('backup', () => {
   })
   it('passes with a marker', async () => {
     expect((await createWalletCheckPorts(deps()).backup()).status).toBe('ok')
+  })
+  it('applies to direct-key logins', async () => {
+    const out = await createWalletCheckPorts(deps({ loginType: 'direct-key', storage: { getItem: () => null } })).backup()
+    expect(out.status).toBe('attention')
+  })
+  it.each(['wab', 'mnemonic-advanced'])('is skipped for %s logins, which have no phrase to save', async loginType => {
+    const out = await createWalletCheckPorts(deps({ loginType, storage: { getItem: () => null } })).backup()
+    expect(out).toEqual({ status: 'skipped', message: 'Uses your recovery key and password' })
   })
 })

@@ -17,6 +17,9 @@ function StatusIcon({ outcome, active }: { outcome?: StepOutcome; active: boolea
   return <ErrorOutlineRounded color="error" />
 }
 
+/** Shared by every dialog instance: WalletHome unmounts on navigation, but a check keeps running. */
+let checkInFlight = false
+
 export default function WalletCheckDialog({ open, onClose }: { open: boolean; onClose(): void }) {
   const history = useHistory()
   const { refreshAppWallet } = useContext(WalletContext)
@@ -35,7 +38,9 @@ export default function WalletCheckDialog({ open, onClose }: { open: boolean; on
 
   const run = useCallback(async () => {
     if (runningRef.current) return
+    if (checkInFlight) { setFailure('A check is already running in the background. Give it a minute, then open Troubleshoot again.'); return }
     runningRef.current = true
+    checkInFlight = true
     setRunning(true)
     skipResolvers.current.clear(); skippedIds.current.clear()
     setOutcomes({}); setResult(null); setFailure(''); setActive(null)
@@ -58,6 +63,7 @@ export default function WalletCheckDialog({ open, onClose }: { open: boolean; on
     } finally {
       release?.()
       runningRef.current = false
+      checkInFlight = false
       setRunning(false)
       setActive(null)
     }

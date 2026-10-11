@@ -15,7 +15,7 @@ import { markWalletBackedUp } from '../../../services/walletCheck/backupMarker'
 
 export default function Security() {
   const history = useHistory()
-  const { loginType, activeProfile } = useContext(WalletContext)
+  const { loginType, activeProfile, managers } = useContext(WalletContext)
   const [revealed, setRevealed] = useState(false)
   const [shares, setShares] = useState<string[]>([])
   const [error, setError] = useState('')
@@ -30,7 +30,14 @@ export default function Security() {
   const identityKey = (keyHex ? new PrivateKey(Utils.toArray(keyHex, 'hex')).toPublicKey().toString() : '') || activeProfile?.identityKey || ''
   const profilesNote = modern ? '\n\nThis phrase also restores every wallet profile created from it. On a new device, add profiles in the same order to bring them back.' : ''
   const wordCount = mnemonic ? mnemonic.split(/\s+/).length : 0
-  const noteBackup = () => { if (activeProfile?.id?.length) markWalletBackedUp(activeProfile.id) }
+  // One phrase backs up every profile derived from it.
+  const noteBackup = () => {
+    let ids: number[][] = activeProfile?.id?.length ? [activeProfile.id] : []
+    if (modern) {
+      try { ids = managers.walletManager?.listProfiles?.().map((profile: any) => profile.id) || ids } catch { }
+    }
+    ids.forEach(id => markWalletBackedUp(id))
+  }
 
   const copy = async (text: string, label: string) => {
     try { await navigator.clipboard.writeText(text); setCopied(label); if (label === 'phrase') noteBackup() }

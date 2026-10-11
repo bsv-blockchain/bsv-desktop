@@ -9,20 +9,21 @@ import AppLogo from '../../components/AppLogo'
 import { ActivityList } from './Activity'
 import WalletCheckDialog from '../../components/WalletCheckDialog'
 import { useTour } from '../../components/tour/TourContext'
-import { markTourSeen, shouldAutoStartTour } from '../../components/tour/autoTour'
+import { isDefaultProfile, markTourSeen, shouldAutoStartTour } from '../../components/tour/autoTour'
 
 export default function WalletHome() {
-  const { activeProfile, chain, useRemoteStorage } = useContext(WalletContext)
+  const { activeProfile, chain, useRemoteStorage, managers } = useContext(WalletContext)
   const { balance, actions, loading, error, refresh } = useWalletOverview()
   const [checkOpen, setCheckOpen] = useState(false)
   const tour = useTour()
-  // New wallets (nothing in them yet) get the tour once, per profile. Marked before
-  // starting so a remount or StrictMode's second effect can't start it again.
+  // New wallets (nothing in them yet) get the tour once, on the default profile only. Marked
+  // before starting so a remount or StrictMode's second effect can't start it again.
   useEffect(() => {
-    if (tour.active || !shouldAutoStartTour({ balance, loading, profileId: activeProfile?.id })) return
+    const defaultProfile = isDefaultProfile(activeProfile?.identityKey, managers.walletManager)
+    if (tour.active || !shouldAutoStartTour({ balance, loading, profileId: activeProfile?.id, defaultProfile })) return
     markTourSeen(activeProfile!.id)
     tour.start()
-  }, [balance, loading, activeProfile?.id, tour])
+  }, [balance, loading, activeProfile?.id, activeProfile?.identityKey, managers.walletManager, tour])
   return <>
     <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3.5 }}><Box><Typography variant="h1">Your everyday wallet.</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>A little simpler. A lot more possible.</Typography></Box><Tooltip title="Refresh wallet"><IconButton aria-label="Refresh wallet" onClick={() => void refresh()} disabled={loading}><RefreshRounded /></IconButton></Tooltip></Stack>
     {error && <Alert severity="error" sx={{ mb: 3 }} action={<Button onClick={() => void refresh()}>Retry</Button>}>{error}</Alert>}

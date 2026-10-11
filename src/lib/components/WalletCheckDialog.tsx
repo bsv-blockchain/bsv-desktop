@@ -58,6 +58,8 @@ export default function WalletCheckDialog({ open, onClose }: { open: boolean; on
         whenSkipped: id => new Promise<void>(resolve => skipResolvers.current.set(id, resolve)),
       })
       setResult(res)
+      // Repairs can change spendable coins; refresh the balance (same event Payments uses).
+      if (res.fixed.length > 0) window.dispatchEvent(new CustomEvent('balance-changed'))
       // A skipped or timed-out step may still be mid-repair: hold the wallet
       // lock (and keep "Run again" hidden) until it actually finishes.
       if (res.pending.length) {

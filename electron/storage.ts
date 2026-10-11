@@ -76,6 +76,17 @@ const ALLOWED_STORAGE_METHODS: ReadonlySet<string> = new Set([
   // Action batches (wallet-toolbox >= 2.4.4)
   'getCapabilities', 'beginActionBatch', 'extendActionBatch', 'renewActionBatch',
   'prepareActionBatchCommit', 'putActionBatchBlob', 'commitActionBatch', 'abortActionBatch',
+  // Action batch packed uploads and digest commit (wallet-toolbox >= 2.4.20)
+  'putActionBatchPack', 'commitActionBatchByDigest',
+  // Action batch resume (wallet-toolbox >= 2.7)
+  'resumeActionBatch',
+  // BRC-177 noSend expiry (wallet-toolbox >= 2.11)
+  'prepareNoSendExpiry', 'activateNoSendExpiry', 'armNoSendExpiry',
+]);
+
+// Refused unless the wallet's monitor is running (see callStorageMethod).
+const NO_SEND_EXPIRY_METHODS: ReadonlySet<string> = new Set([
+  'prepareNoSendExpiry', 'activateNoSendExpiry', 'armNoSendExpiry',
 ]);
 
 // Lazy-load knex to avoid loading better-sqlite3 until actually needed
@@ -155,6 +166,10 @@ class StorageManager {
   private monitors: Map<string, Monitor> = new Map();
   // Monitor worker processes
   private monitorWorkers: Map<string, ChildProcess> = new Map();
+  // Workers whose Monitor is running its tasks, which include BRC-177 deadlines
+  private monitoringWorkers = new WeakSet<ChildProcess>();
+  // Workers asked to stop, which never count as running again
+  private stoppingWorkers = new WeakSet<ChildProcess>();
   private txStatusListeners = new Set<(event: TxStatusChangedEvent) => void>();
 
   /** Subscribe to transaction status changes seen by any monitor worker. */
@@ -403,6 +418,8 @@ class StorageManager {
 
         if (message.type === 'monitor-error') {
           console.error(`[Monitor Worker] Error in ${key}:`, message.error);
+        } else if (message.type === 'monitor-started') {
+          if (!this.stoppingWorkers.has(worker)) this.monitoringWorkers.add(worker);
         } else if (message.type === 'tx-status-changed' && typeof message.txid === 'string') {
           const event: TxStatusChangedEvent = { identityKey, chain, txid: message.txid, status: String(message.status ?? '') };
           for (const listener of this.txStatusListeners) {
@@ -504,6 +521,10 @@ class StorageManager {
     if (!worker) {
       return;
     }
+    // A stopping monitor no longer enforces BRC-177 deadlines, even if its
+    // 'monitor-started' was already in flight when the stop began.
+    this.monitoringWorkers.delete(worker);
+    this.stoppingWorkers.add(worker);
 
     // Resolve only after the child is actually gone. Sending SIGKILL is not
     // evidence that the old writer has exited.
@@ -522,6 +543,16 @@ class StorageManager {
   }
 
   /**
+   * BRC-177 (wallet/0177.md) forbids creating the funding transaction when the
+   * monitor cannot enforce the deadline, so noSend expiry is offered only while
+   * this wallet's monitor worker is running its tasks.
+   */
+  private isMonitoring(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn'): boolean {
+    const worker = this.monitorWorkers.get(walletStorageKey(identityKey, chain));
+    return worker !== undefined && this.monitoringWorkers.has(worker);
+  }
+
+  /**
    * Proxy method calls to the underlying storage instance
    */
   async callStorageMethod(
@@ -535,6 +566,15 @@ class StorageManager {
     // methods (or prototype members) on the StorageKnex instance via IPC.
     if (!ALLOWED_STORAGE_METHODS.has(method)) {
       throw new Error(`Storage method not permitted: ${method}`);
+    }
+    // Checked here as well as in getCapabilities because the monitor can stop
+    // after the toolbox has read the capabilities. prepareNoSendExpiry starts
+    // the funding transaction. activate and arm run before the protected action
+    // is released, and the toolbox handles their refusal safely: a refused
+    // activate leaves the anchor as spendable change, and a refused arm makes it
+    // abort the action, which releases the anchor. Only the funding fee is lost.
+    if (NO_SEND_EXPIRY_METHODS.has(method) && !this.isMonitoring(identityKey, chain)) {
+      throw new Error('BRC-177 noSend expiry is unavailable while the wallet monitor is not running');
     }
 
     const storage = await this.getOrCreateStorage(identityKey, chain);
@@ -550,6 +590,11 @@ class StorageManager {
 
     try {
       const result = await storageAny[method](...args);
+      if (method === 'getCapabilities' && !this.isMonitoring(identityKey, chain)) {
+        const capabilities = { ...result };
+        delete capabilities.brc177NoSendExpiry;
+        return capabilities;
+      }
       return result;
     } catch (error: any) {
       console.error(`[Storage] Error calling ${method}:`, error);

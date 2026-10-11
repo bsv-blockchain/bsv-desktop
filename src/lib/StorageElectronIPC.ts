@@ -430,6 +430,36 @@ export class StorageElectronIPC implements WalletStorageProvider {
     return this.callMethod('relinquishOutput', ...args);
   }
 
+  // ===== Action batch packed upload and digest commit methods (wallet-toolbox >= 2.4.20) =====
+
+  async putActionBatchPack(...args: any[]): Promise<any> {
+    return this.callMethod('putActionBatchPack', ...args);
+  }
+
+  async commitActionBatchByDigest(...args: any[]): Promise<any> {
+    return this.callMethod('commitActionBatchByDigest', ...args);
+  }
+
+  // ===== Action batch resume methods (wallet-toolbox >= 2.7) =====
+
+  async resumeActionBatch(...args: any[]): Promise<any> {
+    return this.callMethod('resumeActionBatch', ...args);
+  }
+
+  // ===== BRC-177 noSend expiry methods (wallet-toolbox >= 2.11) =====
+
+  async prepareNoSendExpiry(...args: any[]): Promise<any> {
+    return this.callMethod('prepareNoSendExpiry', ...args);
+  }
+
+  async activateNoSendExpiry(...args: any[]): Promise<any> {
+    return this.callMethod('activateNoSendExpiry', ...args);
+  }
+
+  async armNoSendExpiry(...args: any[]): Promise<any> {
+    return this.callMethod('armNoSendExpiry', ...args);
+  }
+
   // ===== WalletStorageReader Methods =====
 
   async findCertificatesAuth(...args: any[]): Promise<any> {

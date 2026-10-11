@@ -2,25 +2,18 @@
  * Real ports for the Troubleshoot wallet check. Each port checks one area and
  * repairs it automatically. Dependencies are injected so the logic is testable.
  */
-import { Wallet } from '@bsv/wallet-toolbox-client'
 import { DEFAULT_MESSAGE_BOX_URL } from '../../networkConfig'
-import { activeHttpBridgeRequests } from '../httpBridgeSession'
 import type { WalletService } from '../WalletService'
 import { getWalletBackupTime } from './backupMarker'
 import type { StepOutcome, WalletCheckPorts } from './runWalletCheck'
 
 export interface PeerPayView { client: { listIncomingPayments(): Promise<Array<{ token: { amount: number } }>>; acceptPayment(p: any): Promise<unknown> } | null; isHostAnointed: boolean }
-export interface ActionsWallet {
-  listActions(args: { labels: string[]; limit: number; offset?: number }): Promise<{ actions: Array<{ txid: string; status: string }> }>
-  abortAction(args: { reference: string }): Promise<unknown>
-}
 export interface WalletClassLike {
   listFailedActions(args: { labels: string[]; limit: number; offset?: number }, unfail?: boolean): Promise<{ totalActions: number }>
-  listNoSendActions(args: { labels: string[]; limit: number; offset?: number }, abort?: boolean): Promise<{ totalActions: number }>
   reviewSpendableOutputs(all?: boolean, release?: boolean): Promise<{ totalOutputs: number }>
 }
 export interface WalletCheckDeps {
-  wallet: ActionsWallet & { getHeight(args: object): Promise<{ height: number }> }
+  wallet: { getHeight(args: object): Promise<{ height: number }> }
   walletClass: WalletClassLike | null // null in remote-storage mode
   peerPay: () => PeerPayView // read live: setting the URL creates the client
   useMessageBox: () => boolean
@@ -32,7 +25,7 @@ export interface WalletCheckDeps {
   fetch: (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number }>
   sleep: (ms: number) => Promise<void>
   storage: Pick<Storage, 'getItem'>
-  appRequestsInFlight: () => number
+  hasLocalAdvertisement: () => Promise<boolean> // wallet's own overlay advertisement exists
 }
 
 const NO_REMOTE: StepOutcome = { status: 'skipped', message: 'Not available with remote storage' }
@@ -82,16 +75,6 @@ export function createWalletCheckPorts(deps: WalletCheckDeps): WalletCheckPorts 
       const fixed: string[] = []
       const failed = (await wc.listFailedActions({ labels: [], limit: 1000 }, true)).totalActions
       if (failed > 0) fixed.push(`Retried ${failed} failed transaction(s)`)
-      const nosend = (await wc.listNoSendActions({ labels: [], limit: 1000 }, true)).totalActions
-      if (nosend > 0) fixed.push(`Cancelled ${nosend} unsent transaction(s)`)
-      if (deps.appRequestsInFlight() === 0) {
-        const { actions } = await deps.wallet.listActions({ labels: [], limit: 10000 })
-        let cancelled = 0
-        for (const a of actions.filter(x => x.status === 'unsigned' || x.status === 'unprocessed')) {
-          try { await deps.wallet.abortAction({ reference: a.txid }); cancelled++ } catch { /* ignore */ }
-        }
-        if (cancelled > 0) fixed.push(`Cancelled ${cancelled} stuck transaction(s)`)
-      }
       return { status: 'ok', message: fixed.length ? 'Fixed transactions' : 'Transactions are fine', fixed }
     },
 
@@ -109,7 +92,8 @@ export function createWalletCheckPorts(deps: WalletCheckDeps): WalletCheckPorts 
         fixed.push('Set up your message box')
       }
       if (!deps.peerPay().client) return { status: 'error', message: 'Message box could not start. Run again in a moment.', fixed }
-      if (!deps.peerPay().isHostAnointed) {
+      // queryAdvertisements swallows overlay errors, so an outage looks like "not anointed"; trust the local basket first
+      if (!deps.peerPay().isHostAnointed && !(await deps.hasLocalAdvertisement())) {
         try {
           await deps.anoint()
         } catch (e) {
@@ -150,7 +134,7 @@ export function walletCheckDepsFromService(svc: WalletService, refreshAppWallet:
   if (!wallet) throw new Error('The wallet is not ready yet. Try again in a moment.')
   return {
     wallet,
-    walletClass: wallet instanceof Wallet ? (wallet as any) : null,
+    walletClass: svc.useRemoteStorage ? null : wallet,
     peerPay: () => { const s = svc.peerPay.getSnapshot(); return { client: s.peerPayClient as any, isHostAnointed: s.isHostAnointed } },
     useMessageBox: () => svc.useMessageBox,
     setMessageBoxUrl: url => svc.updateMessageBoxUrl(url),
@@ -161,6 +145,6 @@ export function walletCheckDepsFromService(svc: WalletService, refreshAppWallet:
     fetch: (url, init) => window.fetch(url, init),
     sleep: ms => new Promise(r => setTimeout(r, ms)),
     storage: window.localStorage,
-    appRequestsInFlight: activeHttpBridgeRequests,
+    hasLocalAdvertisement: async () => ((await wallet.listOutputs({ basket: 'overlay advertisements', limit: 10 })).outputs ?? []).some((o: any) => o.spendable !== false),
   }
 }

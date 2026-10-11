@@ -3,10 +3,9 @@ import { createWalletCheckPorts, type WalletCheckDeps } from '../src/lib/service
 
 function deps(over: Partial<WalletCheckDeps> = {}): WalletCheckDeps {
   return {
-    wallet: { getHeight: vi.fn(async () => ({ height: 900000 })), listActions: vi.fn(async () => ({ actions: [] })), abortAction: vi.fn(async () => ({})) },
+    wallet: { getHeight: vi.fn(async () => ({ height: 900000 })) },
     walletClass: {
       listFailedActions: vi.fn(async () => ({ totalActions: 0 })),
-      listNoSendActions: vi.fn(async () => ({ totalActions: 0 })),
       reviewSpendableOutputs: vi.fn(async () => ({ totalOutputs: 0 })),
     },
     peerPay: () => ({ client: { listIncomingPayments: vi.fn(async () => []), acceptPayment: vi.fn(async () => ({})) }, isHostAnointed: true }),
@@ -19,7 +18,7 @@ function deps(over: Partial<WalletCheckDeps> = {}): WalletCheckDeps {
     fetch: vi.fn(async () => ({ ok: true, status: 200 })),
     sleep: vi.fn(async () => {}),
     storage: { getItem: () => '2026-10-10T00:00:00.000Z' },
-    appRequestsInFlight: () => 0,
+    hasLocalAdvertisement: vi.fn(async () => false),
     ...over,
   }
 }
@@ -69,21 +68,17 @@ describe('connections', () => {
 })
 
 describe('transactions', () => {
-  it('retries failed, cancels nosend and stuck, when no app is mid-request', async () => {
-    const d = deps({
-      walletClass: { ...deps().walletClass!, listFailedActions: vi.fn(async () => ({ totalActions: 2 })), listNoSendActions: vi.fn(async () => ({ totalActions: 1 })) },
-      wallet: { ...deps().wallet, listActions: vi.fn(async () => ({ actions: [{ txid: 'a', status: 'unsigned' }, { txid: 'b', status: 'completed' }, { txid: 'c', status: 'unprocessed' }] })) },
-    })
+  it('retries failed transactions', async () => {
+    const d = deps({ walletClass: { ...deps().walletClass!, listFailedActions: vi.fn(async () => ({ totalActions: 2 })) } })
     const out = await createWalletCheckPorts(d).transactions()
     expect(d.walletClass!.listFailedActions).toHaveBeenCalledWith({ labels: [], limit: 1000 }, true)
-    expect(d.walletClass!.listNoSendActions).toHaveBeenCalledWith({ labels: [], limit: 1000 }, true)
-    expect(d.wallet.abortAction).toHaveBeenCalledTimes(2)
-    expect(out.fixed).toEqual(['Retried 2 failed transaction(s)', 'Cancelled 1 unsent transaction(s)', 'Cancelled 2 stuck transaction(s)'])
+    expect(out.fixed).toEqual(['Retried 2 failed transaction(s)'])
   })
-  it('does not cancel unsigned transactions while an app is mid-request', async () => {
-    const d = deps({ appRequestsInFlight: () => 1, wallet: { ...deps().wallet, listActions: vi.fn(async () => ({ actions: [{ txid: 'a', status: 'unsigned' }] })) } })
-    await createWalletCheckPorts(d).transactions()
-    expect(d.wallet.abortAction).not.toHaveBeenCalled()
+  it('reports fine when nothing needs fixing', async () => {
+    const out = await createWalletCheckPorts(deps()).transactions()
+    expect(out.status).toBe('ok')
+    expect(out.message).toBe('Transactions are fine')
+    expect(out.fixed ?? []).toEqual([])
   })
   it('is skipped with remote storage', async () => {
     const out = await createWalletCheckPorts(deps({ walletClass: null })).transactions()
@@ -119,6 +114,15 @@ describe('messageBox', () => {
     const d = deps({ peerPay: () => ({ client: {} as any, isHostAnointed: false }), anoint: vi.fn(async () => { throw new Error('Insufficient funds in the available inputs') }) })
     const out = await createWalletCheckPorts(d).messageBox()
     expect(out).toMatchObject({ status: 'attention', action: { label: 'Get paid', to: '/dashboard/payments?tab=receive' } })
+  })
+})
+
+describe('messageBox advertisement', () => {
+  it('does not anoint when a local advertisement already exists', async () => {
+    const d = deps({ peerPay: () => ({ client: {} as any, isHostAnointed: false }), hasLocalAdvertisement: vi.fn(async () => true) })
+    const out = await createWalletCheckPorts(d).messageBox()
+    expect(out.status).toBe('ok')
+    expect(d.anoint).not.toHaveBeenCalled()
   })
 })
 

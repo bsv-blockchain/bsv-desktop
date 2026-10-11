@@ -102,6 +102,33 @@ describe('MnemonicProfileWalletManager', () => {
     await expect(manager.addProfile('default')).rejects.toThrow()
   })
 
+  test('renameProfile renames any profile, Default included, without rebuilding', async () => {
+    const { manager, builder } = makeManager()
+    await manager.unlockActiveProfile()
+    await manager.addProfile('Work')
+    await manager.renameProfile(Utils.toArray(BSV_WALLET_VECTORS[0].identityKey, 'hex'), '  Personal  ')
+    await manager.renameProfile(Utils.toArray(BSV_WALLET_VECTORS[1].identityKey, 'hex'), 'Business')
+    expect(manager.listProfiles().map(p => p.name)).toEqual(['Personal', 'Business'])
+    expect(manager.profileState.profiles.map(p => p.index)).toEqual([0, 1])
+    expect(builder).toHaveBeenCalledTimes(1)
+    // The freed name is available again, and the renamed state survives a save and reload.
+    await manager.addProfile('Default')
+    expect(parseMnemonicProfiles(JSON.parse(JSON.stringify(manager.profileState))).profiles.map(p => p.name)).toEqual(['Personal', 'Business', 'Default'])
+  })
+
+  test('renameProfile rejects empty, duplicate or unknown targets', async () => {
+    const { manager } = makeManager()
+    await manager.unlockActiveProfile()
+    await manager.addProfile('Work')
+    const defaultId = Utils.toArray(BSV_WALLET_VECTORS[0].identityKey, 'hex')
+    await expect(manager.renameProfile(defaultId, ' ')).rejects.toThrow()
+    await expect(manager.renameProfile(defaultId, 'work')).rejects.toThrow('already in use')
+    await expect(manager.renameProfile([1, 2, 3], 'Other')).rejects.toThrow('Profile not found')
+    // Changing only the case of its own name is fine.
+    await manager.renameProfile(defaultId, 'DEFAULT')
+    expect(manager.listProfiles()[0].name).toBe('DEFAULT')
+  })
+
   test('switchProfile rebuilds the wallet with that profile\'s keys', async () => {
     const { manager, built } = makeManager()
     await manager.unlockActiveProfile()

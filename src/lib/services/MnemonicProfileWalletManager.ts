@@ -8,7 +8,8 @@
  * and app permissions; the phrase and its backups are shared.
  *
  * The manager exposes the same `listProfiles` / `addProfile` / `switchProfile`
- * surface as `CWIStyleWalletManager`, so the existing profile dialog drives it.
+ * surface as `CWIStyleWalletManager`, so the existing profile dialog drives it,
+ * plus `renameProfile` (any profile, including the default one).
  * The profile list is not secret (indices, names, identity keys) and is saved in
  * the snapshot config by WalletService.
  *
@@ -134,16 +135,21 @@ export class MnemonicProfileWalletManager extends SimpleWalletManager {
 
   /** Append the next profile. Does not switch to it, like CWIStyleWalletManager. */
   async addProfile(name: string): Promise<number[]> {
-    const trimmed = (name || '').trim().slice(0, MAX_PROFILE_NAME_LENGTH)
-    if (!trimmed) throw new Error('Enter a profile name.')
-    if (this._profiles.profiles.some(p => p.name.toLowerCase() === trimmed.toLowerCase()) || trimmed.toLowerCase() === DEFAULT_PROFILE_NAME.toLowerCase()) {
-      throw new Error(`Profile name "${trimmed}" is already in use.`)
-    }
+    const trimmed = this.checkName(name)
     const index = this._profiles.profiles.length
     if (index >= MAX_MNEMONIC_PROFILES) throw new Error('No more profiles can be added.')
     const { identityKey } = this.deriveProfile(index)
     this._profiles = { ...this._profiles, profiles: [...this._profiles.profiles, { index, name: trimmed, identityKey }] }
     return Utils.toArray(identityKey, 'hex')
+  }
+
+  /** Names are display only; the index (derivation path) is what identifies a profile. */
+  async renameProfile(profileId: number[], name: string): Promise<void> {
+    const targetKey = Utils.toHex(profileId)
+    const target = this._profiles.profiles.find(record => this.identityKeyOf(record) === targetKey)
+    if (!target) throw new Error('Profile not found.')
+    const trimmed = this.checkName(name, target.index)
+    this._profiles = { ...this._profiles, profiles: this._profiles.profiles.map(p => p.index === target.index ? { ...p, name: trimmed } : p) }
   }
 
   /** Rebuild the wallet with another profile's keys. A failure reopens the previous profile. */
@@ -167,6 +173,15 @@ export class MnemonicProfileWalletManager extends SimpleWalletManager {
       }
       throw error
     }
+  }
+
+  private checkName(name: string, exceptIndex?: number): string {
+    const trimmed = (name || '').trim().slice(0, MAX_PROFILE_NAME_LENGTH)
+    if (!trimmed) throw new Error('Enter a profile name.')
+    if (this._profiles.profiles.some(p => p.index !== exceptIndex && p.name.toLowerCase() === trimmed.toLowerCase())) {
+      throw new Error(`Profile name "${trimmed}" is already in use.`)
+    }
+    return trimmed
   }
 
   private identityKeyOf(record: MnemonicProfileRecord): string {

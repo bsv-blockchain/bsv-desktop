@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useState } from 'react'
 import { NavLink, useHistory } from 'react-router-dom'
-import { AccountBalanceWalletOutlined, SwapHorizRounded, ReceiptLongOutlined, AppsRounded, SettingsOutlined, UnfoldMoreRounded, AddRounded, CheckRounded, LogoutRounded, CloseRounded } from '@mui/icons-material'
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, TextField, Typography, alpha, useMediaQuery } from '@mui/material'
+import { AccountBalanceWalletOutlined, SwapHorizRounded, ReceiptLongOutlined, AppsRounded, SettingsOutlined, UnfoldMoreRounded, AddRounded, CheckRounded, LogoutRounded, CloseRounded, EditOutlined } from '@mui/icons-material'
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, IconButton, List, ListItem, ListItemButton, ListItemIcon, ListItemText, TextField, Typography, alpha, useMediaQuery } from '@mui/material'
 import { toast } from 'react-toastify'
 import { WalletContext } from '../WalletContext'
 import { UserContext } from '../UserContext'
@@ -10,6 +10,7 @@ import type { WalletProfile } from '../types/WalletProfile'
 import * as secrets from '../services/secrets'
 import { getWalletService } from '../hooks/useWalletService'
 import RemoveWalletDialog from '../components/RemoveWalletDialog'
+import { MnemonicProfileWalletManager } from '../services/MnemonicProfileWalletManager'
 import { activeUserWalletOperations, activeHttpBridgeRequests, beginUserWalletOperation, isHttpBridgePaused, setHttpBridgePaused } from '../services/httpBridgeSession'
 
 export const SIDEBAR_WIDTH = 248
@@ -31,10 +32,14 @@ export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; set
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
+  const [renaming, setRenaming] = useState<{ key: string; id: number[]; name: string } | null>(null)
   const supportsProfiles = typeof managers.walletManager?.listProfiles === 'function'
+  // Phrase wallets keep profile names in the snapshot config, so any of them, Default included, can be renamed.
+  const walletManager: unknown = managers.walletManager
+  const phraseProfiles = walletManager instanceof MnemonicProfileWalletManager ? walletManager : null
 
   useEffect(() => {
-    if (!profileOpen) return
+    if (!profileOpen) { setRenaming(null); return }
     let cancelled = false
     Promise.resolve(supportsProfiles ? managers.walletManager.listProfiles() : activeProfile ? [activeProfile] : []).then(result => {
       if (!cancelled) setProfiles(result || [])
@@ -101,6 +106,22 @@ export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; set
     }
     finally { if (release) { if (bridgeReady) setHttpBridgePaused(false); release() }; setBusy(false) }
   }
+  const renameProfile = async () => {
+    if (!phraseProfiles || !renaming?.name.trim() || busy) return
+    setBusy(true)
+    try {
+      await phraseProfiles.renameProfile(renaming.id, renaming.name)
+      await secrets.persistSnapshot(saveEnhancedSnapshot())
+      const updated: WalletProfile[] = await managers.walletManager.listProfiles()
+      setProfiles(updated)
+      const renamed = updated.find(p => p.identityKey === activeProfile?.identityKey)
+      if (renamed && renamed.name !== activeProfile.name) setActiveProfile({ ...activeProfile, name: renamed.name })
+      setRenaming(null)
+    } catch (error) {
+      toast.error(error.message || 'Could not rename the profile.')
+    }
+    finally { setBusy(false) }
+  }
   const lockWallet = async () => {
     setBusy(true)
     let release: (() => void) | undefined
@@ -144,7 +165,20 @@ export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; set
     <Dialog open={profileOpen} onClose={() => !busy && setProfileOpen(false)} fullWidth maxWidth="xs">
       <DialogTitle>Wallet profiles</DialogTitle><DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{supportsProfiles ? 'Use a separate identity for each part of your life.' : 'Your wallet identity is protected on this device.'}</Typography>
-        <List>{profiles.map(profile => <ListItemButton key={profile.id.join(',')} disabled={busy || profile.active} onClick={() => switchProfile(profile)} sx={{ borderRadius: 2 }}><ListItemText primary={profile.name} secondary={`${profile.identityKey?.slice(0, 16)}…`} />{profile.active && <CheckRounded color="primary" />}</ListItemButton>)}</List>
+        <List>{profiles.map(profile => {
+          const key = profile.id.join(',')
+          if (renaming?.key === key) return <ListItem key={key} disablePadding sx={{ py: 0.5 }}>
+            <Box component="form" onSubmit={event => { event.preventDefault(); void renameProfile() }} sx={{ display: 'flex', gap: 0.5, alignItems: 'center', width: '100%' }}>
+              {/* Escape cancels the rename instead of closing the dialog. */}
+              <TextField size="small" label="Profile name" value={renaming.name} onChange={event => setRenaming({ ...renaming, name: event.target.value })} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setRenaming(null) } }} autoFocus fullWidth disabled={busy} inputProps={{ maxLength: 60 }} />
+              <IconButton type="submit" aria-label="Save profile name" disabled={!renaming.name.trim() || busy}><CheckRounded /></IconButton>
+              <IconButton aria-label="Cancel renaming" onClick={() => setRenaming(null)} disabled={busy}><CloseRounded /></IconButton>
+            </Box>
+          </ListItem>
+          return <ListItem key={key} disablePadding secondaryAction={phraseProfiles && <IconButton edge="end" aria-label={`Rename ${profile.name}`} disabled={busy} onClick={() => setRenaming({ key, id: profile.id, name: profile.name })}><EditOutlined fontSize="small" /></IconButton>}>
+            <ListItemButton disabled={busy || profile.active} onClick={() => switchProfile(profile)} sx={{ borderRadius: 2 }}><ListItemText primary={profile.name} secondary={`${profile.identityKey?.slice(0, 16)}…`} />{profile.active && <CheckRounded color="primary" />}</ListItemButton>
+          </ListItem>
+        })}</List>
         {supportsProfiles && loginType === 'mnemonic' && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Every profile comes from your recovery phrase. On a new device, add profiles in the same order to bring them back.</Typography>}
         {supportsProfiles && <Box component="form" onSubmit={event => { event.preventDefault(); void createProfile() }} sx={{ display: 'flex', gap: 1, mt: 2 }}><TextField size="small" label="New profile name" value={name} onChange={event => setName(event.target.value)} fullWidth inputProps={{ maxLength: 60 }} /><IconButton type="submit" aria-label="Create profile" disabled={!name.trim() || busy}><AddRounded /></IconButton></Box>}
       </DialogContent><DialogActions><Button startIcon={<LogoutRounded />} onClick={lockWallet} disabled={busy}>Lock wallet</Button><Button color="error" onClick={() => { setProfileOpen(false); setRemoveOpen(true) }} disabled={busy} sx={{ mr: 'auto' }}>Remove wallet…</Button><Button onClick={() => setProfileOpen(false)} disabled={busy}>Done</Button></DialogActions>

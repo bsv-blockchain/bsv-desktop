@@ -176,11 +176,13 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
 
     // Start monitoring tasks (runs continuous loop)
     console.log(`[Monitor Worker] Starting tasks...`);
-    await monitor.startTasks();
+    const running = monitor.startTasks();
     console.log(`[Monitor Worker] Monitor started successfully for ${key}`);
 
-    // Notify parent process
+    // Notify parent process now, not when startTasks() returns at stop: the
+    // parent offers BRC-177 noSend expiry only while this monitor is running.
     tellParent({ type: 'monitor-started', key });
+    await running;
   } catch (error: any) {
     console.error(`[Monitor Worker] Failed to start:`, error);
     console.error(`[Monitor Worker] Stack:`, error.stack);

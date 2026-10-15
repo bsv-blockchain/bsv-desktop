@@ -199,6 +199,8 @@ Worker Process
   ↓ exit
 ```
 
+**BRC-177 gate**: `StorageManager` offers BRC-177 noSend expiry (`brc177NoSendExpiry` in `getCapabilities`, and the `prepareNoSendExpiry`, `activateNoSendExpiry` and `armNoSendExpiry` writer calls) only while that wallet's worker has reported `monitor-started` and has not since been asked to stop, exited or emitted a process `error`: the worker's Monitor is what broadcasts the reclaim at the deadline.
+
 **Network services** (`electron/arcade.ts`, `electron/arcadeSse.ts`): main process and worker both build Services with `createArcadeServices(chain, identityKey)` — Arcade primary with callback token `identityKey.substring(0, 32)` (same as bsv-wallet), bsv-wallet's fallback hosts after it. The worker enables `TaskArcadeSSE` (`configureArcadeSSE`) and forwards status changes as `tx-status-changed` → main → renderer `wallet:tx-status-changed` → window `balance-changed` / `tx-status-changed`.
 
 **Why Separate Process**:

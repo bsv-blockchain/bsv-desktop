@@ -18,7 +18,7 @@
  * the 429. The rate is deliberately below WoC's ceiling to leave headroom for
  * wallet-toolbox's concurrent (unthrottled) traffic.
  */
-class RateLimitedFetch {
+export class RateLimitedFetch {
   private queue: Array<{
     url: string
     options?: RequestInit
@@ -29,11 +29,13 @@ class RateLimitedFetch {
   private requestsPerSecond: number
   private minInterval: number
   private maxRetries: number
+  private timeoutMs: number
 
-  constructor(requestsPerSecond: number = 1.5, maxRetries: number = 6) {
+  constructor(requestsPerSecond: number = 1.5, maxRetries: number = 6, timeoutMs: number = 20_000) {
     this.requestsPerSecond = requestsPerSecond
     this.minInterval = 1000 / requestsPerSecond
     this.maxRetries = maxRetries
+    this.timeoutMs = timeoutMs
   }
 
   async fetch(url: string, options?: RequestInit): Promise<Response> {
@@ -45,9 +47,19 @@ class RateLimitedFetch {
     })
   }
 
+  /**
+   * One request with a time limit. Requests run one at a time, so a single
+   * stalled request would otherwise block every later caller indefinitely.
+   */
+  private fetchOnce(url: string, options?: RequestInit): Promise<Response> {
+    const timeout = AbortSignal.timeout(this.timeoutMs)
+    const signal = options?.signal ? AbortSignal.any([options.signal, timeout]) : timeout
+    return fetch(url, { ...options, signal })
+  }
+
   private async fetchWithRetry(url: string, options?: RequestInit): Promise<Response> {
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
-      const res = await fetch(url, options)
+      const res = await this.fetchOnce(url, options)
       if (res.status !== 429) return res
       if (attempt === this.maxRetries) return res
       const retryAfter = parseInt(res.headers.get('Retry-After') ?? '', 10)
@@ -59,7 +71,7 @@ class RateLimitedFetch {
       const backoff = base + Math.floor(base * 0.25 * Math.random())
       await new Promise((r) => setTimeout(r, backoff))
     }
-    return fetch(url, options)
+    return this.fetchOnce(url, options)
   }
 
   private async processQueue() {

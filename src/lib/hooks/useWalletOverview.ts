@@ -1,6 +1,7 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { WalletContext } from '../WalletContext'
-import { readWalletBalance, readRecentActions } from '../utils/walletOverview'
+import { readRecentActions } from '../utils/walletOverview'
+import { loadAccountBalance } from '../utils/loadAccountBalance'
 import type { WalletAction } from '@bsv/sdk'
 
 export function useWalletOverview(limit = 30) {
@@ -18,7 +19,7 @@ export function useWalletOverview(limit = 30) {
     setLoading(true)
     try {
       const [amount, recent] = await Promise.all([
-        readWalletBalance(wallet, adminOriginator),
+        loadAccountBalance(wallet, adminOriginator),
         readRecentActions(wallet, adminOriginator, limit),
       ])
       if (current !== generation.current) return

@@ -1,7 +1,7 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { Alert, Box, Button, Checkbox, CircularProgress, Container, FormControlLabel, Link, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { ArrowBack, ArrowForward, ShieldOutlined, ContentCopy, KeyOutlined, QrCodeScannerOutlined } from '@mui/icons-material'
-import { HD, Mnemonic, Utils } from '@bsv/sdk'
+import { Utils } from '@bsv/sdk'
 import { PrivilegedKeyManager } from '@bsv/wallet-toolbox-client'
 import { Link as RouterLink } from 'react-router-dom'
 import { WalletContext, createDisabledPrivilegedManager } from '../../WalletContext'
@@ -16,6 +16,7 @@ import AppLogo from '../../components/AppLogo'
 import { getWalletService } from '../../hooks/useWalletService'
 import QrScanner from '../Dashboard/Payments/QrScanner'
 import { recoveryOptionsFor } from '../Recovery/recoveryOptions'
+import { derivePresentationKeyFromMnemonic } from '../../utils/keyMaterial'
 
 type EntryMode = 'welcome' | 'create' | 'import'
 
@@ -289,7 +290,7 @@ function LegacyUnlock({ onReady }: { onReady: () => void }) {
       if (!manager) throw new Error('The wallet is still getting ready.')
       if (step === 'key') {
         if (wab) { await manager.startAuth({ phoneNumber: phone }); setStep('code') }
-        else { await manager.providePresentationKey(HD.fromSeed(Mnemonic.fromString(phrase.trim()).toSeed()).derive("m/0'/0/0").privKey.toArray()); setStep('password') }
+        else { await manager.providePresentationKey(derivePresentationKeyFromMnemonic(phrase)); setStep('password') }
       } else if (step === 'code') { await manager.completeAuth({ phoneNumber: phone, otp: code }); setStep('password') }
       else {
         await manager.providePassword(password)

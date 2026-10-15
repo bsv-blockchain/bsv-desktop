@@ -168,7 +168,7 @@ export function configureArcadeSSE(options: MonitorOptions, wiring: ArcadeSseWir
  * through a client nothing here configured. (bsv-wallet passes its services too.)
  */
 export function createArcadeMonitorOptions(
-  chain: 'main' | 'test' | 'ttn',
+  chain: 'main' | 'test' | 'ttn' | 'tstn',
   storageManager: WalletStorageManager,
   services: Services,
   wiring: ArcadeSseWiring

@@ -109,6 +109,18 @@ describe('onWalletReady', () => {
     expect(_test_getCurrentWallet()).toBe(wallet2)
   })
 
+  it('does not let a superseded refresh clear a newer wallet registration', async () => {
+    const previous = makeMockWallet()
+    const current = makeMockWallet()
+    await onWalletReady(previous)
+    await onWalletReady(current)
+    const { clearWalletForHttpRoute } = await import('../src/onWalletReady')
+    clearWalletForHttpRoute(previous)
+    expect(_test_getCurrentWallet()).toBe(current)
+    clearWalletForHttpRoute(current)
+    expect(_test_getCurrentWallet()).toBeUndefined()
+  })
+
   it('handler uses latest wallet ref, not stale one', async () => {
     const wallet1 = makeMockWallet({
       getVersion: vi.fn().mockResolvedValue({ version: '1.0.0' }),

@@ -13,12 +13,12 @@ export default function AuthRedirector() {
 
     useEffect(() => {
         if (
-            managers?.walletManager?.authenticated && snapshotLoaded
+            managers?.walletManager?.authenticated && managers?.permissionsManager && snapshotLoaded
         ) {
-            history.push('/dashboard/app-catalog')
+            if (!history.location.pathname.startsWith('/dashboard')) history.replace('/dashboard')
         }
         setPageLoaded(true)
-    }, [managers?.walletManager?.authenticated, snapshotLoaded, history])
+    }, [managers?.walletManager?.authenticated, managers?.permissionsManager, snapshotLoaded, history])
 
     return null
 }

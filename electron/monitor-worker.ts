@@ -32,12 +32,13 @@ function getCreateKnex() {
 
 interface MonitorConfig {
   identityKey: string;
-  chain: 'main' | 'test' | 'ttn';
+  chain: 'main' | 'test' | 'ttn' | 'tstn';
   databasePath: string;
   /** Resolved by the parent process to keep this worker on its startup snapshot. */
   feeRate?: number;
   /** Where the Arcade SSE resume cursor is kept; chosen by the parent process. */
   sseCursorPath?: string;
+  serviceSettings?: import('./networkConfig.js').NetworkSettings;
 }
 
 let monitor: Monitor | null = null;
@@ -75,13 +76,11 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
   try {
     const [
       { StorageKnex, Monitor, WalletStorageManager },
-      { arcadeUrl },
       { arcadeCallbackToken, createArcadeServices },
       { arcadeSseCursorPath, createArcadeMonitorOptions, startArcadeSsePump, tolerateTransientArcadeRejections },
       { DEFAULT_MONITOR_FEE_RATE, getConfiguredFeeRate }
     ] = await Promise.all([
       import('@bsv/wallet-toolbox'),
-      import('./endpoints.js'),
       import('./arcade.js'),
       import('./arcadeSse.js'),
       import('./feeSettings.js')
@@ -134,8 +133,8 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     // merkle proofs, so it needs the same Arcade-first Services as the main
     // process — and the same callback token, or it would subscribe to a stream
     // the main process's broadcasts never report into.
-    const services = createArcadeServices(chain, identityKey);
-    console.log(`[Monitor Worker] Broadcasting, proofs and SSE via Arcade at ${arcadeUrl(chain)}`);
+    const services = createArcadeServices(chain, identityKey, config.serviceSettings);
+    console.log(`[Monitor Worker] Broadcasting, proofs and SSE via Arcade at ${services.options.arcadeUrl}`);
 
     // Set services on storage
     const storageAny = storage as any;

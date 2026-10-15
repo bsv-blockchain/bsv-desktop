@@ -16,6 +16,7 @@ export type PermissionPromptProps = {
 
 export type PermissionModuleFactoryArgs = {
   wallet: WalletInterface
+  adminOriginator: string
   promptHandler?: PermissionPromptHandler
 }
 

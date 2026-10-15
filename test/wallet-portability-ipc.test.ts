@@ -56,10 +56,17 @@ describe('wallet data IPC boundary', () => {
   it('routes every storage IPC handler through the storage access fence', async () => {
     const { readFileSync } = await import('node:fs')
     const main = readFileSync(new URL('../electron/main.ts', import.meta.url), 'utf8')
-    const handlers = [...main.matchAll(/ipcMain\.handle\('(storage:[\w-]+|stas:query)'[\s\S]*?\n\}\);/g)]
-    expect(handlers.map(match => match[1]).sort()).toEqual(['stas:query', 'storage:call-method', 'storage:initialize-services', 'storage:is-available', 'storage:make-available'])
+    const handlers = [...main.matchAll(/ipcMain\.handle\('(storage:[\w-]+)'[\s\S]*?\n\}\);/g)]
+    expect(handlers.map(match => match[1]).sort()).toEqual(['storage:call-method', 'storage:initialize-services', 'storage:is-available', 'storage:make-available', 'storage:release-network'])
     for (const [source, channel] of handlers) {
-      expect(source, channel).toMatch(/manager\.request\(identityKey, chain, \(\) => manager\./)
+      if (channel === 'storage:release-network') {
+        // Release acquires exclusive access and drains existing shared calls.
+        // Wrapping it in request() would make it wait on its own shared call.
+        expect(source, channel).toMatch(/await manager\.releaseNetwork\(identityKey, chain\)/)
+        expect(source, channel).not.toMatch(/manager\.request\(/)
+      } else {
+        expect(source, channel).toMatch(/manager\.request\(identityKey, chain, \(\) => manager\./)
+      }
     }
   })
 

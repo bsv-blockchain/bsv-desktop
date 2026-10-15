@@ -1,6 +1,7 @@
 
 import { Services, ChaintracksServiceClient } from '@bsv/wallet-toolbox-client'
-import { arcadeUrl, chaintracksUrl, type EndpointChain } from '../constants/endpoints'
+import type { EndpointChain } from '../constants/endpoints'
+import { normalizeNetworkSettings, type NetworkSettings } from '../networkConfig'
 
 const IDENTITY_KEY = /^0[23][0-9a-fA-F]{64}$/
 
@@ -29,14 +30,19 @@ export function arcadeCallbackToken(identityKey: string): string {
  * Pass the wallet's identity key so that anything this instance does send to
  * Arcade reports into the wallet's SSE stream.
  */
-export function createServices(chain: EndpointChain, identityKey?: string): Services {
+export function createServices(chain: EndpointChain, identityKey?: string, settings?: Partial<NetworkSettings>): Services {
+  const resolved = normalizeNetworkSettings(chain, settings || {})
   const options = Services.createDefaultOptions(chain)
-  options.chaintracks = new ChaintracksServiceClient(chain, chaintracksUrl(chain))
-  options.arcadeUrl = arcadeUrl(chain)
+  options.chaintracks = new ChaintracksServiceClient(chain, resolved.chaintracksUrl)
+  options.arcadeUrl = resolved.arcadeUrl
   options.arcadeConfig = {
     deploymentId: options.arcConfig?.deploymentId,
     callbackToken: identityKey ? arcadeCallbackToken(identityKey) : undefined,
     headers: { 'X-FullStatusUpdates': 'true' }
   }
-  return new Services(options)
+  const services = new Services(options)
+  // The toolbox keeps provider URLs on the instance. Always point address
+  // lookups at the selected chain's configured explorer.
+  if (resolved.whatsOnChainUrl) (services.whatsonchain as any).URL = resolved.whatsOnChainUrl
+  return services
 }

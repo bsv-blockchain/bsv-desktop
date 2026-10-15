@@ -3,7 +3,7 @@ import { sdk as WalletToolboxSdk } from '@bsv/wallet-toolbox-client'
 
 /** Wallet Storage returns the exact satoshi total without paging wallet outputs. */
 export async function loadAccountBalance(
-  wallet: WalletInterface,
+  wallet: Pick<WalletInterface, 'listOutputs'>,
   originator: string,
   basket = 'default'
 ): Promise<number> {

@@ -22,17 +22,18 @@
  */
 
 import type { sdk } from '@bsv/wallet-toolbox-client';
+import type { NetworkSettings } from './networkConfig';
 
 type WalletStorageProvider = sdk.WalletStorageProvider;
 type WalletServices = sdk.WalletServices;
 
 export class StorageElectronIPC implements WalletStorageProvider {
   private identityKey: string;
-  private chain: 'main' | 'test' | 'ttn';
+  private chain: 'main' | 'test' | 'ttn' | 'tstn';
   private services?: WalletServices;
   private settings?: any;
 
-  constructor(identityKey: string, chain: 'main' | 'test' | 'ttn') {
+  constructor(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', private networkSettings?: NetworkSettings) {
     this.identityKey = identityKey;
     this.chain = chain;
 
@@ -53,7 +54,8 @@ export class StorageElectronIPC implements WalletStorageProvider {
   async initializeBackendServices(): Promise<void> {
     const result = await window.electronAPI.storage.initializeServices(
       this.identityKey,
-      this.chain
+      this.chain,
+      this.networkSettings
     );
     if (!result.success) {
       throw new Error(`Failed to initialize services on backend: ${result.error}`);

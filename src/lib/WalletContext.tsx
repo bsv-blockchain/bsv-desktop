@@ -26,18 +26,18 @@ import { WalletInterface, Utils } from '@bsv/sdk'
 import { PeerPayClient, AdvertisementToken } from '@bsv/message-box-client'
 import 'react-toastify/dist/ReactToastify.css'
 
-import { ADMIN_ORIGINATOR, DEFAULT_SETTINGS } from './config'
+import { ADMIN_ORIGINATOR, DEFAULT_SETTINGS, MESSAGEBOX_HOST } from './config'
 import { UserContext } from './UserContext'
 import { useWalletService, getWalletService } from './hooks/useWalletService'
-import type { StasServices } from './services/WalletService'
 import { buildPermissionModuleRegistry } from './permissionModules/registry'
 import type { PermissionModuleDefinition, PermissionPromptHandler } from './permissionModules/types'
 import type { GroupPermissionRequest, CounterpartyPermissionRequest } from './types/GroupedPermissions'
 import type { WalletProfile } from './types/WalletProfile'
-import { setStasForHttpRoute, setStasTransferEnqueuer, setBsv21DiscoveryForHttpRoute, setPeerTokensForHttpRoute } from '../onWalletReady'
-import type { StasTransferRequest } from './types/StasTransferRequest'
+import { clearWalletForHttpRoute } from '../onWalletReady'
+import { getReadyAppWalletSnapshot, isAppWalletSnapshotCurrent } from './services/appWalletBridge'
 import { RequestInterceptorWallet } from './RequestInterceptorWallet'
 import { updateRecentApp } from './pages/Dashboard/Apps/getApps'
+import { defaultNetworkSettingsMap, type NetworkSettings, type NetworkSettingsMap, type WalletNetwork } from './networkConfig'
 
 // -----
 // Permission Configuration Types (preserved for backward compatibility)
@@ -83,7 +83,8 @@ export const DEFAULT_PERMISSIONS_CONFIG: PermissionsConfig = {
   seekPermissionWhenListingActionsByLabel: false,
   seekProtocolPermissionsForEncrypting: false,
   seekProtocolPermissionsForHMAC: false,
-  seekProtocolPermissionsForSigning: false,
+  // Signatures can authorise actions outside the wallet, so apps must ask first.
+  seekProtocolPermissionsForSigning: true,
   seekSpendingPermissions: true,
 }
 
@@ -91,7 +92,7 @@ export const DEFAULT_PERMISSIONS_CONFIG: PermissionsConfig = {
 // Context Types
 // -----
 
-export type LoginType = 'wab' | 'direct-key' | 'mnemonic-advanced'
+export type LoginType = 'wab' | 'direct-key' | 'mnemonic-advanced' | 'mnemonic'
 type ConfigStatus = 'editing' | 'configured' | 'initial'
 
 interface ManagerState {
@@ -105,7 +106,7 @@ export interface WABConfig {
   wabUrl: string;
   wabInfo: any;
   method: string;
-  network: 'main' | 'test' | 'ttn';
+  network: WalletNetwork;
   storageUrl: string;
   messageBoxUrl: string;
   loginType?: LoginType;
@@ -124,14 +125,15 @@ export interface WalletContextValue {
    * plumbing). App-originated requests must go through `managers.permissionsManager`.
    */
   wallet?: WalletInterface;
-  /** STAS BRC-42 services + discovery loop (Tasks 3/4). */
-  stas?: StasServices;
   settings: WalletSettings;
   updateSettings: (newSettings: WalletSettings) => Promise<void>;
   network: 'mainnet' | 'testnet';
   /** Raw selected chain. Distinguishes TeraTestNet ('ttn') from plain testnet,
    *  which `network` collapses to 'testnet'. Use for picking service endpoints. */
-  chain: 'main' | 'test' | 'ttn';
+  chain: WalletNetwork;
+  networkSettings: NetworkSettingsMap;
+  switchingNetwork: boolean;
+  applyNetworkSettings: (network: WalletNetwork, settings: NetworkSettings) => Promise<void>;
   activeProfile: WalletProfile | null;
   setActiveProfile: (profile: WalletProfile | null) => void;
   logout: () => void;
@@ -143,14 +145,6 @@ export interface WalletContextValue {
   certificateRequests: any[];
   protocolRequests: any[];
   spendingRequests: any[];
-  /**
-   * Pending STAS transfer authorization requests from external apps
-   * calling `POST /stas/transfer`. Surfaced by `StasTransferPermissionHandler`.
-   * Resolves the awaiting route handler when the user clicks Approve/Deny.
-   */
-  stasTransferRequests: StasTransferRequest[];
-  /** Resolves the head of `stasTransferRequests` and removes it from the queue. */
-  advanceStasTransferQueue: (approved: boolean) => void;
   groupPermissionRequests: GroupPermissionRequest[];
   counterpartyPermissionRequests: CounterpartyPermissionRequest[];
   startPactCooldownForCounterparty: (originator: string, counterparty: string) => void;
@@ -166,6 +160,8 @@ export interface WalletContextValue {
   advanceGroupQueue: () => void;
   advanceCounterpartyPermissionQueue: () => void;
   recentApps: any[];
+  /** Refresh the HTTP bridge from the current service snapshot after a profile change. */
+  refreshAppWallet: () => Promise<void>;
   finalizeConfig: (wabConfig: WABConfig) => boolean;
   setConfigStatus: (status: ConfigStatus) => void;
   configStatus: ConfigStatus;
@@ -184,6 +180,8 @@ export interface WalletContextValue {
   updateMessageBoxUrl: (url: string) => Promise<void>;
   removeMessageBoxUrl: () => Promise<void>;
   initializingBackendServices: boolean;
+  /** Wallet built and backend services started: app requests can be served. */
+  appWalletReady: boolean;
   permissionsConfig: PermissionsConfig;
   updatePermissionsConfig: (config: PermissionsConfig) => Promise<void>;
   peerPayClient: PeerPayClient | null;
@@ -202,6 +200,9 @@ export const WalletContext = createContext<WalletContextValue>({
   updateSettings: async () => {},
   network: 'mainnet',
   chain: 'main',
+  networkSettings: defaultNetworkSettingsMap(),
+  switchingNetwork: false,
+  applyNetworkSettings: async () => {},
   activeProfile: null,
   setActiveProfile: () => {},
   logout: () => {},
@@ -213,8 +214,6 @@ export const WalletContext = createContext<WalletContextValue>({
   certificateRequests: [],
   protocolRequests: [],
   spendingRequests: [],
-  stasTransferRequests: [],
-  advanceStasTransferQueue: () => {},
   groupPermissionRequests: [],
   counterpartyPermissionRequests: [],
   startPactCooldownForCounterparty: () => {},
@@ -224,21 +223,22 @@ export const WalletContext = createContext<WalletContextValue>({
   advanceSpendingQueue: () => {},
   setWalletFunder: () => {},
   setUseWab: () => {},
-  useWab: true,
-  loginType: 'wab',
+  useWab: false,
+  loginType: 'mnemonic',
   setLoginType: () => {},
   advanceGroupQueue: () => {},
   advanceCounterpartyPermissionQueue: () => {},
   recentApps: [],
+  refreshAppWallet: async () => {},
   finalizeConfig: () => false,
   setConfigStatus: () => {},
   configStatus: 'initial',
   wabUrl: '',
   setWabUrl: () => {},
   storageUrl: '',
-  messageBoxUrl: '',
+  messageBoxUrl: MESSAGEBOX_HOST,
   useRemoteStorage: false,
-  useMessageBox: false,
+  useMessageBox: true,
   saveEnhancedSnapshot: () => { throw new Error('Not initialized') },
   backupStorageUrls: [],
   addBackupStorageUrl: async () => {},
@@ -248,6 +248,7 @@ export const WalletContext = createContext<WalletContextValue>({
   updateMessageBoxUrl: async () => {},
   removeMessageBoxUrl: async () => {},
   initializingBackendServices: false,
+  appWalletReady: false,
   permissionsConfig: DEFAULT_PERMISSIONS_CONFIG,
   updatePermissionsConfig: async () => {},
   peerPayClient: null,
@@ -291,41 +292,54 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
     () => buildPermissionModuleRegistry(permissionModules),
     [permissionModules]
   )
-  const { registry: permissionModuleRegistry, getPermissionModuleById, normalizeEnabledPermissionModules } = permissionModuleRegistryState
+  const { registry: permissionModuleRegistry, getPermissionModuleById, normalizeEnabledPermissionModules, restoreEnabledPermissionModules } = permissionModuleRegistryState
 
   // ---- Permission prompt handlers (registered by module Prompt components) ----
   const permissionPromptHandlersRef = useRef<Map<string, PermissionPromptHandler>>(new Map())
 
+  // An app that fires several identical requests at once (e.g. parallel
+  // listOutputs calls before the first approval lands) would otherwise stack
+  // copies of the same prompt, so each approve click only revealed the next
+  // copy. While a prompt is unanswered, an identical request (same module,
+  // app and message) joins it and receives the same answer. Prompts that
+  // differ (e.g. spends with different amounts) are never merged.
   const registerPermissionPromptHandler = useCallback((id: string, handler: PermissionPromptHandler) => {
-    permissionPromptHandlersRef.current.set(id, handler)
+    const pending = new Map<string, Promise<boolean>>()
+    const deduped: PermissionPromptHandler = (app, message) => {
+      const key = `${app}\u0000${message}`
+      let prompt = pending.get(key)
+      if (prompt === undefined) {
+        prompt = handler(app, message).finally(() => { pending.delete(key) })
+        pending.set(key, prompt)
+      }
+      return prompt
+    }
+    permissionPromptHandlersRef.current.set(id, deduped)
   }, [])
   const unregisterPermissionPromptHandler = useCallback((id: string) => {
     permissionPromptHandlersRef.current.delete(id)
   }, [])
 
   // ---- Enabled permission modules (persisted to localStorage) ----
-  const [enabledPermissionModules, setEnabledPermissionModules] = useState<string[]>(() =>
-    normalizeEnabledPermissionModules()
-  )
-
-  const updateEnabledPermissionModules = useCallback((modules: string[]) => {
-    const normalized = normalizeEnabledPermissionModules(modules)
-    setEnabledPermissionModules(normalized)
+  const [enabledPermissionModules, setEnabledPermissionModules] = useState<string[]>(() => {
     try {
-      localStorage.setItem('enabledPermissionModules', JSON.stringify(normalized))
+      const saved = localStorage.getItem('enabledPermissionModules')
+      const known = localStorage.getItem('knownPermissionModules')
+      return restoreEnabledPermissionModules(saved ? JSON.parse(saved) : undefined, known ? JSON.parse(known) : undefined)
     } catch (error) {
-      console.warn('Failed to persist enabled permission modules:', error)
+      console.warn('Failed to load enabled permission modules:', error)
+      return normalizeEnabledPermissionModules()
     }
-  }, [normalizeEnabledPermissionModules])
+  })
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('enabledPermissionModules')
-      if (stored) updateEnabledPermissionModules(JSON.parse(stored))
+      localStorage.setItem('enabledPermissionModules', JSON.stringify(enabledPermissionModules))
+      localStorage.setItem('knownPermissionModules', JSON.stringify(permissionModuleRegistry.map(module => module.id)))
     } catch (error) {
-      console.warn('Failed to load enabled permission modules:', error)
+      console.warn('Failed to persist enabled permission modules:', error)
     }
-  }, [updateEnabledPermissionModules])
+  }, [enabledPermissionModules, permissionModuleRegistry])
 
   useEffect(() => {
     setEnabledPermissionModules(prev => normalizeEnabledPermissionModules(prev))
@@ -353,152 +367,60 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
   // ---- React adapter hook — provides all the context values ----
   const walletServiceValues = useWalletService()
 
-  // ---- STAS transfer authorization queue (Apps API permission prompts) ----
-  // External apps hitting POST /stas/transfer get gated by a user prompt
-  // here. enqueueStasTransferRequest is exposed to the HTTP route handler
-  // via setStasTransferEnqueuer (parallel to setStasForHttpRoute).
-  const [stasTransferRequests, setStasTransferRequests] = useState<StasTransferRequest[]>([])
 
-  const enqueueStasTransferRequest = useCallback(
-    (
-      args: Omit<StasTransferRequest, 'requestId' | 'resolve'>
-    ): Promise<boolean> => {
-      return new Promise<boolean>((resolve) => {
-        const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36)
-        setStasTransferRequests((q) => [
-          ...q,
-          { ...args, requestId, resolve },
-        ])
-      })
-    },
-    []
-  )
-
-  const advanceStasTransferQueue = useCallback((approved: boolean) => {
-    setStasTransferRequests((q) => {
-      if (q.length === 0) return q
-      const [head, ...rest] = q
-      try { head.resolve(approved) } catch { /* ignore */ }
-      return rest
-    })
+  // ---- HTTP bridge integration ----
+  const { managers, activeProfile, appWalletReady } = walletServiceValues
+  const recentOriginsRef = useRef<Map<string, number>>(new Map())
+  const profileStorageKey = activeProfile?.id ? Utils.toBase64(activeProfile.id) : ''
+  const updateRecentAppWrapper = useCallback(async (profileId: string, origin: string): Promise<void> => {
+    try {
+      const cacheKey = `${profileId}:${origin}`
+      const now = Date.now()
+      const lastProcessed = recentOriginsRef.current.get(cacheKey)
+      if (lastProcessed && now - lastProcessed < 5000) return
+      recentOriginsRef.current.set(cacheKey, now)
+      await updateRecentApp(profileId, origin)
+      window.dispatchEvent(new CustomEvent('recentAppsUpdated', { detail: { profileId, origin } }))
+    } catch (error) { console.debug('Error tracking recent app:', error) }
   }, [])
 
-  useEffect(() => {
-    setStasTransferEnqueuer(enqueueStasTransferRequest)
-    return () => setStasTransferEnqueuer(null)
-  }, [enqueueStasTransferRequest])
-
-  // ---- onWalletReady integration (replaces Effect 14) ----
-  // This stays in React because it depends on onWalletReady prop and activeProfile
-  const { managers, activeProfile } = walletServiceValues
-  const recentOriginsRef = useRef<Map<string, number>>(new Map())
-  const DEBOUNCE_TIME_MS = 5000
-
-  useEffect(() => {
-    // External BRC-100 traffic (port 3321) hits permissionsManager so app-originated
-    // requests pass through permission prompts. The standalone raw `wallet` (separate
-    // from `managers`) is reserved for internal wallet-toolbox plumbing that
-    // intentionally bypasses permissions (e.g. StorageClient BRC-103 handshake).
-    const walletReady = !!managers?.permissionsManager
-    console.log('[onWalletReady effect] check:', {
-      walletReady,
-      profileId: activeProfile?.id ? `[${activeProfile.id.length} bytes]` : null,
-      lifecycle: getWalletService().lifecycle,
-    })
-    if (!walletReady || !activeProfile?.id) {
-      return
-    }
-
-    console.log('[onWalletReady effect] guard passed — registering wallet ref')
-
-    const updateRecentAppWrapper = async (profileId: string, origin: string): Promise<void> => {
-      try {
-        const cacheKey = `${profileId}:${origin}`
-        const now = Date.now()
-        const lastProcessed = recentOriginsRef.current.get(cacheKey)
-        if (lastProcessed && (now - lastProcessed) < DEBOUNCE_TIME_MS) return
-        recentOriginsRef.current.set(cacheKey, now)
-        await updateRecentApp(profileId, origin)
-        globalThis.dispatchEvent(new CustomEvent('recentAppsUpdated', { detail: { profileId, origin } }))
-      } catch (error) {
-        console.debug('Error tracking recent app:', error)
+  // Read the imperative snapshot instead of the render closure: profile
+  // transitions must update the app bridge before accepting another request.
+  const refreshAppWallet = useCallback(async (): Promise<void> => {
+    const initial = svc.getSnapshot()
+    let interceptorWallet: RequestInterceptorWallet | undefined
+    try {
+      const current = await getReadyAppWalletSnapshot(svc)
+      const permissionsManager = current.managers.permissionsManager
+      const profile = current.activeProfile
+      if (!permissionsManager || !profile?.id) throw new Error('The wallet is not ready for app requests.')
+      interceptorWallet = new RequestInterceptorWallet(permissionsManager, Utils.toBase64(profile.id), updateRecentAppWrapper)
+      await onWalletReady(interceptorWallet)
+      if (!isAppWalletSnapshotCurrent(svc, current)) {
+        throw new Error('The wallet changed while reconnecting apps. Try again when it is ready.')
       }
+    } catch (error) {
+      // A superseded refresh must not disconnect the newer profile's bridge.
+      const latest = svc.getSnapshot()
+      if (interceptorWallet) clearWalletForHttpRoute(interceptorWallet)
+      else if (latest.wallet === initial.wallet && latest.managers.permissionsManager === initial.managers.permissionsManager) clearWalletForHttpRoute()
+      throw error
     }
+  }, [svc, onWalletReady, updateRecentAppWrapper])
 
-    const interceptorWallet = new RequestInterceptorWallet(managers.permissionsManager, Utils.toBase64(activeProfile.id), updateRecentAppWrapper)
-    // onWalletReady registers IPC listener once, subsequent calls just swap
-    // wallet ref. The STAS service bundle (for the Apps API routes
-    // /stas/list, /stas/tokens, /stas/transfer, /stas/receive-address,
-    // /stas/register-by-txid — Task 7a) is injected via a separate setter so
-    // the prop interface stays single-arg.
-    onWalletReady(interceptorWallet)
-    const stas = walletServiceValues.stas
-    if (stas?.keyDeriver && stas.discovery && stas.transfer) {
-      setStasForHttpRoute({
-        discovery: stas.discovery,
-        transfer: stas.transfer,
-        keyDeriver: stas.keyDeriver,
-        identityKey: stas.keyDeriver.identityKey,
-        chain: stas.keyDeriver.chain,
-      })
-    } else {
-      setStasForHttpRoute(null)
-    }
-
-    // Parallel injection for the BSV-21 register-by-txid demo fast-path.
-    // The primary discovery mechanism is bsv21Discovery.scan() — fired by
-    // the AssetsPage Refresh button — which queries the 1Sat overlay's
-    // per-address SSE stream and covers organic receive end-to-end.
-    setBsv21DiscoveryForHttpRoute(stas?.bsv21Discovery ?? null)
-
-    // Peer-token routes (Phase B) — the standalone web page drives this
-    // wallet over /peerToken/*. The page references holdings by outpoint;
-    // source resolution + key derivation stay here behind the HTTP boundary.
-    if (stas?.peerTokens && stas.keyDeriver) {
-      setPeerTokensForHttpRoute({
-        client: stas.peerTokens,
-        wallet: managers.permissionsManager,
-        identityKey: stas.keyDeriver.identityKey,
-        chain: stas.keyDeriver.chain,
-        originator: ADMIN_ORIGINATOR,
-        // TokenProtocolRegistry — powers the /dstas/transfer + /bsv-21/transfer
-        // legacy address-send routes (same adapters the Assets page Send uses).
-        tokens: stas.tokens,
-      })
-    } else {
-      setPeerTokensForHttpRoute(null)
-    }
-
-    // No cleanup — IPC listener is permanent, wallet ref is swapped not re-registered
-  }, [managers?.permissionsManager, activeProfile?.id, onWalletReady])
-
-  // STAS auto-scan: one shot when the raw wallet + STAS services first appear.
-  // The dev-only Dashboard panel exposes a manual re-scan.
+  // The permissions manager exists before backend services finish starting, so
+  // wait for the wallet to be ready. Until onWalletReady runs, the renderer has
+  // no HTTP listener and every app request hangs.
   useEffect(() => {
-    const stas = walletServiceValues.stas
-    const wallet = walletServiceValues.wallet
-    if (!wallet || !stas?.discovery) return
-
-    let cancelled = false
-    ;(async () => {
-      try {
-        console.log('[STAS Discovery] auto-scan starting')
-        const result = await stas.discovery.scan()
-        if (cancelled) return
-        console.log('[STAS Discovery] auto-scan result:', result)
-      } catch (err) {
-        if (!cancelled) console.error('[STAS Discovery] auto-scan error:', err)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [walletServiceValues.wallet, walletServiceValues.stas])
+    if (!appWalletReady || !managers.permissionsManager || !profileStorageKey) return
+    void refreshAppWallet().catch(error => console.error('[WalletContext] App bridge refresh failed:', error))
+  }, [appWalletReady, managers.permissionsManager, profileStorageKey, refreshAppWallet])
 
   // ---- Context value ----
   const contextValue = useMemo<WalletContextValue>(() => ({
     ...walletServiceValues,
-    stasTransferRequests,
-    advanceStasTransferQueue,
-  }), [walletServiceValues, stasTransferRequests, advanceStasTransferQueue])
+    refreshAppWallet,
+  }), [walletServiceValues, refreshAppWallet])
 
   return (
     <WalletContext.Provider value={contextValue}>

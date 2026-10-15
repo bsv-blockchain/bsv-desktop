@@ -57,7 +57,7 @@ interface WalletFundingFlowProps {
   wallet: WalletInterface
   adminOriginator: string
   network: 'mainnet' | 'testnet'
-  chain: 'main' | 'test' | 'ttn'
+  chain: 'main' | 'test' | 'ttn' | 'tstn'
   onFundingComplete: () => void
 }
 

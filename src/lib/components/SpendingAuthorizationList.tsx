@@ -114,6 +114,18 @@ export const SpendingAuthorizationList: FC<Props> = ({
     }
   }, [app, cacheKey, managers.permissionsManager, onEmptyList, busy.waitingForAuth, busy.renewLimit]);
 
+  // Approving a limit lets ensureSpendingAuthorization return before the token
+  // is saved. Wait until the token is listed instead of guessing a delay.
+  const waitForLimits = async (isDone: (auths: PermissionToken[]) => boolean) => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        const auths = await managers.permissionsManager.listSpendingAuthorizations({ originator: app });
+        if (isDone(auths || [])) return;
+      } catch { /* try again */ }
+      await new Promise(res => setTimeout(res, 1000));
+    }
+  };
+
   // --------------------------------------------------------------------------
   //   MUTATIONS
   // --------------------------------------------------------------------------
@@ -131,7 +143,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
         seekPermission: true,
       });
       setBusy(b => ({ ...b, create: false, waitingForAuth: true }));
-      await new Promise(res => setTimeout(res, 6000));
+      await waitForLimits(auths => auths.length > 0);
       SPENDING_CACHE.delete(cacheKey);
       await refreshAuthorizations();
       setIsEditingLimit(false);
@@ -148,8 +160,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
     try {
       await managers.permissionsManager.revokePermission(authorization);
       SPENDING_CACHE.delete(cacheKey);
-      await refreshAuthorizations();
-      await new Promise(res => setTimeout(res, 2000));
+      await waitForLimits(auths => auths.length === 0);
       await createSpendingAuthorization(limitValue);
     } catch (e: unknown) {
       toast.error(`${t('spending_auth_list_update_error')}: ${e instanceof Error ? e.message : 'unknown error'}`);
@@ -181,7 +192,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
         reason: 'Increase spending limit',
         seekPermission: true,
       });
-      await new Promise(res => setTimeout(res, 2300));
+      await waitForLimits(auths => auths.some(auth => auth.authorizedAmount >= sats));
       SPENDING_CACHE.delete(cacheKey);
       await refreshAuthorizations();
       setIsEditingLimit(false);

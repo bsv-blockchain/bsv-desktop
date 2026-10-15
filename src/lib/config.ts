@@ -7,7 +7,7 @@ import {
 export const DEFAULT_CHAIN = 'main'
 export const ADMIN_ORIGINATOR = 'admin.com'
 export const DEFAULT_USE_WAB = false
-export const MESSAGEBOX_HOST = 'https://messagebox.babbage.systems'
+export { DEFAULT_MESSAGE_BOX_URL as MESSAGEBOX_HOST } from './networkConfig'
 
 /** App-level defaults: library defaults + additional pre-approved trust certifiers */
 export const DEFAULT_SETTINGS: WalletSettings = {

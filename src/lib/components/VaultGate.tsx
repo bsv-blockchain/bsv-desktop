@@ -48,100 +48,21 @@ interface Props {
 
 /** Mirror of AppThemeProvider palette so unlock UI matches the rest of the app. */
 function buildVaultTheme(mode: PaletteMode) {
+  const dark = mode === 'dark'
   return createTheme({
     palette: {
       mode,
-      ...(mode === 'light'
-        ? {
-            primary: { main: '#1B365D' },
-            secondary: { main: '#2C5282' },
-            background: { default: '#FFFFFF', paper: '#FFFFFF' },
-            text: { primary: '#4A4A4A', secondary: '#4A5568' },
-          }
-        : {
-            primary: { main: '#FFFFFF' },
-            secondary: { main: '#487dbf' },
-            background: { default: '#1D2125', paper: '#1D2125' },
-            text: { primary: '#FFFFFF', secondary: '#888888' },
-          }),
+      primary: { main: dark ? '#93B4F4' : '#1B365D', contrastText: dark ? '#0D1B3A' : '#FFFFFF' },
+      background: { default: dark ? '#0F172A' : '#F5F7FB', paper: dark ? '#172238' : '#FFFFFF' },
+      text: { primary: dark ? '#EEF2FA' : '#1E293B', secondary: dark ? '#A8B5CC' : '#607086' },
+      divider: dark ? '#2B3953' : '#E2E8F0',
     },
-    typography: {
-      fontFamily: '"Helvetica","Arial",sans-serif',
-    },
+    shape: { borderRadius: 12 },
+    typography: { fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
     components: {
-      MuiCssBaseline: {
-        styleOverrides: {
-          body: {
-            backgroundColor: mode === 'light' ? '#FFFFFF' : '#1D2125',
-            backgroundImage:
-              mode === 'light'
-                ? 'linear-gradient(45deg, rgba(27,54,93,0.05), rgba(44,82,130,0.05))'
-                : 'linear-gradient(45deg, rgba(27,54,93,0.1), rgba(44,82,130,0.1))',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundAttachment: 'fixed',
-          },
-        },
-      },
-      MuiButton: {
-        styleOverrides: {
-          root: {
-            textTransform: 'none',
-            borderRadius: 2,
-            '&.MuiButton-contained': {
-              backgroundColor: mode === 'light' ? '#1B365D' : '#FFFFFF',
-              color: mode === 'light' ? '#FFFFFF' : '#1B365D',
-              '&:hover': {
-                backgroundColor: mode === 'light' ? '#2C5282' : '#F6F6F6',
-              },
-            },
-            '&.MuiButton-outlined': {
-              borderColor: mode === 'light' ? '#1B365D' : '#FFFFFF',
-              color: mode === 'light' ? '#1B365D' : '#FFFFFF',
-              '&:hover': {
-                backgroundColor:
-                  mode === 'light' ? 'rgba(27,54,93,0.04)' : 'rgba(255,255,255,0.08)',
-                borderColor: mode === 'light' ? '#2C5282' : '#F6F6F6',
-              },
-            },
-          },
-        },
-      },
-      MuiPaper: {
-        styleOverrides: {
-          root: {
-            backgroundImage: 'none',
-            backgroundColor: mode === 'light' ? '#FFFFFF' : '#1D2125',
-          },
-        },
-      },
-      MuiOutlinedInput: {
-        styleOverrides: {
-          root: {
-            '& .MuiOutlinedInput-notchedOutline': {
-              borderColor:
-                mode === 'light' ? 'rgba(0,0,0,0.23)' : 'rgba(255,255,255,0.23)',
-            },
-            '&:hover .MuiOutlinedInput-notchedOutline': {
-              borderColor:
-                mode === 'light' ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)',
-            },
-            '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-              borderColor: mode === 'light' ? '#1B365D' : '#487dbf',
-            },
-          },
-        },
-      },
-      MuiInputLabel: {
-        styleOverrides: {
-          root: {
-            color: mode === 'light' ? '#4A5568' : '#888888',
-            '&.Mui-focused': {
-              color: mode === 'light' ? '#1B365D' : '#487dbf',
-            },
-          },
-        },
-      },
+      MuiButton: { styleOverrides: { root: { textTransform: 'none', borderRadius: 12, fontWeight: 600, boxShadow: 'none', '&:hover': { boxShadow: 'none' } } } },
+      MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
+      MuiOutlinedInput: { styleOverrides: { root: { borderRadius: 12 } } },
     },
   })
 }
@@ -272,11 +193,11 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
 
   const handleEnroll = async () => {
     if (passphrase.length < 8) {
-      setError('Unlock passphrase must be at least 8 characters.')
+      setError('Use at least 8 characters for your device password.')
       return
     }
     if (passphrase !== confirm) {
-      setError('Passphrases do not match.')
+      setError('Device passwords do not match.')
       return
     }
     setBusy(true)
@@ -309,8 +230,8 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
     !!status?.biometricsAvailable &&
     !!status?.methods?.includes('se')
 
-  const accentBlue = mode === 'dark' ? '#487dbf' : '#2196F3'
-  const logoColor = '#2196F3'
+  const accent = mode === 'dark' ? '#93B4F4' : '#1B365D'
+  const logoColor = accent
 
   const gatePanel = (
     <Container
@@ -324,41 +245,34 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
       }}
     >
       <Paper
-        elevation={4}
+        elevation={0}
         sx={{
           p: { xs: 3, sm: 4 },
-          borderRadius: 2,
+          borderRadius: 4,
           bgcolor: 'background.paper',
           border: mode === 'dark' ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)',
-          boxShadow: mode === 'dark'
-            ? '0 8px 32px rgba(0,0,0,0.45)'
-            : (t) => t.shadows[3],
+          boxShadow: '0 20px 70px rgba(15, 23, 42, 0.06)',
         }}
       >
         {/* Header — matches Greeter */}
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
           <Box sx={{ mb: 2, width: 80, height: 80 }}>
-            <AppLogo rotate size="80px" color={logoColor} />
+            <AppLogo size="80px" color={logoColor} />
           </Box>
           <Typography
             variant="h2"
-            fontFamily="Helvetica"
+            fontFamily="inherit"
             fontSize="1.75em"
             sx={{
               mb: 0.5,
-              fontWeight: 'bold',
-              background:
-                mode === 'dark'
-                  ? 'linear-gradient(90deg, #FFFFFF 0%, #F5F5F5 100%)'
-                  : 'linear-gradient(90deg, #2196F3 0%, #4569E5 100%)',
-              backgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
+              fontWeight: 750,
+              letterSpacing: -0.8,
             }}
           >
             {appName}
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 1, color: 'text.secondary' }}>
-            <LockOutlinedIcon sx={{ fontSize: 16, color: accentBlue }} />
+            <LockOutlinedIcon sx={{ fontSize: 16, color: accent }} />
             <Typography variant="body2" color="text.secondary" fontWeight={500}>
               {gateMode === 'loading'
                 ? 'Loading…'
@@ -371,14 +285,14 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
 
         {gateMode === 'loading' ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress sx={{ color: accentBlue }} />
+            <CircularProgress sx={{ color: accent }} />
           </Box>
         ) : (
           <Stack spacing={2.5} alignItems="stretch">
             <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', lineHeight: 1.6 }}>
               {isEnroll
-                ? 'Create an unlock passphrase for this device. This is separate from your wallet password or recovery key. When available, biometrics can unlock the vault on launch.'
-                : 'Your wallet secrets are encrypted on this device. Unlock with biometrics or your unlock passphrase to continue.'}
+                ? 'Choose a password to protect your wallet on this computer. Your recovery phrase restores your wallet on other devices.'
+                : 'Your wallet is protected on this computer. Unlock it to pick up where you left off.'}
             </Typography>
 
             {error && (
@@ -402,15 +316,15 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
                 disabled={busy}
                 sx={{
                   py: 1.25,
-                  // Biometrics CTA uses brand blue rather than inverted white
-                  backgroundColor: accentBlue,
-                  color: '#FFFFFF',
+                  // Match the app's navy primary action.
+                  backgroundColor: accent,
+                  color: mode === 'dark' ? '#0D1B3A' : '#FFFFFF',
                   '&:hover': {
-                    backgroundColor: mode === 'dark' ? '#5a8fd0' : '#1B365D',
+                    backgroundColor: mode === 'dark' ? '#B3CBFA' : '#2C5282',
                   },
                 }}
               >
-                Unlock with Touch ID
+                Unlock with biometrics
               </Button>
             )}
 
@@ -420,12 +334,12 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
                 color="text.secondary"
                 sx={{ textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1 }}
               >
-                or use passphrase
+                or use your password
               </Typography>
             )}
 
             <TextField
-              label="Unlock passphrase"
+              label="Device password"
               type={showPass ? 'text' : 'password'}
               value={passphrase}
               onChange={(e) => setPassphrase(e.target.value)}
@@ -455,7 +369,7 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
             {isEnroll && (
               <>
                 <TextField
-                  label="Confirm passphrase"
+                  label="Confirm device password"
                   type={showConfirm ? 'text' : 'password'}
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
@@ -487,14 +401,14 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
                         checked={enableBio}
                         onChange={(e) => setEnableBio(e.target.checked)}
                         sx={{
-                          color: accentBlue,
-                          '&.Mui-checked': { color: accentBlue },
+                          color: accent,
+                          '&.Mui-checked': { color: accent },
                         }}
                       />
                     }
                     label={
                       <Typography variant="body2" color="text.primary">
-                        Enable Touch ID unlock on this device
+                        Use biometrics to unlock this computer
                       </Typography>
                     }
                   />
@@ -503,12 +417,12 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
                   <Alert
                     severity="info"
                     sx={{
-                      bgcolor: mode === 'dark' ? 'rgba(72,125,191,0.12)' : undefined,
-                      color: mode === 'dark' ? '#bbdefb' : undefined,
-                      '& .MuiAlert-icon': { color: accentBlue },
+                      bgcolor: mode === 'dark' ? 'rgba(147,180,244,0.10)' : undefined,
+                      color: mode === 'dark' ? '#D5E2FC' : undefined,
+                      '& .MuiAlert-icon': { color: accent },
                     }}
                   >
-                    No biometric secure element is available on this device. You will unlock with your passphrase only.
+                    This computer uses your device password to unlock your wallet.
                   </Alert>
                 )}
                 {status?.needsMigration && (
@@ -519,7 +433,7 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
                       color: mode === 'dark' ? '#ffe0b2' : undefined,
                     }}
                   >
-                    Existing wallet data will be re-encrypted into a protected vault. You must set a passphrase to continue.
+                    Your existing wallet will be protected with this device password. Your recovery material stays the same.
                   </Alert>
                 )}
               </>
@@ -535,9 +449,9 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
               {busy ? (
                 <CircularProgress size={22} sx={{ color: 'inherit' }} />
               ) : isEnroll ? (
-                'Create vault'
+                'Protect my wallet'
               ) : (
-                'Unlock with passphrase'
+                'Unlock wallet'
               )}
             </Button>
           </Stack>
@@ -563,10 +477,6 @@ const VaultGate: React.FC<Props> = ({ children, onReady, appName = 'BSV Desktop'
             inset: 0,
             zIndex: (t) => t.zIndex.modal + 10,
             bgcolor: 'background.default',
-            backgroundImage:
-              mode === 'light'
-                ? 'linear-gradient(45deg, rgba(27,54,93,0.05), rgba(44,82,130,0.05))'
-                : 'linear-gradient(45deg, rgba(27,54,93,0.15), rgba(72,125,191,0.08))',
             minHeight: '100vh',
           }}
         >

@@ -13,6 +13,24 @@ function portableJson(value: unknown): unknown {
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([, child]) => child != null).map(([key, child]) => [key, portableJson(child)]))
   return value
 }
+const DATE_KEYS = new Set(['created_at', 'updated_at', 'when'])
+const SQL_DATE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z?$/
+/** SQLite rows mix date encodings (CURRENT_TIMESTAMP text, epoch ms, ISO).
+ * Normalise to ISO; leave anything unparseable for the validator to reject. */
+function portableDate(value: unknown): unknown {
+  if (value instanceof Date) return value.toISOString()
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? value : date.toISOString()
+  }
+  if (typeof value === 'string' && SQL_DATE.test(value)) {
+    let iso = value.replace(' ', 'T')
+    if (!iso.endsWith('Z')) iso += 'Z'
+    const date = new Date(iso)
+    return Number.isNaN(date.getTime()) ? value : date.toISOString()
+  }
+  return value
+}
 export function portableSqlRow(table: string, row: ArchiveRow): ArchiveRow {
   const result: ArchiveRow = {}
   for (const [key, value] of Object.entries(row)) {
@@ -20,6 +38,7 @@ export function portableSqlRow(table: string, row: ArchiveRow): ArchiveRow {
     if (binaries[table]?.includes(key)) result[key] = Buffer.from(value).toString('base64')
     else if (jsonFields[table]?.includes(key)) result[key] = portableJson(typeof value === 'string' ? JSON.parse(value) : value)
     else if (booleans.has(key) || key === 'wasBroadcast') result[key] = Boolean(value)
+    else if (DATE_KEYS.has(key)) result[key] = portableDate(value)
     else if (value instanceof Date) result[key] = value.toISOString()
     else result[key] = value
   }

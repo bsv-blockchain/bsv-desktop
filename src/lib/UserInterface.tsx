@@ -19,7 +19,6 @@ import PasswordHandler from './components/PasswordHandler'
 import RecoveryKeyHandler from './components/RecoveryKeyHandler'
 import FundingHandler from './components/FundingHandler'
 import SpendingAuthorizationHandler from './components/SpendingAuthorizationHandler'
-import StasTransferPermissionHandler from './components/StasTransferPermissionHandler'
 import AuthRedirector from './navigation/AuthRedirector'
 import ThemedToastContainer from './components/ThemedToastContainer'
 import { WalletInterface } from '@bsv/sdk'
@@ -37,6 +36,7 @@ const queries = {
 // Import NativeHandlers from UserContext to avoid circular dependency
 import { NativeHandlers, UserContext, UserContextProvider } from './UserContext'
 import GroupPermissionHandler from './components/GroupPermissionHandler'
+import CounterpartyPermissionHandler from './components/CounterpartyPermissionHandler'
 import { UpdateNotification } from './components/UpdateNotification'
 import PrivacyPolicy from './pages/Policies/privacy'
 import UsagePolicy from './pages/Policies/usage'
@@ -75,9 +75,9 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
                 <CertificateAccessHandler />
                 <ProtocolPermissionHandler />
                 <SpendingAuthorizationHandler />
-                <StasTransferPermissionHandler />
                 <ThemedToastContainer />
                 <GroupPermissionHandler />
+                <CounterpartyPermissionHandler />
                 <UpdateNotificationWrapper />
                 <NetworkSettingsDialog />
                 <Switch>

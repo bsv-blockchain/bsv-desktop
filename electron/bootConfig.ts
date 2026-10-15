@@ -12,6 +12,7 @@ export interface BootConfig {
   hasVault: boolean
   unlockMethods: UnlockMethod[]
   network?: string
+  networkSettings?: import('./networkConfig.js').NetworkSettingsMap
   loginType?: string
   wabUrl?: string
   storageUrl?: string

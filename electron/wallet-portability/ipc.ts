@@ -11,7 +11,7 @@ const string = (value: unknown, max = 4096): string => {
   return value
 }
 const chain = (value: unknown): ArchiveChain => {
-  if (value !== 'main' && value !== 'test' && value !== 'ttn') throw new Error('Invalid wallet network')
+  if (value !== 'main' && value !== 'test' && value !== 'ttn' && value !== 'tstn') throw new Error('Invalid wallet network')
   return value
 }
 export function registerWalletPortabilityIpc(getWindow: () => BrowserWindow | null, getService: () => Promise<WalletPortabilityService>, bindings = new WalletDataBindings()): void {

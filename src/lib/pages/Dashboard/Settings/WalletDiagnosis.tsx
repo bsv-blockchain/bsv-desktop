@@ -1,4 +1,4 @@
-import { useState, useContext, useCallback } from 'react'
+import { useState, useContext, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Typography, Box, Paper, Button, Chip, Alert,
@@ -9,6 +9,7 @@ import { toast } from 'react-toastify'
 import { WalletContext } from '../../../WalletContext.js'
 import type { ListActionsArgs, ListOutputsResult } from '@bsv/sdk'
 import { Wallet } from '@bsv/wallet-toolbox-client'
+import { beginUserWalletOperation } from '../../../services/httpBridgeSession'
 
 interface DiagnosisResults {
   failedCount: number
@@ -37,6 +38,7 @@ interface ConfirmationState {
 const WalletDiagnosis = () => {
   const { t } = useTranslation()
   const { wallet: rawWallet } = useContext(WalletContext)
+  const mutationLock = useRef(false)
 
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -66,8 +68,17 @@ const WalletDiagnosis = () => {
     return wallet
   }, [getWallet])
 
-  const confirm = useCallback((title: string, message: string, onConfirm: () => void) => {
-    setConfirmation({ open: true, title, message, onConfirm })
+  const confirm = useCallback((title: string, message: string, onConfirm: () => void | Promise<void>) => {
+    setConfirmation({ open: true, title, message, onConfirm: async () => {
+      if (mutationLock.current) return
+      mutationLock.current = true
+      let release: (() => void) | undefined
+      try {
+        release = beginUserWalletOperation()
+        await onConfirm()
+      } catch (error) { toast.error(error.message || 'The wallet operation could not start.') }
+      finally { release?.(); mutationLock.current = false }
+    } })
   }, [])
 
   const closeConfirmation = useCallback(() => {
@@ -429,7 +440,11 @@ const WalletDiagnosis = () => {
 
   // --- Reset Change Parameters ---
   const resetChangeParams = useCallback(async () => {
+    if (mutationLock.current) return
+    mutationLock.current = true
+    let release: (() => void) | undefined
     try {
+      release = beginUserWalletOperation()
       setLoading(true)
       addLog('Resetting wallet change parameters to defaults (count=144, satoshis=32)...')
       const walletClass = getWalletClass()
@@ -441,6 +456,8 @@ const WalletDiagnosis = () => {
       addLog(`Failed to reset change parameters: ${msg}`)
       toast.error(`Failed to reset change parameters: ${msg}`)
     } finally {
+      release?.()
+      mutationLock.current = false
       setLoading(false)
     }
   }, [getWalletClass, addLog])

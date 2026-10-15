@@ -114,288 +114,88 @@ interface ThemeProps {
  *                         AppThemeProvider
  * ------------------------------------------------------------------ */
 export function AppThemeProvider({ children }: ThemeProps) {
-  const { settings } = useContext(WalletContext);
+  const { settings, managers } = useContext(WalletContext);
 
   /* Detect OS-level colour-scheme preference */
-  const prefersDarkMode = useMediaQuery('(prefers-color-scheme: light)');
+  const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
 
-  // Track localStorage updates to trigger theme re-calculation
-  const [localStorageVersion, setLocalStorageVersion] = useState(0);
-
-  /* Decide the palette mode that should be in force */
+  const walletReady = Boolean(managers.permissionsManager)
   const mode: PaletteMode = useMemo(() => {
-    // Always check localStorage first, then fall back to WalletContext settings
-    let pref = settings?.theme?.mode ?? 'system';
-
-    try {
-      const cachedTheme = localStorage.getItem('userTheme');
-      if (cachedTheme && ['light', 'dark', 'system'].includes(cachedTheme)) {
-        pref = cachedTheme;
-      } else {
-        // Update localStorage with the WalletContext value
-        if (pref) {
-          localStorage.setItem('userTheme', pref);
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to access localStorage:', error);
+    let preference = settings?.theme?.mode || 'system'
+    if (!walletReady) {
+      try { preference = localStorage.getItem('userTheme') || preference } catch { /* use OS preference */ }
     }
+    if (preference === 'light' || preference === 'dark') return preference
+    return prefersDarkMode ? 'dark' : 'light'
+  }, [settings?.theme?.mode, prefersDarkMode, walletReady])
 
-    if (pref === 'system') {
-      return prefersDarkMode ? 'dark' : 'light';
-    }
-    return pref as PaletteMode; // 'light' or 'dark'
-  }, [settings?.theme?.mode, prefersDarkMode, localStorageVersion]);
-
-  // Update localStorage only when WalletContext settings actually change (not on every render)
-  const [lastWalletTheme, setLastWalletTheme] = useState<string | undefined>(settings?.theme?.mode);
-  
+  // The cache makes the device unlock screen match the last open wallet.
   useEffect(() => {
-    // Only update localStorage if WalletContext theme actually changed from what we last saw
-    const currentWalletTheme = settings?.theme?.mode;
-    
-    if (currentWalletTheme && currentWalletTheme !== lastWalletTheme) {
-      try {
-        localStorage.setItem('userTheme', currentWalletTheme);
-        // Trigger useMemo to re-run by updating the version
-        setLocalStorageVersion(prev => prev + 1);
-      } catch (error) {
-        console.warn('Failed to update localStorage:', error);
-      }
-      
-      setLastWalletTheme(currentWalletTheme);
-    } else if (!lastWalletTheme && currentWalletTheme) {
-      // First time WalletContext loads
-      setLastWalletTheme(currentWalletTheme);
-    }
-  }, [settings?.theme?.mode, lastWalletTheme]);
+    if (!walletReady) return
+    try { localStorage.setItem('userTheme', settings?.theme?.mode || 'system') } catch { /* theme still works */ }
+  }, [settings?.theme?.mode, walletReady])
 
   /* Re-compute the theme whenever `mode` flips */
   const theme = useMemo(() => {
     return createTheme({
       approvals: {
-        protocol: '#86c489',
-        basket: '#96c486',
+        protocol: '#8fafd3',
+        basket: '#a2bbd6',
         identity: '#86a7c4',
         renewal: '#ad86c4',
       },
       palette: {
         mode,
-        ...(mode === 'light'
-          ? {
-            primary: { main: '#1B365D' },
-            secondary: { main: '#2C5282' },
-            background: { default: '#FFFFFF', paper: '#F6F6F6' },
-            text: { primary: '#4A4A4A', secondary: '#4A5568' },
-          }
-          : {
-            primary: { main: '#FFFFFF' },
-            secondary: { main: '#487dbf' },
-            background: { default: '#1D2125', paper: '#1D2125' },
-            text: { primary: '#FFFFFF', secondary: '#888888' },
-          }),
+        primary: { main: mode === 'light' ? '#1b365d' : '#93b4f4', contrastText: mode === 'light' ? '#ffffff' : '#0d1b3a' },
+        secondary: { main: mode === 'light' ? '#2c5282' : '#b2c5e8' },
+        background: { default: mode === 'light' ? '#f5f7fb' : '#0f172a', paper: mode === 'light' ? '#ffffff' : '#172238' },
+        text: { primary: mode === 'light' ? '#1e293b' : '#eef2fa', secondary: mode === 'light' ? '#607086' : '#a8b5cc' },
+        divider: mode === 'light' ? '#e2e8f0' : '#2b3953',
+        success: { main: mode === 'light' ? '#1b365d' : '#93b4f4' },
       },
       typography: {
-        fontFamily: '"Helvetica","Arial",sans-serif',
-        h1: {
-          fontWeight: 700,
-          fontSize: '2.5rem',
-          '@media (max-width:900px)': { fontSize: '1.8rem' },
-        },
-        h2: {
-          fontWeight: 700,
-          fontSize: '1.7rem',
-          '@media (max-width:900px)': { fontSize: '1.6rem' },
-        },
-        h3: { fontSize: '1.4rem' },
-        h4: { fontSize: '1.25rem' },
-        h5: { fontSize: '1.1rem' },
-        h6: { fontSize: '1rem' },
+        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        h1: { fontWeight: 650, fontSize: '2rem', letterSpacing: '-0.055em', lineHeight: 1.2 },
+        h2: { fontWeight: 650, fontSize: '1.65rem', letterSpacing: '-0.04em' },
+        h3: { fontWeight: 600, fontSize: '1.4rem', letterSpacing: '-0.03em' },
+        h4: { fontWeight: 600, fontSize: '1.15rem', letterSpacing: '-0.02em' },
+        h5: { fontWeight: 600, fontSize: '1rem' },
+        h6: { fontWeight: 600, fontSize: '0.95rem' },
+        body1: { fontSize: '0.95rem', lineHeight: 1.65 },
+        body2: { fontSize: '0.85rem', lineHeight: 1.6 },
+        button: { fontWeight: 600, fontSize: '0.875rem' },
       },
       components: {
-        MuiCssBaseline: {
-          styleOverrides: {
-            body: {
-              backgroundColor: mode === 'light' ? '#FFFFFF' : '#1D2125',
-              backgroundImage:
-                mode === 'light'
-                  ? 'linear-gradient(45deg, rgba(27,54,93,0.05), rgba(44,82,130,0.05))'
-                  : 'linear-gradient(45deg, rgba(27,54,93,0.1), rgba(44,82,130,0.1))',
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              backgroundAttachment: 'fixed',
-            },
-            // App-wide themed scrollbars — replaces the default gray/white bars.
-            // Thin, rounded, translucent brand colour on a transparent track so
-            // they sit quietly on any surface and fade with the light/dark theme.
-            '*::-webkit-scrollbar': {
-              width: '10px',
-              height: '10px',
-            },
-            '*::-webkit-scrollbar-track': {
-              backgroundColor: 'transparent',
-            },
-            '*::-webkit-scrollbar-thumb': {
-              backgroundColor:
-                mode === 'light' ? 'rgba(27,54,93,0.30)' : 'rgba(255,255,255,0.22)',
-              borderRadius: '8px',
-              // Transparent border + padding-box clip = inset padding around the
-              // thumb, so it reads as a slim pill rather than a full-width bar.
-              border: '2px solid transparent',
-              backgroundClip: 'padding-box',
-              minHeight: '40px',
-            },
-            '*::-webkit-scrollbar-thumb:hover': {
-              backgroundColor:
-                mode === 'light' ? 'rgba(27,54,93,0.50)' : 'rgba(255,255,255,0.42)',
-            },
-            '*::-webkit-scrollbar-corner': {
-              backgroundColor: 'transparent',
-            },
-            // Firefox (and the web-served build) — thin bars in matching colours.
-            '*': {
-              scrollbarWidth: 'thin',
-              scrollbarColor: `${
-                mode === 'light' ? 'rgba(27,54,93,0.30)' : 'rgba(255,255,255,0.22)'
-              } transparent`,
-            },
-          },
-        },
-        MuiButton: {
-          styleOverrides: {
-            root: {
-              textTransform: 'none',
-              borderRadius: 2,
-              '&.MuiButton-contained': {
-                backgroundColor: mode === 'light' ? '#1B365D' : '#FFFFFF',
-                color: mode === 'light' ? '#FFFFFF' : '#1B365D',
-                '&:hover': {
-                  backgroundColor: mode === 'light' ? '#2C5282' : '#F6F6F6',
-                },
-              },
-              '&.MuiButton-outlined': {
-                borderColor: mode === 'light' ? '#1B365D' : '#FFFFFF',
-                color: mode === 'light' ? '#1B365D' : '#FFFFFF',
-                '&:hover': {
-                  backgroundColor:
-                    mode === 'light'
-                      ? 'rgba(27,54,93,0.04)'
-                      : 'rgba(255,255,255,0.08)',
-                  borderColor: mode === 'light' ? '#2C5282' : '#F6F6F6',
-                },
-              },
-              '&.Mui-disabled': {
-                backgroundColor:
-                  mode === 'light'
-                    ? 'rgba(0,0,0,0.12)'
-                    : 'rgba(255,255,255,0.12)',
-                color:
-                  mode === 'light'
-                    ? 'rgba(0,0,0,0.26)'
-                    : 'rgba(255,255,255,0.3)',
-                boxShadow: 'none',
-                '&.MuiButton-contained': {
-                  backgroundColor:
-                    mode === 'light'
-                      ? 'rgba(0,0,0,0.12)'
-                      : 'rgba(255,255,255,0.12)',
-                },
-                '&.MuiButton-outlined': {
-                  borderColor:
-                    mode === 'light'
-                      ? 'rgba(0,0,0,0.12)'
-                      : 'rgba(255,255,255,0.12)',
-                },
-              },
-            },
-          },
-        },
-        MuiPaper: {
-          styleOverrides: {
-            root: {
-              backgroundImage: 'none',
-              backgroundColor: mode === 'light' ? '#FFFFFF' : '#1D2125',
-            },
-          },
-        },
-        MuiAppBar: {
-          styleOverrides: {
-            root: {
-              backgroundColor: mode === 'light' ? '#1B365D' : '#1D2125',
-              color: '#FFFFFF',
-            },
-          },
-        },
-        MuiCard: {
-          styleOverrides: {
-            root: {
-              borderRadius: 12,
-              border: `1px solid ${mode === 'light'
-                ? 'rgba(0,0,0,0.12)'
-                : 'rgba(255,255,255,0.12)'
-                }`,
-            },
-          },
-        },
-        MuiChip: {
-          styleOverrides: {
-            root: { borderRadius: 8 },
-          },
-        },
-        MuiDialog: {
-          styleOverrides: {
-            paper: {
-              backgroundImage: 'none',
-              backgroundColor: mode === 'light' ? '#FFFFFF' : '#1D2125',
-              color: mode === 'light' ? '#4A4A4A' : '#FFFFFF',
-              borderRadius: 8,
-              overflow: 'hidden',
-            },
-          },
-        },
-        MuiDialogTitle: {
-          styleOverrides: {
-            root: {
-              backgroundColor: mode === 'light' ? '#1B365D' : '#1D2125',
-              color: '#FFFFFF',
-              borderBottom: `1px solid ${mode === 'light'
-                ? 'rgba(0,0,0,0.12)'
-                : 'rgba(255,255,255,0.12)'
-                }`,
-            },
-          },
-        },
-        MuiDialogContent: {
-          styleOverrides: {
-            root: {
-              backgroundColor: mode === 'light' ? '#FFFFFF' : '#1D2125',
-              color: mode === 'light' ? '#4A4A4A' : '#FFFFFF',
-            },
-          },
-        },
-        MuiDialogActions: {
-          styleOverrides: {
-            root: {
-              backgroundColor: mode === 'light' ? '#F6F6F6' : '#1D2125',
-              borderTop: `1px solid ${mode === 'light'
-                ? 'rgba(0,0,0,0.12)'
-                : 'rgba(255,255,255,0.12)'
-                }`,
-            },
-          },
-        },
+        MuiCssBaseline: { styleOverrides: {
+          body: { backgroundImage: 'none' },
+          '*': { scrollbarWidth: 'thin', scrollbarColor: `${mode === 'light' ? '#c5cfdf' : '#405373'} transparent` },
+          '*:focus-visible': { outline: '3px solid #87a9dc', outlineOffset: 3 },
+          '@media (prefers-reduced-motion: reduce)': { '*, *::before, *::after': { animationDuration: '0.01ms !important', transitionDuration: '0.01ms !important' } },
+        } },
+        MuiButton: { defaultProps: { disableElevation: true }, styleOverrides: { root: { textTransform: 'none', borderRadius: 10, padding: '10px 18px' } } },
+        MuiIconButton: { styleOverrides: { root: { borderRadius: 10 } } },
+        MuiPaper: { defaultProps: { elevation: 0 }, styleOverrides: { root: { backgroundImage: 'none' } } },
+        MuiCard: { styleOverrides: { root: { borderRadius: 18, border: `1px solid ${mode === 'light' ? '#e2e8f0' : '#2b3953'}`, boxShadow: 'none' } } },
+        MuiOutlinedInput: { styleOverrides: { root: { borderRadius: 10 } } },
+        MuiChip: { styleOverrides: { root: { borderRadius: 7, fontWeight: 500, fontSize: '0.75rem' } } },
+        MuiDialog: { styleOverrides: { paper: { borderRadius: 20, backgroundImage: 'none' } } },
+        MuiDialogTitle: { styleOverrides: { root: { fontWeight: 650, padding: '24px 24px 12px' } } },
+        MuiDialogActions: { styleOverrides: { root: { padding: '16px 24px 24px' } } },
+        MuiTab: { styleOverrides: { root: { textTransform: 'none', fontWeight: 600 } } },
+        MuiAlert: { styleOverrides: { root: { borderRadius: 10 } } },
+        MuiTooltip: { defaultProps: { arrow: true } },
       },
-      shape: { borderRadius: 2 },
+      shape: { borderRadius: 6 },
       templates: {
         page_wrap: {
-          maxWidth: 'min(1440px, 100vw)',
+          maxWidth: '1120px',
           margin: 'auto',
           boxSizing: 'border-box',
-          padding: '56px',
+          padding: '24px',
         },
         subheading: {
           textTransform: 'uppercase',
-          letterSpacing: '6px',
+          letterSpacing: '1.5px',
           fontWeight: '700',
         },
         boxOfChips: {

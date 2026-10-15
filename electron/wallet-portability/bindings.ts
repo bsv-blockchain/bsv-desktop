@@ -7,7 +7,7 @@ import type { ArchiveChain } from './schema.js'
 export const walletDataDirectory = () => path.join(os.homedir(), '.bsv-desktop', 'wallet-portability-v1')
 export interface WalletDataBinding { id: string; storageIdentityKey: string; preferLocal: boolean; activatedAt: string }
 export function walletStorageKey(identity: string, chain: ArchiveChain): string {
-  if (!/^(02|03)[a-f0-9]{64}$/.test(identity) || !['main', 'test', 'ttn'].includes(chain)) throw new Error('Invalid wallet identity or network')
+  if (!/^(02|03)[a-f0-9]{64}$/.test(identity) || !['main', 'test', 'ttn', 'tstn'].includes(chain)) throw new Error('Invalid wallet identity or network')
   return `${identity}-${chain}`
 }
 export class WalletDataBindings {

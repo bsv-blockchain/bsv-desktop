@@ -25,31 +25,10 @@ export async function onDownloadFile(fileData: Blob, fileName: string): Promise<
   }
 }
 
-export async function saveMnemonic(mnemonic: string): Promise<{ success: boolean; path?: string; error?: string }> {
-  try {
-    const result = await window.electronAPI.saveMnemonic(mnemonic);
-    return result;
-  } catch (error) {
-    console.error('Save mnemonic failed:', error);
-    return { success: false, error: String(error) };
-  }
-}
-
-export async function savePrivateKey(privateKey: string): Promise<{ success: boolean; path?: string; error?: string }> {
-  try {
-    const result = await window.electronAPI.savePrivateKey(privateKey);
-    return result;
-  } catch (error) {
-    console.error('Save private key failed:', error);
-    return { success: false, error: String(error) };
-  }
-}
-
 // Export bundled functions for UserInterface
 export const electronFunctions = {
   isFocused,
   onFocusRequested,
   onFocusRelinquished,
   onDownloadFile,
-  saveMnemonic
 };

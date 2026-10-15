@@ -12,7 +12,11 @@ autoUpdater.logger.transports.file.level = 'info';
 
 // Configure auto-updater
 autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = false; // Set to false to avoid conflict with manual quitAndInstall()
+// On macOS, let Squirrel.Mac fetch and verify the update as soon as it is
+// downloaded. With this off, Squirrel only starts when the user clicks Install,
+// so a code-signature problem surfaced late (or not at all) and the update
+// appeared to download but never install. Elsewhere, keep installs explicit.
+autoUpdater.autoInstallOnAppQuit = process.platform === 'darwin';
 
 // Platform-specific update configuration
 if (process.platform === 'win32') {
@@ -86,6 +90,7 @@ function initAutoUpdater(mainWindow) {
     log.info('Update downloaded:', info);
     updateState.downloading = false;
     updateState.ready = true;
+    updateState.error = null;
     updateState.updateInfo = info;
     mainWindow.webContents.send('update-downloaded', info);
   });
@@ -118,17 +123,23 @@ function initAutoUpdater(mainWindow) {
 
 // Download update
 function downloadUpdate() {
+  updateState.downloading = true;
+  updateState.error = null;
   log.info(`[${process.platform}] Starting update download - Differential: ${!autoUpdater.disableDifferentialDownload}, WebInstaller: ${!autoUpdater.disableWebInstaller}`);
   return autoUpdater.downloadUpdate();
 }
 
 // Install update and restart
 function quitAndInstall() {
-  const { app } = require('electron');
-  // Remove listeners that may prevent proper app relaunch on macOS
-  setImmediate(() => {
+  const { app, autoUpdater: nativeUpdater } = require('electron');
+  // Remove listeners that may prevent proper app relaunch on macOS, but only
+  // once the install is really starting: if Squirrel fails, the app keeps
+  // running and still needs its quit-time cleanup.
+  nativeUpdater.once('before-quit-for-update', () => {
     app.removeAllListeners('window-all-closed');
     app.removeAllListeners('before-quit');
+  });
+  setImmediate(() => {
     // isSilent = false, forceRunAfter = true (force app to relaunch)
     autoUpdater.quitAndInstall(false, true);
   });

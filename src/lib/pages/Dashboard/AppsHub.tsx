@@ -2,14 +2,14 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
 import { Alert, Box, Button, Chip, InputAdornment, Paper, Skeleton, Stack, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { AppsRounded, ArrowForwardRounded, OpenInNewRounded, SearchRounded, SettingsOutlined } from '@mui/icons-material'
-import { AppCatalog as AppCatalogAPI } from 'metanet-apps'
 import type { PublishedApp } from 'metanet-apps/src/types'
 import { WalletContext } from '../../WalletContext'
 import { openUrl } from '../../utils/openUrl'
+import { loadAppCatalog } from '../../utils/appCatalog'
 import { applyAppIconFallback, FALLBACK_APP_ICON } from '../../utils/appIconFallback'
 
 export default function AppsHub() {
-  const { recentApps } = useContext(WalletContext)
+  const { recentApps, chain } = useContext(WalletContext)
   const [tab, setTab] = useState(0)
   const [search, setSearch] = useState('')
   const [catalog, setCatalog] = useState<PublishedApp[]>([])
@@ -17,10 +17,10 @@ export default function AppsHub() {
   const [error, setError] = useState('')
   const load = useCallback(async () => {
     setLoading(true)
-    try { setCatalog(await new AppCatalogAPI({}).findApps()); setError('') }
+    try { setCatalog(await loadAppCatalog(chain)); setError('') }
     catch { setError('The app directory is unavailable. Your connected apps are still here.') }
     finally { setLoading(false) }
-  }, [])
+  }, [chain])
   useEffect(() => { void load() }, [load])
   const apps = useMemo(() => (tab === 0 ? catalog.map(app => ({ name: app.metadata.name, description: app.metadata.description, domain: app.metadata.domain, url: app.metadata.httpURL, icon: app.metadata.icon, category: app.metadata.category })) : recentApps.map(app => ({ name: app.name || app.domain, description: app.domain, domain: app.domain, icon: app.iconImageUrl }))).filter(app => `${app.name} ${app.description} ${app.domain}`.toLowerCase().includes(search.toLowerCase())), [catalog, recentApps, tab, search])
   const launch = (app: { url?: string; domain: string }) => {

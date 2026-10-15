@@ -9,7 +9,8 @@ import {
   Typography,
   LinearProgress,
   Box,
-  Stack
+  Stack,
+  CircularProgress
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { toast } from 'react-toastify';
@@ -49,6 +50,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [updateReady, setUpdateReady] = useState(false);
+  const [installing, setInstalling] = useState(false);
 
   const notesHtml = useMemo(
     () => releaseNotesToHtml(updateInfo?.releaseNotes),
@@ -123,6 +125,10 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     window.electronAPI.updates.onUpdateError((error: string) => {
       console.error('Update error:', error);
       setDownloading(false);
+      // On macOS, update-downloaded fires before Squirrel verifies the update;
+      // a later error means there is nothing to install.
+      setUpdateReady(false);
+      setInstalling(false);
       toast.error(`${t('update_notification_error_prefix')}: ${error}`);
     });
 
@@ -135,21 +141,51 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     try {
       setDownloading(true);
       setUpdateAvailable(false);
-      await window.electronAPI.updates.download();
+      // The IPC call resolves when the download finishes, so announce it first.
       toast.info(t('update_notification_downloading'));
+      const result = await window.electronAPI.updates.download();
+      if (result && result.success === false) throw new Error(result.error);
     } catch (error) {
-      console.error('Failed to start download:', error);
-      toast.error(t('update_notification_failed_to_start_download'));
+      console.error('Failed to download update:', error);
+      toast.error(`${t('update_notification_failed_to_start_download')}${error?.message ? `: ${error.message}` : ''}`);
       setDownloading(false);
     }
   };
 
+  // Events from the main process can be missed (e.g. a reload mid-download).
+  // While the download dialog is open, also poll the updater's state so the
+  // dialog can never be left showing "Downloading" forever.
+  useEffect(() => {
+    if (!downloading || !window.electronAPI?.updates?.getState) return;
+    const timer = setInterval(async () => {
+      try {
+        const result = await window.electronAPI.updates.getState();
+        const state = result?.success ? result.state : null;
+        if (!state) return;
+        if (state.ready) {
+          if (state.updateInfo) setUpdateInfo(state.updateInfo);
+          setDownloading(false);
+          setUpdateReady(true);
+        } else if (state.error && !state.downloading) {
+          setDownloading(false);
+          toast.error(`${t('update_notification_error_prefix')}: ${state.error}`);
+        } else if (state.downloadProgress) {
+          setDownloadProgress(state.downloadProgress);
+        }
+      } catch { /* try again on the next tick */ }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [downloading, t]);
+
   const handleInstall = async () => {
+    setInstalling(true);
     try {
-      await window.electronAPI.updates.install();
+      const result = await window.electronAPI.updates.install();
+      if (result && result.success === false) throw new Error(result.error);
     } catch (error) {
       console.error('Failed to install update:', error);
       toast.error(t('update_notification_failed_to_install'));
+      setInstalling(false);
     }
   };
 
@@ -336,7 +372,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
       </Dialog>
 
       {/* Downloading Dialog */}
-      <Dialog open={downloading} disableEscapeKeyDown fullWidth PaperProps={{ sx: dialogPaperSx }}>
+      <Dialog open={downloading} onClose={() => setDownloading(false)} fullWidth PaperProps={{ sx: dialogPaperSx }}>
         <DialogTitle component="div" sx={{ px: 3, py: 2 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
             <Typography component="h2" variant="h6" fontWeight={700} sx={{ color: 'inherit' }}>
@@ -389,6 +425,12 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
           )}
           </Box>
         </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
+          {/* The download keeps going; the Ready dialog opens when it finishes. */}
+          <Button onClick={() => setDownloading(false)} color="primary">
+            {t('update_notification_later')}
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* Update Ready Dialog */}
@@ -417,10 +459,10 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
-          <Button onClick={handleDismissReady} color="primary">
+          <Button onClick={handleDismissReady} color="primary" disabled={installing}>
             {t('update_notification_install_later')}
           </Button>
-          <Button onClick={handleInstall} color="primary" variant="contained">
+          <Button onClick={handleInstall} color="primary" variant="contained" disabled={installing} startIcon={installing ? <CircularProgress size={16} color="inherit" /> : undefined}>
             {t('update_notification_install_and_restart')}
           </Button>
         </DialogActions>

@@ -15,6 +15,8 @@ import { WalletContext } from '../../WalletContext.js'
 import AppChip from '../AppChip/index.js'
 import { UserContext } from '../../UserContext.js'
 import { reportGrantFailure } from '../../services/grantFailure'
+import AmountInput from '../AmountInput'
+import { minimumRaisedLimit, suggestRaisedLimit } from '../../utils/spendingLimitRaise'
 import PaymentsIcon from '@mui/icons-material/Payments'
 
 const SpendingAuthorizationHandler: React.FC = () => {
@@ -26,11 +28,14 @@ const SpendingAuthorizationHandler: React.FC = () => {
   const { spendingAuthorizationModalOpen } = useContext(UserContext)
 
   const [detailsOpen, setDetailsOpen] = useState(false)
+  // New monthly limit typed in the over-limit prompt; undefined means untouched (use the suggestion).
+  const [raisedLimit, setRaisedLimit] = useState<number | null | undefined>(undefined)
 
   const handleCancel = () => {
     if (spendingRequests.length > 0) {
       managers.permissionsManager!.denyPermission(spendingRequests[0].requestID)
     }
+    setRaisedLimit(undefined)
     advanceSpendingQueue()
   }
 
@@ -40,6 +45,7 @@ const SpendingAuthorizationHandler: React.FC = () => {
       managers.permissionsManager!.grantPermission({ requestID, ephemeral: singular, amount })
         .catch(error => reportGrantFailure(requestID, error))
     }
+    setRaisedLimit(undefined)
     advanceSpendingQueue()
   }
 
@@ -51,6 +57,10 @@ const SpendingAuthorizationHandler: React.FC = () => {
 
   const isSpendingLimitIncrease = currentPerm.description === 'Increase spending limit'
   const isCreateSpendingLimit = currentPerm.description === 'Create a spending limit'
+  // An app payment over the app's monthly limit: offer to raise the limit (#103).
+  const canRaiseLimit = !isSpendingLimitIncrease && !isCreateSpendingLimit && !!currentPerm.renewal && currentPerm.amountPreviouslyAuthorized > 0
+  const minimumLimit = minimumRaisedLimit(currentPerm)
+  const newLimit = raisedLimit === undefined ? suggestRaisedLimit(currentPerm) : raisedLimit
 
   const getDialogTitle = () => {
     if (isSpendingLimitIncrease) return t('spending_limit_increase_title')
@@ -140,6 +150,33 @@ const SpendingAuthorizationHandler: React.FC = () => {
                       ))}
                     </Stack>
                   </Collapse>
+                </Box>
+              )}
+
+              {canRaiseLimit && (
+                <Box sx={{ width: '100%', mt: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                    This payment goes over this app's monthly limit of <AmountDisplay>{currentPerm.amountPreviouslyAuthorized}</AmountDisplay> (<AmountDisplay>{currentPerm.totalPastSpending}</AmountDisplay> used). Raise the limit to stop being asked for each payment this month.
+                  </Typography>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'flex-start' }}>
+                    <AmountInput
+                      size="small"
+                      label="New monthly limit"
+                      valueSats={newLimit}
+                      onChangeSats={setRaisedLimit}
+                      error={newLimit !== null && newLimit < minimumLimit}
+                      helperText={newLimit !== null && newLimit < minimumLimit ? <>At least <AmountDisplay>{minimumLimit}</AmountDisplay> to cover this payment.</> : ' '}
+                      sx={{ flex: 1 }}
+                    />
+                    <Button
+                      variant="outlined"
+                      onClick={() => handleGrant({ singular: false, amount: newLimit })}
+                      disabled={!newLimit || newLimit < minimumLimit}
+                      sx={{ whiteSpace: 'nowrap', height: 40 }}
+                    >
+                      Raise limit and pay
+                    </Button>
+                  </Stack>
                 </Box>
               )}
             </Stack>

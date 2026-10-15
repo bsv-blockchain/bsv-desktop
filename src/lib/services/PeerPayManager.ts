@@ -23,7 +23,20 @@ type PeerPayEvents = {
   changed: PeerPaySnapshot
 }
 
+/** Origin plus path, the form message-box-client stores advertised hosts in. */
+function canonicalHost(url: string): string {
+  try {
+    const parsed = new URL(url.trim())
+    return parsed.origin + parsed.pathname.replace(/\/+$/, '')
+  } catch {
+    return url.trim().replace(/\/+$/, '')
+  }
+}
+
 export class PeerPayManager extends EventEmittable<PeerPayEvents> {
+  /** Waits between overlay re-checks after anointing. */
+  static anointConfirmDelaysMs = [2000, 4000, 8000]
+
   private _client: PeerPayClient | null = null
   private _isHostAnointed = false
   private _anointedHosts: AdvertisementToken[] = []
@@ -99,8 +112,19 @@ export class PeerPayManager extends EventEmittable<PeerPayEvents> {
       // Since message-box-client 2.x, init() only selects the host; the
       // overlay advertisement is a separate, explicit anointHost() call.
       await this._client.init(messageBoxUrl)
-      await this._client.anointHost(messageBoxUrl)
-      await this._checkAnointmentStatus(messageBoxUrl)
+      const { txid } = await this._client.anointHost(messageBoxUrl)
+      // The overlay can take a moment to index the new advertisement. Re-check
+      // a few times so a slow lookup is not shown as "Not Anointed", which
+      // invites a second paid anointment.
+      for (const delay of [0, ...PeerPayManager.anointConfirmDelaysMs]) {
+        if (delay) await new Promise(resolve => setTimeout(resolve, delay))
+        await this._checkAnointmentStatus(messageBoxUrl)
+        if (this._isHostAnointed) return
+      }
+      throw new Error(
+        `Your host was anointed (transaction ${txid}), but the overlay has not confirmed it yet. ` +
+        'Check again in a few minutes before anointing again.'
+      )
     } finally {
       this._anointmentLoading = false
       this._emitChanged()
@@ -174,7 +198,10 @@ export class PeerPayManager extends EventEmittable<PeerPayEvents> {
     try {
       const identityKey = await this._client.getIdentityKey()
       const ads = await this._client.queryAdvertisements(identityKey, messageBoxUrl)
-      this._isHostAnointed = ads.length > 0 && ads.some(ad => ad.host === messageBoxUrl)
+      // The client stores hosts in canonical form (lower-case, no default port),
+      // so compare canonical forms rather than the URL exactly as typed.
+      const host = canonicalHost(messageBoxUrl)
+      this._isHostAnointed = ads.some(ad => canonicalHost(ad.host) === host)
       this._anointedHosts = ads
     } catch (checkError) {
       console.warn('[PeerPayManager] Could not check anointment status:', checkError)

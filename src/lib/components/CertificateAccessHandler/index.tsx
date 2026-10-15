@@ -8,6 +8,7 @@ import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
 import deterministicColor from '../../utils/deterministicColor'
 import { WalletContext } from '../../WalletContext'
 import { UserContext } from '../../UserContext'
+import { reportGrantFailure } from '../../services/grantFailure'
 import { PermissionRequest } from '@bsv/wallet-toolbox-client'
 
 type CertificateAccessRequest = {
@@ -49,6 +50,8 @@ const CertificateAccessHandler = () => {
       setGranting(true)
       await managers.permissionsManager?.grantPermission({ requestID })
       window.dispatchEvent(new CustomEvent('cert-access-changed', { detail: { op: 'grant', originator } }))
+    } catch (error) {
+      reportGrantFailure(requestID, error)
     } finally {
       setGranting(false)
       advanceCertificateQueue()

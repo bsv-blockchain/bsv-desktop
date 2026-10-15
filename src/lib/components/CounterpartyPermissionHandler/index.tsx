@@ -6,6 +6,7 @@ import CounterpartyChip from '../CounterpartyChip'
 import ProtoChip from '../ProtoChip'
 import { WalletContext } from '../../WalletContext'
 import { UserContext } from '../../UserContext'
+import { reportGroupGrantFailure } from '../../services/grantFailure'
 import { displayProtocols } from './protocols'
 
 const CounterpartyPermissionHandler = () => {
@@ -83,7 +84,11 @@ const CounterpartyPermissionHandler = () => {
         } catch {
         }
       } catch (e) {
-        console.error('Error granting counterparty permission request:', e)
+        reportGroupGrantFailure(
+          { originator: currentRequest.originator, counterparty: currentRequest.counterparty },
+          { protocolPermissions: protocols },
+          e
+        )
       }
     }
 

@@ -126,6 +126,11 @@ const GROUP_GRACE_MS = 20_000
 const GROUP_COOLDOWN_MS = 5 * 60 * 1000
 const PACT_COOLDOWN_MS = 5 * 60 * 1000
 
+/** Counterparty (pact) prompts name level-2 protocols; grouped prompts carry the protocol ID. */
+function sessionProtocolID(p: any): any {
+  return p?.protocolID ?? (p?.protocolName ? [2, p.protocolName] : undefined)
+}
+
 export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents> {
   // ---- Queue state (previously useState) ----
   private _basketRequests: BasketAccessRequest[] = []
@@ -158,6 +163,14 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
 
   // ---- Live permissions manager (replaces permissionsManagerRef + sync useEffect) ----
   private _permissionsManager: any = null
+  /**
+   * Permissions the user granted that could not be saved on chain because the
+   * wallet had no funds for the token's fee. Honored with one-time grants until
+   * the wallet closes, so the app is not asked again on every call.
+   */
+  private _sessionGrants = new Set<string>()
+  /** Toolbox-shaped requests by requestID, to key a grant that fails to save. */
+  private _requestsById = new Map<string, any>()
 
   // ---- Configuration ----
   permissionsConfig: PermissionsConfig = DEFAULT_PERMISSIONS_CONFIG
@@ -262,6 +275,79 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
   // ------------------------------------------------------------------
   // Cooldown helpers
   // ------------------------------------------------------------------
+
+  /** True when an error means the wallet cannot pay for a permission token. */
+  static isInsufficientFunds(error: any): boolean {
+    const code = error?.code || error?.name
+    return code === 'WERR_INSUFFICIENT_FUNDS' || /insufficient funds/i.test(String(error?.message ?? error ?? ''))
+  }
+
+  private _sessionKey(request: any): string | null {
+    try { return this._permissionsManager?.buildRequestKey?.(request) ?? null } catch { return null }
+  }
+
+  /**
+   * Handles a grant whose on-chain save failed. For a single request the app's
+   * call has already been allowed; with no funds, the grant is remembered for
+   * this session. Returns the message to show the user.
+   */
+  noteGrantFailure(requestID: string, error: any): string {
+    const request = this._requestsById.get(requestID)
+    this._requestsById.delete(requestID)
+    if (!PermissionQueueManager.isInsufficientFunds(error)) {
+      return `The permission could not be saved: ${error?.message || error}`
+    }
+    const key = request && this._sessionKey(request)
+    if (key) this._sessionGrants.add(key)
+    return 'Allowed for now. Saving this permission needs a small network fee and your wallet has no funds, so it lasts until the wallet is closed.'
+  }
+
+  /**
+   * Handles a grouped or counterparty grant whose on-chain save failed. The
+   * app's call was rejected; with no funds the approval is remembered so the
+   * app's retry is allowed without a prompt. Returns the message to show.
+   */
+  noteGroupGrantFailure(request: { originator: string; counterparty?: string }, granted: any, error: any): string {
+    if (!PermissionQueueManager.isInsufficientFunds(error)) {
+      return `The permissions could not be saved: ${error?.message || error}`
+    }
+    this._rememberGroupForSession(request.originator, granted, request.counterparty)
+    return 'Saving these permissions needs a small network fee and your wallet has no funds. They are allowed until the wallet is closed; try again in the app.'
+  }
+
+  /** Answers a request from the session grants, without a prompt or a token. */
+  private _grantFromSession(requestID: string, request: any): boolean {
+    const key = this._sessionKey(request)
+    if (!key || !this._sessionGrants.has(key)) return false
+    Promise.resolve(this._permissionsManager?.grantPermission?.({ requestID, ephemeral: true }))
+      .catch(error => console.debug('[PermissionQueueManager] session grant failed:', error))
+    return true
+  }
+
+  private _groupItemsCoveredBySession(originator: string, permissions: GroupedPermissions, counterparty?: string): boolean {
+    if ((permissions as any)?.spendingAuthorization) return false
+    const keys = [
+      ...(permissions?.protocolPermissions || []).map(p => this._sessionKey({ type: 'protocol', originator, privileged: false, protocolID: sessionProtocolID(p), counterparty: (p as any).counterparty ?? counterparty })),
+      ...(permissions?.basketAccess || []).map(b => this._sessionKey({ type: 'basket', originator, basket: b.basket })),
+      ...(permissions?.certificateAccess || []).map(c => this._sessionKey({ type: 'certificate', originator, privileged: false, certificate: { verifier: c.verifierPublicKey, certType: c.type, fields: c.fields } })),
+    ]
+    return keys.length > 0 && keys.every(key => key && this._sessionGrants.has(key))
+  }
+
+  private _rememberGroupForSession(originator: string, granted: any, counterparty?: string) {
+    for (const p of granted?.protocolPermissions || []) {
+      const key = this._sessionKey({ type: 'protocol', originator, privileged: false, protocolID: sessionProtocolID(p), counterparty: (p as any).counterparty ?? counterparty })
+      if (key) this._sessionGrants.add(key)
+    }
+    for (const b of granted?.basketAccess || []) {
+      const key = this._sessionKey({ type: 'basket', originator, basket: b.basket })
+      if (key) this._sessionGrants.add(key)
+    }
+    for (const c of granted?.certificateAccess || []) {
+      const key = this._sessionKey({ type: 'certificate', originator, privileged: false, certificate: { verifier: c.verifierPublicKey, certType: c.type, fields: c.fields } })
+      if (key) this._sessionGrants.add(key)
+    }
+  }
 
   private _normalizeOriginator(o: string) {
     return o.replace(/^https?:\/\//, '')
@@ -642,6 +728,8 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     if (!this._acceptPermissionForHttpBridge(incomingRequest.requestID, incomingRequest.originator)) {
       return
     }
+    if (this._grantFromSession(incomingRequest.requestID, incomingRequest)) return
+    this._requestsById.set(incomingRequest.requestID, incomingRequest)
 
     if (this._groupPhase === 'pending') {
       this._deferred.basket.push({
@@ -682,6 +770,8 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     if (!this._acceptPermissionForHttpBridge(incomingRequest.requestID, incomingRequest.originator)) {
       return
     }
+    if (this._grantFromSession(incomingRequest.requestID, incomingRequest)) return
+    this._requestsById.set(incomingRequest.requestID, incomingRequest)
 
     if (this._groupPhase === 'pending') {
       const certificate = incomingRequest.certificate as any
@@ -724,6 +814,8 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     if (!this._acceptPermissionForHttpBridge(requestID, originator)) {
       return Promise.resolve()
     }
+    if (this._grantFromSession(requestID, args)) return Promise.resolve()
+    this._requestsById.set(requestID, args)
 
     const [protocolSecurityLevel, protocolNameString] = protocolID as any
 
@@ -817,6 +909,10 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     if (requestID.startsWith('group-peer:')) {
       const parts = requestID.split(':')
       const counterparty = parts[parts.length - 1] || 'self'
+      if (this._groupItemsCoveredBySession(originator, permissions, counterparty)) {
+        try { await (this._permissionsManager as any)?.dismissGroupedPermission?.(requestID) } catch { }
+        return
+      }
       const newItem: CounterpartyPermissionRequest = {
         requestID,
         originator,
@@ -855,6 +951,12 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     }
 
     // Standard group permission request
+    if (this._groupItemsCoveredBySession(originator, permissions)) {
+      // Everything asked for was granted earlier this session but could not be
+      // saved (no funds). Allow it again without a prompt or a token.
+      try { await (this._permissionsManager as any)?.dismissGroupedPermission?.(requestID) } catch { }
+      return
+    }
     const newItem: GroupPermissionRequest = { requestID, originator, permissions }
     const cooldownKey = this._getGroupCooldownKey(originator, permissions)
     this._groupRequestCooldownKeyById.set(requestID, cooldownKey)
@@ -890,6 +992,11 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
   readonly counterpartyPermissionCallback = async (args: CounterpartyPermissionRequest): Promise<void> => {
     if (!args?.requestID || !args?.permissions) return
     if (!this._acceptPermissionForHttpBridge(args.requestID, args.originator)) {
+      return
+    }
+
+    if (this._groupItemsCoveredBySession(args.originator, { protocolPermissions: args.permissions.protocols as any }, args.counterparty)) {
+      try { await (this._permissionsManager as any)?.dismissGroupedPermission?.(args.requestID) } catch { }
       return
     }
 
@@ -957,6 +1064,10 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       permissionModules: permissionModulesMap,
     }
 
+    // A new permissions manager means a new wallet or profile.
+    this._sessionGrants.clear()
+    this._requestsById.clear()
+
     const pm = wrapCreateActionForTokenInputs(
       new WalletPermissionsManager(wallet, this.adminOriginator, configWithModules as any),
       () => listMandalaTokenOutpoints(wallet, this.adminOriginator),
@@ -983,14 +1094,27 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       // Same single-object signature as WalletPermissionsManager.grantGroupedPermission.
       ;(pm as any).grantGroupedPermission = async (params: { requestID: string; granted: any; expiry?: number }) => {
         const { requestID, granted } = params
-        const res = await originalGrant(params)
-        try { await this._releaseDeferredAfterGroup(this._decisionFromGranted(granted)) } catch { }
-        const key = this._groupRequestCooldownKeyById.get(requestID)
-        if (key) {
-          this._startGroupCooldown(key)
-          this._groupRequestCooldownKeyById.delete(requestID)
+        const request = this._groupRequests.find(r => r.requestID === requestID)
+          ?? this._counterpartyRequests.find(r => r.requestID === requestID)
+        try {
+          return await originalGrant(params)
+        } catch (error) {
+          // The app's call was rejected; remember the approval so its retry
+          // goes through without asking again or needing a token.
+          if (request && PermissionQueueManager.isInsufficientFunds(error)) {
+            this._rememberGroupForSession(request.originator, granted, (request as any).counterparty)
+          }
+          throw error
+        } finally {
+          // Release the gate even when the grant fails, or deferred prompts wait
+          // for the grace timer and the cooldown key leaks.
+          try { await this._releaseDeferredAfterGroup(this._decisionFromGranted(granted)) } catch { }
+          const key = this._groupRequestCooldownKeyById.get(requestID)
+          if (key) {
+            this._startGroupCooldown(key)
+            this._groupRequestCooldownKeyById.delete(requestID)
+          }
         }
-        return res
       }
     }
     if (originalDeny) {

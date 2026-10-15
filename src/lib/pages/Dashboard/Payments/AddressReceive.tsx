@@ -60,35 +60,49 @@ export default function AddressReceive({ identity, onSuccess }: { identity: stri
       const remembered = JSON.parse(localStorage.getItem(storageKey) || '[]')
       const dates = [...new Set([date, ...Array.from({ length: 4 }, (_, i) => addressDate(i)), ...(Array.isArray(remembered) ? remembered : [])])] as string[]
       let count = 0
+      let firstError: Error | undefined
       for (const value of dates) {
         if (!mounted.current) return
         if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) continue
-        const paymentAddress = await derive(value)
-        const response = await wocFetch.fetch(`${wocApiBase(chain)}/address/${paymentAddress}/unspent/all`)
-        if (!response.ok) throw new Error(`The address service could not check payments (${response.status}). Try again shortly.`)
-        const result = await response.json()
-        if (!Array.isArray(result.result)) throw new Error('The address service returned an unexpected response.')
-        const actions = await wallet.listActions({ labels: [paymentAddress], labelQueryMode: 'all', includeOutputs: true, limit: 1000 }, adminOriginator)
-        const recorded = new Set(actions.actions.flatMap(action => (action.outputs || []).map(output => `${action.txid}.${output.outputIndex}`)))
-        const utxos = result.result.filter((output: any) => output.isSpentInMempoolTx === false && /^[a-f0-9]{64}$/i.test(output.tx_hash) && Number.isSafeInteger(output.tx_pos) && output.tx_pos >= 0 && !recorded.has(`${output.tx_hash}.${output.tx_pos}`))
-        for (const txid of [...new Set(utxos.map((output: any) => output.tx_hash))] as string[]) {
-          const beef = await getBeefForTxid(txid, chain)
-          const tx = beef.findAtomicTransaction(txid)
-          if (!tx) throw new Error('The transaction proof did not contain this payment.')
-          const relevant = utxos.filter((output: any) => output.tx_hash === txid)
-          const expectedScript = new P2PKH().lock(paymentAddress).toHex()
-          if (relevant.some((output: any) => tx.outputs[output.tx_pos]?.lockingScript.toHex() !== expectedScript || tx.outputs[output.tx_pos]?.satoshis !== output.value)) throw new Error('The address service returned an inconsistent payment.')
-          const accepted = await wallet.internalizeAction({ tx: tx.toAtomicBEEF(), description: 'Received BSV at address', outputs: relevant.map((output: any) => ({ outputIndex: output.tx_pos, protocol: 'wallet payment' as const, paymentRemittance: { senderIdentityKey: new PrivateKey(1).toPublicKey().toString(), derivationPrefix: prefixFor(value), derivationSuffix: SUFFIX } })), labels: ['legacy', 'inbound', paymentAddress, `ts:${Date.now()}`] }, adminOriginator)
-          if (!accepted.accepted) throw new Error('The wallet could not accept this payment. Try checking again.')
-          count++
-        }
+        // One failing address (service error, missing proof) must not stop
+        // the other addresses from being checked.
+        try {
+          const paymentAddress = await derive(value)
+          const response = await wocFetch.fetch(`${wocApiBase(chain)}/address/${paymentAddress}/unspent/all`)
+          if (!response.ok) throw new Error(`The address service could not check payments (${response.status}). Try again shortly.`)
+          const result = await response.json()
+          if (!Array.isArray(result.result)) throw new Error('The address service returned an unexpected response.')
+          const actions = await wallet.listActions({ labels: [paymentAddress], labelQueryMode: 'all', includeOutputs: true, limit: 1000 }, adminOriginator)
+          const recorded = new Set(actions.actions.flatMap(action => (action.outputs || []).map(output => `${action.txid}.${output.outputIndex}`)))
+          const utxos = result.result.filter((output: any) => output.isSpentInMempoolTx === false && /^[a-f0-9]{64}$/i.test(output.tx_hash) && Number.isSafeInteger(output.tx_pos) && output.tx_pos >= 0 && !recorded.has(`${output.tx_hash}.${output.tx_pos}`))
+          for (const txid of [...new Set(utxos.map((output: any) => output.tx_hash))] as string[]) {
+            const beef = await getBeefForTxid(txid, chain)
+            const tx = beef.findAtomicTransaction(txid)
+            if (!tx) throw new Error('The transaction proof did not contain this payment.')
+            const relevant = utxos.filter((output: any) => output.tx_hash === txid)
+            const expectedScript = new P2PKH().lock(paymentAddress).toHex()
+            if (relevant.some((output: any) => tx.outputs[output.tx_pos]?.lockingScript.toHex() !== expectedScript || tx.outputs[output.tx_pos]?.satoshis !== output.value)) throw new Error('The address service returned an inconsistent payment.')
+            const accepted = await wallet.internalizeAction({ tx: tx.toAtomicBEEF(), description: 'Received BSV at address', outputs: relevant.map((output: any) => ({ outputIndex: output.tx_pos, protocol: 'wallet payment' as const, paymentRemittance: { senderIdentityKey: new PrivateKey(1).toPublicKey().toString(), derivationPrefix: prefixFor(value), derivationSuffix: SUFFIX } })), labels: ['legacy', 'inbound', paymentAddress, `ts:${Date.now()}`] }, adminOriginator)
+            if (!accepted.accepted) throw new Error('The wallet could not accept this payment. Try checking again.')
+            count++
+          }
+        } catch (error) { firstError ??= error as Error }
       }
       if (!mounted.current) return
-      setChecked(true)
+      if (firstError) setError(firstError.message || 'Payments could not be checked.')
+      setChecked(!firstError)
       if (count) { window.dispatchEvent(new CustomEvent('balance-changed')); onSuccess(`Received ${count} address payment${count === 1 ? '' : 's'}.`) }
     } catch (error) { if (mounted.current) setError((error as Error).message || 'Payments could not be checked.') } finally { release?.(); inFlight.current = false; if (mounted.current) setChecking(false) }
   }, [wallet, switchingNetwork, storageKey, date, derive, chain, adminOriginator, onSuccess])
-  useEffect(() => { if (!address) return; void check(); const timer = setInterval(() => { if (!document.hidden) void check() }, 30_000); return () => clearInterval(timer) }, [address, check])
+  useEffect(() => {
+    if (!address) return
+    void check()
+    const timer = setInterval(() => { if (!document.hidden) void check() }, 30_000)
+    // Check as soon as the window comes back instead of waiting for the next tick.
+    const onVisible = () => { if (!document.hidden) void check() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
+  }, [address, check])
 
   return <Stack spacing={2.5}>
     <Box><Typography variant="h6" sx={{ fontWeight: 700 }}>Receive from any BSV wallet</Typography><Typography color="text.secondary" variant="body2" sx={{ mt: .5 }}>Share this address. Incoming funds are checked and added to your wallet automatically while this screen is open.</Typography></Box>

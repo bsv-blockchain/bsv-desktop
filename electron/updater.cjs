@@ -100,6 +100,9 @@ function initAutoUpdater(mainWindow) {
     log.error('Update error:', error);
     updateState.error = error.message;
     updateState.downloading = false;
+    // macOS reports update-downloaded before Squirrel verifies the zip, so a
+    // verification error must also withdraw the ready state.
+    updateState.ready = false;
     mainWindow.webContents.send('update-error', error.message);
   });
 

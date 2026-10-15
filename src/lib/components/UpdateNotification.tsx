@@ -125,6 +125,10 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     window.electronAPI.updates.onUpdateError((error: string) => {
       console.error('Update error:', error);
       setDownloading(false);
+      // On macOS, update-downloaded fires before Squirrel verifies the update;
+      // a later error means there is nothing to install.
+      setUpdateReady(false);
+      setInstalling(false);
       toast.error(`${t('update_notification_error_prefix')}: ${error}`);
     });
 

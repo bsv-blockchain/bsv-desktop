@@ -54,6 +54,13 @@ import * as secrets from './secrets'
 import { deriveMnemonicWallet, verifyMnemonicWallet } from '../utils/mnemonicRecovery'
 import { MnemonicProfileWalletManager, defaultMnemonicProfiles, parseMnemonicProfiles, type MnemonicProfilesState } from './MnemonicProfileWalletManager'
 import { DEFAULT_CHAIN, ADMIN_ORIGINATOR, DEFAULT_SETTINGS, MESSAGEBOX_HOST } from '../config'
+import {
+  type DisplayPreferences,
+  loadDisplayPreferences,
+  saveDisplayPreferences,
+  seedDisplayPreferences,
+  withDisplayPreferences,
+} from '../utils/displayPreferences'
 import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
 import { defaultNetworkSettingsMap, isWalletNetwork, normalizeMessageBoxUrl, normalizeNetworkSettings, restoreNetworkSettings, type NetworkSettings, type NetworkSettingsMap, type WalletNetwork } from '../networkConfig'
@@ -149,7 +156,15 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   private _walletDataGeneration = 0
   private _managers: WalletServiceSnapshot['managers'] = {}
   private _wallet?: WalletInterface
+  /** Settings as stored on chain by WalletSettingsManager (trust network only). */
   private _settings: WalletSettings = DEFAULT_SETTINGS
+  /**
+   * Appearance and display currency live on this device, like language, so
+   * switching them is free and works in an empty wallet. They are never
+   * written to the wallet settings token.
+   */
+  private _displayPrefs: DisplayPreferences = loadDisplayPreferences()
+  private _effectiveSettings: WalletSettings = withDisplayPreferences(DEFAULT_SETTINGS, this._displayPrefs)
   private _activeProfile: WalletProfile | null = null
   private _snapshotLoaded = false
   private _initializingBackendServices = false
@@ -184,7 +199,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   get adminOriginator() { return this._adminOriginator }
   get managers() { return this._managers }
   get wallet() { return this._wallet }
-  get settings() { return this._settings }
+  get settings() { return this._effectiveSettings }
+  get displayPreferences() { return this._displayPrefs }
   get activeProfile() { return this._activeProfile }
   get snapshotLoaded() { return this._snapshotLoaded }
   get initializingBackendServices() { return this._initializingBackendServices }
@@ -209,7 +225,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       adminOriginator: this._adminOriginator,
       managers: this._managers,
       wallet: this._wallet,
-      settings: this._settings,
+      settings: this._effectiveSettings,
       activeProfile: this._activeProfile,
       snapshotLoaded: this._snapshotLoaded,
       initializingBackendServices: this._initializingBackendServices,
@@ -808,7 +824,12 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       // Load settings
       try {
         const userSettings = await (wallet as any).settingsManager?.get()
-        if (generation === this._walletDataGeneration && userSettings) this._settings = userSettings
+        if (generation === this._walletDataGeneration && userSettings) {
+          this._settings = userSettings
+          // One-time carry-over of older on-chain display choices to this device.
+          this._displayPrefs = seedDisplayPreferences(this._displayPrefs, userSettings)
+          this._effectiveSettings = withDisplayPreferences(userSettings, this._displayPrefs)
+        }
       } catch { }
 
       if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while loading settings')
@@ -1234,10 +1255,27 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     toast.success('Message Box URL removed successfully!')
   }
 
+  /**
+   * Saves wallet settings that belong on chain (the trust network). Theme and
+   * display currency are ignored here; use updateDisplayPreferences for them.
+   * A save that changes nothing does not create a transaction.
+   */
   async updateSettings(newSettings: WalletSettings): Promise<void> {
     if (!this._managers.settingsManager) throw new Error('The user must be logged in to update settings!')
-    await this._managers.settingsManager.set(newSettings)
-    this._settings = newSettings
+    const { theme: _theme, currency: _currency, ...rest } = newSettings
+    const next: WalletSettings = { ...this._settings, ...rest }
+    if (JSON.stringify(next) !== JSON.stringify(this._settings)) {
+      await this._managers.settingsManager.set(next)
+      this._settings = next
+    }
+    this._effectiveSettings = withDisplayPreferences(this._settings, this._displayPrefs)
+    this._emitState()
+  }
+
+  /** Changes appearance or display currency on this device. Free, no wallet needed. */
+  updateDisplayPreferences(change: Partial<DisplayPreferences>): void {
+    this._displayPrefs = saveDisplayPreferences({ ...this._displayPrefs, ...change })
+    this._effectiveSettings = withDisplayPreferences(this._settings, this._displayPrefs)
     this._emitState()
   }
 

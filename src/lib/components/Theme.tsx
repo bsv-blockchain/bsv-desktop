@@ -1,4 +1,4 @@
-import React, { ReactNode, useContext, useMemo, useEffect, useState } from 'react';
+import React, { ReactNode, useContext, useMemo } from 'react';
 import {
   ThemeProvider,
   createTheme,
@@ -114,26 +114,18 @@ interface ThemeProps {
  *                         AppThemeProvider
  * ------------------------------------------------------------------ */
 export function AppThemeProvider({ children }: ThemeProps) {
-  const { settings, managers } = useContext(WalletContext);
+  const { settings } = useContext(WalletContext);
 
   /* Detect OS-level colour-scheme preference */
   const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
 
-  const walletReady = Boolean(managers.permissionsManager)
+  // Appearance is a device preference (see utils/displayPreferences), so it
+  // applies before sign-in as well as after.
   const mode: PaletteMode = useMemo(() => {
-    let preference = settings?.theme?.mode || 'system'
-    if (!walletReady) {
-      try { preference = localStorage.getItem('userTheme') || preference } catch { /* use OS preference */ }
-    }
+    const preference = settings?.theme?.mode || 'system'
     if (preference === 'light' || preference === 'dark') return preference
     return prefersDarkMode ? 'dark' : 'light'
-  }, [settings?.theme?.mode, prefersDarkMode, walletReady])
-
-  // The cache makes the device unlock screen match the last open wallet.
-  useEffect(() => {
-    if (!walletReady) return
-    try { localStorage.setItem('userTheme', settings?.theme?.mode || 'system') } catch { /* theme still works */ }
-  }, [settings?.theme?.mode, walletReady])
+  }, [settings?.theme?.mode, prefersDarkMode])
 
   /* Re-compute the theme whenever `mode` flips */
   const theme = useMemo(() => {

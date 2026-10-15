@@ -16,18 +16,11 @@ function SettingsLink({ to, icon: Icon, title, description }: { to: string; icon
 }
 
 export default function Settings() {
-  const { chain, settings, updateSettings, useRemoteStorage, messageBoxUrl } = useContext(WalletContext)
+  const { chain, settings, updateDisplayPreferences, useRemoteStorage, messageBoxUrl } = useContext(WalletContext)
   const { appVersion, setManualUpdateInfo } = useContext(UserContext)
   const { currentLanguage, setCurrentLanguage, supportedLanguages } = useLanguage()
-  const [busy, setBusy] = useState(false)
   const [checking, setChecking] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
-  const save = async (change: any) => {
-    setBusy(true)
-    try { await updateSettings({ ...settings, ...change }) }
-    catch (error) { toast.error(error.message || 'Could not save settings.') }
-    finally { setBusy(false) }
-  }
   const checkUpdates = async () => {
     setChecking(true)
     try {
@@ -52,8 +45,8 @@ export default function Settings() {
     <RemoveWalletDialog open={removeOpen} onClose={() => setRemoveOpen(false)} />
     <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: '0.1em', fontSize: 11 }}>PREFERENCES</Typography>
     <Paper sx={{ mt: 1.25, mb: 4, p: 3, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
-      <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ mb: 3 }}><Box><Typography variant="body2" fontWeight={600}>Appearance</Typography><Typography variant="caption" color="text.secondary">Set the mood for your wallet.</Typography></Box><ToggleButtonGroup size="small" exclusive value={settings?.theme?.mode || 'system'} onChange={(_, mode) => mode && void save({ theme: { mode } })} disabled={busy} aria-label="Appearance"><ToggleButton value="light" aria-label="Light appearance"><LightModeOutlined sx={{ fontSize: 18, mr: 0.75 }} />Light</ToggleButton><ToggleButton value="dark" aria-label="Dark appearance"><DarkModeOutlined sx={{ fontSize: 18, mr: 0.75 }} />Dark</ToggleButton><ToggleButton value="system" aria-label="System appearance">System</ToggleButton></ToggleButtonGroup></Stack>
-      <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 3 }}><Box><Typography variant="body2" fontWeight={600}>Display currency</Typography><Typography variant="caption" color="text.secondary">Your balance, in the unit you prefer.</Typography></Box><TextField select size="small" label="Currency" sx={{ minWidth: 210 }} value={settings?.currency || 'BSV'} onChange={event => void save({ currency: event.target.value })} disabled={busy}>{['BSV', 'SATS', 'USD', 'EUR', 'GBP'].map(currency => <MenuItem key={currency} value={currency}>{currency === 'SATS' ? 'Satoshis' : currency}</MenuItem>)}</TextField></Stack>
+      <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ mb: 3 }}><Box><Typography variant="body2" fontWeight={600}>Appearance</Typography><Typography variant="caption" color="text.secondary">Set the mood for your wallet.</Typography></Box><ToggleButtonGroup size="small" exclusive value={settings?.theme?.mode || 'system'} onChange={(_, mode) => mode && updateDisplayPreferences({ theme: mode })} aria-label="Appearance"><ToggleButton value="light" aria-label="Light appearance"><LightModeOutlined sx={{ fontSize: 18, mr: 0.75 }} />Light</ToggleButton><ToggleButton value="dark" aria-label="Dark appearance"><DarkModeOutlined sx={{ fontSize: 18, mr: 0.75 }} />Dark</ToggleButton><ToggleButton value="system" aria-label="System appearance">System</ToggleButton></ToggleButtonGroup></Stack>
+      <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 3 }}><Box><Typography variant="body2" fontWeight={600}>Display currency</Typography><Typography variant="caption" color="text.secondary">Your balance, in the unit you prefer.</Typography></Box><TextField select size="small" label="Currency" sx={{ minWidth: 210 }} value={settings?.currency || 'BSV'} onChange={event => updateDisplayPreferences({ currency: event.target.value })}>{['BSV', 'SATS', 'USD', 'EUR', 'GBP'].map(currency => <MenuItem key={currency} value={currency}>{currency === 'SATS' ? 'Satoshis' : currency}</MenuItem>)}</TextField></Stack>
       <Stack direction={{ xs: 'column', sm: 'row' }} gap={2} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}><Box><Typography variant="body2" fontWeight={600}>Language</Typography><Typography variant="caption" color="text.secondary">Feel right at home.</Typography></Box><TextField select size="small" label="Language" sx={{ minWidth: 210 }} value={currentLanguage} onChange={event => setCurrentLanguage(event.target.value)}>{supportedLanguages.map(language => <MenuItem key={language} value={language}>{languageNames[language] || language}</MenuItem>)}</TextField></Stack>
     </Paper>
     <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: '0.1em', fontSize: 11 }}>NETWORK & CONNECTIONS</Typography>

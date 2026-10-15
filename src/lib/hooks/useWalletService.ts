@@ -285,6 +285,7 @@ export function useWalletService() {
   const removeMessageBoxUrl = useCallback(() => svc.removeMessageBoxUrl(), [svc])
   const applyNetworkSettings = useCallback((network: any, settings: any) => svc.applyNetworkSettings(network, settings), [svc])
   const updateSettings = useCallback((s: any) => svc.updateSettings(s), [svc])
+  const updateDisplayPreferences = useCallback((p: any) => svc.updateDisplayPreferences(p), [svc])
   const updatePermissionsConfig = useCallback(async (config: any) => {
     // Persist first — if storage fails we don't want to silently update the
     // in-memory config and have the change disappear on reload.
@@ -371,6 +372,7 @@ export function useWalletService() {
     // Settings
     settings: walletState.settings,
     updateSettings,
+    updateDisplayPreferences,
     // 'ttn' (TeraTestNet) uses testnet-style addresses, so it collapses to 'testnet' here.
     network: walletState.selectedNetwork === 'main' ? 'mainnet' as const : 'testnet' as const,
     chain: walletState.selectedNetwork,

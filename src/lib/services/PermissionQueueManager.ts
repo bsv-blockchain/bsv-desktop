@@ -23,6 +23,7 @@ import {
   CounterpartyPermissionRequest,
   GroupedPermissions,
 } from '../types/GroupedPermissions'
+import { broadcastSpendingTokensNow } from './permissionTokenBroadcast'
 import type { PermissionPromptHandler } from '../permissionModules/types'
 import { listMandalaTokenOutpoints } from '../permissionModules/mandala'
 import { wrapCreateActionForTokenInputs } from '../permissionModules/mandala/permissionModule'
@@ -298,7 +299,8 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       return `The permission could not be saved: ${error?.message || error}`
     }
     const key = request && this._sessionKey(request)
-    if (key) this._sessionGrants.add(key)
+    if (!key) return 'Allowed this time, but it could not be saved: saving needs a small network fee and your wallet has no funds.'
+    this._sessionGrants.add(key)
     return 'Allowed for now. Saving this permission needs a small network fee and your wallet has no funds, so it lasts until the wallet is closed.'
   }
 
@@ -428,6 +430,16 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
 
   private _isCoveredByDecision(d: GroupDecision | null, req: any): boolean {
     if (!d) return false
+    // Protocol requests also carry a `type` (protocol/identity/renewal), so they
+    // must be matched before the certificate rule below.
+    if ('protocolID' in req) {
+      if (d.allow.protocols === 'all') return true
+      if (!(d.allow.protocols instanceof Set)) return false
+      const key = req.protocolSecurityLevel === 2
+        ? `${req.protocolID}|${req.counterparty ?? 'self'}`
+        : req.protocolID
+      return d.allow.protocols.has(key)
+    }
     if ('basket' in req) {
       return !!d.allow.baskets && !!req.basket && d.allow.baskets.has(req.basket)
     }
@@ -440,14 +452,6 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       if (!rule.fields || rule.fields.size === 0) return true
       for (const f of fields) if (!rule.fields.has(f)) return false
       return true
-    }
-    if ('protocolID' in req) {
-      if (d.allow.protocols === 'all') return true
-      if (!(d.allow.protocols instanceof Set)) return false
-      const key = req.protocolSecurityLevel === 2
-        ? `${req.protocolID}|${req.counterparty ?? 'self'}`
-        : req.protocolID
-      return d.allow.protocols.has(key)
     }
     if ('authorizationAmount' in req) {
       return d.allow.spendingUpTo != null && req.authorizationAmount <= (d.allow.spendingUpTo as number)
@@ -497,6 +501,8 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       const s = granted?.spendingAuthorization ?? granted?.spending ?? null
       if (!s) return undefined
       if (typeof s === 'number') return s
+      // The group dialog grants { amount, description }.
+      if (typeof s?.amount === 'number') return s.amount
       if (typeof s?.satoshis === 'number') return s.satoshis
       return undefined
     })()
@@ -516,6 +522,11 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       for (const r of list) {
         if (!this._isCoveredByDecision(decision, r)) {
           (requeue as any)[key].push(r)
+        } else {
+          // The group grant covers this request, but its caller is still
+          // waiting on the toolbox. Answer it; dropping it hangs the app's call.
+          Promise.resolve(this._permissionsManager?.grantPermission?.({ requestID: r.requestID, ephemeral: true }))
+            .catch(error => console.debug('[PermissionQueueManager] covered request could not be granted:', error))
         }
       }
     }
@@ -1069,7 +1080,7 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     this._requestsById.clear()
 
     const pm = wrapCreateActionForTokenInputs(
-      new WalletPermissionsManager(wallet, this.adminOriginator, configWithModules as any),
+      new WalletPermissionsManager(broadcastSpendingTokensNow(wallet, this.adminOriginator), this.adminOriginator, configWithModules as any),
       () => listMandalaTokenOutpoints(wallet, this.adminOriginator),
       this.adminOriginator
     )

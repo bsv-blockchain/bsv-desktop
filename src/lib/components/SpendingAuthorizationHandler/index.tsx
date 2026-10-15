@@ -14,6 +14,7 @@ import CustomDialog from '../CustomDialog/index.js'
 import { WalletContext } from '../../WalletContext.js'
 import AppChip from '../AppChip/index.js'
 import { UserContext } from '../../UserContext.js'
+import { reportGrantFailure } from '../../services/grantFailure'
 import PaymentsIcon from '@mui/icons-material/Payments'
 
 const SpendingAuthorizationHandler: React.FC = () => {
@@ -35,11 +36,9 @@ const SpendingAuthorizationHandler: React.FC = () => {
 
   const handleGrant = async ({ singular = true, amount }: { singular?: boolean, amount?: number }) => {
     if (spendingRequests.length > 0) {
-      managers.permissionsManager!.grantPermission({
-        requestID: spendingRequests[0].requestID,
-        ephemeral: singular,
-        amount
-      })
+      const { requestID } = spendingRequests[0]
+      managers.permissionsManager!.grantPermission({ requestID, ephemeral: singular, amount })
+        .catch(error => reportGrantFailure(requestID, error))
     }
     advanceSpendingQueue()
   }

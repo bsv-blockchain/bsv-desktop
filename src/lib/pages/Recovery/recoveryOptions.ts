@@ -1,6 +1,6 @@
 import type { LoginType } from '../../WalletContext'
 
-/** A recovery flow offered on the Recovery page. */
+/** A recovery flow linked from the saved-wallet unlock screen. */
 export type RecoveryOption = 'presentation-key' | 'password'
 
 /**
@@ -11,7 +11,8 @@ export type RecoveryOption = 'presentation-key' | 'password'
  *   built for 'wab' and 'mnemonic-advanced'.
  * - 'password' (phone code + presentation key + recovery key) also needs
  *   startAuth/completeAuth, which only the WAB manager has.
- * 'direct-key' uses a SimpleWalletManager, which has neither.
+ * 'direct-key' uses a SimpleWalletManager and 'mnemonic' a
+ * MnemonicProfileWalletManager (a SimpleWalletManager), which have neither.
  */
 export function recoveryOptionsFor(loginType: LoginType): RecoveryOption[] {
   switch (loginType) {

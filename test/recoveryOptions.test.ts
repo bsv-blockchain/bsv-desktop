@@ -1,7 +1,7 @@
 /**
  * Recovery options by login type (#88)
  *
- * The Recovery page must not offer a flow whose page calls a wallet manager
+ * The unlock screen must not link a flow whose page calls a wallet manager
  * method that the current login type's manager doesn't have: that fails with
  * "walletManager.provideRecoveryKey is not a function". This checks method
  * presence only, not that a flow succeeds for a given account.
@@ -17,6 +17,7 @@ import {
 } from '@bsv/wallet-toolbox-client'
 import { recoveryOptionsFor, type RecoveryOption } from '../src/lib/pages/Recovery/recoveryOptions'
 import type { LoginType } from '../src/lib/WalletContext'
+import { MnemonicProfileWalletManager } from '../src/lib/services/MnemonicProfileWalletManager'
 
 const RECOVERY_DIR = path.resolve(__dirname, '../src/lib/pages/Recovery')
 
@@ -30,7 +31,8 @@ const PAGES: Record<RecoveryOption, string> = {
 const MANAGERS: Record<LoginType, { prototype: object }> = {
   wab: WalletAuthenticationManager,
   'direct-key': SimpleWalletManager,
-  'mnemonic-advanced': CWIStyleWalletManager
+  'mnemonic-advanced': CWIStyleWalletManager,
+  mnemonic: MnemonicProfileWalletManager
 }
 
 /** Every walletManager method a page calls, read from its source. */

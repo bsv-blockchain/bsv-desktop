@@ -51,6 +51,7 @@ import {
   GetNetworkResult,
   GetVersionResult
 } from '@bsv/sdk';
+import { normalizeOriginator } from './utils/normalizeOriginator';
 
 /**
  * RequestInterceptorWallet wraps another WalletInterface and records each call's
@@ -175,7 +176,13 @@ export class RequestInterceptorWallet implements WalletInterface {
     args: CreateActionArgs,
     originator?: OriginatorDomainNameStringUnder250Bytes
   ): Promise<CreateActionResult> {
-    return this.passthrough(this.underlying.createAction, args, originator);
+    this.record(originator);
+    // The permissions manager finds an app's spending limit by hostname, but
+    // labels each action with the originator exactly as given; the monthly
+    // total then missed every spend from an app on a port (e.g.
+    // localhost:3000), so its limit was never enforced (#93). Pass the same
+    // hostname form so the labels match. Recent apps keep the full origin.
+    return this.underlying.createAction.call(this.underlying, args, normalizeOriginator(originator));
   }
 
   async signAction(

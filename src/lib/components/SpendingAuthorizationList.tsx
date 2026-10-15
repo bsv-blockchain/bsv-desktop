@@ -8,6 +8,7 @@ import { FC, useCallback, useContext, useEffect, useMemo, useRef, useState } fro
 import { toast } from 'react-toastify';
 import AmountDisplay from './AmountDisplay';
 import { WalletContext } from '../WalletContext';
+import { normalizeOriginator } from '../utils/normalizeOriginator';
 import { PermissionToken } from '@bsv/wallet-toolbox-client';
 import { createServices } from '../services/createServices';
 // NOTE: rely on the same exchange-rate provider used by AmountDisplay
@@ -67,6 +68,8 @@ export const SpendingAuthorizationList: FC<Props> = ({
   //   MISC
   // --------------------------------------------------------------------------
   const cacheKey = app + activeProfile.id;
+  // Limits are stored by hostname; `app` may carry a port (localhost:3000).
+  const limitOriginator = normalizeOriginator(app);
   const services = useMemo(() => createServices('main'), []); // keep if other code relies on this instantiation
   const prevRqRef = useRef<number>(spendingRequests.length);
 
@@ -87,7 +90,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
     }
 
     try {
-      const auths = await managers.permissionsManager.listSpendingAuthorizations({ originator: app });
+      const auths = await managers.permissionsManager.listSpendingAuthorizations({ originator: limitOriginator });
       if (!auths?.length) {
         if (!busy.waitingForAuth && !busy.renewLimit) {
           setAuthorization(null);
@@ -119,7 +122,7 @@ export const SpendingAuthorizationList: FC<Props> = ({
   const waitForLimits = async (isDone: (auths: PermissionToken[]) => boolean) => {
     for (let attempt = 0; attempt < 20; attempt++) {
       try {
-        const auths = await managers.permissionsManager.listSpendingAuthorizations({ originator: app });
+        const auths = await managers.permissionsManager.listSpendingAuthorizations({ originator: limitOriginator });
         if (isDone(auths || [])) return;
       } catch { /* try again */ }
       await new Promise(res => setTimeout(res, 1000));

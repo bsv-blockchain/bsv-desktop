@@ -8,6 +8,7 @@ import ShoppingBasketIcon from '@mui/icons-material/ShoppingBasket'
 import deterministicColor from '../../utils/deterministicColor'
 import { WalletContext } from '../../WalletContext'
 import { UserContext } from '../../UserContext'
+import { reportGrantFailure } from '../../services/grantFailure'
 
 
 const BasketAccessHandler = () => {
@@ -26,9 +27,9 @@ const BasketAccessHandler = () => {
     // Handle granting the top request in the queue
     const handleGrant = async () => {
         if (basketRequests.length > 0) {
-            managers.permissionsManager?.grantPermission({
-                requestID: basketRequests[0].requestID
-            })
+            const { requestID } = basketRequests[0]
+            managers.permissionsManager?.grantPermission({ requestID })
+                ?.catch(error => reportGrantFailure(requestID, error))
         }
         advanceBasketQueue()
     }

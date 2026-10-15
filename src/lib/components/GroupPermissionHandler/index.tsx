@@ -7,6 +7,7 @@ import { makeStyles } from '@mui/styles'
 import CustomDialog from '../CustomDialog'
 import { WalletContext, WalletContextValue } from '../../WalletContext'
 import { UserContext, UserContextValue } from '../../UserContext'
+import { reportGroupGrantFailure } from '../../services/grantFailure'
 import AppChip from '../AppChip'
 import ProtoChip from '../ProtoChip'
 import CertificateChip from '../CertificateChip'
@@ -199,7 +200,7 @@ const GroupPermissionHandler = () => {
           })
           console.log('Granting group permission for requestID:', requestID, 'with granted:', granted)
         } catch (error) {
-          console.error('Error granting group permission:', error)
+          reportGroupGrantFailure({ originator: groupPermissionRequests[0]?.originator }, granted, error)
         }
       }
 

@@ -4,6 +4,7 @@ import { DialogContent, DialogActions, Button, Box, Stack, Tooltip, Avatar, Divi
 import CustomDialog from '../CustomDialog/index'
 import { WalletContext } from '../../WalletContext'
 import { UserContext } from '../../UserContext'
+import { reportGrantFailure } from '../../services/grantFailure'
 import AppChip from '../AppChip/index'
 import ProtoChip from '../ProtoChip/index'
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
@@ -68,7 +69,7 @@ const ProtocolPermissionHandler = () => {
     if (protocolRequests.length > 0) {
       const { requestID, originator, protocolID, protocolSecurityLevel, counterparty } = protocolRequests[0]
       const p = managers.permissionsManager?.grantPermission({ requestID })
-      p?.finally(() => {
+      p?.catch(error => reportGrantFailure(requestID, error)).finally(() => {
         window.dispatchEvent(new CustomEvent('protocol-permissions-changed', {
           detail: {
             op: 'grant',

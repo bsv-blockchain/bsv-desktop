@@ -127,6 +127,8 @@ export interface WalletContextValue {
   wallet?: WalletInterface;
   settings: WalletSettings;
   updateSettings: (newSettings: WalletSettings) => Promise<void>;
+  /** Appearance / display currency. Saved on this device only; free, no transaction. */
+  updateDisplayPreferences: (change: { theme?: string; currency?: string }) => void;
   network: 'mainnet' | 'testnet';
   /** Raw selected chain. Distinguishes TeraTestNet ('ttn') from plain testnet,
    *  which `network` collapses to 'testnet'. Use for picking service endpoints. */
@@ -198,6 +200,7 @@ export const WalletContext = createContext<WalletContextValue>({
   updateManagers: () => {},
   settings: DEFAULT_SETTINGS,
   updateSettings: async () => {},
+  updateDisplayPreferences: () => {},
   network: 'mainnet',
   chain: 'main',
   networkSettings: defaultNetworkSettingsMap(),

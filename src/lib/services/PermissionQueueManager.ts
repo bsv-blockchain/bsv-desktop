@@ -876,13 +876,21 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     let { satoshis, lineItems } = spending as any
     if (!lineItems) lineItems = []
 
+    // Over-limit payments carry the app's current limit, so the prompt can offer
+    // to raise it (#103).
+    const previousToken = (args as any).previousToken
+    let totalPastSpending = 0
+    if (renewal && previousToken) {
+      try { totalPastSpending = Math.max(0, Number(await this._permissionsManager?.querySpentSince?.(previousToken)) || 0) } catch { }
+    }
+
     const newItem: SpendingRequest = {
       requestID,
       originator,
       description: reason,
-      transactionAmount: 0,
-      totalPastSpending: 0,
-      amountPreviouslyAuthorized: 0,
+      transactionAmount: satoshis,
+      totalPastSpending,
+      amountPreviouslyAuthorized: renewal ? (previousToken?.authorizedAmount ?? 0) : 0,
       authorizationAmount: satoshis,
       renewal,
       lineItems,

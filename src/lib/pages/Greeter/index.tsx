@@ -15,6 +15,7 @@ import RecoveryPhrase from '../../components/RecoveryPhrase'
 import AppLogo from '../../components/AppLogo'
 import { getWalletService } from '../../hooks/useWalletService'
 import QrScanner from '../Dashboard/Payments/QrScanner'
+import { recoveryOptionsFor } from '../Recovery/recoveryOptions'
 
 type EntryMode = 'welcome' | 'create' | 'import'
 
@@ -279,6 +280,8 @@ function LegacyUnlock({ onReady }: { onReady: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const wab = loginType === 'wab'
+  // Only link flows this login type's manager can run (#88).
+  const recovery = recoveryOptionsFor(loginType)
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setBusy(true); setError('')
@@ -304,7 +307,7 @@ function LegacyUnlock({ onReady }: { onReady: () => void }) {
     {(error || startupError) && <Alert severity="error">{error || startupError}</Alert>}
     {startupError && <Button onClick={() => getWalletService().retrySavedWallet()} disabled={busy}>Try opening the saved wallet again</Button>}
     <Button variant="contained" type="submit" disabled={busy || !manager} size="large">{busy ? <CircularProgress size={20} /> : step === 'password' ? 'Unlock wallet' : 'Continue'}</Button>
-    <Stack direction="row" spacing={1} justifyContent="center"><Button component={RouterLink} to="/recovery/password" size="small">Recover original password</Button><Button component={RouterLink} to="/recovery/presentation-key" size="small">Recover original credentials</Button></Stack>
+    <Stack direction="row" spacing={1} justifyContent="center">{recovery.includes('password') && <Button component={RouterLink} to="/recovery/password" size="small">Recover original password</Button>}{recovery.includes('presentation-key') && <Button component={RouterLink} to="/recovery/presentation-key" size="small">Recover original credentials</Button>}</Stack>
     <Button component={RouterLink} to="/recovery/wallet-data" size="small">Open wallet data files</Button>
   </Stack>
 }

@@ -11,6 +11,7 @@ import * as secrets from '../services/secrets'
 import { getWalletService } from '../hooks/useWalletService'
 import RemoveWalletDialog from '../components/RemoveWalletDialog'
 import { MnemonicProfileWalletManager } from '../services/MnemonicProfileWalletManager'
+import { addProfileWithRollback } from '../utils/addProfileWithRollback'
 import { activeUserWalletOperations, activeHttpBridgeRequests, beginUserWalletOperation, isHttpBridgePaused, setHttpBridgePaused } from '../services/httpBridgeSession'
 
 export const SIDEBAR_WIDTH = 248
@@ -91,7 +92,7 @@ export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; set
       assertIdle()
       release = beginUserWalletOperation()
       setHttpBridgePaused(true)
-      await managers.walletManager.addProfile(name.trim())
+      await addProfileWithRollback(managers.walletManager, name.trim())
       await secrets.persistSnapshot(saveEnhancedSnapshot())
       await refreshAppWallet()
       bridgeReady = true
@@ -102,6 +103,8 @@ export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; set
         try { await refreshAppWallet(); bridgeReady = true }
         catch { toast.error('App connections are paused. Reopen the wallet to reconnect safely.') }
       }
+      // Show the saved list, not a profile that only existed in memory.
+      try { if (supportsProfiles) setProfiles(await managers.walletManager.listProfiles()) } catch { /* keep the current list */ }
       toast.error(error.message || 'Could not create a profile.')
     }
     finally { if (release) { if (bridgeReady) setHttpBridgePaused(false); release() }; setBusy(false) }

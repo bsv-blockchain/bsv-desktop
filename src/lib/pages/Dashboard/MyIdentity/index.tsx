@@ -9,6 +9,7 @@ import style from './style.js'
 import CheckIcon from '@mui/icons-material/Check'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import EyeCon from '@mui/icons-material/Visibility'
+import { toast } from 'react-toastify'
 import { WalletContext } from '../../../WalletContext.js'
 import { ProtoWallet, VerifiableCertificate } from '@bsv/sdk'
 import CertificateCard from './CertificateCard.js'
@@ -109,12 +110,16 @@ const MyIdentity = () => {
   }, [setCertificates, setPrimaryIdentityKey, adminOriginator, activeProfile, isDirectKey])
 
   const handleRevealPrivilegedKey = async () => {
-    const { publicKey } = await managers.permissionsManager.getPublicKey({
-      identityKey: true,
-      privileged: true,
-      privilegedReason: t('identity_button_privileged_key_reason')
-    }, adminOriginator)
-    setPrivilegedIdentityKey(publicKey)
+    try {
+      const { publicKey } = await managers.permissionsManager.getPublicKey({
+        identityKey: true,
+        privileged: true,
+        privilegedReason: t('identity_button_privileged_key_reason')
+      }, adminOriginator)
+      setPrivilegedIdentityKey(publicKey)
+    } catch (error) {
+      toast.error(`Could not reveal the privileged identity key: ${(error as Error)?.message || error}`)
+    }
   }
 
   // Handle certificate revocation by removing it from the state

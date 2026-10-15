@@ -61,4 +61,39 @@ describe('PeerPayManager.anointCurrentHost', () => {
     await expect(manager.anointCurrentHost(HOST)).rejects.toThrow('Insufficient funds')
     expect(manager.getSnapshot().anointmentLoading).toBe(false)
   })
+
+  it('waits for a slow overlay instead of showing "Not Anointed" (#107)', async () => {
+    const { PeerPayManager } = await import('../src/lib/services/PeerPayManager')
+    PeerPayManager.anointConfirmDelaysMs = [1, 1, 1]
+    const manager = await managerWithClient()
+    client.queryAdvertisements
+      .mockRejectedValueOnce(new Error('lookup timed out'))
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([{ host: HOST }])
+
+    await manager.anointCurrentHost(HOST)
+
+    expect(client.anointHost).toHaveBeenCalledOnce()
+    expect(manager.getSnapshot().isHostAnointed).toBe(true)
+  })
+
+  it('says the anointment went through when the overlay never confirms it (#107)', async () => {
+    const { PeerPayManager } = await import('../src/lib/services/PeerPayManager')
+    PeerPayManager.anointConfirmDelaysMs = [1, 1]
+    const manager = await managerWithClient()
+    client.queryAdvertisements.mockClear()
+
+    await expect(manager.anointCurrentHost(HOST)).rejects.toThrow(`transaction ${'ab'.repeat(32)}`)
+    expect(client.queryAdvertisements).toHaveBeenCalledTimes(3)
+    expect(manager.getSnapshot().anointmentLoading).toBe(false)
+  })
+
+  it('matches the advertised host however the URL was typed (#107)', async () => {
+    const manager = await managerWithClient()
+    client.queryAdvertisements.mockResolvedValue([{ host: 'https://gmb.example.com' }])
+
+    await manager.checkAnointmentStatus('https://GMB.example.com:443/')
+
+    expect(manager.getSnapshot().isHostAnointed).toBe(true)
+  })
 })

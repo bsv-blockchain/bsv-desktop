@@ -57,7 +57,7 @@ export interface ElectronAPI {
     releaseNetwork: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<{ success: boolean; error?: string }>;
     isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<boolean>;
     makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<{ success: boolean; settings?: any; error?: string }>;
-    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string }>;
+    callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string; walletError?: string }>;
     initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings?: import('./lib/networkConfig').NetworkSettings) => Promise<{ success: boolean; error?: string }>;
   };
   secrets: {

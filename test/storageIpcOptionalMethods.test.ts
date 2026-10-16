@@ -26,8 +26,8 @@ import knex, { type Knex } from 'knex'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { Beef, CachedKeyDeriver, Hash, P2PKH, PrivateKey, Script, Transaction, Utils, Validation } from '@bsv/sdk'
 import { KnexMigrations, MockServices, Monitor, StorageKnex, WalletStorageManager as MainWalletStorageManager } from '@bsv/wallet-toolbox'
-import { ScriptTemplateBRC29, Wallet, WalletStorageManager } from '@bsv/wallet-toolbox-client'
-import { storageManager } from '../electron/storage'
+import { ScriptTemplateBRC29, Wallet, WalletStorageManager, sdk } from '@bsv/wallet-toolbox-client'
+import { storageCallFailure, storageManager } from '../electron/storage'
 import { StorageElectronIPC } from '../src/lib/StorageElectronIPC'
 import { WalletDataStorageManager } from '../src/lib/walletPortability/WalletDataStorageManager'
 
@@ -94,7 +94,7 @@ function bridgeTo(mainStorage: unknown): void {
   vi.spyOn(storageManager, 'getOrCreateStorage').mockResolvedValue(mainStorage as StorageKnex)
   const reply = async (operation: () => Promise<unknown>) => {
     try { return { success: true, result: structuredClone(await operation()) } }
-    catch (error: any) { return { success: false, error: error.message } }
+    catch (error) { return storageCallFailure(error) }
   }
   vi.stubGlobal('window', {
     electronAPI: {
@@ -344,6 +344,20 @@ describe.skipIf(!sqliteAvailable)('optional storage writer methods over IPC with
     const call = (rendererStorageManager() as any)[method](args)
 
     await expect(call).rejects.toThrow(new RegExp(`^Storage method ${method} failed: .*${reason.source}`))
+  })
+
+  // The renderer's toolbox acts on the storage error's code: an empty wallet's
+  // WERR_INSUFFICIENT_FUNDS, for one, lets WalletPermissionsManager keep a
+  // grant whose token cannot be funded instead of asking for it again.
+  test('an empty wallet createAction rejects with the toolbox error code over IPC', async () => {
+    const wallet = new Wallet({ chain: 'mock', keyDeriver: new CachedKeyDeriver(new PrivateKey(1)), storage: rendererStorageManager(), services: new MockServices(db) })
+    const action = { description: 'empty wallet test', outputs: [{ lockingScript: '51', satoshis: 1, outputDescription: 'token' }] }
+
+    const failure = await wallet.createAction(action).catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(sdk.WERR_INSUFFICIENT_FUNDS)
+    expect(failure).toMatchObject({ code: 'WERR_INSUFFICIENT_FUNDS', moreSatoshisNeeded: expect.any(Number) })
+    expect((failure as Error).message).toMatch(/^Storage method createAction failed: Insufficient funds/)
   })
 
   const protectedAction = {

@@ -18,6 +18,7 @@ const require = createRequire(import.meta.url);
 
 // Lazy load storage to avoid loading knex/better-sqlite3 at startup
 let storageManager: any = null;
+let storageCallFailure: ((error: unknown) => { success: false; error: string; walletError?: string }) | null = null;
 // One load shared by concurrent callers, so the listener below is added once.
 // A failed load is forgotten, so the next caller tries again.
 let storageManagerLoad: Promise<any> | null = null;
@@ -29,6 +30,7 @@ async function getStorageManager() {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('wallet:tx-status-changed', event);
     });
     storageManager = module.storageManager;
+    storageCallFailure = module.storageCallFailure;
     return storageManager;
   }).catch(error => {
     storageManagerLoad = null;
@@ -527,7 +529,7 @@ ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain:
     return { success: true, result };
   } catch (error: any) {
     console.error('[IPC] storage:call-method error:', error);
-    return { success: false, error: error.message };
+    return storageCallFailure ? storageCallFailure(error) : { success: false, error: error.message };
   }
 });
 

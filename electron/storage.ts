@@ -17,7 +17,7 @@ import os from 'os';
 import { createRequire } from 'module';
 import { fork, ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
-import { StorageKnex, KnexMigrations, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
+import { StorageKnex, KnexMigrations, Monitor, WalletStorageManager, sdk } from '@bsv/wallet-toolbox';
 import { createArcadeServices } from './arcade.js';
 import { normalizeNetworkSettings, type NetworkSettings } from './networkConfig.js';
 import { arcadeSseCursorPath } from './arcadeSse.js';
@@ -651,3 +651,16 @@ class StorageManager {
 
 // Export singleton instance
 export const storageManager = new StorageManager();
+
+/**
+ * The reply electron/main.ts sends when a storage call fails. A toolbox
+ * WalletError also travels as its JSON, so the renderer can rethrow the same
+ * error class with its code and fields (WERR_INSUFFICIENT_FUNDS and the
+ * satoshis needed, for one); any other error keeps the message only.
+ */
+export function storageCallFailure(error: any): { success: false; error: string; walletError?: string } {
+  if (typeof error?.name === 'string' && error.name.startsWith('WERR_')) {
+    return { success: false, error: error.message, walletError: sdk.WalletError.unknownToJson(error) };
+  }
+  return { success: false, error: error?.message };
+}

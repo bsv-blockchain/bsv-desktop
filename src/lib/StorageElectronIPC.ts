@@ -21,7 +21,7 @@
  * - IPC is more efficient and simpler for Electron's architecture
  */
 
-import type { sdk } from '@bsv/wallet-toolbox-client';
+import { sdk } from '@bsv/wallet-toolbox-client';
 import type { NetworkSettings } from './networkConfig';
 
 type WalletStorageProvider = sdk.WalletStorageProvider;
@@ -144,7 +144,17 @@ export class StorageElectronIPC implements WalletStorageProvider {
     );
 
     if (!result.success) {
-      throw new Error(`Storage method ${method} failed: ${result.error}`);
+      const message = `Storage method ${method} failed: ${result.error}`;
+      if (typeof result.walletError !== 'string') throw new Error(message);
+      // Rethrow the toolbox's own error class, so callers can act on its code.
+      let error: Error;
+      try {
+        error = sdk.WalletErrorFromJson(JSON.parse(result.walletError));
+      } catch {
+        error = new Error(message);
+      }
+      error.message = message;
+      throw error;
     }
 
     return result.result as T;

@@ -13,6 +13,13 @@ import { FeeSettingsService, registerFeeSettingsIpc } from './feeSettings.js';
 import { arcadeUrl } from './endpoints.js';
 import { getBootConfig } from './bootConfig.js';
 import { checkAndRepairCertTrust } from './sslCert.js';
+import { applyUserDataOverride } from './userDataOverride.js';
+
+// BSV_DESKTOP_USER_DATA moves userData so a second copy of the app (a second
+// test wallet) can run on one machine. This has to stay ahead of everything
+// else: it must run before the app is ready, and nothing imported above reads
+// userData while its module loads (they all read it inside functions).
+applyUserDataOverride(app);
 
 const require = createRequire(import.meta.url);
 

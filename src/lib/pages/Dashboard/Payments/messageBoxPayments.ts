@@ -10,6 +10,8 @@ export interface OutgoingPayment {
   createdAt: number
   delivered: boolean
   request?: { requestId: string; messageId: string }
+  /** How it was first sent; rows saved before direct payments existed are message box rows. */
+  via?: 'messagebox' | 'direct'
   token: { transaction: number[]; amount: number; outputIndex: number; customInstructions: { derivationPrefix: string; derivationSuffix: string } }
 }
 /** Persist the signed token before any broadcast or delivery, so retry never pays twice. */

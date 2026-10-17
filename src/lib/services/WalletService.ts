@@ -61,12 +61,22 @@ import {
   seedDisplayPreferences,
   withDisplayPreferences,
 } from '../utils/displayPreferences'
+import { DIRECT_PAY_SETTINGS_KEY } from '../utils/directPaySettings'
 import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
 import { defaultNetworkSettingsMap, isWalletNetwork, normalizeMessageBoxUrl, normalizeNetworkSettings, restoreNetworkSettings, type NetworkSettings, type NetworkSettingsMap, type WalletNetwork } from '../networkConfig'
 import { setWocEndpoints } from '../utils/woc'
 import { activeHttpBridgeRequests, activeUserWalletOperations, isHttpBridgePaused, setHttpBridgePaused } from './httpBridgeSession'
 import { clearWalletForHttpRoute } from '../../onWalletReady'
+
+// Device-local payment state a logout must not drop: the MessageBox and nearby outboxes,
+// and the direct-pay settings plus its retry and idempotency lists. Removing the wallet
+// from the device wipes them with everything else.
+const PAYMENT_STATE_KEY_PREFIXES = ['peerpay-outbox-v1:', 'nearby-payment-v1:', 'direct-pay-']
+
+function isPaymentStateKey(key: string): boolean {
+  return key === DIRECT_PAY_SETTINGS_KEY || PAYMENT_STATE_KEY_PREFIXES.some(prefix => key.startsWith(prefix))
+}
 
 export type WalletLifecycle =
   | 'unconfigured'
@@ -1293,7 +1303,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     void secrets.endSession().catch((err) =>
       console.warn('[WalletService] endSession on logout failed:', err)
     )
-    this._clearLocalWalletState()
+    // Undelivered and unaccepted payments outlive a logout; only removal scrubs them.
+    this._clearLocalWalletState({ preservePayments: true })
     this._lifecycle = 'configured'
     this._emitState()
   }
@@ -1334,7 +1345,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         this._tryAutoInitialize()
         throw new Error('The wallet could not be removed from this device. It is unchanged and will reopen.')
       }
-      this._clearLocalWalletState()
+      this._clearLocalWalletState({ preservePayments: false })
       this._lifecycle = 'unconfigured'
       this._emitState()
     } finally {
@@ -1342,12 +1353,16 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     }
   }
 
-  /** Forget the wallet in this renderer: local storage (payment requests aside), secret cache and runtime state. */
-  private _clearLocalWalletState() {
+  /**
+   * Forget the wallet in this renderer: local storage, secret cache and runtime state.
+   * Payment requests are always kept. With `preservePayments` (logout), so are the
+   * payment outboxes and direct-pay state, which a payment still in flight depends on.
+   */
+  private _clearLocalWalletState({ preservePayments }: { preservePayments: boolean }) {
     const preservedKeys: Record<string, string> = {}
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
-      if (key?.startsWith('payReq_')) {
+      if (key && (key.startsWith('payReq_') || (preservePayments && isPaymentStateKey(key)))) {
         preservedKeys[key] = localStorage.getItem(key) ?? ''
       }
     }

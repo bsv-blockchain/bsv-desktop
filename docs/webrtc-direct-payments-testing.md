@@ -183,6 +183,7 @@ The relay refuses to start without `PUBLIC_URLS` unless `HOST` is a loopback add
 | `PUBLIC_URLS` | Comma-separated URLs wallets dial, such as `wss://relay.example.com`. Each wallet's **Relay URL** must be exactly one of them. **Required unless `HOST` is a loopback address**, and whenever a proxy fronts the relay. | unset |
 | `TRUSTED_IP_HEADER` | Header the outermost proxy sets to the client's address (`cf-connecting-ip` behind Cloudflare), for the per-address limits | unset |
 | `STUN_URLS` | Comma-separated `stun:` URLs handed to wallets | unset |
+| `TURN_PROVIDER` | Where TURN credentials come from: `coturn` (the default when `TURN_SECRET` is set; what local testing uses) or `cloudflare` (the planned production setup, with `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN` instead of `TURN_SECRET` and `TURN_URLS`; see [TURN](#turn-connections-that-cannot-go-direct)) | unset |
 | `TURN_SECRET` | coturn `static-auth-secret`; turns on TURN credentials (needs `TURN_URLS`) | unset |
 | `TURN_URLS` | Comma-separated `turn:` URLs to issue credentials for | unset |
 | `TURN_TTL` | Lifetime of issued TURN credentials, in seconds | `600` |
@@ -214,6 +215,8 @@ Then repeat test 1 (Delivery: Direct). Also check:
 
 TURN relays the encrypted connection when two NATs cannot be punched through, which is typical on mobile carrier networks. The TURN server carries only ciphertext and cannot read the payment. The relay hands out TURN credentials itself, which is the easy way to test it: run the Docker stack above (or the relay with `TURN_SECRET` and `TURN_URLS` set) and use **Signaling: Relay server**. Before each connection, face-to-face code exchanges included, the wallet asks the relay for TURN credentials and reuses them while they are valid (10 minutes by default), so it does not use up the relay's hourly allowance per address (6 by default; the Docker stack sets 600). You enter nothing in the TURN fields.
 
+**Production TURN (planned).** The production relay is planned to issue Cloudflare managed TURN credentials (`TURN_PROVIDER=cloudflare`; infrastructure work in bsva-infra-flux#427), so there is no TURN server of our own to run. Wallets need no setting for it: they still ask the relay for TURN servers before each connection, and the relay sends the time the credentials stop working (`expiresAt`) with them, which the wallet reads to know when to ask again (Cloudflare's usernames say nothing about it). Cloudflare then sees the address, ports and timing of each wallet whose connection it relays, never the payment and never an identity key. None of this can be tried locally and no test here calls Cloudflare: local testing still uses the WebRTPay Docker coturn stack below, which the relay drives with `TURN_SECRET` and `TURN_URLS`.
+
 Notes:
 
 - As shipped, the Docker stack publishes everything on 127.0.0.1 and coturn advertises `127.0.0.1`, so TURN only helps a same-machine test.
@@ -224,7 +227,7 @@ Notes:
   - Allow those ports through the host firewall.
 - The shipped `turnserver.conf` never relays to private addresses: its `denied-peer-ip` lines cover 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 and the other private and reserved ranges. Two relayed wallets still reach each other, because both relayed addresses map back to coturn itself, which `allowed-peer-ip=172.30.78.10` permits. But coturn will not relay to a wallet's own LAN address (such as 192.168.1.21), so on one LAN only relay-to-relay connections use TURN. For a LAN test that needs more, add `allowed-peer-ip=<that wallet's address>` for the test only, never in a deployment, or test across networks.
 - The wallet has no "force relay" switch. To see TURN used, make a direct path impossible (put the wallets on different networks, such as a phone hotspot, or block UDP between them while allowing it to the TURN host) and confirm the payment still completes. The coturn log (`docker compose -f docker/docker-compose.yml logs coturn`) shows an allocation for the test.
-- A relay without a TURN server hands out STUN servers only, and the wallet connects without TURN. When the relay refuses TURN credentials (its allowance for your address is used up) or does not answer within 5 seconds, the wallet connects without them too, and the developer console logs `Connecting without the relay's TURN servers`.
+- A relay without a TURN server hands out STUN servers only, and the wallet connects without TURN. When the relay refuses TURN credentials (its allowance for your address is used up), says its TURN provider could not issue credentials just then (`unavailable`, which a Cloudflare outage or error causes), or does not answer within 5 seconds, the wallet connects without them too, shows no error, and the developer console logs `Connecting without the relay's TURN servers` with the reason. The next connection asks the relay again, which spends another of your address's hourly allowance even when the provider fails.
 - To use the **TURN server (optional, for testing)** fields yourself (they take a fixed username and credential), mint coturn REST credentials for the dev secret that last an hour:
 
   ```bash

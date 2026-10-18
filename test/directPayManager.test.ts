@@ -433,6 +433,30 @@ describe('DirectPayManager.start', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('[DirectPayManager]'), failure)
   })
 
+  // A relay whose TURN provider (Cloudflare) could not issue credentials just then answers
+  // `unavailable`. That is "no TURN this time": the client gathers with STUN alone, and the
+  // only trace is the console line. It is not a problem with receiving, so nothing in the
+  // snapshot changes and the page shows nothing.
+  it('logs a relay that cannot issue TURN credentials (`unavailable`) and shows the user nothing', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY }) }))
+    const [client] = h.made.clients
+    const before = manager.getSnapshot()
+    const listener = vi.fn()
+    manager.on('changed', listener)
+    events.length = 0
+
+    const failure = new WebRTPayError('unavailable', 'Relay could not get TURN credentials; try again later')
+    client.options.onIceServersProviderError(failure)
+
+    expect(warn).toHaveBeenCalledOnce()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Connecting without the relay's TURN servers"), failure)
+    expect(manager.getSnapshot()).toBe(before)
+    expect(manager.getSnapshot().error).toBe('')
+    expect(listener).not.toHaveBeenCalled()
+    expect(events).toEqual([])
+  })
+
   it('asks no provider for ICE servers when signaling through the message box', async () => {
     await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
 

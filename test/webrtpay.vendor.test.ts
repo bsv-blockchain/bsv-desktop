@@ -59,15 +59,25 @@ interface FakeSocket {
 /** The relay cannot be reached: the socket closes before it opens. */
 const relayDown = (ws: FakeSocket) => ws.end()
 
-/** The relay accepts this wallet and answers `turn` with `turn` (STUN servers otherwise). */
-const relayUp = (turn?: RTCIceServer) => (ws: FakeSocket) => {
+/**
+ * The relay accepts this wallet and answers `turn` with `turn` (STUN servers otherwise), sending
+ * `expiresAt` with it when given, as a relay with Cloudflare's TURN does. `unavailable` is how
+ * many `turn` requests it first answers with `unavailable`, as when its TURN provider is down.
+ */
+const relayUp = (turn?: RTCIceServer, o: { expiresAt?: number; unavailable?: number } = {}) => (ws: FakeSocket) => {
+  let unavailable = o.unavailable ?? 0
   ws.readyState = 1
   ws.onSend = frame => {
     if (frame.t === 'auth') {
       ws.receive({ t: 'ready', identityKey: frame.identityKey })
       ws.receive({ t: 'ice', iceServers: [{ urls: 'stun:stun.example.com:3478' }] })
     } else if (frame.t === 'turn') {
-      ws.receive({ t: 'ice', iceServers: [{ urls: 'stun:stun.example.com:3478' }, ...(turn ? [turn] : [])] })
+      if (unavailable > 0) {
+        unavailable--
+        ws.receive({ t: 'error', code: 'unavailable' })
+        return
+      }
+      ws.receive({ t: 'ice', iceServers: [{ urls: 'stun:stun.example.com:3478' }, ...(turn ? [turn] : [])], ...(o.expiresAt !== undefined && { expiresAt: o.expiresAt }) })
     }
   }
   ws.receive({ t: 'challenge', nonce: 'nonce-1' })
@@ -181,6 +191,127 @@ describe('vendored @bsv/webrtpay', () => {
       expect(relayFake.frames.filter(frame => frame.t === 'turn')).toHaveLength(1)
     } finally {
       await relay.close()
+    }
+  })
+
+  // Cloudflare's TURN usernames are random, so the only expiry a wallet has is the `expiresAt`
+  // the relay sends with the servers. Without reading it, the wallet would keep dead credentials.
+  describe('TURN credentials from a relay that sends expiresAt (Cloudflare)', () => {
+    const cloudflare: RTCIceServer = {
+      urls: ['turn:turn.cloudflare.com:3478?transport=udp', 'turns:turn.cloudflare.com:443?transport=tcp'],
+      username: 'cf-opaque-username',
+      credential: 'cf-opaque-credential'
+    }
+    const turnFrames = (relayFake: ReturnType<typeof fakeRelay>) => relayFake.frames.filter(frame => frame.t === 'turn')
+
+    it('reuses credentials that stay valid, going by expiresAt', async () => {
+      const relayFake = fakeRelay([relayUp(cloudflare, { expiresAt: Date.now() + 600_000 })])
+      const relay = new RelaySignaler({ url: 'wss://relay.example.com', wallet, originator: 'admin.local', WebSocket: relayFake.WebSocket })
+      const provider = relay.turnProvider()
+      try {
+        await relay.connect() // as a wallet that is receiving does: the socket stays open between requests
+        await provider()
+        const second = await provider()
+
+        expect(second).toContainEqual(cloudflare)
+        expect(relay.iceServers()).toContainEqual(cloudflare)
+        expect(turnFrames(relayFake)).toHaveLength(1)
+      } finally {
+        await relay.close()
+      }
+    })
+
+    it('asks again once they are within 30 seconds of expiring, and stops offering them from iceServers()', async () => {
+      const relayFake = fakeRelay([relayUp(cloudflare, { expiresAt: Date.now() + 10_000 })])
+      const relay = new RelaySignaler({ url: 'wss://relay.example.com', wallet, originator: 'admin.local', WebSocket: relayFake.WebSocket })
+      const provider = relay.turnProvider()
+      try {
+        await relay.connect()
+        await provider()
+        expect(relay.iceServers()).not.toContainEqual(cloudflare)
+        await provider()
+
+        expect(turnFrames(relayFake)).toHaveLength(2)
+      } finally {
+        await relay.close()
+      }
+    })
+  })
+
+  // A relay whose TURN provider (Cloudflare) fails answers `unavailable`. That is "no TURN this
+  // time": the request fails with its own code, the relay connection stays up, and nothing is
+  // remembered, so the next gather asks again.
+  it('fails a TURN request with `unavailable` when the relay cannot issue credentials, keeps the connection, and asks again next time', async () => {
+    const turn: RTCIceServer = { urls: 'turn:turn.cloudflare.com:3478', username: 'cf-opaque-username', credential: 'cf-opaque-credential' }
+    const relayFake = fakeRelay([relayUp(turn, { unavailable: 1, expiresAt: Date.now() + 600_000 })])
+    const states: Array<[string, string | undefined]> = []
+    const relay = new RelaySignaler({
+      url: 'wss://relay.example.com',
+      wallet,
+      originator: 'admin.local',
+      WebSocket: relayFake.WebSocket,
+      onStateChange: (state, error) => { states.push([state, error?.code]) }
+    })
+    const provider = relay.turnProvider()
+    try {
+      await relay.connect() // as a wallet that is receiving does: the socket stays open between requests
+      const failure = await provider().catch(e => e)
+      expect(failure).toBeInstanceOf(WebRTPayError)
+      expect(failure.code).toBe('unavailable')
+      expect(relay.iceServers()).not.toContainEqual(turn)
+
+      const retried = await provider()
+
+      expect(retried).toContainEqual(turn)
+      expect(relayFake.frames.filter(frame => frame.t === 'turn')).toHaveLength(2)
+      // The one socket stayed open, and the failure never showed up as a connection problem.
+      expect(relayFake.sockets).toHaveLength(1)
+      expect(states).toEqual([['connecting', undefined], ['online', undefined]])
+    } finally {
+      await relay.close()
+    }
+  })
+
+  // The same through a real client: a provider that fails never fails the dial. The payer
+  // connects and authenticates on STUN alone, and is told why through onIceServersProviderError.
+  it('connects without TURN when the relay answers a TURN request `unavailable`, telling onIceServersProviderError', async () => {
+    const { RTCPeerConnection } = await import('node-datachannel/polyfill')
+    const hub = createMemoryHub()
+    const rtc = { RTCPeerConnection: RTCPeerConnection as unknown as typeof globalThis.RTCPeerConnection, iceServers: [], extraConfig: { bindAddress: '127.0.0.1' } }
+    const party = async () => {
+      const proto = new ProtoWallet(PrivateKey.fromRandom())
+      const { publicKey } = await proto.getPublicKey({ identityKey: true })
+      return { proto, identityKey: publicKey }
+    }
+    const [payee, payer] = [await party(), await party()]
+    const relay = new RelaySignaler({
+      url: 'wss://relay.example.com',
+      wallet,
+      originator: 'admin.local',
+      WebSocket: fakeRelay([relayUp(undefined, { unavailable: 1 })]).WebSocket
+    })
+    const providerErrors: unknown[] = []
+    const payeeClient = new DirectPayClient({ wallet: payee.proto, originator: 'admin.test', chain: 'main', signaler: hub.signaler(payee.identityKey), rtc, timeouts: { connectMs: 10_000 } })
+    const payerClient = new DirectPayClient({
+      wallet: payer.proto,
+      originator: 'admin.test',
+      chain: 'main',
+      signaler: hub.signaler(payer.identityKey),
+      rtc,
+      timeouts: { connectMs: 10_000 },
+      iceServersProvider: relay.turnProvider(),
+      onIceServersProviderError: e => { providerErrors.push(e) }
+    })
+    try {
+      await payeeClient.startReceiving({ onPayment: async () => 'accepted' as const })
+      const peer = await payerClient.connect(payee.identityKey)
+
+      expect(peer.isOpen).toBe(true)
+      expect(providerErrors).toHaveLength(1)
+      expect(providerErrors[0]).toBeInstanceOf(WebRTPayError)
+      expect((providerErrors[0] as WebRTPayError).code).toBe('unavailable')
+    } finally {
+      await Promise.all([payerClient.close(), payeeClient.close(), relay.close()])
     }
   })
 

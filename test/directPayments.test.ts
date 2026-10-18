@@ -4,6 +4,7 @@ import type { WalletInterface } from '@bsv/sdk'
 import { createMemoryHub, DirectPayClient, paymentKey, WebRTPayError } from '@bsv/webrtpay'
 import type { AuthenticatedPeer, IncomingPayment, InboundLimits, MemoryHub } from '@bsv/webrtpay'
 import { createSeenStore, deliverDirect, receiveDirectPayment, retryReceivedDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
+import type { DroppedDirectPayment } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import { prepareMessageBoxPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
 import type { OutgoingPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
 
@@ -101,8 +102,8 @@ const keyOf = (p: IncomingPayment) => paymentKey(txidOf(p.token.transaction), 0,
 const receive = (payee: Payee, payment: IncomingPayment) =>
   receiveDirectPayment({ wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN, payment })
 
-const retry = (payee: Payee) =>
-  retryReceivedDirectPayments({ wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN })
+const retry = (payee: Payee, onDropped: (dropped: DroppedDirectPayment) => void = vi.fn()) =>
+  retryReceivedDirectPayments({ wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN, onDropped })
 
 /** An error shaped like the wallet-toolbox / SDK WERR_* classes (they set `name`). */
 const werr = (name: string, message: string) => Object.assign(new Error(message), { name })
@@ -464,21 +465,193 @@ describe('receiveDirectPayment', () => {
 })
 
 describe('retryReceivedDirectPayments', () => {
-  it('adds what the wallet now accepts, keeps transient failures and drops payments it refuses', async () => {
-    const payer = await makePayer(), payee = await makePayee()
-    const [ok, later, bad] = [await incoming(payer, payee), await incoming(payer, payee), await incoming(payer, payee)]
+  const HOUR = 60 * 60 * 1000
+
+  /** Kept payments for `payee`, received while its wallet was locked. */
+  async function kept(payer: Payer, payee: Payee, count = 1): Promise<IncomingPayment[]> {
+    const payments: IncomingPayment[] = []
     payee.internalizeAction.mockRejectedValue(new Error('User is not authenticated.'))
-    for (const payment of [ok, later, bad]) await receive(payee, payment)
+    for (let i = 0; i < count; i++) {
+      payments.push(await incoming(payer, payee))
+      await expect(receive(payee, payments[i])).resolves.toBe('received')
+    }
+    payee.internalizeAction.mockReset()
+    return payments
+  }
+
+  /** Rewrites the stored retry entries, e.g. to age them. */
+  function patchRetries(payee: Payee, patch: (entry: any) => object) {
+    local.set(`direct-pay-retry-v1:${payee.identityKey}:${CHAIN}`, JSON.stringify(retries(payee.identityKey).map(entry => ({ ...entry, ...patch(entry) }))))
+  }
+
+  it('adds what the wallet now accepts, keeps transient failures and drops and reports payments it refuses', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const [ok, later, bad] = await kept(payer, payee, 3)
     expect(retries(payee.identityKey)).toHaveLength(3)
 
-    payee.internalizeAction.mockReset()
+    const refusal = 'The wallet payment parameter must be valid paymentRemittance and no insertionRemittance'
     payee.internalizeAction
       .mockResolvedValueOnce({ accepted: true })
       .mockRejectedValueOnce(new TypeError('fetch failed'))
-      .mockRejectedValueOnce(werr('WERR_INVALID_PARAMETER', 'The tx parameter must be valid AtomicBEEF'))
-    await expect(retry(payee)).resolves.toBe(1)
-    expect(retries(payee.identityKey)).toEqual([expect.objectContaining({ key: keyOf(later) })])
+      .mockRejectedValueOnce(werr('WERR_INVALID_PARAMETER', refusal))
+    const onDropped = vi.fn()
+    await expect(retry(payee, onDropped)).resolves.toBe(1)
+    expect(retries(payee.identityKey)).toEqual([expect.objectContaining({ key: keyOf(later), attempts: 0 })]) // a temporary failure is not a try
     expect(seenKeys(payee.identityKey)).toEqual([keyOf(ok)])
+    expect(onDropped).toHaveBeenCalledTimes(1)
+    expect(onDropped).toHaveBeenCalledWith({
+      reason: 'refused',
+      txid: txidOf(bad.token.transaction),
+      sender: payer.identityKey,
+      amount: 1000,
+      receivedAt: expect.any(Number),
+      attempts: 0,
+      error: refusal,
+      payment: {
+        messageId: bad.messageId,
+        sender: payer.identityKey,
+        token: { customInstructions: bad.token.customInstructions, transaction: Utils.toBase64(bad.token.transaction), amount: 1000, outputIndex: 0 }
+      }
+    })
+  })
+
+  it.each([
+    ['an unknown failure', new Error('Something unexpected')],
+    ['a chain tracker HTTP error', new Error('ChainTracks request failed with HTTP 503.')],
+    ['a chain tracker error page', new Error('ChainTracks service returned invalid JSON.')],
+    ['a lagging chain tracker', werr('WERR_INVALID_PARAMETER', 'The tx parameter must be valid AtomicBEEF')],
+    ['an unreachable header service', new Error('Failed to verify merkleroot for height 5.')],
+    ['a merkle root mismatch', werr('WERR_INVALID_MERKLE_ROOT', 'Invalid merkleRoot 00 for block 00 at height 1.')],
+    ['a transaction busy in storage', new Error('Storage method internalizeAction failed: The tx parameter must be target transaction of internalizeAction is undergoing active changes.')],
+    ['a transaction storage does not know yet', new Error(`Storage method internalizeAction failed: The txid parameter must be known to storage. ${'ab'.repeat(32)} is not known.`)],
+    ['a transaction lookup HTTP error', werr('WERR_INVALID_PARAMETER', `The txid parameter must be valid transaction. '${'ab'.repeat(32)}' response Service Unavailable`)],
+    ['a transaction not found on chain yet', werr('WERR_INVALID_PARAMETER', `The txid ${'ab'.repeat(32)} parameter must be valid transaction on chain test`)],
+    ['wallet services not set up yet', werr('WERR_INVALID_PARAMETER', 'The services parameter must be valid in constructor arguments to be retreived here.')],
+    ['an unexplained refusal', new Error('The wallet did not accept the payment')]
+  ])('keeps a payment it acknowledged when the retry fails with %s', async (_, failure) => {
+    const payer = await makePayer(), payee = await makePayee()
+    const [payment] = await kept(payer, payee)
+    payee.internalizeAction.mockRejectedValue(failure)
+    const onDropped = vi.fn()
+    await expect(retry(payee, onDropped)).resolves.toBe(0)
+    await expect(retry(payee, onDropped)).resolves.toBe(0)
+    expect(payee.internalizeAction).toHaveBeenCalledTimes(2)
+    expect(onDropped).not.toHaveBeenCalled()
+    expect(retries(payee.identityKey)).toEqual([expect.objectContaining({ key: keyOf(payment), attempts: 2, error: failure.message })])
+  })
+
+  it('keeps a payment the wallet answers with accepted false', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    await kept(payer, payee)
+    payee.internalizeAction.mockResolvedValue({ accepted: false })
+    const onDropped = vi.fn()
+    await expect(retry(payee, onDropped)).resolves.toBe(0)
+    expect(onDropped).not.toHaveBeenCalled()
+    expect(retries(payee.identityKey)).toEqual([expect.objectContaining({ attempts: 1, error: 'The wallet did not accept the payment' })])
+  })
+
+  it('gives up on a payment it cannot verify only after 5 tries and more than a day, and reports it', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const [payment] = await kept(payer, payee)
+    const receivedAt = retries(payee.identityKey)[0].receivedAt
+    const failure = new Error('ChainTracks request failed with HTTP 503.')
+    payee.internalizeAction.mockRejectedValue(failure)
+    const onDropped = vi.fn()
+
+    patchRetries(payee, () => ({ attempts: 4, receivedAt: Date.now() - 23 * HOUR })) // enough tries, too young
+    await retry(payee, onDropped)
+    expect(retries(payee.identityKey)).toEqual([expect.objectContaining({ attempts: 5 })])
+
+    patchRetries(payee, () => ({ attempts: 0, receivedAt: Date.now() - 25 * HOUR })) // old enough, too few tries
+    await retry(payee, onDropped)
+    expect(retries(payee.identityKey)).toEqual([expect.objectContaining({ attempts: 1 })])
+    expect(onDropped).not.toHaveBeenCalled()
+
+    const old = receivedAt - 25 * HOUR
+    patchRetries(payee, () => ({ attempts: 4, receivedAt: old }))
+    await expect(retry(payee, onDropped)).resolves.toBe(0)
+    expect(retries(payee.identityKey)).toEqual([])
+    expect(onDropped).toHaveBeenCalledTimes(1)
+    expect(onDropped).toHaveBeenCalledWith(expect.objectContaining({
+      reason: 'unverifiable',
+      txid: txidOf(payment.token.transaction),
+      sender: payer.identityKey,
+      amount: 1000,
+      receivedAt: old,
+      attempts: 5,
+      error: failure.message,
+      payment: expect.objectContaining({ token: expect.objectContaining({ transaction: Utils.toBase64(payment.token.transaction), customInstructions: payment.token.customInstructions }) })
+    }))
+  })
+
+  it('does not count temporary failures towards giving up', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    await kept(payer, payee)
+    patchRetries(payee, () => ({ attempts: 4, receivedAt: Date.now() - 48 * HOUR }))
+    const onDropped = vi.fn()
+    for (const failure of [new Error('User is not authenticated.'), new TypeError('fetch failed'), new Error('Storage method internalizeAction failed: SQLITE_BUSY: database is locked')]) {
+      payee.internalizeAction.mockRejectedValueOnce(failure)
+      await expect(retry(payee, onDropped)).resolves.toBe(0)
+    }
+    expect(onDropped).not.toHaveBeenCalled()
+    expect(retries(payee.identityKey)).toEqual([expect.objectContaining({ attempts: 4, error: 'User is not authenticated.' })])
+  })
+
+  it('drops and reports at once a payment that does not pay this wallet', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    await kept(payer, payee)
+    patchRetries(payee, entry => ({ payment: { ...entry.payment, token: { ...entry.payment.token, amount: 999 } } }))
+    const onDropped = vi.fn()
+    await expect(retry(payee, onDropped)).resolves.toBe(0)
+    expect(payee.internalizeAction).not.toHaveBeenCalled()
+    expect(retries(payee.identityKey)).toEqual([])
+    expect(onDropped).toHaveBeenCalledWith(expect.objectContaining({ reason: 'refused', amount: 999, attempts: 0, error: expect.stringMatching(/does not pay/) }))
+  })
+
+  it.each([
+    ['a missing argument', werr('WERR_MISSING_PARAMETER', 'The required outputs parameter is missing.')],
+    ['a storage-wrapped argument check', new Error('Storage method internalizeAction failed: The outputs parameter must be unique outputIndex values')],
+    ['an invalid derivation', werr('WERR_INVALID_PARAMETER', 'The derivationPrefix parameter must be valid base64.')],
+    ['an invalid remittance', werr('WERR_INVALID_PARAMETER', 'The output remittance parameter must be only paymentRemittance for wallet payment')]
+  ])('drops and reports at once a payment refused for %s', async (_, failure) => {
+    const payer = await makePayer(), payee = await makePayee()
+    await kept(payer, payee)
+    payee.internalizeAction.mockRejectedValue(failure)
+    const onDropped = vi.fn()
+    await retry(payee, onDropped)
+    expect(retries(payee.identityKey)).toEqual([])
+    expect(onDropped).toHaveBeenCalledWith(expect.objectContaining({ reason: 'refused', error: failure.message }))
+  })
+
+  it('keeps a payment whose report fails and reports it on the next retry', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    await kept(payer, payee)
+    payee.internalizeAction.mockRejectedValue(werr('WERR_INVALID_PARAMETER', 'The outputs parameter must be unique outputIndex values'))
+    await retry(payee, () => { throw new Error('could not log') })
+    expect(retries(payee.identityKey)).toHaveLength(1)
+    const onDropped = vi.fn()
+    await retry(payee, onDropped)
+    expect(onDropped).toHaveBeenCalledTimes(1)
+    expect(retries(payee.identityKey)).toEqual([])
+  })
+
+  it('keeps a payment that arrives while a retry waits for the wallet', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const [first] = await kept(payer, payee)
+    let fail!: (error: Error) => void
+    payee.internalizeAction
+      .mockImplementationOnce(() => new Promise((_, reject) => { fail = reject }))
+      .mockRejectedValueOnce(new Error('User is not authenticated.'))
+    const retrying = retry(payee)
+    await vi.waitFor(() => expect(payee.internalizeAction).toHaveBeenCalledTimes(1))
+    const second = await incoming(payer, payee)
+    await expect(receive(payee, second)).resolves.toBe('received')
+    fail(new Error('ChainTracks request failed with HTTP 503.'))
+    await expect(retrying).resolves.toBe(0)
+    expect(retries(payee.identityKey)).toEqual([
+      expect.objectContaining({ key: keyOf(first), attempts: 1 }),
+      expect.objectContaining({ key: keyOf(second), attempts: 0 })
+    ])
   })
 
   it('returns 0 when nothing is waiting or the stored list is unreadable', async () => {

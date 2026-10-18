@@ -9,6 +9,10 @@
  * take right now (locked, or its storage or network unavailable) is kept on this device
  * for a retry and acknowledged as received; anything the wallet refuses is rejected, so
  * a peer cannot fill this device's storage with payments that will never verify.
+ *
+ * A kept payment was acknowledged, so its payer will not send it again: a retry drops it
+ * only when the wallet refuses it outright, or when it still cannot be verified after
+ * several tries over more than a day. Every dropped payment is reported to the caller.
  */
 import { Transaction, Utils } from '@bsv/sdk'
 import type { WalletInterface } from '@bsv/sdk'
@@ -25,6 +29,14 @@ const SEEN_LIMIT = 5000
 const RETRY_LIMIT = 50
 /** Characters of stored retry JSON (transactions are kept as base64). */
 const RETRY_BUDGET = 1_000_000
+/**
+ * A kept payment the wallet still cannot verify is given up only after this many failed
+ * retries AND this long after it arrived, so a lagging or unreachable chain tracker has time
+ * to catch up. Failures known to be temporary (wallet locked, storage or network down) do
+ * not count as tries.
+ */
+const RETRY_GIVE_UP_ATTEMPTS = 5
+const RETRY_GIVE_UP_AGE_MS = 24 * 60 * 60 * 1000
 
 const seenStorageKey = (identity: string, chain: string) => `direct-pay-seen-v1:${identity}:${chain}`
 const retryStorageKey = (identity: string, chain: string) => `direct-pay-retry-v1:${identity}:${chain}`
@@ -153,16 +165,60 @@ export async function receiveDirectPayment(o: {
   return 'accepted'
 }
 
+/** A kept payment as stored on this device: everything needed to take it into a wallet. */
+export interface KeptDirectPayment {
+  messageId: string
+  /** The payer's identity key. */
+  sender: string
+  token: {
+    customInstructions: { derivationPrefix: string; derivationSuffix: string }
+    /** Atomic BEEF, base64. */
+    transaction: string
+    amount: number
+    outputIndex: number
+  }
+}
+
+/** A kept payment that a retry gave up on. Its payer will not resend it, so report it. */
+export interface DroppedDirectPayment {
+  /**
+   * `refused`: it does not pay this wallet, or the wallet refused one of its fixed arguments
+   * (never the transaction or its proof). `unverifiable`: the wallet still could not take it after
+   * {@link RETRY_GIVE_UP_ATTEMPTS} tries, more than a day after it arrived.
+   */
+  reason: 'refused' | 'unverifiable'
+  txid: string
+  sender: string
+  amount: number
+  receivedAt: number
+  /** Failed retries counted towards giving up (temporary failures are not counted). */
+  attempts: number
+  /** The last failure (local text; never sent to the payer). */
+  error: string
+  payment: KeptDirectPayment
+}
+
 /**
  * Offers every kept payment to the wallet again. A payment the wallet takes (or already
- * has) leaves the list, as does one it now refuses; one that still fails for a temporary
- * reason stays. Returns how many payments were added to the wallet.
+ * has) leaves the list. Each kept payment was acknowledged as received, so its payer will
+ * not resend it; a failed retry therefore drops it only when:
+ * - the wallet refuses it outright (`invalid_payment`, or a check on an argument built
+ *   from the kept payment, such as `outputs` or `paymentRemittance`; never `tx`), or
+ * - the wallet still cannot verify it after {@link RETRY_GIVE_UP_ATTEMPTS} failed tries
+ *   and more than {@link RETRY_GIVE_UP_AGE_MS} after it arrived. A failure known to be
+ *   temporary (wallet locked, storage or network down) is not counted as a try.
+ *
+ * Any other failure, including an unknown one and every chain tracker or proof error,
+ * keeps the payment. `onDropped` is called for every payment given up on, before it
+ * leaves the list; if it throws, the payment stays and is reported again next time.
+ * Returns how many payments were added to the wallet. Run it single-flight.
  */
 export async function retryReceivedDirectPayments(o: {
   wallet: WalletInterface
   originator: string
   identity: string
   chain: string
+  onDropped: (dropped: DroppedDirectPayment) => void
 }): Promise<number> {
   const storageKey = retryStorageKey(o.identity, o.chain)
   const seen = createSeenStore(o.identity, o.chain)
@@ -172,7 +228,23 @@ export async function retryReceivedDirectPayments(o: {
       const result = await acceptDirectPayment(o.wallet, toIncoming(entry), { originator: o.originator, seen })
       if (result.status === 'accepted') accepted++
     } catch (error) {
-      if (!(error instanceof WebRTPayError) && isTemporary(error)) continue
+      const verdict = retryVerdict(error)
+      if (verdict === 'temporary') continue
+      const failed: RetryEntry = { ...entry, error: messageOf(error).slice(0, 500) }
+      if (verdict === 'unproven') {
+        failed.attempts = entry.attempts + 1
+        if (failed.attempts < RETRY_GIVE_UP_ATTEMPTS || Date.now() - entry.receivedAt <= RETRY_GIVE_UP_AGE_MS) {
+          // If this write fails the try is just not counted; the payment stays either way.
+          update(storageKey, failed)
+          continue
+        }
+      }
+      try {
+        o.onDropped(dropped(failed, verdict === 'refused' ? 'refused' : 'unverifiable'))
+      } catch {
+        update(storageKey, failed)
+        continue // not reported, so not dropped
+      }
     }
     forget(storageKey, entry.key)
   }
@@ -183,8 +255,20 @@ export async function retryReceivedDirectPayments(o: {
 const VALIDATION = /parameter must be|parameter is missing|merkle ?root/i
 /** The wallet is locked, or its storage (over IPC) or network is unavailable. */
 const TEMPORARY = /not authenticated|^Storage method \w+ failed:|^Settings not available|^Services not set|^Failed to make storage available|fetch failed|failed to fetch|network ?error|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i
+/** A WERR_INVALID_PARAMETER / WERR_MISSING_PARAMETER message (only the message crosses IPC). */
+const ARGUMENT = /\bThe (?:required )?([\w. ]{1,60}?) parameter (?:must be|is missing)/
+/**
+ * internalizeAction arguments other than `tx` that acceptDirectPayment builds from the kept
+ * payment (wallet-toolbox validateInternalizeActionArgs, signer and storage internalize), so
+ * a failed check on one fails the same way on every retry. Not here on purpose: `tx`, `txid`
+ * (storage state and service lookups), `services`, `status` and other state-dependent names.
+ */
+const FIXED_ARGUMENT = /^(?:args|outputs|output|output remittance|protocol|outputIndex|paymentRemittance|derivationPrefix|derivationSuffix|senderIdentityKey|description|labels?|seekPermission|wallet payment|basket insertion|insertionRemittance(?:\.basket)?)$/
 
-/** Only failures known to be temporary are worth keeping a payment for (audit finding F6). */
+/**
+ * Receive time: only failures known to be temporary are worth keeping a payment for (audit
+ * finding F6). Rejecting anything else is safe there, because the payer still has it.
+ */
 function isTemporary(error: unknown): boolean {
   const name = (error as { name?: unknown } | null)?.name
   const message = messageOf(error)
@@ -193,24 +277,37 @@ function isTemporary(error: unknown): boolean {
   return name === 'WERR_NOT_ACTIVE' || TEMPORARY.test(message)
 }
 
+/**
+ * Retry time: the payer no longer has the payment, so unknown means keep. `refused` is a
+ * definite answer about the payment itself: it does not pay this wallet, or one of the
+ * {@link FIXED_ARGUMENT}s is invalid. Any other argument error may come from state or a
+ * service: a chain tracker that has not caught up answers `false`, which the wallet reports
+ * as "The tx parameter must be valid AtomicBEEF", and storage reports a transaction it does
+ * not know yet under `txid`. Those are `unproven`, like tracker request failures and
+ * unknown errors.
+ */
+function retryVerdict(error: unknown): 'refused' | 'temporary' | 'unproven' {
+  if (error instanceof WebRTPayError) return error.code === 'invalid_payment' ? 'refused' : 'unproven'
+  const parameter = ARGUMENT.exec(messageOf(error))?.[1]
+  if (parameter !== undefined && FIXED_ARGUMENT.test(parameter)) return 'refused'
+  return isTemporary(error) ? 'temporary' : 'unproven'
+}
+
 /** A payment acknowledged as received that the wallet has not taken yet. */
 interface RetryEntry {
   /** {@link paymentKey}: one entry per payment output. */
   key: string
-  payment: {
-    messageId: string
-    sender: string
-    token: {
-      customInstructions: { derivationPrefix: string; derivationSuffix: string }
-      /** Atomic BEEF, base64. */
-      transaction: string
-      amount: number
-      outputIndex: number
-    }
-  }
-  /** Why the wallet could not take it (kept on this device only). */
+  payment: KeptDirectPayment
+  /** The latest reason the wallet could not take it (kept on this device only). */
   error: string
   receivedAt: number
+  /** Failed retries counted towards giving up; see {@link retryReceivedDirectPayments}. */
+  attempts: number
+}
+
+function dropped(entry: RetryEntry, reason: DroppedDirectPayment['reason']): DroppedDirectPayment {
+  const { key, payment, error, receivedAt, attempts } = entry
+  return { reason, txid: key.split(':')[0], sender: payment.sender, amount: payment.token.amount, receivedAt, attempts, error, payment }
 }
 
 /**
@@ -243,8 +340,22 @@ function forget(storageKey: string, key: string): void {
   } catch { /* see above */ }
 }
 
+/**
+ * Replaces a kept payment's entry, re-reading the list first so a payment kept meanwhile
+ * (the retry awaits the wallet) is not lost. If the entry is gone, nothing is written.
+ */
+function update(storageKey: string, entry: RetryEntry): void {
+  const entries = readRetries(storageKey)
+  const index = entries.findIndex(e => e.key === entry.key)
+  if (index < 0) return
+  entries[index] = entry
+  try { localStorage.setItem(storageKey, JSON.stringify(entries)) } catch { /* the old entry stays */ }
+}
+
 function readRetries(storageKey: string): RetryEntry[] {
-  return readArray(storageKey).filter((e: any): e is RetryEntry => typeof e?.key === 'string' && typeof e?.payment?.token?.transaction === 'string')
+  return readArray(storageKey)
+    .filter((e: any): e is RetryEntry => typeof e?.key === 'string' && typeof e?.payment?.token?.transaction === 'string')
+    .map(e => ({ ...e, attempts: Number.isSafeInteger(e.attempts) && e.attempts > 0 ? e.attempts : 0, receivedAt: Number.isFinite(e.receivedAt) ? e.receivedAt : Date.now() }))
 }
 
 function readArray(storageKey: string): unknown[] {
@@ -269,7 +380,8 @@ function toEntry(p: IncomingPayment, error: unknown): RetryEntry {
     key: keyOf(p, Transaction.fromAtomicBEEF(transaction).id('hex')),
     payment: { messageId: p.messageId, sender: p.sender, token: { customInstructions: { derivationPrefix, derivationSuffix }, transaction: Utils.toBase64(transaction), amount, outputIndex } },
     error: messageOf(error).slice(0, 500),
-    receivedAt: Date.now()
+    receivedAt: Date.now(),
+    attempts: 0
   }
 }
 

@@ -96,6 +96,8 @@ type RetrySchedule = {
   /** The wait before the next timed pass; doubles after each, up to {@link RETRY_MAX_MS}. */
   delay: number
   timer?: ReturnType<typeof setTimeout>
+  /** When `timer` fires (ms since the epoch). */
+  due?: number
   /** The next pass also offers payments that need attention (when the wallet opens, or the network is back). */
   withAttention: boolean
   /** Asked for while a pass was running: run another as soon as it ends. */
@@ -322,14 +324,22 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     window.removeEventListener('online', s.onOnline)
   }
 
-  /** A payment was just kept: the next pass comes after the first wait again. */
+  /** A payment was just kept: the next pass comes after the first wait at the latest. */
   private _retrySoon(o: DirectPayStartOptions): void {
     const s = this._retry
     if (!s || !isSameWallet(s.options, o)) return
     s.delay = RETRY_FIRST_MS
     if (s.timer === undefined) return // a pass is running; it schedules the next one
+    // A sooner pass (say one waiting for a network switch to end) stays as it is.
+    if (s.due !== undefined && s.due <= Date.now() + RETRY_FIRST_MS) return
+    this._retryIn(s, RETRY_FIRST_MS)
+  }
+
+  /** Runs the next pass `ms` from now, replacing any pass already waiting. */
+  private _retryIn(s: RetrySchedule, ms: number): void {
     clearTimeout(s.timer)
-    s.timer = setTimeout(() => this._retryNow(s, false), s.delay)
+    s.due = Date.now() + ms
+    s.timer = setTimeout(() => this._retryNow(s, false), ms)
   }
 
   /**
@@ -340,6 +350,7 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     if (this._retry !== s) return
     clearTimeout(s.timer)
     s.timer = undefined
+    s.due = undefined
     s.withAttention ||= withAttention
     const key = `${s.options.identity}:${s.options.chain}`
     if (this._retrying.has(key)) {
@@ -347,7 +358,7 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
       return
     }
     if (walletBusy()) {
-      s.timer = setTimeout(() => this._retryNow(s, false), RETRY_BUSY_MS)
+      this._retryIn(s, RETRY_BUSY_MS)
       return
     }
     const withAttentionNow = s.withAttention
@@ -363,9 +374,9 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
         current.again = false
         this._retryNow(current, false)
       } else if (outcome === 'busy') {
-        current.timer = setTimeout(() => this._retryNow(current, false), RETRY_BUSY_MS)
+        this._retryIn(current, RETRY_BUSY_MS)
       } else {
-        current.timer = setTimeout(() => this._retryNow(current, false), current.delay)
+        this._retryIn(current, current.delay)
         current.delay = Math.min(current.delay * 2, RETRY_MAX_MS)
       }
     })

@@ -502,6 +502,25 @@ describe('DirectPayManager.start', () => {
     expect(h.retry).toHaveBeenCalledTimes(5)
   })
 
+  it('keeps a sooner retry when a payment is newly kept, such as the one waiting for a network switch to end', async () => {
+    vi.useFakeTimers()
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.retry).toHaveBeenCalledTimes(1)
+    setHttpBridgePaused(true)
+    try {
+      await vi.advanceTimersByTimeAsync(60_000) // the next pass is due, and waits for the switch
+      expect(h.retry).toHaveBeenCalledTimes(1)
+      await expect(handlersOf().onPayment(payment, { txid: 'ab'.repeat(32) })).resolves.toBe('received')
+    } finally {
+      setHttpBridgePaused(false)
+    }
+
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(h.retry).toHaveBeenCalledTimes(2)
+  })
+
   it('takes a wallet operation for each wallet call of a retry, never across the waits between them', async () => {
     const held: number[] = []
     h.retry = vi.fn(async (o: any) => {

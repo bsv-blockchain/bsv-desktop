@@ -1,9 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LockingScript, MerklePath, OP, P2PKH, PrivateKey, ProtoWallet, PublicKey, Random, Transaction, UnlockingScript, Utils } from '@bsv/sdk'
 import type { WalletInterface } from '@bsv/sdk'
-import { createMemoryHub, DirectPayClient, paymentKey, WebRTPayError } from '@bsv/webrtpay'
+import { createMemoryHub, DirectPayClient, MAX_DIRECT_TRANSACTION_BYTES, paymentKey, WebRTPayError } from '@bsv/webrtpay'
 import type { AuthenticatedPeer, IncomingPayment, InboundLimits, MemoryHub } from '@bsv/webrtpay'
-import { createSeenStore, deliverDirect, receiveDirectPayment, retryReceivedDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
+import { createSeenStore, deliverDirect, NotSentError, receiveDirectPayment, retryReceivedDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import type { DroppedDirectPayment } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import { prepareMessageBoxPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
 import type { OutgoingPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
@@ -197,6 +197,7 @@ describe('deliverDirect', () => {
     payer.createAction.mockClear()
     const box = outbox()
     const error = await deliverDirect({ client: client(hub, payer), wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 2500, existing, persist: box.persist, markDelivered: box.markDelivered }).catch(e => e)
+    expect(error).toBeInstanceOf(NotSentError) // stopped before anything was broadcast
     expect(error.message).toMatch(/saved payment is unchanged.*message box/)
     expect(error.message).not.toMatch(/Nothing was spent/)
     expect(payer.createAction).not.toHaveBeenCalled()
@@ -286,6 +287,77 @@ describe('deliverDirect', () => {
     expect(ack.status).toBe('accepted')
     expect(connect).toHaveBeenCalledTimes(2) // only the test's own dials
     await closedSoon(peer)
+  })
+
+  // The payee checks the token, its size and the session only after the payer broadcast: the
+  // payer checks them first, so a payment that would be refused is never broadcast.
+  it('refuses a saved payment the recipient would reject, before broadcasting it', async () => {
+    const hub = createMemoryHub()
+    const payer = await makePayer(), payee = await makePayee()
+    await receiving(hub, payee)
+    const saved = await prepareMessageBoxPayment(payer.wallet, payee.identityKey, 2500, ORIGIN, undefined, () => {})
+    payer.createAction.mockClear()
+    const existing = { ...saved, token: { ...saved.token, customInstructions: { ...saved.token.customInstructions, derivationPrefix: 'not base64!' } } }
+    const box = outbox()
+    const error = await deliverDirect({ client: client(hub, payer), wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 2500, existing, persist: box.persist, markDelivered: box.markDelivered }).catch(e => e)
+    expect(error).toBeInstanceOf(NotSentError)
+    expect(error.message).toMatch(/^The recipient's wallet would refuse this payment: .*derivation.* Your saved payment is unchanged/i)
+    expect(payer.createAction).not.toHaveBeenCalled() // no broadcast
+    expect(box.markDelivered).not.toHaveBeenCalled()
+    expect(payee.internalizeAction).not.toHaveBeenCalled()
+  })
+
+  it('refuses a saved payment too large to deliver directly, before broadcasting it', async () => {
+    const hub = createMemoryHub()
+    const payer = await makePayer(), payee = await makePayee()
+    await receiving(hub, payee)
+    const saved = await prepareMessageBoxPayment(payer.wallet, payee.identityKey, 2500, ORIGIN, undefined, () => {})
+    payer.createAction.mockClear()
+    const existing = { ...saved, token: { ...saved.token, transaction: new Array(MAX_DIRECT_TRANSACTION_BYTES + 1).fill(0) } }
+    const box = outbox()
+    const error = await deliverDirect({ client: client(hub, payer), wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 2500, existing, persist: box.persist, markDelivered: box.markDelivered }).catch(e => e)
+    expect(error).toBeInstanceOf(NotSentError)
+    expect(error.message).toBe(`This payment is too large to deliver directly: its transaction is ${(MAX_DIRECT_TRANSACTION_BYTES + 1).toLocaleString()} bytes, and at most ${MAX_DIRECT_TRANSACTION_BYTES.toLocaleString()} can be delivered. Your saved payment is unchanged; deliver it through the message box.`)
+    expect(payer.createAction).not.toHaveBeenCalled()
+    expect(payee.internalizeAction).not.toHaveBeenCalled()
+  })
+
+  it('does not broadcast a saved payment once the recipient has closed the connection', async () => {
+    const hub = createMemoryHub()
+    const payer = await makePayer(), payee = await makePayee()
+    await receiving(hub, payee)
+    const existing = await prepareMessageBoxPayment(payer.wallet, payee.identityKey, 2500, ORIGIN, undefined, () => {})
+    payer.createAction.mockClear()
+    const payerClient = client(hub, payer)
+    const peer = await payerClient.connect(payee.identityKey)
+    peer.close()
+    const box = outbox()
+    const error = await deliverDirect({ client: payerClient, wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 2500, existing, peer, persist: box.persist, markDelivered: box.markDelivered }).catch(e => e)
+    expect(error).toBeInstanceOf(NotSentError)
+    expect(error.message).toBe("The recipient's wallet closed the connection before the payment was sent. Your saved payment is unchanged; retry later or deliver it through the message box.")
+    expect(payer.createAction).not.toHaveBeenCalled()
+  })
+
+  it('releases a new payment and spends nothing when the recipient hangs up while it is being made', async () => {
+    const hub = createMemoryHub()
+    const payer = await makePayer(), payee = await makePayee()
+    // The payee closes a session that sends nothing within its first-message window; this
+    // payer's wallet takes longer than that to make the payment.
+    await receiving(hub, payee, { firstMessageTimeoutMs: 300 })
+    const make = payer.createAction.getMockImplementation()!
+    payer.createAction.mockImplementation(async (args: any) => {
+      if (!args.options?.sendWith) await new Promise(resolve => setTimeout(resolve, 1000))
+      return make(args)
+    })
+    const box = outbox()
+    const error = await deliverDirect({ client: client(hub, payer), wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 600, persist: box.persist, markDelivered: box.markDelivered }).catch(e => e)
+    expect(error).toBeInstanceOf(NotSentError)
+    expect(error.message).toBe("The recipient's wallet closed the connection before the payment was sent. Nothing was spent.")
+    expect(payer.created()).toBe(1)
+    expect(payer.abortAction).toHaveBeenCalledWith({ reference: '0' }, ORIGIN) // its inputs are released
+    expect(payer.createAction.mock.calls.some(([args]) => args.options?.sendWith)).toBe(false) // never broadcast
+    expect(box.persist).not.toHaveBeenCalled()
+    expect(payee.internalizeAction).not.toHaveBeenCalled()
   })
 
   it('closes the connection and saves nothing when the payment cannot be prepared', async () => {

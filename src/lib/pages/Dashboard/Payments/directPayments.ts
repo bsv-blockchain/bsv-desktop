@@ -16,7 +16,7 @@
  */
 import { Transaction, Utils } from '@bsv/sdk'
 import type { WalletInterface } from '@bsv/sdk'
-import { acceptDirectPayment, paymentKey, WebRTPayError } from '@bsv/webrtpay'
+import { acceptDirectPayment, MAX_DIRECT_TRANSACTION_BYTES, paymentKey, validatePaymentToken, WebRTPayError } from '@bsv/webrtpay'
 import type { AuthenticatedPeer, DirectPayClient, IncomingPayment, PaymentAck, SeenStore } from '@bsv/webrtpay'
 import { prepareMessageBoxPayment } from './messageBoxPayments'
 import type { OutgoingPayment } from './messageBoxPayments'
@@ -48,12 +48,28 @@ const CANNOT_KEEP = 'The wallet cannot take payments right now; try again later'
 // ---- sending -----------------------------------------------------------------------------
 
 /**
+ * A direct payment that stopped before anything was broadcast. The message says so, for the
+ * user: "Nothing was spent", or that a saved payment is unchanged.
+ */
+export class NotSentError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NotSentError'
+  }
+}
+
+/**
  * Pays `recipient` directly. Connects first (unless `peer` is already connected to the
  * recipient), so an unreachable recipient costs nothing. Then uses `existing` or prepares a
  * new payment (saved through `persist` with `via: 'direct'` before it is broadcast),
  * broadcasts it, sends it and waits for the ack. `accepted` and `received` mark the row
  * delivered; `rejected` throws with the recipient's reason. The peer is always closed.
  * With `existing`, `amount` is ignored: the saved transaction is delivered as it is.
+ *
+ * Before the broadcast the payment is checked as the recipient will check it, and the
+ * connection must still be open (a payee hangs up when no payment arrives within its
+ * first-message window). A new payment is checked before it is saved, so a refusal releases
+ * it and nothing is spent. These refusals, and a failed connect, throw {@link NotSentError}.
  */
 export async function deliverDirect(o: {
   client: DirectPayClient
@@ -77,10 +93,18 @@ export async function deliverDirect(o: {
   }
   const peer = o.peer ?? (await connect(o.client, recipient, o.existing !== undefined))
   try {
-    if (peer.peerIdentityKey !== recipient) throw new Error('The connected wallet is not the recipient. Nothing was sent.')
+    if (peer.peerIdentityKey !== recipient) throw new NotSentError('The connected wallet is not the recipient. Nothing was sent.')
     let payment = o.existing
-    if (!payment) {
-      const prepared = await prepareMessageBoxPayment(o.wallet, recipient, o.amount, o.originator, undefined, row => o.persist({ ...row, via: 'direct' }))
+    if (payment) {
+      const refusal = whyNotDeliverable(peer, payment.token)
+      if (refusal) throw new NotSentError(`${refusal.reason} Your saved payment is unchanged; ${refusal.retry ? 'retry later or deliver it' : 'deliver it'} through the message box.`)
+    } else {
+      const prepared = await prepareMessageBoxPayment(o.wallet, recipient, o.amount, o.originator, undefined, row => {
+        // A throw here releases the prepared transaction (prepareMessageBoxPayment aborts it).
+        const refusal = whyNotDeliverable(peer, row.token)
+        if (refusal) throw new NotSentError(`${refusal.reason} Nothing was spent.`)
+        o.persist({ ...row, via: 'direct' })
+      })
       payment = { ...prepared, via: 'direct' }
     }
     await broadcastNearbyPayment(o.wallet, payment.txid, o.originator)
@@ -106,10 +130,29 @@ async function connect(client: DirectPayClient, recipient: string, saved: boolea
     const why = error instanceof WebRTPayError && error.code === 'rejected'
       ? "The recipient's wallet is not taking direct payments right now."
       : "The recipient's wallet could not be reached directly."
-    throw new Error(saved
+    throw new NotSentError(saved
       ? `${why} Your saved payment is unchanged; retry later or deliver it through the message box.`
       : `${why} Nothing was spent. Send it through the message box instead.`)
   }
+}
+
+/**
+ * Why `token` must not be broadcast for delivery over `peer`, checked as the recipient will
+ * check it once it arrives (by then it would be on the network), or undefined when it may.
+ * `retry`: delivering it directly later can work.
+ */
+function whyNotDeliverable(peer: AuthenticatedPeer, token: OutgoingPayment['token']): { reason: string; retry: boolean } | undefined {
+  const bytes = token.transaction.length
+  if (bytes > MAX_DIRECT_TRANSACTION_BYTES) {
+    return { reason: `This payment is too large to deliver directly: its transaction is ${bytes.toLocaleString()} bytes, and at most ${MAX_DIRECT_TRANSACTION_BYTES.toLocaleString()} can be delivered.`, retry: false }
+  }
+  try {
+    validatePaymentToken(token)
+  } catch (error) {
+    return { reason: `The recipient's wallet would refuse this payment: ${messageOf(error).replace(/\.$/, '')}.`, retry: false }
+  }
+  if (!peer.isOpen) return { reason: "The recipient's wallet closed the connection before the payment was sent.", retry: true }
+  return undefined
 }
 
 // ---- receiving ---------------------------------------------------------------------------

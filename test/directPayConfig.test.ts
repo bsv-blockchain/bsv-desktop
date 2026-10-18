@@ -247,6 +247,8 @@ describe('receive warning text (audit F14)', () => {
     expect(text).toMatch(/when your wallet is unlocked/)
     expect(text).toMatch(/starting a connection/)
     expect(text).toMatch(/without paying you/)
+    // Final review M29: the setting is one per device, so it answers for every profile.
+    expect(text).toMatch(/applies to every wallet profile on this device/)
   })
 
   it('exists, translated, in every language', () => {
@@ -268,6 +270,21 @@ describe('card description (C5 review)', () => {
     expect(text).toMatch(/message box or relay server only (carries|passes on) the encrypted connection details/)
     expect(text).toMatch(/until they are read/)
     expect(text).not.toMatch(/stored on a server|Nothing is stored/i)
+  })
+
+  // Final review M14/M26 (spec §12): a TURN server may carry the encrypted connection, and the
+  // carriers see who connects, their addresses and when, but never the payment.
+  it('says a TURN server may relay the encrypted connection, and what the servers see, in every language', () => {
+    const en = translations.slice(translations.indexOf('const en = {'), translations.indexOf('const es = {'))
+    const text = en.match(/^ {4}directpay_description: '((?:[^'\\]|\\.)*)',$/m)![1]
+    expect(text).toMatch(/usually goes directly between the wallets/)
+    expect(text).toMatch(/If the wallets cannot connect directly, a TURN server may relay the encrypted connection\./)
+    expect(text).toMatch(/message box, relay and TURN servers can see which wallets connect, their IP addresses and when, but never the payment/)
+    expect(text).toMatch(/STUN servers see this device\\'s IP address when it connects/)
+    for (const line of descriptions()) {
+      expect(line).toMatch(/TURN/)
+      expect(line).toMatch(/STUN/)
+    }
   })
 
   it('no longer claims, in any language, that nothing is stored on a server', () => {

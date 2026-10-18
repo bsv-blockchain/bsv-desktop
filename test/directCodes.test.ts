@@ -546,6 +546,12 @@ describe('Nearby → Direct (WebRTC) wiring', () => {
     expect(page).toMatch(/const deliver = async \(payment: OutgoingPayment\) => \{/)
   })
 
+  // Final review M26: "goes straight to their wallet" is not the whole story when TURN relays it.
+  it('says on Nearby → Direct that a TURN server may relay the encrypted connection, and who sees the address', () => {
+    expect(nearby).toMatch(/The payment is encrypted between the two wallets and no server stores it; if they cannot connect directly, a TURN server may relay the encrypted connection\. The codes carry each wallet’s network address, and STUN servers see it too\./)
+    expect(nearby).not.toMatch(/goes straight to their wallet/)
+  })
+
   it('switches Nearby between Animated QR and Direct (WebRTC), opening Direct for a direct code', () => {
     expect(nearby).toMatch(/useState<'airgap' \| 'direct'>\(initialDirectCode \? 'direct' : 'airgap'\)/)
     expect(nearby).toMatch(/<ToggleButton value="airgap">Animated QR<\/ToggleButton><ToggleButton value="direct">Direct \(WebRTC\)<\/ToggleButton>/)

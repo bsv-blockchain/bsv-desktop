@@ -5,9 +5,12 @@
  *
  * Receiving is off by default: while it is on, any wallet that knows the
  * identity key can learn this device's public IP address and when the wallet is
- * unlocked by starting a connection, without paying (audit F14). Sending
- * directly needs no setting, and reveals the payer's IP address to the
- * recipient's wallet.
+ * unlocked by starting a connection, without paying (audit F14). The settings
+ * are one per device, so receiving answers for every wallet profile on it.
+ * Sending directly needs no setting, and reveals the payer's IP address to the
+ * recipient's wallet. When two wallets cannot connect directly, a TURN server
+ * may relay the encrypted connection; the carriers see who connects, their
+ * addresses and when, never the payment.
  */
 export interface DirectPaySettings {
   /** Answer direct payments from other wallets. Off unless the user turns it on. */

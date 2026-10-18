@@ -139,10 +139,19 @@ describe('DirectPayManager.start', () => {
 
     expect(h.made.messageBoxes).toHaveLength(1)
     // Audit F19: with a host, list and ack go straight to it instead of an overlay lookup per poll.
-    expect(h.made.messageBoxes[0]).toEqual({ client: peerPayClient, options: { host: HOST } })
+    expect(h.made.messageBoxes[0]).toEqual({ client: peerPayClient, options: { host: HOST, messageBox: 'webrtpay_signals' } })
     expect(h.made.clients[0].startReceiving).toHaveBeenCalledOnce()
     expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'messagebox', error: '' })
     expect(changes).toEqual(['starting', 'online'])
+  })
+
+  // Final review D2: one identity on two networks must not take the other network's dials.
+  // Mainnet keeps the package's default box, so it still meets other wallets there.
+  it.each([['main', 'webrtpay_signals'], ['test', 'webrtpay_signals_test'], ['ttn', 'webrtpay_signals_ttn'], ['tstn', 'webrtpay_signals_tstn']])('signals on %s through the message box %s, and binds the client to that network', async (chain, box) => {
+    await manager.start(startOptions({ chain, settings: settings({ receiveEnabled: true }) }))
+
+    expect(h.made.messageBoxes[0].options).toEqual({ host: HOST, messageBox: box })
+    expect(h.made.clients[0].options.chain).toBe(chain)
   })
 
   it('reports an error when receiving cannot start', async () => {
@@ -346,7 +355,7 @@ describe('DirectPayManager.start', () => {
 
     expect(h.made.clients).toHaveLength(2)
     expect(h.made.clients[0].close).toHaveBeenCalledOnce()
-    expect(h.made.messageBoxes[1]).toEqual({ client: replacement, options: { host: 'https://other.example.com' } })
+    expect(h.made.messageBoxes[1]).toEqual({ client: replacement, options: { host: 'https://other.example.com', messageBox: 'webrtpay_signals' } })
     expect(manager.getSnapshot().client).toBe(h.made.clients[1])
   })
 

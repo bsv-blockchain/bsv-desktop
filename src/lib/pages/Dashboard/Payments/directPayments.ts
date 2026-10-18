@@ -128,9 +128,15 @@ async function connect(client: DirectPayClient, recipient: string, saved: boolea
   try {
     return await client.connect(recipient)
   } catch (error) {
-    const why = error instanceof WebRTPayError && error.code === 'rejected'
-      ? "The recipient's wallet is not taking direct payments right now."
-      : "The recipient's wallet could not be reached directly."
+    const refused = error instanceof WebRTPayError && error.code === 'rejected'
+    // The recipient's wallet, or this one, refused a dial between two networks (the client is
+    // bound to this wallet's chain): redialing cannot help until both are on one network.
+    if (refused && error.reason === 'wrong_network') {
+      throw new NotSentError(saved
+        ? "The recipient's wallet is on a different network. Your saved payment is unchanged; deliver it when you are both on the same network, or through the message box."
+        : "The recipient's wallet is on a different network. Nothing was spent.")
+    }
+    const why = refused ? "The recipient's wallet is not taking direct payments right now." : "The recipient's wallet could not be reached directly."
     throw new NotSentError(saved
       ? `${why} Your saved payment is unchanged; retry later or deliver it through the message box.`
       : `${why} Nothing was spent. Send it through the message box instead.`)

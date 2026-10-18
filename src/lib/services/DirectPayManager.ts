@@ -148,7 +148,7 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
       } else if (!o.peerPayClient) {
         notice = NO_MESSAGE_BOX
       } else {
-        signaler = new MessageBoxSignaler(o.peerPayClient, { host: o.messageBoxUrl || undefined })
+        signaler = new MessageBoxSignaler(o.peerPayClient, { host: o.messageBoxUrl || undefined, messageBox: signalBox(o.chain) })
         via = 'messagebox'
       }
       client = new DirectPayClient({
@@ -314,6 +314,14 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     if (change.status !== this._snapshot.status || change.error !== this._snapshot.error) this._set({ ...this._snapshot, ...change })
   }
 }
+
+/**
+ * The message box that carries this network's signals. An identity key is the same on every
+ * network, so one identity open on two networks (or two devices) would otherwise take the
+ * other network's dials (final review D2). Mainnet keeps the package's default box, where
+ * other wallets dial; the client also refuses a dial that names another network.
+ */
+const signalBox = (chain: string) => (chain === 'main' ? 'webrtpay_signals' : `webrtpay_signals_${chain}`)
 
 function isSameWallet(a: DirectPayStartOptions, b: DirectPayStartOptions): boolean {
   return a.wallet === b.wallet && a.identity === b.identity && a.chain === b.chain

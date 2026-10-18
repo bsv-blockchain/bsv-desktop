@@ -123,13 +123,13 @@ afterEach(async () => {
   await Promise.all(clients.splice(0).map(client => client.close()))
 })
 
-function client(hub: MemoryHub, party: { wallet: WalletInterface; identityKey: string }, limits?: Partial<InboundLimits>): DirectPayClient {
+function client(hub: MemoryHub, party: { wallet: WalletInterface; identityKey: string }, limits?: Partial<InboundLimits>, chain = CHAIN): DirectPayClient {
   const c = new DirectPayClient({
     limits,
     wallet: party.wallet,
     originator: ORIGIN,
     signaler: hub.signaler(party.identityKey),
-    chain: CHAIN,
+    chain,
     rtc: { RTCPeerConnection, iceServers: [], extraConfig: { bindAddress: '127.0.0.1' } },
     timeouts: { connectMs: 10_000, ackMs: 10_000 }
   })
@@ -138,8 +138,8 @@ function client(hub: MemoryHub, party: { wallet: WalletInterface; identityKey: s
 }
 
 /** The payee's wallet listening with the desktop receive flow. */
-async function receiving(hub: MemoryHub, payee: Payee, limits?: Partial<InboundLimits>): Promise<DirectPayClient> {
-  const c = client(hub, payee, limits)
+async function receiving(hub: MemoryHub, payee: Payee, limits?: Partial<InboundLimits>, chain = CHAIN): Promise<DirectPayClient> {
+  const c = client(hub, payee, limits, chain)
   await c.startReceiving({ onPayment: async p => (await receive(payee, p)).status })
   return c
 }
@@ -188,6 +188,33 @@ describe('deliverDirect', () => {
     await expect(deliverDirect({ client: payerClient, wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 1500, persist: box.persist, markDelivered: box.markDelivered }))
       .rejects.toThrow(/not taking direct payments right now\. Nothing was spent/)
     expect(payer.createAction).not.toHaveBeenCalled()
+  })
+
+  // Final review D2: the payee's wallet refuses a dial from another network before connecting.
+  it('spends nothing when the recipient\'s wallet is on another network, and says so', async () => {
+    const hub = createMemoryHub()
+    const payer = await makePayer(), payee = await makePayee()
+    await receiving(hub, payee, undefined, 'main')
+    const box = outbox()
+    const error = await deliverDirect({ client: client(hub, payer), wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 1500, persist: box.persist, markDelivered: box.markDelivered }).catch(e => e)
+    expect(error).toBeInstanceOf(NotSentError)
+    expect(error.message).toBe("The recipient's wallet is on a different network. Nothing was spent.")
+    expect(payer.createAction).not.toHaveBeenCalled()
+    expect(box.persist).not.toHaveBeenCalled()
+    expect(payee.internalizeAction).not.toHaveBeenCalled()
+  })
+
+  it('leaves a saved payment unbroadcast when the recipient\'s wallet is on another network', async () => {
+    const hub = createMemoryHub()
+    const payer = await makePayer(), payee = await makePayee()
+    await receiving(hub, payee, undefined, 'main')
+    const box = outbox()
+    const existing = await prepareMessageBoxPayment(payer.wallet, payee.identityKey, 2500, ORIGIN, undefined, () => {})
+    payer.createAction.mockClear()
+    const saved = await deliverDirect({ client: client(hub, payer), wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 2500, existing, persist: box.persist, markDelivered: box.markDelivered }).catch(e => e)
+    expect(saved).toBeInstanceOf(NotSentError)
+    expect(saved.message).toBe("The recipient's wallet is on a different network. Your saved payment is unchanged; deliver it when you are both on the same network, or through the message box.")
+    expect(payer.createAction).not.toHaveBeenCalled() // not even broadcast
   })
 
   it('says a saved payment is unchanged, not that nothing was spent, when it cannot be redelivered', async () => {

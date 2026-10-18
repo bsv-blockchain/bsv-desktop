@@ -9,9 +9,10 @@ import * as path from 'path'
 import {
   DEFAULT_DIRECT_PAY_SETTINGS,
   DIRECT_PAY_SETTINGS_KEY,
-  loadDirectPaySettings
+  loadDirectPaySettings,
+  saveDirectPaySettings
 } from '../src/lib/utils/directPaySettings'
-import { formFromSettings, saveDirectPayForm, settingsFromForm } from '../src/lib/components/DirectPayConfig/form'
+import { followStoredSettings, formFromSettings, saveDirectPayForm, settingsFromForm } from '../src/lib/components/DirectPayConfig/form'
 import { DIRECT_PAY_STATE_COLOR, directPayState } from '../src/lib/components/DirectPayConfig/status'
 
 let local: Map<string, string>
@@ -127,18 +128,34 @@ describe('saving the direct-pay form', () => {
   })
 })
 
+describe('reloading the form when the settings are saved elsewhere', () => {
+  it('hands the form the stored settings after every save, until it stops following', () => {
+    const setForm = vi.fn()
+    const stop = followStoredSettings(setForm)
+
+    const saved = saveDirectPaySettings(stored)
+    expect(setForm).toHaveBeenCalledOnce()
+    expect(setForm).toHaveBeenCalledWith(formFromSettings(saved))
+
+    stop()
+    saveDirectPaySettings({ ...stored, receiveEnabled: true })
+    expect(setForm).toHaveBeenCalledOnce()
+  })
+})
+
 describe('direct-pay status chip', () => {
   it.each([
-    [{ status: 'off', via: 'messagebox' }, 'off', 'default'],
-    [{ status: 'off', via: null }, 'off', 'default'],
-    [{ status: 'starting', via: 'relay' }, 'starting', 'info'],
-    [{ status: 'online', via: 'messagebox' }, 'online_messagebox', 'success'],
-    [{ status: 'online', via: 'relay' }, 'online_relay', 'success'],
-    // No signaler could be set up (no message box, or relay without a URL): a setup gap, not a failure.
-    [{ status: 'error', via: null }, 'not_set_up', 'warning'],
-    // Receiving was set up and failed (say the relay is down); the manager keeps retrying.
-    [{ status: 'error', via: 'relay' }, 'failed', 'error'],
-    [{ status: 'error', via: 'messagebox' }, 'failed', 'error']
+    [{ status: 'off', via: 'messagebox', notice: '' }, 'off', 'default'],
+    [{ status: 'off', via: null, notice: '' }, 'off', 'default'],
+    // No message box to signal through: a gap in the setup, explained by the notice, not a failure.
+    [{ status: 'off', via: null, notice: 'Connect a message box in Settings.' }, 'not_set_up', 'default'],
+    [{ status: 'starting', via: 'relay', notice: '' }, 'starting', 'info'],
+    [{ status: 'online', via: 'messagebox', notice: '' }, 'online_messagebox', 'success'],
+    [{ status: 'online', via: 'relay', notice: '' }, 'online_relay', 'success'],
+    // Real errors: relay signaling without an address (Ruling 14), or receiving failed (the relay is down).
+    [{ status: 'error', via: null, notice: '' }, 'failed', 'error'],
+    [{ status: 'error', via: 'relay', notice: '' }, 'failed', 'error'],
+    [{ status: 'error', via: 'messagebox', notice: '' }, 'failed', 'error']
   ] as const)('%o shows as %s', (snapshot, state, color) => {
     expect(directPayState(snapshot)).toBe(state)
     expect(DIRECT_PAY_STATE_COLOR[directPayState(snapshot)]).toBe(color)
@@ -162,6 +179,8 @@ describe('Direct payments card wiring', () => {
 
   it('starts from the stored settings and saves the whole form, then applies it, while holding a wallet operation', () => {
     expect(card).toMatch(/formFromSettings\(loadDirectPaySettings\(\)\)/)
+    // Settings saved anywhere else show in the form too.
+    expect(card).toMatch(/useEffect\(\(\) => followStoredSettings\(setForm\), \[\]\)/)
     expect(card).toMatch(/saveDirectPayForm\(form, applyDirectPaySettings\)/)
     expect(card).toMatch(/release = beginUserWalletOperation\(\)/)
     expect(card).not.toMatch(/saveDirectPaySettings\(/)
@@ -171,7 +190,9 @@ describe('Direct payments card wiring', () => {
     expect(card).toMatch(/t\('directpay_receive_label'\)/)
     expect(card).toMatch(/t\('directpay_receive_warning'\)/)
     expect(card).toMatch(/directPayState\(directPay\)/)
-    expect(card).toMatch(/directPay\.error/)
+    // A failure is an error; a setup gap is information.
+    expect(card).toMatch(/\{directPay\.error && \(\s*<Alert severity="error"[^>]*>\s*\{directPay\.error\}/)
+    expect(card).toMatch(/\{directPay\.notice && \(\s*<Alert severity="info"[^>]*>\s*\{directPay\.notice\}/)
   })
 
   it('offers both signaling choices and the relay, STUN and TURN fields', () => {
@@ -202,5 +223,33 @@ describe('receive warning text (audit F14)', () => {
     const lines = [...translations.matchAll(/^ {4}directpay_receive_warning: '((?:[^'\\]|\\.)*)',$/gm)].map(m => m[1])
     expect(lines).toHaveLength(12)
     expect(new Set(lines).size).toBe(12)
+  })
+})
+
+describe('card description (C5 review)', () => {
+  let translations: string
+  beforeAll(() => { translations = read('src/lib/i18n/translations.ts') })
+  const descriptions = () => [...translations.matchAll(/^ {4}directpay_description: '((?:[^'\\]|\\.)*)',$/gm)].map(m => m[1])
+
+  it('says the payment goes between the wallets and the carrier only relays encrypted connection details', () => {
+    const en = translations.slice(translations.indexOf('const en = {'), translations.indexOf('const es = {'))
+    const text = en.match(/^ {4}directpay_description: '((?:[^'\\]|\\.)*)',$/m)![1]
+    expect(text).toMatch(/directly between/)
+    expect(text).toMatch(/message box or relay server only (carries|passes on) the encrypted connection details/)
+    expect(text).toMatch(/until they are read/)
+    expect(text).not.toMatch(/stored on a server|Nothing is stored/i)
+  })
+
+  it('no longer claims, in any language, that nothing is stored on a server', () => {
+    const claims = [
+      'Nothing is stored on a server', 'Nada se guarda en un servidor', 'Rien n\\\'est stocké sur un serveur',
+      'Nada é armazenado em um servidor', '服务器上不会存储任何内容', 'सर्वर पर कुछ भी संग्रहीत नहीं होता',
+      'কোনো সার্ভারে কিছুই সংরক্ষিত হয় না', 'لا يُخزَّن أي شيء على خادم', 'На сервере ничего не хранится',
+      'Tidak ada yang disimpan di server', 'サーバーには何も保存されません', 'Nic nie jest przechowywane na serwerze'
+    ]
+    const lines = descriptions()
+    expect(lines).toHaveLength(12)
+    expect(new Set(lines).size).toBe(12)
+    for (const claim of claims) expect(lines.filter(line => line.includes(claim))).toEqual([])
   })
 })

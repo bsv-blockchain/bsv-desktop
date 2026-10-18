@@ -1,4 +1,4 @@
-import { saveDirectPaySettings, type DirectPaySettings } from '../../utils/directPaySettings'
+import { loadDirectPaySettings, saveDirectPaySettings, subscribeDirectPaySettings, type DirectPaySettings } from '../../utils/directPaySettings'
 
 /** The Direct payments card's fields, as the user edits them. */
 export interface DirectPayForm {
@@ -48,4 +48,12 @@ export async function saveDirectPayForm(form: DirectPayForm, apply: (s: DirectPa
   const saved = saveDirectPaySettings(settingsFromForm(form))
   await apply(saved)
   return saved
+}
+
+/**
+ * Shows the stored settings in the form after every save on this device, the card's own
+ * included (it then shows what was stored). Returns the function that stops it.
+ */
+export function followStoredSettings(setForm: (form: DirectPayForm) => void): () => void {
+  return subscribeDirectPaySettings(() => setForm(formFromSettings(loadDirectPaySettings())))
 }

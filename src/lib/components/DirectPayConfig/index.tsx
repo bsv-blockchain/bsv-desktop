@@ -1,4 +1,4 @@
-import { useState, useContext, useRef } from 'react'
+import { useState, useContext, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Typography,
@@ -20,7 +20,7 @@ import { toast } from 'react-toastify'
 import { WalletContext } from '../../WalletContext'
 import { beginUserWalletOperation } from '../../services/httpBridgeSession'
 import { loadDirectPaySettings } from '../../utils/directPaySettings'
-import { formFromSettings, saveDirectPayForm, type DirectPayForm } from './form'
+import { followStoredSettings, formFromSettings, saveDirectPayForm, type DirectPayForm } from './form'
 import { DIRECT_PAY_STATE_COLOR, directPayState } from './status'
 
 interface DirectPayConfigProps {
@@ -38,6 +38,8 @@ export default function DirectPayConfig({ showTitle = true, embedded = false }: 
   const [operationError, setOperationError] = useState('')
   const mutationLock = useRef(false)
   const busy = saving || switchingNetwork
+
+  useEffect(() => followStoredSettings(setForm), [])
 
   const state = directPayState(directPay)
   const stateLabel = {
@@ -97,8 +99,13 @@ export default function DirectPayConfig({ showTitle = true, embedded = false }: 
         <Chip label={stateLabel} color={DIRECT_PAY_STATE_COLOR[state]} size="small" />
       </Box>
       {directPay.error && (
-        <Alert severity={state === 'failed' ? 'error' : 'warning'} sx={{ mb: 2 }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
           {directPay.error}
+        </Alert>
+      )}
+      {directPay.notice && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          {directPay.notice}
         </Alert>
       )}
 

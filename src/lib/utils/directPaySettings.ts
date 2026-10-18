@@ -3,9 +3,11 @@
  * localStorage like the display preferences. They are not part of the wallet,
  * so they work before sign-in and survive logout (see WalletService).
  *
- * Receiving is off by default: answering a direct payment reveals this
- * device's public IP address to the payer, and anyone who knows the identity
- * key can try to connect. Sending directly needs no setting.
+ * Receiving is off by default: while it is on, any wallet that knows the
+ * identity key can learn this device's public IP address and when the wallet is
+ * unlocked by starting a connection, without paying (audit F14). Sending
+ * directly needs no setting, and reveals the payer's IP address to the
+ * recipient's wallet.
  */
 export interface DirectPaySettings {
   /** Answer direct payments from other wallets. Off unless the user turns it on. */

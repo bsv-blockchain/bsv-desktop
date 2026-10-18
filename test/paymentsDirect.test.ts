@@ -9,44 +9,52 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { DELIVERY_HELP, deliveryProblem, directStatusLine } from '../src/lib/pages/Dashboard/Payments/delivery'
 
-const ready = { client: {}, via: 'messagebox' as const, error: '' }
+const ready = { client: {}, via: 'messagebox' as const, error: '', notice: '' }
 
 describe('choosing how a wallet payment is delivered', () => {
-  it('explains each choice; Direct says it connects first and spends nothing if the recipient is offline', () => {
-    expect(DELIVERY_HELP.direct).toBe("Direct · connects to the recipient's wallet first; nothing is spent if they're offline")
+  it('explains each choice; Direct says it connects first, spends nothing if the recipient is offline, and shows them your IP address', () => {
+    expect(DELIVERY_HELP.direct).toBe("Direct · connects to the recipient's wallet first; nothing is spent if they're offline. A direct payment reveals your IP address to their wallet.")
     expect(DELIVERY_HELP.messagebox).toMatch(/^Message box · /)
     expect(DELIVERY_HELP.messagebox).toMatch(/offline/)
   })
 
   it('needs a connected message box for message box delivery only', () => {
-    expect(deliveryProblem('messagebox', { messageBoxAvailable: true, directPay: { client: null, via: null, error: '' } })).toBe('')
+    expect(deliveryProblem('messagebox', { messageBoxAvailable: true, directPay: { client: null, via: null, error: '', notice: '' } })).toBe('')
     expect(deliveryProblem('messagebox', { messageBoxAvailable: false, directPay: ready })).toMatch(/Connect your message box in Settings/)
     expect(deliveryProblem('direct', { messageBoxAvailable: false, directPay: ready })).toBe('')
   })
 
-  it('needs a direct-pay client for direct delivery', () => {
-    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: null, via: null, error: '' } })).toMatch(/not ready/)
+  it('needs a direct-pay client for direct delivery, and says why there is none when it is known', () => {
+    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: null, via: null, error: '', notice: '' } })).toMatch(/not ready/)
+    const failed = 'Direct payments could not be set up: bad options'
+    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: null, via: null, error: failed, notice: '' } })).toBe(failed)
+    const notice = 'Direct payments reach other wallets through the message box. Connect a message box in Settings, or use a relay server.'
+    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: null, via: null, error: '', notice } })).toBe(notice)
   })
 
   it('explains why direct delivery cannot reach anyone when no signaler is set up', () => {
     const error = 'Enter a relay server address in Settings, or use the message box for direct payments.'
-    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: null, error } })).toBe(error)
-    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: null, error: '' } })).toMatch(/Settings/)
+    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: null, error, notice: '' } })).toBe(error)
+    const notice = 'Direct payments reach other wallets through the message box. Connect a message box in Settings, or use a relay server.'
+    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: null, error: '', notice } })).toBe(notice)
+    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: null, error: '', notice: '' } })).toMatch(/Settings/)
   })
 
   it('still allows direct sending while receiving is off or failing', () => {
-    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: 'relay', error: 'Direct payments cannot be received: relay down' } })).toBe('')
+    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: 'relay', error: 'Direct payments cannot be received: relay down', notice: '' } })).toBe('')
   })
 })
 
 describe('direct-payments status line on the Receive tab', () => {
   it.each([
-    [{ status: 'online', via: 'messagebox', error: '' }, 'success', 'Direct payments: online via the message box.'],
-    [{ status: 'online', via: 'relay', error: '' }, 'success', 'Direct payments: online via the relay server.'],
-    [{ status: 'off', via: 'messagebox', error: '' }, 'info', 'Direct payments: off — enable in Settings.'],
-    [{ status: 'starting', via: 'relay', error: '' }, 'info', 'Direct payments: starting…'],
-    [{ status: 'error', via: null, error: 'Enter a relay server address in Settings, or use the message box for direct payments.' }, 'warning', 'Direct payments: not set up. Enter a relay server address in Settings, or use the message box for direct payments.'],
-    [{ status: 'error', via: 'relay', error: 'Direct payments cannot be received: Could not connect to the relay' }, 'error', 'Direct payments cannot be received: Could not connect to the relay']
+    [{ status: 'online', via: 'messagebox', error: '', notice: '' }, 'success', 'Direct payments: online via the message box.'],
+    [{ status: 'online', via: 'relay', error: '', notice: '' }, 'success', 'Direct payments: online via the relay server.'],
+    [{ status: 'off', via: 'messagebox', error: '', notice: '' }, 'info', 'Direct payments: off — enable in Settings.'],
+    [{ status: 'starting', via: 'relay', error: '', notice: '' }, 'info', 'Direct payments: starting…'],
+    // No message box: not set up, and nothing alarming.
+    [{ status: 'off', via: null, error: '', notice: 'Direct payments reach other wallets through the message box. Connect a message box in Settings, or use a relay server.' }, 'info', 'Direct payments: not set up. Direct payments reach other wallets through the message box. Connect a message box in Settings, or use a relay server.'],
+    [{ status: 'error', via: null, error: 'Enter a relay server address in Settings, or use the message box for direct payments.', notice: '' }, 'error', 'Enter a relay server address in Settings, or use the message box for direct payments.'],
+    [{ status: 'error', via: 'relay', error: 'Direct payments cannot be received: the relay server cannot be reached. Trying again…', notice: '' }, 'error', 'Direct payments cannot be received: the relay server cannot be reached. Trying again…']
   ] as const)('%o', (snapshot, severity, text) => {
     expect(directStatusLine(snapshot)).toEqual({ severity, text })
   })
@@ -72,7 +80,7 @@ describe('Payments page wiring', () => {
   it('fixes the delivery when the payment is reviewed, shows it, and pays requests through the message box', () => {
     expect(page).toMatch(/setReview\(\{ target, amount: sendAmount!, delivery \}\)/)
     expect(page).toMatch(/request, delivery: 'messagebox' \}\)/)
-    expect(page).toMatch(/Delivery: \{review\?\.delivery === 'direct' \? 'Direct \(peer-to-peer\)' : 'Message box'\}/)
+    expect(page).toMatch(/Delivery: \{review\?\.delivery === 'direct' \? 'Direct \(peer-to-peer\)' : 'Message box'\}<\/Typography><Typography variant="caption" color="text\.secondary">\{DELIVERY_HELP\[review\.delivery\]\}/)
   })
 
   it('sends a direct payment with deliverDirect, saving the row before broadcast and marking it delivered', () => {

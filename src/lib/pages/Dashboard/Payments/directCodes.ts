@@ -116,7 +116,7 @@ export function createDirectRequest(o: {
       const release = beginUserWalletOperation()
       let status: 'accepted' | 'received'
       try {
-        status = await receiveDirectPayment({ wallet, originator, identity, chain, payment: p })
+        ({ status } = await receiveDirectPayment({ wallet, originator, identity, chain, payment: p }))
       } finally {
         release()
       }

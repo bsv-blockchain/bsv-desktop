@@ -134,11 +134,22 @@ export function createSeenStore(identity: string, chain: string): SeenStore {
   }
 }
 
+/** What became of a payment from a peer. */
+export interface DirectReceipt {
+  /** The ack for the payer: in the wallet, or kept on this device until the wallet can take it. */
+  status: 'accepted' | 'received'
+  /**
+   * This wallet had already taken or kept this payment: the payer delivered it again after
+   * losing the ack. Announce a payment only when this is false, so it is announced once.
+   */
+  repeat: boolean
+}
+
 /**
  * Takes a payment from an authenticated peer into the wallet (once; see
  * {@link createSeenStore}) and returns the ack status. When the wallet is locked or its
  * storage or network is unavailable, the payment is kept for
- * {@link retryReceivedDirectPayments} and the result is `received`.
+ * {@link retryReceivedDirectPayments} and the status is `received`.
  *
  * @throws `WebRTPayError` for the payer, which the client turns into a `rejected` ack:
  * `invalid_payment` when the payment does not pay this wallet; `rejected` when the wallet
@@ -151,18 +162,19 @@ export async function receiveDirectPayment(o: {
   identity: string
   chain: string
   payment: IncomingPayment
-}): Promise<'accepted' | 'received'> {
-  let txid: string
+}): Promise<DirectReceipt> {
+  let result: { txid: string; status: 'accepted' | 'duplicate' }
   try {
-    ({ txid } = await acceptDirectPayment(o.wallet, o.payment, { originator: o.originator, seen: createSeenStore(o.identity, o.chain) }))
+    result = await acceptDirectPayment(o.wallet, o.payment, { originator: o.originator, seen: createSeenStore(o.identity, o.chain) })
   } catch (error) {
     if (error instanceof WebRTPayError) throw error
     if (!isTemporary(error)) throw new WebRTPayError('rejected', NOT_ACCEPTED, { cause: error })
-    keepForRetry(retryStorageKey(o.identity, o.chain), o.payment, error)
-    return 'received'
+    const kept = keepForRetry(retryStorageKey(o.identity, o.chain), o.payment, error)
+    return { status: 'received', repeat: !kept }
   }
-  forget(retryStorageKey(o.identity, o.chain), keyOf(o.payment, txid))
-  return 'accepted'
+  // A payment kept for a retry earlier was announced when it was kept.
+  const wasKept = forget(retryStorageKey(o.identity, o.chain), keyOf(o.payment, result.txid))
+  return { status: 'accepted', repeat: result.status === 'duplicate' || wasKept }
 }
 
 /** A kept payment as stored on this device: everything needed to take it into a wallet. */
@@ -311,33 +323,39 @@ function dropped(entry: RetryEntry, reason: DroppedDirectPayment['reason']): Dro
 }
 
 /**
- * Adds the payment to the retry list, once. Nothing already kept is ever dropped to make
- * room: each entry was acknowledged as received, so the payer will not resend it. A
- * payment that cannot be kept is refused instead; the payer still has it.
+ * Adds the payment to the retry list, once; returns false when it was already there.
+ * Nothing already kept is ever dropped to make room: each entry was acknowledged as
+ * received, so the payer will not resend it. A payment that cannot be kept is refused
+ * instead; the payer still has it.
  */
-function keepForRetry(storageKey: string, p: IncomingPayment, error: unknown): void {
+function keepForRetry(storageKey: string, p: IncomingPayment, error: unknown): boolean {
   try {
     const entry = toEntry(p, error)
     const entries = readRetries(storageKey)
-    if (entries.some(e => e.key === entry.key)) return
+    if (entries.some(e => e.key === entry.key)) return false
     if (entries.length >= RETRY_LIMIT) throw new Error('Too many payments are waiting for the wallet.')
     const text = JSON.stringify([...entries, entry])
     if (text.length > RETRY_BUDGET) throw new Error('No room to keep this payment.')
     localStorage.setItem(storageKey, text)
+    return true
   } catch (cause) {
     throw new WebRTPayError('rejected', CANNOT_KEEP, { cause })
   }
 }
 
-/** Removes a payment from the retry list; if that fails it stays and a later retry finds it seen. */
-function forget(storageKey: string, key: string): void {
+/**
+ * Removes a payment from the retry list and says whether it was there. If the write fails
+ * the entry stays, and a later retry finds the payment seen.
+ */
+function forget(storageKey: string, key: string): boolean {
   const entries = readRetries(storageKey)
   const rest = entries.filter(e => e.key !== key)
-  if (rest.length === entries.length) return
+  if (rest.length === entries.length) return false
   try {
     if (rest.length) localStorage.setItem(storageKey, JSON.stringify(rest))
     else localStorage.removeItem(storageKey)
   } catch { /* see above */ }
+  return true
 }
 
 /**

@@ -140,7 +140,7 @@ function client(hub: MemoryHub, party: { wallet: WalletInterface; identityKey: s
 /** The payee's wallet listening with the desktop receive flow. */
 async function receiving(hub: MemoryHub, payee: Payee, limits?: Partial<InboundLimits>): Promise<DirectPayClient> {
   const c = client(hub, payee, limits)
-  await c.startReceiving({ onPayment: p => receive(payee, p) })
+  await c.startReceiving({ onPayment: async p => (await receive(payee, p)).status })
   return c
 }
 
@@ -358,11 +358,11 @@ describe('deliverDirect', () => {
 })
 
 describe('receiveDirectPayment', () => {
-  it('internalizes once and acks a repeated delivery as accepted without a second internalize', async () => {
+  it('internalizes once and acks a repeated delivery as accepted, marked as a repeat, without a second internalize', async () => {
     const payer = await makePayer(), payee = await makePayee()
     const payment = await incoming(payer, payee)
-    await expect(receive(payee, payment)).resolves.toBe('accepted')
-    await expect(receive(payee, { ...payment, messageId: 'again' })).resolves.toBe('accepted')
+    await expect(receive(payee, payment)).resolves.toEqual({ status: 'accepted', repeat: false })
+    await expect(receive(payee, { ...payment, messageId: 'again' })).resolves.toEqual({ status: 'accepted', repeat: true })
     expect(payee.internalizeAction).toHaveBeenCalledTimes(1)
     expect(seenKeys(payee.identityKey)).toEqual([keyOf(payment)])
   })
@@ -388,7 +388,7 @@ describe('receiveDirectPayment', () => {
     const payer = await makePayer(), payee = await makePayee()
     payee.internalizeAction.mockRejectedValue(failure)
     const payment = await incoming(payer, payee)
-    await expect(receive(payee, payment)).resolves.toBe('received')
+    await expect(receive(payee, payment)).resolves.toEqual({ status: 'received', repeat: false })
     expect(retries(payee.identityKey)).toEqual([expect.objectContaining({ key: keyOf(payment), error: failure.message })])
   })
 
@@ -409,21 +409,22 @@ describe('receiveDirectPayment', () => {
     expect(local.size).toBe(0)
   })
 
-  it('keeps one retry entry per payment however often it is redelivered', async () => {
+  it('keeps one retry entry per payment however often it is redelivered, and says it was kept before', async () => {
     const payer = await makePayer(), payee = await makePayee()
     payee.internalizeAction.mockRejectedValue(new Error('User is not authenticated.'))
     const payment = await incoming(payer, payee)
-    await receive(payee, payment)
-    await receive(payee, { ...payment, messageId: 'again' })
+    await expect(receive(payee, payment)).resolves.toEqual({ status: 'received', repeat: false })
+    // A redelivery (the payer lost the ack) is acked again, but marked as seen before.
+    await expect(receive(payee, { ...payment, messageId: 'again' })).resolves.toEqual({ status: 'received', repeat: true })
     expect(retries(payee.identityKey)).toHaveLength(1)
   })
 
-  it('removes the retry entry when a redelivery succeeds', async () => {
+  it('removes the retry entry when a redelivery succeeds, which is a repeat of the kept payment', async () => {
     const payer = await makePayer(), payee = await makePayee()
     payee.internalizeAction.mockRejectedValueOnce(new Error('User is not authenticated.'))
     const payment = await incoming(payer, payee)
-    await expect(receive(payee, payment)).resolves.toBe('received')
-    await expect(receive(payee, payment)).resolves.toBe('accepted')
+    await expect(receive(payee, payment)).resolves.toEqual({ status: 'received', repeat: false })
+    await expect(receive(payee, payment)).resolves.toEqual({ status: 'accepted', repeat: true })
     expect(retries(payee.identityKey)).toEqual([])
   })
 
@@ -433,7 +434,7 @@ describe('receiveDirectPayment', () => {
     const kept: string[] = []
     for (let i = 0; i < 50; i++) {
       const payment = await incoming(payer, payee)
-      await expect(receive(payee, payment)).resolves.toBe('received')
+      await expect(receive(payee, payment)).resolves.toEqual({ status: 'received', repeat: false })
       kept.push(keyOf(payment))
     }
     const error = await receive(payee, await incoming(payer, payee)).catch(e => e)
@@ -462,7 +463,7 @@ describe('receiveDirectPayment', () => {
   it('still acks accepted when the idempotency record cannot be saved', async () => {
     const payer = await makePayer(), payee = await makePayee()
     setItem = () => { throw new DOMException('The quota has been exceeded.', 'QuotaExceededError') }
-    await expect(receive(payee, await incoming(payer, payee))).resolves.toBe('accepted')
+    await expect(receive(payee, await incoming(payer, payee))).resolves.toEqual({ status: 'accepted', repeat: false })
   })
 })
 
@@ -475,7 +476,7 @@ describe('retryReceivedDirectPayments', () => {
     payee.internalizeAction.mockRejectedValue(new Error('User is not authenticated.'))
     for (let i = 0; i < count; i++) {
       payments.push(await incoming(payer, payee))
-      await expect(receive(payee, payments[i])).resolves.toBe('received')
+      await expect(receive(payee, payments[i])).resolves.toEqual({ status: 'received', repeat: false })
     }
     payee.internalizeAction.mockReset()
     return payments
@@ -647,7 +648,7 @@ describe('retryReceivedDirectPayments', () => {
     const retrying = retry(payee)
     await vi.waitFor(() => expect(payee.internalizeAction).toHaveBeenCalledTimes(1))
     const second = await incoming(payer, payee)
-    await expect(receive(payee, second)).resolves.toBe('received')
+    await expect(receive(payee, second)).resolves.toEqual({ status: 'received', repeat: false })
     fail(new Error('ChainTracks request failed with HTTP 503.'))
     await expect(retrying).resolves.toBe(0)
     expect(retries(payee.identityKey)).toEqual([

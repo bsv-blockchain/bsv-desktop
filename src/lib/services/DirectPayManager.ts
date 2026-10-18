@@ -6,6 +6,8 @@
  * codes work. Dialing and receiving by identity key also need a signaler, chosen in the
  * device settings: the message box (this wallet's own host) or a relay server. Receiving
  * is on only when the user turned it on; payments are taken into the wallet at once.
+ * Through a relay, receiving follows the relay connection, which reconnects by itself, and
+ * every connection may use the short-lived TURN servers the relay hands out.
  *
  * React integration: subscribe to 'changed', like PeerPayManager.
  */
@@ -13,15 +15,16 @@
 import { toast } from 'react-toastify'
 import type { WalletInterface } from '@bsv/sdk'
 import { DirectPayClient, MessageBoxSignaler, RelaySignaler } from '@bsv/webrtpay'
-import type { IncomingPayment, MessageBoxLike, PaymentDecision, Signaler } from '@bsv/webrtpay'
+import type { IncomingPayment, MessageBoxLike, PaymentDecision, RelayConnectionState, Signaler, WebRTPayError } from '@bsv/webrtpay'
 import { EventEmittable } from './EventEmittable'
 import { beginUserWalletOperation } from './httpBridgeSession'
 import { iceServersFrom, loadDirectPaySettings, subscribeDirectPaySettings, type DirectPaySettings } from '../utils/directPaySettings'
-import { receiveDirectPayment, retryReceivedDirectPayments, type DroppedDirectPayment } from '../pages/Dashboard/Payments/directPayments'
+import { receiveDirectPayment, retryReceivedDirectPayments, type DirectReceipt, type DroppedDirectPayment } from '../pages/Dashboard/Payments/directPayments'
 
 /**
- * `off`: not receiving (sending works if `via` is set); `starting`: setting up receiving;
- * `online`: receiving; `error`: see `error`.
+ * `off`: not receiving (sending works if `via` is set; see `notice` when it is not);
+ * `starting`: setting up receiving, or connecting to the relay; `online`: receiving;
+ * `error`: see `error`.
  */
 export type DirectPayStatus = 'off' | 'starting' | 'online' | 'error'
 
@@ -33,6 +36,11 @@ export interface DirectPaySnapshot {
   via: 'messagebox' | 'relay' | null
   /** Why `status` is `error`, for the user; empty otherwise. */
   error: string
+  /**
+   * Why direct payments by identity key are not set up, when that is not a failure: this
+   * wallet has no message box to signal through. `status` is then `off`. Empty otherwise.
+   */
+  notice: string
   /** Direct payments received since the wallet opened. */
   received: number
 }
@@ -53,12 +61,10 @@ export interface DirectPayStartOptions {
   settings: DirectPaySettings
 }
 
-const OFF: DirectPaySnapshot = { client: null, status: 'off', via: null, error: '', received: 0 }
+const OFF: DirectPaySnapshot = { client: null, status: 'off', via: null, error: '', notice: '', received: 0 }
 
-/** First pause before trying to receive again after a failure; doubles with each failure. */
-const RECEIVE_RETRY_MIN_MS = 1000
-/** Longest pause between tries to receive. */
-const RECEIVE_RETRY_MAX_MS = 30000
+/** How often a retry of kept payments checks whether a network switch has finished. */
+const OPERATION_WAIT_MS = 1000
 
 const NO_RELAY = 'Enter a relay server address in Settings, or use the message box for direct payments.'
 const NO_MESSAGE_BOX = 'Direct payments reach other wallets through the message box. Connect a message box in Settings, or use a relay server.'
@@ -74,8 +80,6 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
   private _generation = 0
   /** `identity:chain` of wallets whose kept payments are being retried. */
   private readonly _retrying = new Set<string>()
-  /** The next try to receive after a failure; cleared by every start and stop. */
-  private _receiveRetry: ReturnType<typeof setTimeout> | undefined
 
   getSnapshot(): DirectPaySnapshot {
     return this._snapshot
@@ -83,9 +87,11 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
 
   /**
    * Starts direct payments for a wallet. Called again with the same inputs it does
-   * nothing, unless receiving failed: then it starts over at once. With different inputs
+   * nothing, unless receiving failed (say the relay is unreachable): then it starts over
+   * at once instead of waiting for the relay signaler's next try. With different inputs
    * it replaces the client. Never rejects: problems show as `status: 'error'`. Resolves
-   * once the first try to receive has finished; a failed one is tried again later.
+   * once receiving is set up; a relay that could not be reached yet is retried by its
+   * signaler, and the status follows it.
    */
   start(o: DirectPayStartOptions): Promise<void> {
     const previous = this._started?.options
@@ -118,91 +124,106 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
   /** Sets up a client synchronously (so the snapshot has it at once), then receiving. */
   private async _launch(o: DirectPayStartOptions, received: number, closing: Promise<void>): Promise<void> {
     const generation = this._generation
-    const iceServers = iceServersFrom(o.settings)
     let client: DirectPayClient | null = null
     let relay: RelaySignaler | null = null
     let signaler: Signaler | undefined
     let via: DirectPaySnapshot['via'] = null
     let error = ''
+    let notice = ''
     try {
       if (o.settings.signaling === 'relay') {
         if (!o.settings.relayUrl) {
           error = NO_RELAY
         } else {
+          const url = o.settings.relayUrl
           relay = new RelaySignaler({
-            url: o.settings.relayUrl,
+            url,
             wallet: o.wallet,
             originator: o.originator,
-            // The relay may hand out STUN/TURN servers of its own; use them as well.
-            onIceServers: servers => client?.updateRtc({ iceServers: [...iceServers, ...servers] })
+            onStateChange: (state, e) => this._relayChanged(generation, o.settings.receiveEnabled, url, state, e)
           })
           signaler = relay
           via = 'relay'
         }
       } else if (!o.peerPayClient) {
-        error = NO_MESSAGE_BOX
+        notice = NO_MESSAGE_BOX
       } else {
         signaler = new MessageBoxSignaler(o.peerPayClient, { host: o.messageBoxUrl || undefined })
         via = 'messagebox'
       }
-      client = new DirectPayClient({ wallet: o.wallet, originator: o.originator, chain: o.chain, signaler, rtc: { iceServers } })
+      client = new DirectPayClient({
+        wallet: o.wallet,
+        originator: o.originator,
+        chain: o.chain,
+        signaler,
+        rtc: { iceServers: iceServersFrom(o.settings) },
+        // The relay's TURN servers, asked for before each ICE gather (Ruling 27). One provider
+        // for the client's life: it reuses live credentials, because each request spends one
+        // of this address's few an hour and strangers can make a payee gather.
+        ...(relay && {
+          iceServersProvider: relay.turnProvider(),
+          onIceServersProviderError: (e: unknown) => console.warn("[DirectPayManager] Connecting without the relay's TURN servers:", e)
+        })
+      })
     } catch (e) {
       void relay?.close().catch(() => {})
       relay = null
       via = null
+      notice = ''
       error = `Direct payments could not be set up: ${messageOf(e)}`
     }
 
-    const receive = !error && o.settings.receiveEnabled
+    const receive = !error && !notice && o.settings.receiveEnabled
     this._started = {
       options: o,
       relay,
       unsubscribe: subscribeDirectPaySettings(() => { void this.applySettings(loadDirectPaySettings()) })
     }
-    this._set({ client, status: error ? 'error' : receive ? 'starting' : 'off', via, error, received })
+    this._set({ client, status: error ? 'error' : receive ? 'starting' : 'off', via, error, notice, received })
     if (!receive || !client) return
 
     // The previous client stops listening first, so two never answer the same offer.
     await closing
     if (generation !== this._generation) return
-    await this._receive(o, client, generation, 0)
-  }
-
-  /**
-   * Tries once to start receiving on `client`. After a failure (say, the relay cannot be
-   * reached yet) the status is `error` and the same client tries again after a pause that
-   * doubles up to 30 s, for as long as this start is current. The spec's service "keeps
-   * listening while the wallet is unlocked", and a relay down at unlock must not end that.
-   */
-  private async _receive(o: DirectPayStartOptions, client: DirectPayClient, generation: number, failures: number): Promise<void> {
     try {
       await client.startReceiving({
         onPayment: p => this._onPayment(o, p),
         onError: e => console.warn('[DirectPayManager] Inbound direct payment session failed:', e)
       })
-      if (generation === this._generation) this._set({ ...this._snapshot, status: 'online', error: '' })
+      // Through a relay the status follows its connection (see _relayChanged).
+      if (generation === this._generation && !relay) this._update({ status: 'online', error: '' })
     } catch (e) {
-      if (generation !== this._generation) return
-      const error = `Direct payments cannot be received: ${messageOf(e)}`
-      if (this._snapshot.status !== 'error' || this._snapshot.error !== error) this._set({ ...this._snapshot, status: 'error', error })
-      const pause = Math.min(RECEIVE_RETRY_MIN_MS * 2 ** failures, RECEIVE_RETRY_MAX_MS)
-      this._receiveRetry = setTimeout(() => {
-        this._receiveRetry = undefined
-        if (generation === this._generation) void this._receive(o, client, generation, failures + 1)
-      }, pause)
+      // Neither signaler fails to listen while it is open; this is a client that cannot receive.
+      if (generation === this._generation) this._update({ status: 'error', error: `Direct payments cannot be received: ${messageOf(e)}` })
     }
+  }
+
+  /**
+   * While receiving through a relay, the status follows its connection: `starting` while it
+   * connects, `online` once the relay accepted this wallet, and `error` with the reason
+   * while it is offline (the signaler keeps trying, and the status recovers by itself).
+   * While not receiving, the relay connects only for payments, and the status stays `off`.
+   */
+  private _relayChanged(generation: number, receiving: boolean, url: string, state: RelayConnectionState, e?: WebRTPayError): void {
+    if (generation !== this._generation || !receiving) return
+    if (state === 'online') this._update({ status: 'online', error: '' })
+    else if (state === 'offline' && e) this._update({ status: 'error', error: `Direct payments cannot be received: ${relayProblem(e, url)}` })
+    // Connecting again: keep showing why the last try failed until one succeeds.
+    else if (this._snapshot.status !== 'error') this._update({ status: 'starting', error: '' })
   }
 
   /** Takes a payment into the wallet; a throw becomes a `rejected` ack for the payer. */
   private async _onPayment(o: DirectPayStartOptions, p: IncomingPayment): Promise<PaymentDecision> {
     // Throws while the network is changing: the payer keeps the payment and can retry.
     const release = beginUserWalletOperation()
-    let decision: 'accepted' | 'received'
+    let receipt: DirectReceipt
     try {
-      decision = await receiveDirectPayment({ wallet: o.wallet, originator: o.originator, identity: o.identity, chain: o.chain, payment: p })
+      receipt = await receiveDirectPayment({ wallet: o.wallet, originator: o.originator, identity: o.identity, chain: o.chain, payment: p })
     } finally {
       release()
     }
+    // Delivered again after a lost ack: it was announced the first time.
+    if (receipt.repeat) return receipt.status
     // The payment is taken: nothing below may turn the ack into a rejection.
     try {
       const current = this._started?.options
@@ -212,7 +233,7 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     } catch (e) {
       console.warn('[DirectPayManager] Could not announce a received direct payment:', e)
     }
-    return decision
+    return receipt.status
   }
 
   /**
@@ -223,16 +244,40 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     const key = `${o.identity}:${o.chain}`
     if (this._retrying.has(key)) return
     this._retrying.add(key)
-    retryReceivedDirectPayments({
-      wallet: o.wallet,
-      originator: o.originator,
-      identity: o.identity,
-      chain: o.chain,
-      onDropped: dropped => this._reportDropped(dropped)
-    })
-      .then(added => { if (added > 0) window.dispatchEvent(new CustomEvent('balance-changed')) })
-      .catch(e => console.warn('[DirectPayManager] Retrying kept direct payments failed:', e))
-      .finally(() => this._retrying.delete(key))
+    void this._runRetry(o).finally(() => this._retrying.delete(key))
+  }
+
+  /**
+   * Runs the retry inside a user wallet operation, so a network switch or wallet removal
+   * cannot cut storage off while a payment is being taken. A wallet opened by a network
+   * switch opens while the switch still holds wallet work off: the retry waits for the
+   * switch to finish, and is dropped if that wallet closes first. Never rejects.
+   */
+  private async _runRetry(o: DirectPayStartOptions): Promise<void> {
+    let release: () => void
+    for (;;) {
+      if (!this._started || !isSameWallet(this._started.options, o)) return
+      try {
+        release = beginUserWalletOperation()
+        break
+      } catch {
+        await new Promise(resolve => setTimeout(resolve, OPERATION_WAIT_MS))
+      }
+    }
+    try {
+      const added = await retryReceivedDirectPayments({
+        wallet: o.wallet,
+        originator: o.originator,
+        identity: o.identity,
+        chain: o.chain,
+        onDropped: dropped => this._reportDropped(dropped)
+      })
+      if (added > 0) window.dispatchEvent(new CustomEvent('balance-changed'))
+    } catch (e) {
+      console.warn('[DirectPayManager] Retrying kept direct payments failed:', e)
+    } finally {
+      release()
+    }
   }
 
   /** The payer will not send a dropped payment again, so keep its details for recovery. */
@@ -245,8 +290,6 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
   /** Detaches the current client and signaler; returns their closing (never rejects). */
   private _teardown(): Promise<void> {
     this._generation++
-    clearTimeout(this._receiveRetry)
-    this._receiveRetry = undefined
     const started = this._started
     const client = this._snapshot.client
     this._started = null
@@ -263,6 +306,11 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     this._snapshot = snapshot
     this.emit('changed', snapshot)
   }
+
+  /** Changes the status and its message; emits only when they change. */
+  private _update(change: Pick<DirectPaySnapshot, 'status' | 'error'>) {
+    if (change.status !== this._snapshot.status || change.error !== this._snapshot.error) this._set({ ...this._snapshot, ...change })
+  }
 }
 
 function isSameWallet(a: DirectPayStartOptions, b: DirectPayStartOptions): boolean {
@@ -270,8 +318,9 @@ function isSameWallet(a: DirectPayStartOptions, b: DirectPayStartOptions): boole
 }
 
 /**
- * Receiving was set up and failed. A setup problem (no relay address, no message box)
- * leaves `via` null instead, and starting over with the same inputs would not fix it.
+ * Receiving was set up and failed (the relay is offline). A setup problem (no relay
+ * address, no message box) leaves `via` null instead, and starting over with the same
+ * inputs would not fix it.
  */
 function receiveFailed(s: DirectPaySnapshot): boolean {
   return s.status === 'error' && s.via !== null
@@ -283,6 +332,20 @@ function sameInputs(a: DirectPayStartOptions, b: DirectPayStartOptions): boolean
     a.peerPayClient === b.peerPayClient &&
     (a.messageBoxUrl || '') === (b.messageBoxUrl || '') &&
     JSON.stringify(a.settings) === JSON.stringify(b.settings)
+}
+
+/** Why the relay connection is down, for the user. */
+function relayProblem(e: WebRTPayError, url: string): string {
+  switch (e.code) {
+    case 'auth_failed':
+      return `the relay server did not accept this wallet at ${url}. The address in Settings must be exactly one the relay serves (its PUBLIC_URLS). Trying again…`
+    case 'rate_limited':
+      return 'the relay server is limiting connections from this network. Trying again…'
+    case 'peer_unreachable':
+      return 'the relay server cannot be reached. Trying again…'
+    default:
+      return `${e.message}. Trying again…`
+  }
 }
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))

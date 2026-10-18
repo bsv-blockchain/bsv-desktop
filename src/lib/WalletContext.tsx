@@ -268,7 +268,7 @@ export const WalletContext = createContext<WalletContextValue>({
   anointCurrentHost: async () => {},
   revokeHostAnointment: async () => {},
   checkAnointmentStatus: async () => {},
-  directPay: { client: null, status: 'off', via: null, error: '', received: 0 },
+  directPay: { client: null, status: 'off', via: null, error: '', notice: '', received: 0 },
   applyDirectPaySettings: async () => {},
 })
 

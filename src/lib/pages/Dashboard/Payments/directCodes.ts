@@ -16,7 +16,7 @@ import { beginUserWalletOperation } from '../../../services/httpBridgeSession'
 import { deliverDirect, keepDirectPayment, NotSentError, receiveDirectPayment } from './directPayments'
 import type { DirectReceipt } from './directPayments'
 import type { OutgoingPayment } from './messageBoxPayments'
-import { networkLabel, validAmount } from './paymentProtocol'
+import { isKnownNetwork, networkLabel, validAmount } from './paymentProtocol'
 
 /**
  * The longest code a level M QR code holds (version 40, byte mode). qrcode.react throws while
@@ -57,6 +57,7 @@ function whyUnpayable(text: string, chain: string): string {
   if (code.kind !== 'offer') return UNREADABLE
   if (code.expiresAt !== undefined && Date.now() >= code.expiresAt) return 'This request has expired. Ask them for a new one.'
   if (code.chain === undefined) return 'This request does not say which network it is for, so it cannot be paid safely.'
+  if (!isKnownNetwork(code.chain)) return `This request is for a network this wallet does not support (${code.chain}).`
   return `This request is for ${networkLabel(code.chain)}, but your wallet is on ${networkLabel(chain)}. Switch networks in Settings first.`
 }
 

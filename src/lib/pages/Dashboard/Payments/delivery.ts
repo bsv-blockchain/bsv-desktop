@@ -24,6 +24,15 @@ export function deliveryProblem(delivery: Delivery, o: { messageBoxAvailable: bo
   return ''
 }
 
+/**
+ * Why face-to-face codes (Nearby → Direct) cannot be used right now, for the user; empty when
+ * they can. They need a client but no signaler.
+ */
+export function codeExchangeProblem(directPay: Pick<DirectPaySnapshot, 'error'> & { client: unknown }): string {
+  if (directPay.client) return ''
+  return directPay.error || 'Direct payments are not ready yet. Try again in a moment.'
+}
+
 /** The Receive tab's line about receiving direct payments. */
 export function directStatusLine(s: Pick<DirectPaySnapshot, 'status' | 'via' | 'error' | 'notice'>): { severity: 'success' | 'info' | 'warning' | 'error'; text: string } {
   switch (directPayState(s)) {

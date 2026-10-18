@@ -168,6 +168,13 @@ describe('reading a recipient’s offer code', () => {
     expect(() => readOfferCode(offer.code, { chain: CHAIN, identity: 'x' })).toThrow('This request is for Mainnet, but your wallet is on Testnet. Switch networks in Settings first.')
   })
 
+  // Final review M20/M25: not "TeraScaling Testnet", and no advice to switch to a network this wallet lacks.
+  it('names a network this wallet does not support by the code\'s id, without advice to switch', async () => {
+    const payee = await makePayee()
+    const offer = await client(payee).createOfferCode({ chain: 'regtest', handlers: { onPayment: async () => 'accepted' } })
+    expect(() => readOfferCode(offer.code, { chain: CHAIN, identity: 'x' })).toThrow(/^This request is for a network this wallet does not support \(regtest\)\.$/)
+  })
+
   it('refuses an expired code', async () => {
     const payee = await makePayee()
     const expiring = await client(payee).createOfferCode({ chain: CHAIN, expiresInMs: 60_000, handlers: { onPayment: async () => 'accepted' } })
@@ -585,6 +592,16 @@ describe('Nearby → Direct (WebRTC) wiring', () => {
   it('shows the payment that arrived with DirectReceiptView, which directReceipts.test.ts renders', () => {
     expect(exchange).toMatch(/phase === 'received' && received \? <DirectReceiptView received=\{received\} onAgain=\{newRequest\} \/>/)
     expect(exchange).not.toMatch(/Payment received/)
+  })
+
+  // Final review M22: an answer that finishes after the screen closed must not reject unobserved.
+  it('observes the delivery of an answer made after the screen closed, and cancels it', () => {
+    expect(exchange).toMatch(/if \(!alive\.current\) \{ const stopped = next\.cancel\(\); next\.delivered\.catch\(failure => \{ if \(!stopped\) console\.warn\('\[DirectCodeExchange\] A direct payment answered after leaving the screen did not complete:', failure\) \}\); return \}/)
+  })
+
+  it('says why direct payments are unavailable instead of "not ready" for ever', () => {
+    expect(exchange).toMatch(/const unavailable = codeExchangeProblem\(directPay\)/)
+    expect(exchange).toMatch(/\{unavailable && <Alert severity=\{directPay\.error \? 'error' : 'info'\}>\{unavailable\}<\/Alert>\}/)
   })
 
   it('cancels unanswered codes when the screen closes', () => {

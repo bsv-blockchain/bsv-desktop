@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
-import { DELIVERY_HELP, deliveryProblem, directStatusLine } from '../src/lib/pages/Dashboard/Payments/delivery'
+import { codeExchangeProblem, DELIVERY_HELP, deliveryProblem, directStatusLine } from '../src/lib/pages/Dashboard/Payments/delivery'
 import { networkLabel } from '../src/lib/pages/Dashboard/Payments/paymentProtocol'
 
 const ready = { client: {}, via: 'messagebox' as const, error: '', notice: '' }
@@ -39,6 +39,14 @@ describe('choosing how a wallet payment is delivered', () => {
     const notice = 'Direct payments reach other wallets through the message box. Connect a message box in Settings, or use a relay server.'
     expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: null, error: '', notice } })).toBe(notice)
     expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: null, error: '', notice: '' } })).toMatch(/Settings/)
+  })
+
+  // Final review M27: when there is no client, say why instead of "not ready" for ever.
+  it('says why face-to-face codes are unavailable when there is no client, and nothing when there is one', () => {
+    expect(codeExchangeProblem({ client: null, error: 'Direct payments could not be set up: bad options' })).toBe('Direct payments could not be set up: bad options')
+    expect(codeExchangeProblem({ client: null, error: '' })).toBe('Direct payments are not ready yet. Try again in a moment.')
+    // Codes need no signaler, so a missing message box is no reason.
+    expect(codeExchangeProblem({ client: {}, error: '' })).toBe('')
   })
 
   it('still allows direct sending while receiving is off or failing', () => {
@@ -90,7 +98,7 @@ describe('Payments page wiring', () => {
     expect(branch).toMatch(/^if \(review\.delivery === 'direct'\) \{/)
     const call = branch.slice(branch.indexOf('await deliverDirect({'), branch.indexOf('} else {'))
     expect(call).toMatch(/client: directPay\.client/)
-    expect(call).toMatch(/recipient: review\.target\.recipient, amount: review\.amount/)
+    expect(call).toMatch(/recipient: review\.target\.recipient, amount: review\.amount, host: review\.target\.host,/)
     // Both write from the rows stored at that moment (see directCodes.test.ts wiring).
     expect(call).toMatch(/persist: row => \{ addOutgoing\(row\); prepared = true \}/)
     expect(call).toMatch(/markDelivered: markOutgoingDelivered \}\)/)
@@ -118,6 +126,10 @@ describe('Payments page wiring', () => {
     expect(page).toMatch(/<Alert severity=\{noticeSeverity\}/)
   })
 
+  it('says why Direct is unavailable under the delivery choice when it is disabled', () => {
+    expect(page).toMatch(/\{!directAvailable && <Typography variant="caption" color="text\.secondary" sx=\{\{ display: 'block' \}\}>Direct is unavailable: \{deliveryProblem\('direct', \{ messageBoxAvailable, directPay \}\)\}<\/Typography>\}/)
+  })
+
   it('shows the direct-payments status on the Receive tab, even without a message box', () => {
     expect(page).toMatch(/const directLine = directStatusLine\(directPay\)/)
     const receive = page.slice(page.indexOf("{tab === 'receive' &&"), page.indexOf("{tab === 'nearby' &&"))
@@ -137,6 +149,11 @@ describe('network names on the Payments page', () => {
     expect(networkLabel('test')).toBe('Testnet')
     expect(networkLabel('ttn')).toBe('TeraTestnet')
     expect(networkLabel('tstn')).toBe('TeraScaling Testnet')
+  })
+
+  // Final review M20/M25: a code from another wallet can name any network.
+  it('names a network it does not know by the code\'s own id, never as another network', () => {
+    for (const chain of ['stn', 'mainnet', 'regtest', 'constructor']) expect(networkLabel(chain)).toBe(chain)
   })
 
   it('uses those names in the chip and in every confirmation, never the raw chain id', () => {
@@ -173,5 +190,20 @@ describe('a payment error is shown once', () => {
     expect(exchange.match(/\{error && /g)).toHaveLength(2)
     // A new review starts without the last attempt's error, which would read as this one's.
     expect(exchange).toMatch(/if \(validAmount\(amount\)\) \{ setError\(''\); setReview\(\{ code: input\.trim\(\), offer: offerCode, amount, saved \}\) \}/)
+  })
+
+  // Final review D7/M17: an earlier attempt's error ("Nothing was spent", "do not send a new
+  // payment") must not appear inside a new review as if it were this payment's.
+  it('Send: Review payment and Review & pay start without the last attempt\'s error', () => {
+    const page = read('index.tsx')
+    expect(page).toMatch(/onClick=\{\(\) => \{ setNotice\(''\); setError\(''\); setReview\(\{ target, amount: sendAmount!, delivery \}\) \}\}>Review payment<\/Button>/)
+    expect(page).toMatch(/onClick=\{\(\) => \{ setError\(''\); setReview\(\{ target: \{ kind: 'identity', recipient: request\.sender \}, amount: request\.amount, request, delivery: 'messagebox' \}\) \}\}>Review & pay<\/Button>/)
+  })
+
+  // Clearing the error drops its "do not send a new payment"; the review says it itself instead.
+  it('Send: the review warns of a saved payment to the same wallet that was never delivered', () => {
+    const page = read('index.tsx')
+    expect(page).toMatch(/const savedForReview = review\?\.target\.kind === 'identity' \? pending\.find\(row => row\.recipient === review\.target\.recipient\) : undefined/)
+    expect(page).toMatch(/\{savedForReview && <Alert severity="warning">A payment of \{savedForReview\.amount\.toLocaleString\(\)\} satoshis to this wallet is saved but was never delivered\. Retry it from Saved payments instead of sending a new one\.<\/Alert>\}/)
   })
 })

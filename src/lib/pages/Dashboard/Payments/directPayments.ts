@@ -87,6 +87,8 @@ export async function deliverDirect(o: {
   originator: string
   recipient: string
   amount: number
+  /** The message box host the payee's payment link named, kept on a new row for a later "Retry via message box". */
+  host?: string
   existing?: OutgoingPayment
   persist: (p: OutgoingPayment) => void
   markDelivered: (txid: string) => void
@@ -109,7 +111,7 @@ export async function deliverDirect(o: {
       const refusal = whyNotDeliverable(peer, payment.token)
       if (refusal) throw new NotSentError(`${refusal.reason} Your saved payment is unchanged; ${refusal.retry ? 'retry later or deliver it' : 'deliver it'} through the message box.`)
     } else {
-      const prepared = await prepareMessageBoxPayment(o.wallet, recipient, o.amount, o.originator, undefined, row => {
+      const prepared = await prepareMessageBoxPayment(o.wallet, recipient, o.amount, o.originator, o.host, row => {
         // A throw here releases the prepared transaction (prepareMessageBoxPayment aborts it).
         const refusal = whyNotDeliverable(peer, row.token)
         if (refusal) throw new NotSentError(`${refusal.reason} Nothing was spent.`)
@@ -117,7 +119,13 @@ export async function deliverDirect(o: {
       })
       payment = { ...prepared, via: 'direct' }
     }
-    await broadcastNearbyPayment(o.wallet, payment.txid, o.originator)
+    try {
+      await broadcastNearbyPayment(o.wallet, payment.txid, o.originator)
+    } catch (error) {
+      // The row is saved either way; Animated QR's "keep this payment code" does not apply here.
+      const why = messageOf(error)
+      throw new Error(`The payment could not be broadcast yet${why.startsWith('Broadcast is pending.') ? '' : ` (${why.replace(/\.$/, '')})`}; retry when you are online. Retrying reuses the same transaction.`)
+    }
     let ack: PaymentAck
     try {
       ack = await o.client.sendPayment(peer, payment.token)

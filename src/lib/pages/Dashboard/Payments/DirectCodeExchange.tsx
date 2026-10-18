@@ -13,6 +13,7 @@ import QrScanner from './QrScanner'
 import { answerDirectRequest, codeFitsQr, createDirectRequest, offerFailure, pendingPaymentFor, readOfferCode } from './directCodes'
 import { NotSentError } from './directPayments'
 import { payerReceipt } from './directReceipts'
+import { codeExchangeProblem } from './delivery'
 import DirectReceiptView from './DirectReceiptView'
 import type { DirectAnswer, DirectOutbox, ReceivedDirectPayment } from './directCodes'
 import type { OutgoingPayment } from './messageBoxPayments'
@@ -51,6 +52,7 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
   const { managers, chain, adminOriginator, switchingNetwork, directPay } = useContext(WalletContext)
   const wallet = managers.permissionsManager!
   const client = directPay.client
+  const unavailable = codeExchangeProblem(directPay)
   const [direction, setDirection] = useState<'receive' | 'send'>(initialCode ? 'send' : 'receive')
   const [error, setError] = useState('')
   /** The wallet's own words under `error`; shown only with the error it came with. */
@@ -160,7 +162,9 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
       const next = await answerDirectRequest({ client, wallet, originator: adminOriginator, identity, chain, code: review.code, amount: review.amount, existing: review.saved,
         persist: row => { outbox.add(row); prepared = true }, markDelivered: outbox.markDelivered, onConnected: () => { if (alive.current) setPayPhase('sending') } })
       answerRef.current = next
-      if (!alive.current) { next.cancel(); return }
+      // The screen closed while the answer was made. Cancel it; if their wallet connected already,
+      // the delivery runs on (the row is saved) and only a failure is logged.
+      if (!alive.current) { const stopped = next.cancel(); next.delivered.catch(failure => { if (!stopped) console.warn('[DirectCodeExchange] A direct payment answered after leaving the screen did not complete:', failure) }); return }
       setAnswer(next); setReview(null); setPayPhase('answer')
       next.delivered.then(result => {
         if (answerRef.current === next) answerRef.current = null
@@ -195,7 +199,7 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
 
   return <Stack spacing={3}>
     <ToggleButtonGroup fullWidth exclusive value={direction} onChange={(_, value) => { if (value) { setDirection(value); setError('') } }} aria-label="Direct payment direction"><ToggleButton value="receive">Receive directly</ToggleButton><ToggleButton value="send">Pay directly</ToggleButton></ToggleButtonGroup>
-    {!client && <Alert severity="info">Direct payments are not ready yet. Try again in a moment.</Alert>}
+    {unavailable && <Alert severity={directPay.error ? 'error' : 'info'}>{unavailable}</Alert>}
     {/* While the confirm dialog is open it shows the error itself. */}
     {error && !review && <Alert severity="error" onClose={() => setError('')}>{error}{errorDetail?.error === error && <Typography variant="body2" sx={{ mt: .5 }}>{errorDetail.detail}</Typography>}</Alert>}
     {busy && <LinearProgress />}

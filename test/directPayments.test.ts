@@ -261,6 +261,33 @@ describe('deliverDirect', () => {
     expect(retries(payee.identityKey)).toEqual([])
   })
 
+  // Final review M21: a later "Retry via message box" must go to the host the payee's link named.
+  it('keeps the payment link\'s message box host on the saved row', async () => {
+    const hub = createMemoryHub()
+    const payer = await makePayer(), payee = await makePayee()
+    await receiving(hub, payee)
+    const box = outbox()
+    const { payment } = await deliverDirect({ client: client(hub, payer), wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 900, host: 'https://box.example.com', persist: box.persist, markDelivered: box.markDelivered })
+    expect(box.rows).toEqual([expect.objectContaining({ host: 'https://box.example.com', via: 'direct' })])
+    expect(payment.host).toBe('https://box.example.com')
+  })
+
+  // Final review M19: "Keep this payment code" belongs to Animated QR; here the row is saved.
+  it('says a saved direct payment can be retried when it cannot be broadcast, without Animated QR wording', async () => {
+    const hub = createMemoryHub()
+    const payer = await makePayer(), payee = await makePayee()
+    await receiving(hub, payee)
+    const existing = await prepareMessageBoxPayment(payer.wallet, payee.identityKey, 2500, ORIGIN, undefined, () => {})
+    payer.createAction.mockImplementation(async (args: any) => ({ sendWithResults: args.options.sendWith.map((txid: string) => ({ txid, status: 'failed' })) }))
+    const box = outbox()
+    const error = await deliverDirect({ client: client(hub, payer), wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 2500, existing, persist: box.persist, markDelivered: box.markDelivered }).catch(e => e)
+    expect(error.message).toBe('The payment could not be broadcast yet; retry when you are online. Retrying reuses the same transaction.')
+    expect(error.message).not.toMatch(/payment code/)
+    expect(error).not.toBeInstanceOf(NotSentError)
+    expect(box.markDelivered).not.toHaveBeenCalled()
+    expect(payee.internalizeAction).not.toHaveBeenCalled()
+  })
+
   it('redelivers an existing row with the same transaction and creates none', async () => {
     const hub = createMemoryHub()
     const payer = await makePayer(), payee = await makePayee()

@@ -18,8 +18,11 @@ export function validateHost(value: string): string {
   return url.toString().replace(/\/+$/, '')
 }
 
-/** The network's name on the Payments page: its chip and every confirmation use this. */
-export const networkLabel = (chain: string) => chain === 'main' ? 'Mainnet' : chain === 'test' ? 'Testnet' : chain === 'ttn' ? 'TeraTestnet' : 'TeraScaling Testnet'
+const NETWORK_LABELS = new Map([['main', 'Mainnet'], ['test', 'Testnet'], ['ttn', 'TeraTestnet'], ['tstn', 'TeraScaling Testnet']])
+/** A network this wallet can be on. Codes from other wallets may name any network. */
+export const isKnownNetwork = (chain: string) => NETWORK_LABELS.has(chain)
+/** The network's name on the Payments page: its chip and every confirmation use this. Any other network keeps its own id. */
+export const networkLabel = (chain: string) => NETWORK_LABELS.get(chain) ?? chain
 
 /** A face-to-face direct payment code (an offer or an answer); Nearby → Direct (WebRTC) takes it. */
 export const isDirectCode = (text: string) => text.trim().startsWith(CODE_PREFIX)

@@ -146,7 +146,7 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
   const openReview = () => {
     if (!offerCode) return
     const amount = saved ? saved.amount : chosenAmount
-    if (validAmount(amount)) setReview({ code: input.trim(), offer: offerCode, amount, saved })
+    if (validAmount(amount)) { setError(''); setReview({ code: input.trim(), offer: offerCode, amount, saved }) }
   }
   const confirm = async () => {
     if (!review || !client || busy || switchingNetwork) return

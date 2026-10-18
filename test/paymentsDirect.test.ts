@@ -166,5 +166,7 @@ describe('a payment error is shown once', () => {
     const dialog = exchange.slice(exchange.indexOf('<Dialog open={!!review}'))
     expect(dialog).toMatch(/^[^\n]*<DialogContent><Stack spacing=\{2\}>\n\s*\{error && <Alert severity="error">\{error\}<\/Alert>\}/)
     expect(exchange.match(/\{error && /g)).toHaveLength(2)
+    // A new review starts without the last attempt's error, which would read as this one's.
+    expect(exchange).toMatch(/if \(validAmount\(amount\)\) \{ setError\(''\); setReview\(\{ code: input\.trim\(\), offer: offerCode, amount, saved \}\) \}/)
   })
 })

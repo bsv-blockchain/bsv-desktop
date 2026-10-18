@@ -194,6 +194,7 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
       <Typography variant="h6" sx={{ mt: 2 }}>Payment received</Typography>
       <Typography variant="h4" sx={{ my: 1.5, fontWeight: 700 }}><AmountDisplay>{received.amount}</AmountDisplay></Typography>
       <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all' }}>From {received.sender}</Typography>
+      {received.requested !== undefined && <Alert severity="warning" sx={{ mt: 2, textAlign: 'left' }}>Received {received.amount.toLocaleString()} satoshis — you requested {received.requested.toLocaleString()}.</Alert>}
       {received.status === 'received' && <Alert severity="info" sx={{ mt: 2, textAlign: 'left' }}>Your wallet could not add it yet. It is kept on this device and added once it can be verified.</Alert>}
       <Button sx={{ mt: 2 }} onClick={newRequest}>Receive another payment</Button>
     </Box> : !offer ? <>

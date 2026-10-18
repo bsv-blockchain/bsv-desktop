@@ -347,18 +347,34 @@ describe('paying a recipient’s offer code', () => {
 })
 
 describe('receiving with an offer code', () => {
-  it('refuses a payment for another amount than requested, without taking it into the wallet', async () => {
+  // Ruling 29: the payer has broadcast it by now, and it pays this wallet. Refusing it would
+  // strand the funds until a retry, so it is taken and the difference is shown.
+  it('takes a payment for another amount than requested and reports both amounts', async () => {
     const payer = await makePayer(), payee = await makePayee()
     const { offer, received, errors } = await request(payee, { amount: 1200 })
     const payerClient = client(payer) // a payer that ignores the requested amount
     const answer = await payerClient.answerOfferCode(offer.code)
     await offer.complete(answer.answerCode)
     const box = outbox()
-    await expect(deliverDirect({ client: payerClient, wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 500, persist: box.persist, markDelivered: box.markDelivered, peer: await answer.connected }))
-      .rejects.toThrow('The recipient rejected this payment: The amount differs from the requested 1200 satoshis')
-    expect(payee.internalizeAction).not.toHaveBeenCalled()
-    expect(received).toEqual([])
-    expect(errors.map(e => (e as Error).message)).toEqual(['A payment of 500 satoshis was refused because you asked for 1200.'])
+    const { ack } = await deliverDirect({ client: payerClient, wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 500, persist: box.persist, markDelivered: box.markDelivered, peer: await answer.connected })
+
+    expect(ack.status).toBe('accepted')
+    expect(payee.internalizeAction).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(received).toEqual([{ amount: 500, requested: 1200, sender: payer.identityKey, status: 'accepted' }]))
+    expect(errors).toEqual([])
+  })
+
+  it('reports no requested amount when the payment matches it, or when none was asked for', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    for (const amount of [800, undefined]) {
+      const { offer, received } = await request(payee, { amount })
+      const box = outbox()
+      const answer = await answerDirectRequest({ client: client(payer), wallet: payer.wallet, originator: ORIGIN, identity: payer.identityKey, chain: CHAIN, code: offer.code, amount: 800, persist: box.persist, markDelivered: box.markDelivered })
+      await offer.complete(answer.answerCode)
+      await answer.delivered
+      await vi.waitFor(() => expect(received).toHaveLength(1))
+      expect(received[0]).not.toHaveProperty('requested')
+    }
   })
 })
 
@@ -450,6 +466,10 @@ describe('Nearby → Direct (WebRTC) wiring', () => {
     expect(exchange).toMatch(/answerDirectRequest\(\{ client, wallet, originator: adminOriginator, identity, chain, code: review\.code, amount: review\.amount, existing: review\.saved,\s+persist: row => \{ outbox\.add\(row\); prepared = true \}, markDelivered: outbox\.markDelivered,/)
     expect(exchange).toMatch(/const amount = saved \? saved\.amount : chosenAmount/)
     expect(exchange).toMatch(/const chosenAmount = offerCode\?\.amount \?\? payAmount/)
+  })
+
+  it('shows the requested amount beside a payment of another amount (Ruling 29)', () => {
+    expect(exchange).toMatch(/\{received\.requested !== undefined && <Alert severity="warning"[^>]*>Received \{received\.amount\.toLocaleString\(\)\} satoshis — you requested \{received\.requested\.toLocaleString\(\)\}\./)
   })
 
   it('cancels unanswered codes when the screen closes', () => {

@@ -83,6 +83,8 @@ export interface DirectOutbox {
 /** A payment taken in over a code-exchange session. */
 export interface ReceivedDirectPayment {
   amount: number
+  /** The amount the offer asked for, when the payment is for another amount. */
+  requested?: number
   /** The payer's identity key, as proven in the connection's handshake. */
   sender: string
   /** `received`: kept on this device until the wallet can take it (see receiveDirectPayment). */
@@ -91,9 +93,11 @@ export interface ReceivedDirectPayment {
 
 /**
  * Creates the payee's offer code for `amount` (any amount when absent). Payments on its
- * session go into the wallet through receiveDirectPayment, then `onReceived` is called. A
- * payment for another amount than requested is refused and not taken, as in the animated QR
- * flow. `onError` hears of failed sessions and refused payments.
+ * session go into the wallet through receiveDirectPayment, then `onReceived` is called.
+ * A payment for another amount than requested is taken too, and reported with the
+ * requested amount (Ruling 29): it pays this wallet, and its payer has already broadcast
+ * it, so refusing it would only strand the funds. `onError` hears of failed sessions and
+ * refused payments.
  */
 export function createDirectRequest(o: {
   client: DirectPayClient
@@ -108,10 +112,6 @@ export function createDirectRequest(o: {
   const { client, wallet, originator, identity, chain, amount } = o
   const handlers: ReceiveHandlers = {
     onPayment: async p => {
-      if (amount !== undefined && p.token.amount !== amount) {
-        o.onError?.(new Error(`A payment of ${p.token.amount} satoshis was refused because you asked for ${amount}.`))
-        return { status: 'rejected', reason: `The amount differs from the requested ${amount} satoshis` }
-      }
       // Throws while the network is changing: the payer keeps the payment and can retry.
       const release = beginUserWalletOperation()
       let status: 'accepted' | 'received'
@@ -122,7 +122,8 @@ export function createDirectRequest(o: {
       }
       // The payment is taken: nothing below may turn the ack into a rejection.
       try {
-        o.onReceived({ amount: p.token.amount, sender: p.sender, status })
+        const requested = amount !== undefined && amount !== p.token.amount ? { requested: amount } : {}
+        o.onReceived({ amount: p.token.amount, ...requested, sender: p.sender, status })
       } catch (e) {
         console.warn('[directCodes] Could not announce a received direct payment:', e)
       }

@@ -33,7 +33,11 @@ export const DEFAULT_DIRECT_PAY_SETTINGS: DirectPaySettings = {
   receiveEnabled: false,
   signaling: 'messagebox',
   relayUrl: '',
-  stunUrls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478']
+  stunUrls: [
+    'stun:stun-us-1.bsvb.tech:3478',
+    'stun:stun.l.google.com:19302',
+    'stun:stun.cloudflare.com:3478'
+  ]
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])

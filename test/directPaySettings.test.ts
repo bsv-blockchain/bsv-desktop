@@ -35,7 +35,11 @@ describe('direct-pay settings: loading', () => {
       receiveEnabled: false,
       signaling: 'messagebox',
       relayUrl: '',
-      stunUrls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478']
+      stunUrls: [
+        'stun:stun-us-1.bsvb.tech:3478',
+        'stun:stun.l.google.com:19302',
+        'stun:stun.cloudflare.com:3478'
+      ]
     })
     expect(loadDirectPaySettings()).toEqual(DEFAULT_DIRECT_PAY_SETTINGS)
   })
@@ -43,7 +47,7 @@ describe('direct-pay settings: loading', () => {
   it('hands out copies, so callers cannot change the defaults', () => {
     loadDirectPaySettings().stunUrls.push('stun:evil.example:3478')
     expect(loadDirectPaySettings().stunUrls).toEqual(DEFAULT_DIRECT_PAY_SETTINGS.stunUrls)
-    expect(DEFAULT_DIRECT_PAY_SETTINGS.stunUrls).toHaveLength(2)
+    expect(DEFAULT_DIRECT_PAY_SETTINGS.stunUrls).toHaveLength(3)
   })
 
   it.each(['{not json', '"text"', 'null', '[]', '42'])('falls back to defaults for corrupt storage %s', raw => {

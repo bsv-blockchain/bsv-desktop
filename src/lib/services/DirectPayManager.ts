@@ -82,6 +82,9 @@ const RETRY_BUSY_MS = 1000
  */
 const RETRY_CALL_MS = 15_000
 
+/** Failed polls of the message box in a row before the status says it cannot be reached. */
+const POLL_FAILURES_SHOWN = 2
+
 const NO_RELAY = 'Enter a relay server address in Settings, or use the message box for direct payments.'
 const NO_MESSAGE_BOX = 'Direct payments reach other wallets through the message box. Connect a message box in Settings, or use a relay server.'
 
@@ -180,7 +183,12 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
       } else if (!o.peerPayClient) {
         notice = NO_MESSAGE_BOX
       } else {
-        signaler = new MessageBoxSignaler(o.peerPayClient, { host: o.messageBoxUrl || undefined, messageBox: signalBox(o.chain) })
+        let failures = 0
+        const polled = (error?: unknown) => {
+          failures = error === undefined ? 0 : failures + 1
+          this._messageBoxPolled(generation, o.settings.receiveEnabled, failures, error)
+        }
+        signaler = new MessageBoxSignaler(watchingPolls(o.peerPayClient, polled), { host: o.messageBoxUrl || undefined, messageBox: signalBox(o.chain) })
         via = 'messagebox'
       }
       client = new DirectPayClient({
@@ -222,8 +230,8 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
         onPayment: p => this._onPayment(o, p),
         onError: e => console.warn('[DirectPayManager] Inbound direct payment session failed:', e)
       })
-      // Through a relay the status follows its connection (see _relayChanged).
-      if (generation === this._generation && !relay) this._update({ status: 'online', error: '' })
+      // The status follows the relay's connection (see _relayChanged), or the message box's
+      // polls (see _messageBoxPolled), so it says online only once receiving works.
     } catch (e) {
       // Neither signaler fails to listen while it is open; this is a client that cannot receive.
       if (generation === this._generation) this._update({ status: 'error', error: `Direct payments cannot be received: ${messageOf(e)}` })
@@ -242,6 +250,18 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     else if (state === 'offline' && e) this._update({ status: 'error', error: `Direct payments cannot be received: ${relayProblem(e, url)}` })
     // Connecting again: keep showing why the last try failed until one succeeds.
     else if (this._snapshot.status !== 'error') this._update({ status: 'starting', error: '' })
+  }
+
+  /**
+   * While receiving through the message box, the status follows its polls (final review M13):
+   * `online` once a poll worked, and `error` with the reason after
+   * {@link POLL_FAILURES_SHOWN} failures in a row (the signaler keeps polling, and the status
+   * recovers by itself). While not receiving, polls are a payment's, and the status stays `off`.
+   */
+  private _messageBoxPolled(generation: number, receiving: boolean, failures: number, error: unknown): void {
+    if (generation !== this._generation || !receiving) return
+    if (failures === 0) this._update({ status: 'online', error: '' })
+    else if (failures >= POLL_FAILURES_SHOWN) this._update({ status: 'error', error: `Direct payments cannot be received: the message box cannot be reached (${messageOf(error)}). Trying again…` })
   }
 
   /** Takes a payment into the wallet; a throw becomes a `rejected` ack for the payer. */
@@ -435,6 +455,30 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
  * other wallets dial; the client also refuses a dial that names another network.
  */
 const signalBox = (chain: string) => (chain === 'main' ? 'webrtpay_signals' : `webrtpay_signals_${chain}`)
+
+/**
+ * The message box client as the signaler sees it: the same calls, with each listing (a poll)
+ * reported to `polled`, with its error when it failed.
+ */
+function watchingPolls(client: MessageBoxLike, polled: (error?: unknown) => void): MessageBoxLike {
+  // The status is only shown: reporting it must never fail a poll (its messages would be lost).
+  const report = (error?: unknown) => { try { polled(error) } catch (e) { console.warn('[DirectPayManager] Could not show the message box status:', e) } }
+  return {
+    sendMessage: (a, host) => client.sendMessage(a, host),
+    listMessages: async a => {
+      let messages: Awaited<ReturnType<MessageBoxLike['listMessages']>>
+      try {
+        messages = await client.listMessages(a)
+      } catch (e) {
+        report(e ?? new Error('The message box could not be listed'))
+        throw e
+      }
+      report()
+      return messages
+    },
+    acknowledgeMessage: a => client.acknowledgeMessage(a)
+  }
+}
 
 /** Another payment, app request or a network switch is using the wallet. */
 const walletBusy = () => isHttpBridgePaused() || activeUserWalletOperations() > 0 || activeHttpBridgeRequests() > 0

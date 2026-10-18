@@ -35,9 +35,9 @@ const h = vi.hoisted(() => {
 vi.mock('@bsv/webrtpay', async importOriginal => ({
   ...(await importOriginal<typeof import('@bsv/webrtpay')>()),
   DirectPayClient: vi.fn(function (options: any) {
-    const client = {
+    const client: any = {
       options,
-      startReceiving: vi.fn((...args: unknown[]) => h.startReceiving(...args)),
+      startReceiving: vi.fn((...args: unknown[]) => h.startReceiving(client, ...args)),
       updateRtc: vi.fn(),
       close: vi.fn(async () => {})
     }
@@ -99,9 +99,13 @@ let manager: DirectPayManager
 /** The handlers the manager passed to startReceiving on the nth client. */
 const handlersOf = (n = 0) => h.made.clients[n].startReceiving.mock.calls[0][0]
 
+/** What a message box signaler does once it listens: it polls the box. */
+const pollOnce = async (client: any) => { await client.options.signaler?.client?.listMessages?.({ messageBox: 'webrtpay_signals' }) }
+
 beforeEach(() => {
   h.made = { clients: [], messageBoxes: [], relays: [] }
-  h.startReceiving = async () => {}
+  h.startReceiving = pollOnce
+  peerPayClient.listMessages.mockReset()
   h.receive = vi.fn(async () => ({ status: 'accepted', repeat: false, added: true }))
   h.keep = vi.fn(async () => ({ status: 'received', repeat: false, added: false }))
   h.retry = vi.fn(async () => 0)
@@ -152,10 +156,74 @@ describe('DirectPayManager.start', () => {
 
     expect(h.made.messageBoxes).toHaveLength(1)
     // Audit F19: with a host, list and ack go straight to it instead of an overlay lookup per poll.
-    expect(h.made.messageBoxes[0]).toEqual({ client: peerPayClient, options: { host: HOST, messageBox: 'webrtpay_signals' } })
+    expect(h.made.messageBoxes[0].options).toEqual({ host: HOST, messageBox: 'webrtpay_signals' })
     expect(h.made.clients[0].startReceiving).toHaveBeenCalledOnce()
     expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'messagebox', error: '' })
     expect(changes).toEqual(['starting', 'online'])
+  })
+
+  it('hands the signaler the wallet\'s message box client, only watching its polls', async () => {
+    const box = { sendMessage: vi.fn(async function (this: unknown) { return this }), listMessages: vi.fn(async function (this: unknown) { return [this] }), acknowledgeMessage: vi.fn(async function (this: unknown) { return this }) }
+    await manager.start(startOptions({ peerPayClient: box }))
+    const { client } = h.made.messageBoxes[0]
+
+    await expect(client.sendMessage({ recipient: SENDER, messageBox: 'b', body: 'x' }, 'https://their.host')).resolves.toBe(box)
+    await expect(client.listMessages({ messageBox: 'b', host: HOST })).resolves.toEqual([box])
+    await expect(client.acknowledgeMessage({ messageIds: ['1'], host: HOST })).resolves.toBe(box)
+    expect(box.sendMessage).toHaveBeenCalledWith({ recipient: SENDER, messageBox: 'b', body: 'x' }, 'https://their.host')
+    expect(box.listMessages).toHaveBeenCalledWith({ messageBox: 'b', host: HOST })
+    expect(box.acknowledgeMessage).toHaveBeenCalledWith({ messageIds: ['1'], host: HOST })
+  })
+
+  // Final review M13: an unreachable host, or a sign-in the host refuses, must not read "Online".
+  it('says online through the message box only once a poll of the box has worked', async () => {
+    h.startReceiving = async () => {}
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
+    expect(manager.getSnapshot().status).toBe('starting')
+
+    await h.made.messageBoxes[0].client.listMessages({ messageBox: 'webrtpay_signals' })
+
+    expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'messagebox', error: '' })
+  })
+
+  it('says why after two failed polls in a row, keeps saying it while they fail, and recovers by itself', async () => {
+    h.startReceiving = async () => {}
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
+    const box = h.made.messageBoxes[0].client
+    peerPayClient.listMessages.mockRejectedValue(new Error('fetch failed'))
+
+    await expect(box.listMessages({ messageBox: 'webrtpay_signals' })).rejects.toThrow('fetch failed')
+    expect(manager.getSnapshot().status).toBe('starting') // one failure can be a blip
+    await expect(box.listMessages({ messageBox: 'webrtpay_signals' })).rejects.toThrow('fetch failed')
+    expect(manager.getSnapshot()).toMatchObject({ status: 'error', via: 'messagebox', error: 'Direct payments cannot be received: the message box cannot be reached (fetch failed). Trying again…' })
+
+    peerPayClient.listMessages.mockResolvedValue([])
+    await box.listMessages({ messageBox: 'webrtpay_signals' })
+    expect(manager.getSnapshot()).toMatchObject({ status: 'online', error: '' })
+    peerPayClient.listMessages.mockRejectedValue(new Error('fetch failed'))
+    await expect(box.listMessages({ messageBox: 'webrtpay_signals' })).rejects.toThrow()
+    expect(manager.getSnapshot().status).toBe('online') // the count starts over after a success
+  })
+
+  it('never fails a poll because showing the status failed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    h.startReceiving = async () => {}
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
+    const failing = () => { throw new Error('listener failed') }
+    manager.on('changed', failing)
+    peerPayClient.listMessages.mockResolvedValue([{ messageId: 'm1', sender: SENDER, body: '{}' }])
+
+    await expect(h.made.messageBoxes[0].client.listMessages({ messageBox: 'webrtpay_signals' })).resolves.toEqual([{ messageId: 'm1', sender: SENDER, body: '{}' }])
+    expect(warn).toHaveBeenCalled()
+    manager.off('changed', failing)
+  })
+
+  it('leaves the status off while not receiving, whatever the polls of a payment being sent do', async () => {
+    await manager.start(startOptions())
+    peerPayClient.listMessages.mockRejectedValue(new Error('fetch failed'))
+    for (let i = 0; i < 3; i++) await expect(h.made.messageBoxes[0].client.listMessages({ messageBox: 'webrtpay_signals' })).rejects.toThrow()
+
+    expect(manager.getSnapshot()).toMatchObject({ status: 'off', via: 'messagebox', error: '' })
   })
 
   // Final review D2: one identity on two networks must not take the other network's dials.
@@ -363,12 +431,14 @@ describe('DirectPayManager.start', () => {
 
   it('replaces the client when the message box client changes', async () => {
     await manager.start(startOptions())
-    const replacement = { ...peerPayClient }
+    const replacement = { ...peerPayClient, listMessages: vi.fn() }
     await manager.start(startOptions({ peerPayClient: replacement, messageBoxUrl: 'https://other.example.com' }))
 
     expect(h.made.clients).toHaveLength(2)
     expect(h.made.clients[0].close).toHaveBeenCalledOnce()
-    expect(h.made.messageBoxes[1]).toEqual({ client: replacement, options: { host: 'https://other.example.com', messageBox: 'webrtpay_signals' } })
+    expect(h.made.messageBoxes[1].options).toEqual({ host: 'https://other.example.com', messageBox: 'webrtpay_signals' })
+    await h.made.messageBoxes[1].client.listMessages({ messageBox: 'webrtpay_signals' })
+    expect(replacement.listMessages).toHaveBeenCalledOnce()
     expect(manager.getSnapshot().client).toBe(h.made.clients[1])
   })
 

@@ -6,8 +6,8 @@
  * message box path (same outbox row, same PaymentToken).
  *
  * Receiving takes the payment into the wallet at once. Only a payment the wallet cannot
- * take right now (locked, or its storage or network unavailable) is kept on this device
- * for a retry and acknowledged as received; anything the wallet refuses is rejected, so
+ * take right now (locked, its storage or network unavailable, or a network or profile switch
+ * under way) is kept on this device for a retry and acknowledged as received; anything the wallet refuses is rejected, so
  * a peer cannot fill this device's storage with payments that will never verify.
  *
  * A kept payment was acknowledged, so its payer will not send it again, and only this device

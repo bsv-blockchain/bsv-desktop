@@ -374,9 +374,10 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
   /**
    * One pass over the wallet's kept payments. Each payment's wallet calls run inside their own
    * user wallet operation, so a network switch or wallet removal cannot cut storage off under
-   * them, and none is held between payments or across waits. The pass ends early (`busy`)
-   * when the wallet is paused or busy with other work, or when a call takes longer than
-   * {@link RETRY_CALL_MS}, which releases its operation. Never rejects.
+   * them, and none is held between payments or across waits. The pass ends early when the
+   * wallet closes, when it is paused or busy with other work (`busy`: tried again a second
+   * later), or when a call takes longer than {@link RETRY_CALL_MS}, which releases its
+   * operation (the next pass comes after the usual wait). Never rejects.
    */
   private async _runRetry(s: RetrySchedule, includeNeedsAttention: boolean): Promise<'done' | 'busy'> {
     const o = s.options

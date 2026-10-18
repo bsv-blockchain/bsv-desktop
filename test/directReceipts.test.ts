@@ -10,12 +10,13 @@ import * as path from 'path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Utils } from '@bsv/sdk'
-import { keptPaymentsRemovalNote, keptStatusText, payeeReceipt, payerReceipt, receivedNotice, recoveryDetails } from '../src/lib/pages/Dashboard/Payments/directReceipts'
+import { KEPT_UNREADABLE, keptPaymentsRemovalNote, keptStatusText, keptUnknownText, payeeReceipt, payerReceipt, receivedNotice, recoveryDetails } from '../src/lib/pages/Dashboard/Payments/directReceipts'
 import type { KeptDirectPaymentInfo } from '../src/lib/pages/Dashboard/Payments/directPayments'
 
 // AmountDisplay reads the wallet's settings and exchange rates; the amount is what matters here.
 vi.mock('../src/lib/components/AmountDisplay', () => ({ default: ({ children }: { children: number }) => createElement('span', null, `${children} sats`) }))
 const { default: DirectReceiptView } = await import('../src/lib/pages/Dashboard/Payments/DirectReceiptView')
+const { default: KeptDirectPayments } = await import('../src/lib/pages/Dashboard/Payments/KeptDirectPayments')
 
 const SENDER = `03${'34'.repeat(32)}`
 const ME = `02${'12'.repeat(32)}`
@@ -109,6 +110,55 @@ describe('a kept payment in the Payments page list', () => {
     }
     expect(keptStatusText(kept({ needsAttention: { since: 1, reason: 'refused' } }))).toMatch(/refused it/)
     expect(keptStatusText(kept({ needsAttention: { since: 1, reason: 'unverifiable' } }))).toMatch(/could not verify it after repeated tries/)
+  })
+})
+
+describe('the Payments page list of kept payments, as first shown', () => {
+  const listKey = `direct-pay-retry-v1:${ME}:main`
+  /** Renders the list over `stored` as this device's storage. */
+  function render(stored: Record<string, string>): string {
+    vi.stubGlobal('localStorage', { getItem: (key: string) => stored[key] ?? null })
+    try {
+      return renderToStaticMarkup(createElement(KeptDirectPayments, { identity: ME, chain: 'main' }))
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  }
+  const entry = (change: Partial<KeptDirectPaymentInfo> = {}) => {
+    const { txid: _, sender: __, amount: ___, ...stored } = kept(change)
+    return stored
+  }
+
+  it('shows nothing when nothing is kept', () => {
+    expect(render({})).toBe('')
+  })
+
+  it('shows each kept payment with its state', () => {
+    const html = render({ [listKey]: JSON.stringify([entry()]) })
+    expect(html).toContain('Received, not yet in your wallet')
+    expect(html).toContain('1500 sats')
+    expect(html).toContain('retrying automatically')
+    expect(html).not.toContain('Copy recovery details')
+  })
+
+  // Final review follow-up (C12): an unreadable list is left as it is, so it must be said, not shown as empty.
+  it('says when the kept list cannot be read, also with nothing else to show', () => {
+    const html = render({ [listKey]: '{not json' })
+    expect(html).toContain('Received, not yet in your wallet')
+    expect(html).toContain(KEPT_UNREADABLE)
+  })
+
+  it('says how many kept entries this version cannot read, beside the payments it can', () => {
+    const html = render({ [listKey]: JSON.stringify([{ key: 'future' }, entry(), 7]) })
+    expect(html).toContain(keptUnknownText(2))
+    expect(html).toContain('1500 sats')
+  })
+
+  it('words the unreadable states plainly', () => {
+    expect(KEPT_UNREADABLE).toMatch(/could not be read\. They are left as they are\./)
+    expect(KEPT_UNREADABLE).toMatch(/refused, and its sender keeps it/)
+    expect(keptUnknownText(1)).toBe('One entry in the direct payments kept on this device could not be read by this version of BSV Desktop. It is left as it is.')
+    expect(keptUnknownText(3)).toBe('3 entries in the direct payments kept on this device could not be read by this version of BSV Desktop. They are left as they are.')
   })
 })
 

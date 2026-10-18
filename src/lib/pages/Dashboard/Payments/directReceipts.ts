@@ -43,6 +43,20 @@ export function keptStatusText(p: KeptDirectPaymentInfo): string {
 }
 
 /**
+ * The Payments page warning when this wallet's kept payments cannot be read (see
+ * directPayments.ts): nothing writes over them, so payments the wallet cannot add at once are
+ * refused, and their payers keep them.
+ */
+export const KEPT_UNREADABLE = 'Direct payments kept on this device for this wallet could not be read. They are left as they are. Until they can be read, a direct payment your wallet cannot add at once is refused, and its sender keeps it.'
+
+/** The Payments page note for kept entries this version does not recognise. */
+export function keptUnknownText(count: number): string {
+  return count === 1
+    ? 'One entry in the direct payments kept on this device could not be read by this version of BSV Desktop. It is left as it is.'
+    : `${count} entries in the direct payments kept on this device could not be read by this version of BSV Desktop. They are left as they are.`
+}
+
+/**
  * Everything needed to add a kept payment by hand, as JSON: the transaction (Atomic BEEF, hex),
  * the output and its BRC-29 derivation, and the payer. Only this device has the derivation,
  * and the payer will not send the payment again.

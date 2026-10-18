@@ -117,7 +117,7 @@ describe('local state when the wallet is removed from the device', () => {
   it('leaves a kept direct payment for the same wallet to add when it is opened here again', async () => {
     await readyService().removeWalletFromDevice()
 
-    expect(listKeptDirectPayments(identity, 'main')).toEqual([expect.objectContaining({ txid: 'ab'.repeat(32), sender: keptPayment.payment.sender, amount: 700, payment: keptPayment.payment })])
+    expect(listKeptDirectPayments(identity, 'main').payments).toEqual([expect.objectContaining({ txid: 'ab'.repeat(32), sender: keptPayment.payment.sender, amount: 700, payment: keptPayment.payment })])
   })
 
   it('does not touch the payment state when the vault cannot be wiped', async () => {

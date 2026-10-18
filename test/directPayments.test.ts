@@ -892,12 +892,88 @@ describe('retryReceivedDirectPayments', () => {
     ])
   })
 
-  it('returns 0 when nothing is waiting or the stored list is unreadable', async () => {
+  it('returns 0 when nothing is waiting or the stored list is unreadable, and leaves an unreadable list as it is', async () => {
     const payee = await makePayee()
     await expect(retry(payee)).resolves.toBe(0)
     local.set(`direct-pay-retry-v1:${payee.identityKey}:${CHAIN}`, '{not json')
     await expect(retry(payee)).resolves.toBe(0)
     expect(payee.internalizeAction).not.toHaveBeenCalled()
+    expect(local.get(`direct-pay-retry-v1:${payee.identityKey}:${CHAIN}`)).toBe('{not json')
+  })
+})
+
+// Final review follow-up (C12): a kept list this version cannot read may hold the only copy of
+// acknowledged payments, so nothing ever writes over it, and entries it does not recognise are
+// passed through as they are.
+describe('a kept list this device cannot read', () => {
+  const listKey = (payee: Payee) => `direct-pay-retry-v1:${payee.identityKey}:${CHAIN}`
+  const locked = () => new Error('User is not authenticated.')
+
+  it.each([
+    ['text that is not JSON', '{not json'],
+    ['JSON that is not a list', '{"key":"x"}']
+  ])('refuses to keep a new payment rather than replace %s, and leaves it as it is', async (_, text) => {
+    const payer = await makePayer(), payee = await makePayee()
+    local.set(listKey(payee), text)
+    payee.internalizeAction.mockRejectedValue(locked())
+
+    const error = await receive(payee, await incoming(payer, payee)).catch(e => e)
+    const kept = await keepDirectPayment({ wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN, payment: await incoming(payer, payee) }).catch(e => e)
+
+    for (const refusal of [error, kept]) {
+      expect(refusal).toBeInstanceOf(WebRTPayError)
+      expect(refusal.code).toBe('rejected') // the payer still has the payment
+      expect(refusal.message).toMatch(/try again later/i)
+    }
+    expect(local.get(listKey(payee))).toBe(text)
+  })
+
+  it('leaves it as it is when the wallet takes a payment, or a retry fails, after it became unreadable', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    payee.internalizeAction.mockRejectedValue(locked())
+    await receive(payee, await incoming(payer, payee))
+    await receive(payee, await incoming(payer, payee))
+    const corrupt = () => { local.set(listKey(payee), '[{"key":') }
+    payee.internalizeAction.mockReset()
+      .mockImplementationOnce(async () => { corrupt(); return { accepted: true } })
+      .mockImplementationOnce(async () => { corrupt(); throw werr('WERR_INVALID_PARAMETER', 'The outputs parameter must be unique outputIndex values') })
+
+    await retry(payee)
+
+    expect(payee.internalizeAction).toHaveBeenCalledTimes(2)
+    expect(local.get(listKey(payee))).toBe('[{"key":')
+    expect(listKeptDirectPayments(payee.identityKey, CHAIN)).toEqual({ payments: [], unreadable: true, unknown: 0 })
+  })
+
+  it('passes entries it does not recognise through unchanged, in place, and never counts them as kept payments', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const foreign = [{ key: 'from-a-newer-version', payment: { token: { transaction: 42 } } }, { key: 'no-payment' }, 'text', null]
+    local.set(listKey(payee), JSON.stringify(foreign))
+    payee.internalizeAction.mockRejectedValue(locked())
+    const [first, second] = [await incoming(payer, payee), await incoming(payer, payee)]
+    await expect(receive(payee, first)).resolves.toEqual({ status: 'received', repeat: false, added: false })
+    await expect(receive(payee, second)).resolves.toEqual({ status: 'received', repeat: false, added: false })
+    expect(listKeptDirectPayments(payee.identityKey, CHAIN)).toEqual({ payments: [expect.objectContaining({ key: keyOf(first) }), expect.objectContaining({ key: keyOf(second) })], unreadable: false, unknown: 4 })
+
+    payee.internalizeAction.mockReset()
+      .mockRejectedValueOnce(werr('WERR_INVALID_PARAMETER', 'The outputs parameter must be unique outputIndex values')) // flags the first
+      .mockResolvedValueOnce({ accepted: true }) // adds the second
+    await expect(retry(payee)).resolves.toBe(1)
+    expect(retries(payee.identityKey)).toEqual([...foreign, expect.objectContaining({ key: keyOf(first), needsAttention: expect.objectContaining({ reason: 'refused' }) })])
+
+    payee.internalizeAction.mockReset().mockResolvedValue({ accepted: true })
+    await expect(retry(payee)).resolves.toBe(1)
+    expect(retries(payee.identityKey)).toEqual(foreign) // the list stays while anything is in it
+  })
+
+  it('keeps reading entries saved before tries were counted', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    payee.internalizeAction.mockRejectedValue(locked())
+    const payment = await incoming(payer, payee)
+    await receive(payee, payment)
+    const [{ attempts: _, ...early }] = retries(payee.identityKey)
+    local.set(listKey(payee), JSON.stringify([early]))
+    expect(listKeptDirectPayments(payee.identityKey, CHAIN)).toEqual({ payments: [expect.objectContaining({ key: keyOf(payment), attempts: 0 })], unreadable: false, unknown: 0 })
   })
 })
 
@@ -908,18 +984,23 @@ describe('kept payments for display', () => {
     const payment = await incoming(payer, payee, 1234)
     await receive(payee, payment)
 
-    expect(listKeptDirectPayments(payee.identityKey, CHAIN)).toEqual([{
-      key: keyOf(payment),
-      txid: txidOf(payment.token.transaction),
-      sender: payer.identityKey,
-      amount: 1234,
-      receivedAt: expect.any(Number),
-      attempts: 0,
-      error: 'fetch failed',
-      payment: { messageId: payment.messageId, sender: payer.identityKey, token: { customInstructions: payment.token.customInstructions, transaction: Utils.toBase64(payment.token.transaction), amount: 1234, outputIndex: 0 } }
-    }])
-    expect(listKeptDirectPayments(payee.identityKey, 'main')).toEqual([])
-    expect(listKeptDirectPayments('other', CHAIN)).toEqual([])
+    expect(listKeptDirectPayments(payee.identityKey, CHAIN)).toEqual({
+      payments: [{
+        key: keyOf(payment),
+        txid: txidOf(payment.token.transaction),
+        sender: payer.identityKey,
+        amount: 1234,
+        receivedAt: expect.any(Number),
+        attempts: 0,
+        error: 'fetch failed',
+        payment: { messageId: payment.messageId, sender: payer.identityKey, token: { customInstructions: payment.token.customInstructions, transaction: Utils.toBase64(payment.token.transaction), amount: 1234, outputIndex: 0 } }
+      }],
+      unreadable: false,
+      unknown: 0
+    })
+    const none = { payments: [], unreadable: false, unknown: 0 }
+    expect(listKeptDirectPayments(payee.identityKey, 'main')).toEqual(none)
+    expect(listKeptDirectPayments('other', CHAIN)).toEqual(none)
   })
 
   it('counts and totals every kept payment on this device, for every wallet and network', async () => {

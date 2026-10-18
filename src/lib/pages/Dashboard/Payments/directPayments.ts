@@ -15,7 +15,9 @@
  * deleted until the wallet has it: a retry the wallet refuses outright, or that still cannot
  * verify it after several tries over more than a day, flags it as needing attention, and the
  * user can copy its recovery details (Ruling 36). The kept list also survives wallet removal
- * (see WalletService).
+ * (see WalletService). A kept list this version cannot read is never written over, and entries
+ * it does not recognise are passed through as they are: either may hold the only copy of a
+ * payment.
  */
 import { Transaction, Utils } from '@bsv/sdk'
 import type { WalletInterface } from '@bsv/sdk'
@@ -188,7 +190,9 @@ function whyNotDeliverable(peer: AuthenticatedPeer, token: OutgoingPayment['toke
  */
 export function createSeenStore(identity: string, chain: string): SeenStore {
   const storageKey = seenStorageKey(identity, chain)
-  const read = () => readArray(storageKey).filter((key): key is string => typeof key === 'string')
+  // Unreadable counts as empty here, and add() may replace it: a lost record only means a
+  // redelivery is offered to the wallet again, which treats it as the output it already has.
+  const read = () => (readArray(storageKey) ?? []).filter((key): key is string => typeof key === 'string')
   return {
     has: key => read().includes(key),
     add: key => {
@@ -358,7 +362,7 @@ export async function retryReceivedDirectPayments(o: {
   const seen = createSeenStore(o.identity, o.chain)
   const run = o.run ?? (<T>(call: () => Promise<T>) => call())
   let accepted = 0
-  for (const entry of readRetries(storageKey)) {
+  for (const entry of readRetries(storageKey)?.entries ?? []) {
     if (entry.needsAttention && !o.includeNeedsAttention) continue
     try {
       const result = await run(() => acceptDirectPayment(o.wallet, toIncoming(entry), { originator: o.originator, seen }))
@@ -385,9 +389,24 @@ export async function retryReceivedDirectPayments(o: {
   return accepted
 }
 
-/** The open wallet's kept payments, oldest first. */
-export function listKeptDirectPayments(identity: string, chain: string): KeptDirectPaymentInfo[] {
-  return readRetries(retryStorageKey(identity, chain)).map(infoOf)
+/** A wallet's kept-payment list as this device holds it. */
+export interface KeptDirectPaymentsList {
+  /** The kept payments this version can read, oldest first. */
+  payments: KeptDirectPaymentInfo[]
+  /**
+   * The stored list cannot be read. It is left as it is, and until it can be read no payment
+   * is kept (one the wallet cannot take at once is refused, so its payer keeps it).
+   */
+  unreadable: boolean
+  /** Stored entries this version does not recognise; they are kept as they are. */
+  unknown: number
+}
+
+/** The open wallet's kept payments. */
+export function listKeptDirectPayments(identity: string, chain: string): KeptDirectPaymentsList {
+  const stored = readRetries(retryStorageKey(identity, chain))
+  if (!stored) return { payments: [], unreadable: true, unknown: 0 }
+  return { payments: stored.entries.map(infoOf), unreadable: false, unknown: stored.unknown }
 }
 
 /** How many kept payments this device holds, for every wallet and network, and their total. */
@@ -396,7 +415,7 @@ export function keptDirectPaymentsOnDevice(): { count: number; total: number } {
   let total = 0
   for (const key of storageKeys()) {
     if (!key.startsWith(KEPT_DIRECT_PAYMENTS_PREFIX)) continue
-    for (const entry of readRetries(key)) {
+    for (const entry of readRetries(key)?.entries ?? []) {
       count++
       if (validAmount(entry.payment.token.amount)) total += entry.payment.token.amount
     }
@@ -475,15 +494,16 @@ function infoOf(entry: RetryEntry): KeptDirectPaymentInfo {
  * Adds the payment to the retry list, once; returns false when it was already there.
  * Nothing already kept is ever dropped to make room: each entry was acknowledged as
  * received, so the payer will not resend it. A payment that cannot be kept is refused
- * instead; the payer still has it.
+ * instead; the payer still has it. So is every payment while the stored list cannot be read.
  */
 function keepForRetry(storageKey: string, p: IncomingPayment, error: unknown): boolean {
   try {
     const entry = toEntry(p, error)
-    const entries = readRetries(storageKey)
-    if (entries.some(e => e.key === entry.key)) return false
-    if (entries.length >= RETRY_LIMIT) throw new Error('Too many payments are waiting for the wallet.')
-    const text = JSON.stringify([...entries, entry])
+    const stored = readRetries(storageKey)
+    if (!stored) throw new Error('The kept payments on this device cannot be read.')
+    if (stored.entries.some(e => e.key === entry.key)) return false
+    if (stored.entries.length >= RETRY_LIMIT) throw new Error('Too many payments are waiting for the wallet.')
+    const text = JSON.stringify([...stored.items, entry])
     if (text.length > RETRY_BUDGET) throw new Error('No room to keep this payment.')
     localStorage.setItem(storageKey, text)
     announceKept()
@@ -494,52 +514,77 @@ function keepForRetry(storageKey: string, p: IncomingPayment, error: unknown): b
 }
 
 /**
- * Removes a payment from the retry list and says whether it was there. If the write fails
- * the entry stays, and a later retry finds the payment seen.
+ * Removes a payment from the retry list and says whether it was there. If the write fails, or
+ * the list cannot be read, the entry stays, and a later retry finds the payment seen.
  */
 function forget(storageKey: string, key: string): boolean {
-  const entries = readRetries(storageKey)
-  const rest = entries.filter(e => e.key !== key)
-  if (rest.length === entries.length) return false
-  try {
-    if (rest.length) localStorage.setItem(storageKey, JSON.stringify(rest))
-    else localStorage.removeItem(storageKey)
-    announceKept()
-  } catch { /* see above */ }
-  return true
+  return rewrite(storageKey, key, () => undefined) !== undefined
 }
 
 /**
  * Replaces a kept payment's entry, re-reading the list first so a payment kept meanwhile
- * (the retry awaits the wallet) is not lost. If the entry is gone, nothing is written.
- * Returns whether the entry was written.
+ * (the retry awaits the wallet) is not lost. If the entry is gone, or the list cannot be read,
+ * nothing is written. Returns whether the entry was written.
  */
 function update(storageKey: string, entry: RetryEntry): boolean {
-  const entries = readRetries(storageKey)
-  const index = entries.findIndex(e => e.key === entry.key)
-  if (index < 0) return false
-  entries[index] = entry
+  return rewrite(storageKey, entry.key, () => entry) === true
+}
+
+/**
+ * Replaces (`change` returns an entry) or removes (it returns undefined) the stored entry for
+ * `key`, from the list as stored now. Every other stored item, recognised or not, is written
+ * back exactly as it was read. Returns undefined when nothing was there to change (or the list
+ * cannot be read: it is never written over), else whether the write succeeded.
+ */
+function rewrite(storageKey: string, key: string, change: (entry: RetryEntry) => RetryEntry | undefined): boolean | undefined {
+  const stored = readRetries(storageKey)
+  const index = stored?.items.findIndex(item => toRetryEntry(item)?.key === key) ?? -1
+  if (!stored || index < 0) return undefined
+  const replacement = change(toRetryEntry(stored.items[index])!)
+  const items = stored.items.flatMap((item, i) => (i !== index ? [item] : replacement ? [replacement] : []))
   try {
-    localStorage.setItem(storageKey, JSON.stringify(entries))
+    if (items.length) localStorage.setItem(storageKey, JSON.stringify(items))
+    else localStorage.removeItem(storageKey)
   } catch {
-    return false // the old entry stays
+    return false // the stored list stays as it was
   }
   announceKept()
   return true
 }
 
-function readRetries(storageKey: string): RetryEntry[] {
-  return readArray(storageKey)
-    .filter((e: any): e is RetryEntry => typeof e?.key === 'string' && typeof e?.payment?.token?.transaction === 'string')
-    .map(e => {
-      const { needsAttention, ...rest } = e
-      return {
-        ...rest,
-        attempts: Number.isSafeInteger(e.attempts) && e.attempts > 0 ? e.attempts : 0,
-        receivedAt: Number.isFinite(e.receivedAt) ? e.receivedAt : Date.now(),
-        ...(isNeedsAttention(needsAttention) && { needsAttention })
-      }
-    })
+/**
+ * A kept list as stored: every item, in order (writes pass the ones this version does not
+ * recognise through unchanged), and the recognised entries. Null when the list itself cannot
+ * be read (not JSON, not a list, or storage unavailable): it is then never written over.
+ */
+function readRetries(storageKey: string): { items: unknown[]; entries: RetryEntry[]; unknown: number } | null {
+  const items = readArray(storageKey)
+  if (!items) return null
+  const entries = items.map(toRetryEntry).filter((e): e is RetryEntry => e !== undefined)
+  return { items, entries, unknown: items.length - entries.length }
+}
+
+/**
+ * A stored item as a kept payment, or undefined when it is not one this version can retry or
+ * show (every field it needs, of the right type). Entries from before tries were counted lack
+ * `attempts`; it reads as 0.
+ */
+function toRetryEntry(e: any): RetryEntry | undefined {
+  const payment = e?.payment
+  const token = payment?.token
+  const derivation = token?.customInstructions
+  const recognised = typeof e?.key === 'string' && typeof payment?.messageId === 'string' && typeof payment.sender === 'string' &&
+    typeof token?.transaction === 'string' && Number.isSafeInteger(token.amount) && Number.isSafeInteger(token.outputIndex) && token.outputIndex >= 0 &&
+    typeof derivation?.derivationPrefix === 'string' && typeof derivation.derivationSuffix === 'string'
+  if (!recognised) return undefined
+  const { needsAttention, ...rest } = e
+  return {
+    ...rest,
+    error: typeof e.error === 'string' ? e.error : '',
+    attempts: Number.isSafeInteger(e.attempts) && e.attempts > 0 ? e.attempts : 0,
+    receivedAt: Number.isFinite(e.receivedAt) ? e.receivedAt : Date.now(),
+    ...(isNeedsAttention(needsAttention) && { needsAttention })
+  }
 }
 
 function isNeedsAttention(x: any): x is NeedsAttention {
@@ -564,12 +609,13 @@ function storageKeys(): string[] {
   return keys
 }
 
-function readArray(storageKey: string): unknown[] {
+/** The list stored under `storageKey` (none stored reads as empty), or null when it cannot be read. */
+function readArray(storageKey: string): unknown[] | null {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '[]')
-    return Array.isArray(value) ? value : []
+    return Array.isArray(value) ? value : null
   } catch {
-    return []
+    return null
   }
 }
 

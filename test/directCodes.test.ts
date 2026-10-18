@@ -364,6 +364,16 @@ describe('receiving with an offer code', () => {
 
 // ---- wiring --------------------------------------------------------------------------------
 
+/** The source of the call that starts at `start`, through its closing parenthesis. */
+function callText(src: string, start: number): string {
+  let depth = 0
+  for (let i = start; i < src.length; i++) {
+    if (src[i] === '(') depth++
+    else if (src[i] === ')' && --depth === 0) return src.slice(start, i + 1)
+  }
+  throw new Error(`Unclosed call at ${start}`)
+}
+
 describe('Nearby → Direct (WebRTC) wiring', () => {
   const read = (file: string) => fs.readFileSync(path.resolve(__dirname, '../src/lib/pages/Dashboard/Payments', file), 'utf8')
   let page: string, nearby: string, exchange: string
@@ -381,9 +391,38 @@ describe('Nearby → Direct (WebRTC) wiring', () => {
   })
 
   it('lets Nearby save and mark payments through the page’s outbox, reading the latest rows', () => {
-    expect(page).toMatch(/outgoingRef\.current = rows; setOutgoing\(rows\)/)
-    expect(page).toMatch(/add: row => saveOutgoing\(\[\.\.\.outgoingRef\.current, row\]\)/)
-    expect(page).toMatch(/markDelivered: txid => saveOutgoing\(outgoingRef\.current\.map\(row => row\.txid === txid \? \{ \.\.\.row, delivered: true \} : row\)\)/)
+    expect(page).toMatch(/const addOutgoing = useCallback\(\(row: OutgoingPayment\) => updateOutgoing\(rows => \[\.\.\.rows, row\]\), \[updateOutgoing\]\)/)
+    expect(page).toMatch(/const markOutgoingDelivered = useCallback\(\(txid: string\) => updateOutgoing\(rows => rows\.map\(row => row\.txid === txid \? \{ \.\.\.row, delivered: true \} : row\)\), \[updateOutgoing\]\)/)
+    expect(page).toMatch(/const nearbyOutbox = useMemo<DirectOutbox>\(\(\) => \(\{ rows: outgoing, add: addOutgoing, markDelivered: markOutgoingDelivered \}\)/)
+  })
+
+  // A delivery can finish 30–75 s after it began, after other flows (Nearby, Retry directly,
+  // a remounted page) saved rows. A write built from a render's `outgoing` would drop them,
+  // and with them the only copy of a broadcast payment's token.
+  it('builds every outbox write from the rows stored at that moment, never from a render’s copy', () => {
+    // One write path, which reads the stored rows first.
+    expect(page.match(/localStorage\.setItem\(/g)).toHaveLength(1)
+    expect(page).toMatch(/const updateOutgoing = useCallback\(\(change: \(rows: OutgoingPayment\[\]\) => OutgoingPayment\[\]\) => \{ if \(!outboxKey\) throw new Error\('Your wallet identity is still loading\.'\); const rows = change\(readOutgoing\(outboxKey\) \?\? \[\]\); localStorage\.setItem\(outboxKey, JSON\.stringify\(rows\)\); setOutgoing\(rows\) \}, \[outboxKey\]\)/)
+    expect(page).toMatch(/^function readOutgoing\(key: string\): OutgoingPayment\[\] \| null \{$/m)
+    // The state is set only on load and by that write path.
+    expect([...page.matchAll(/setOutgoing\(([^)]*)\)/g)].map(m => m[1])).toEqual(['[]', 'rows', 'rows'])
+    // updateOutgoing is called only with an updater of the rows it is given, and only by the two helpers.
+    const updates = [...page.matchAll(/updateOutgoing\(/g)].map(m => callText(page, m.index!))
+    expect(updates).toEqual([
+      'updateOutgoing(rows => [...rows, row])',
+      'updateOutgoing(rows => rows.map(row => row.txid === txid ? { ...row, delivered: true } : row))'
+    ])
+    // Every writer goes through the helpers; none passes rows of its own.
+    const adds = [...page.matchAll(/addOutgoing\(/g)].map(m => callText(page, m.index!))
+    expect(adds).toEqual(['addOutgoing(row)', 'addOutgoing(payment)'])
+    expect([...page.matchAll(/markOutgoingDelivered\(/g)].map(m => callText(page, m.index!))).toEqual(['markOutgoingDelivered(payment.txid)'])
+    expect(page.match(/markDelivered: markOutgoingDelivered\b/g)).toHaveLength(3) // Send direct, Retry directly, Nearby
+    // No writer captures the render's rows.
+    expect(page).not.toMatch(/saveOutgoing|outgoingRef|nextRows/)
+    expect(page).not.toMatch(/\[\.\.\.outgoing\b/)
+    expect(page).not.toMatch(/\boutgoing\.map\(/)
+    expect(page).not.toMatch(/rows = outgoing\b/)
+    expect(page).toMatch(/const deliver = async \(payment: OutgoingPayment\) => \{/)
   })
 
   it('switches Nearby between Animated QR and Direct (WebRTC), opening Direct for a direct code', () => {

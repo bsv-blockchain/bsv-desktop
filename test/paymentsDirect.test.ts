@@ -82,8 +82,9 @@ describe('Payments page wiring', () => {
     const call = branch.slice(branch.indexOf('await deliverDirect({'), branch.indexOf('} else {'))
     expect(call).toMatch(/client: directPay\.client/)
     expect(call).toMatch(/recipient: review\.target\.recipient, amount: review\.amount/)
-    expect(call).toMatch(/persist: row => \{ nextRows = \[\.\.\.outgoing, row\]; saveOutgoing\(nextRows\); prepared = true \}/)
-    expect(call).toMatch(/markDelivered: txid => \{ nextRows = nextRows\.map\(row => row\.txid === txid \? \{ \.\.\.row, delivered: true \} : row\); saveOutgoing\(nextRows\) \}/)
+    // Both write from the rows stored at that moment (see directCodes.test.ts wiring).
+    expect(call).toMatch(/persist: row => \{ addOutgoing\(row\); prepared = true \}/)
+    expect(call).toMatch(/markDelivered: markOutgoingDelivered \}\)/)
   })
 
   it('records message box rows as such', () => {

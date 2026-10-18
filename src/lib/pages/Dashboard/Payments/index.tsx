@@ -29,6 +29,10 @@ import type { DirectOutbox } from './directCodes'
 const card = { border: '1px solid', borderColor: 'divider', borderRadius: 4, p: { xs: 2.5, md: 4 }, boxShadow: '0 8px 30px rgba(15, 23, 42, 0.035)' }
 const short = (value: string) => `${value.slice(0, 12)}…${value.slice(-6)}`
 type Review = { target: PaymentTarget; amount: number; request?: IncomingPaymentRequest; delivery: Delivery }
+/** The saved payments as stored now, or null when they cannot be read. */
+function readOutgoing(key: string): OutgoingPayment[] | null {
+  try { const rows = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(rows) && !rows.some(row => !row || !/^[0-9a-f]{64}$/.test(row.txid) || !validAmount(row.amount) || !row.token || !Array.isArray(row.token.transaction)) ? rows : null } catch { return null }
+}
 
 export default function Payments() {
   const context = useContext(WalletContext)
@@ -63,9 +67,6 @@ export default function Payments() {
   const [inboxError, setInboxError] = useState('')
   const [inboxBusy, setInboxBusy] = useState('')
   const [outgoing, setOutgoing] = useState<OutgoingPayment[]>([])
-  /** The saved rows as last written, for Nearby → Direct, whose delivery can outlive a render. */
-  const outgoingRef = useRef(outgoing)
-  outgoingRef.current = outgoing
   const [allowedKey, setAllowedKey] = useState('')
   const refreshLock = useRef(false)
   const mutationLock = useRef(false)
@@ -81,9 +82,17 @@ export default function Payments() {
   useEffect(() => { setReview(null); setRecipient(''); setRecipientLabel(''); setAmount(null); setDelivery('messagebox'); setNearbyRequest(''); setError(''); setNotice(''); }, [wallet, chain])
   useEffect(() => { const onReceived = (event: Event) => { const amount = (event as CustomEvent<{ amount?: unknown }>).detail?.amount; notify(validAmount(amount) ? `Direct payment received: ${amount.toLocaleString()} satoshis.` : 'Direct payment received.') }; window.addEventListener('direct-payment-received', onReceived); return () => window.removeEventListener('direct-payment-received', onReceived) }, [notify])
   useEffect(() => { let alive = true; setIdentity(''); if (wallet) wallet.getPublicKey({ identityKey: true }, adminOriginator).then(result => { if (alive) setIdentity(result.publicKey) }).catch(error => { if (alive) setError(error.message || 'Your wallet identity could not be loaded.') }); return () => { alive = false } }, [wallet, chain, adminOriginator])
-  useEffect(() => { setOutgoing([]); if (!outboxKey) return; try { const rows = JSON.parse(localStorage.getItem(outboxKey) || '[]'); if (!Array.isArray(rows) || rows.some(row => !row || !/^[0-9a-f]{64}$/.test(row.txid) || !validAmount(row.amount) || !row.token || !Array.isArray(row.token.transaction))) throw new Error(); setOutgoing(rows) } catch { setError('Saved payments could not be read. Check Activity before sending again.'); } }, [outboxKey])
-  const saveOutgoing = useCallback((rows: OutgoingPayment[]) => { if (!outboxKey) throw new Error('Your wallet identity is still loading.'); localStorage.setItem(outboxKey, JSON.stringify(rows)); outgoingRef.current = rows; setOutgoing(rows) }, [outboxKey])
-  const nearbyOutbox = useMemo<DirectOutbox>(() => ({ rows: outgoing, add: row => saveOutgoing([...outgoingRef.current, row]), markDelivered: txid => saveOutgoing(outgoingRef.current.map(row => row.txid === txid ? { ...row, delivered: true } : row)) }), [outgoing, saveOutgoing])
+  useEffect(() => { setOutgoing([]); if (!outboxKey) return; const rows = readOutgoing(outboxKey); if (rows) setOutgoing(rows); else setError('Saved payments could not be read. Check Activity before sending again.') }, [outboxKey])
+  /**
+   * The only outbox write. It starts from the rows stored at that moment, never from a render's
+   * `outgoing`: a delivery can finish 30–75 s after it began, after Nearby, a retry or a remounted
+   * page saved rows, and a stale copy would drop them and with them a broadcast payment's token.
+   * An unreadable store is replaced, as it was when the page loaded it as empty.
+   */
+  const updateOutgoing = useCallback((change: (rows: OutgoingPayment[]) => OutgoingPayment[]) => { if (!outboxKey) throw new Error('Your wallet identity is still loading.'); const rows = change(readOutgoing(outboxKey) ?? []); localStorage.setItem(outboxKey, JSON.stringify(rows)); setOutgoing(rows) }, [outboxKey])
+  const addOutgoing = useCallback((row: OutgoingPayment) => updateOutgoing(rows => [...rows, row]), [updateOutgoing])
+  const markOutgoingDelivered = useCallback((txid: string) => updateOutgoing(rows => rows.map(row => row.txid === txid ? { ...row, delivered: true } : row)), [updateOutgoing])
+  const nearbyOutbox = useMemo<DirectOutbox>(() => ({ rows: outgoing, add: addOutgoing, markDelivered: markOutgoingDelivered }), [outgoing, addOutgoing, markOutgoingDelivered])
   const target = useMemo(() => { try { return parsePaymentTarget(recipient, chain) } catch { return null } }, [recipient, chain])
   const targetError = useMemo(() => { if (!recipient.trim()) return ''; try { parsePaymentTarget(recipient, chain); return '' } catch (error) { return (error as Error).message } }, [recipient, chain])
   const looksLikeCode = /^[a-z][a-z0-9+.-]*:/i.test(recipient) || /^(0[23][a-f0-9]{10,}|[1mn][1-9A-HJ-NP-Za-km-z]{24,})$/i.test(recipient)
@@ -115,7 +124,7 @@ export default function Payments() {
   }, [peerPayClient, messageBoxAvailable, messageBoxUrl, switchingNetwork, scope])
   useEffect(() => { setIncoming([]); setRequests([]); void refresh(); const timer = setInterval(() => { if (!document.hidden) void refresh() }, 20_000); return () => clearInterval(timer) }, [refresh])
 
-  const deliver = async (payment: OutgoingPayment, rows = outgoing) => {
+  const deliver = async (payment: OutgoingPayment) => {
     if (!wallet || !peerPayClient) throw new Error('Connect a message box in Settings before sending.')
     const release = beginUserWalletOperation()
     try {
@@ -125,7 +134,7 @@ export default function Payments() {
         await peerPayClient.sendMessage({ recipient: payment.recipient, messageBox: 'payment_request_responses', body: JSON.stringify({ requestId: payment.request.requestId, status: 'paid', amountPaid: payment.amount }) }, payment.host)
         await peerPayClient.acknowledgeMessage({ messageIds: [payment.request.messageId], host: messageBoxUrl })
       }
-      saveOutgoing(rows.map(row => row.txid === payment.txid ? { ...row, delivered: true } : row))
+      markOutgoingDelivered(payment.txid)
       window.dispatchEvent(new CustomEvent('balance-changed'))
     } finally { release() }
   }
@@ -141,18 +150,18 @@ export default function Payments() {
       if (review.target.kind === 'identity') {
         const problem = deliveryProblem(review.delivery, { messageBoxAvailable, directPay })
         if (problem) throw new Error(problem)
-        let nextRows = outgoing
         if (review.delivery === 'direct') {
-          await deliverDirect({ client: directPay.client!, wallet, originator: adminOriginator, recipient: review.target.recipient, amount: review.amount, persist: row => { nextRows = [...outgoing, row]; saveOutgoing(nextRows); prepared = true }, markDelivered: txid => { nextRows = nextRows.map(row => row.txid === txid ? { ...row, delivered: true } : row); saveOutgoing(nextRows) } })
+          await deliverDirect({ client: directPay.client!, wallet, originator: adminOriginator, recipient: review.target.recipient, amount: review.amount, persist: row => { addOutgoing(row); prepared = true }, markDelivered: markOutgoingDelivered })
         } else {
           if (review.request) {
             const fresh = (await peerPayClient!.listIncomingPaymentRequests(messageBoxUrl)).find(request => request.messageId === review.request!.messageId)
             if (!fresh || fresh.sender !== review.target.recipient || fresh.amount !== review.amount || fresh.requestId !== review.request.requestId || fresh.expiresAt <= Date.now()) throw new Error('This request has changed or expired. Refresh your inbox before paying.')
             if (outgoing.some(payment => payment.request?.requestId === fresh.requestId && payment.recipient === fresh.sender)) throw new Error('You have already prepared this payment. Retry its delivery from Saved payments.')
           }
-          let payment = await prepareMessageBoxPayment(wallet, review.target.recipient, review.amount, adminOriginator, review.target.host, original => { const saved = { ...original, via: 'messagebox' as const, ...(review.request ? { request: { requestId: review.request.requestId, messageId: review.request.messageId } } : {}) }; nextRows = [...outgoing, saved]; saveOutgoing(nextRows); prepared = true })
-          payment = nextRows[nextRows.length - 1]
-          await deliver(payment, nextRows)
+          // The saved row, not the returned one: deliver needs its `request` to answer the request.
+          let payment: OutgoingPayment | undefined
+          await prepareMessageBoxPayment(wallet, review.target.recipient, review.amount, adminOriginator, review.target.host, original => { payment = { ...original, via: 'messagebox' as const, ...(review.request ? { request: { requestId: review.request.requestId, messageId: review.request.messageId } } : {}) }; addOutgoing(payment); prepared = true })
+          await deliver(payment!)
         }
       } else {
         await wallet.createAction({ description: 'Sent BSV to address', outputs: [{ lockingScript: new P2PKH().lock(review.target.recipient).toHex(), satoshis: review.amount, outputDescription: 'BSV payment' }], labels: ['legacy', 'outbound', `to-address:${review.target.recipient}`] }, adminOriginator)
@@ -168,7 +177,7 @@ export default function Payments() {
       const problem = deliveryProblem('direct', { messageBoxAvailable, directPay })
       if (problem) throw new Error(problem)
       release = beginUserWalletOperation()
-      await deliverDirect({ client: directPay.client!, wallet, originator: adminOriginator, recipient: payment.recipient, amount: payment.amount, existing: payment, persist: () => {}, markDelivered: txid => saveOutgoing(outgoing.map(row => row.txid === txid ? { ...row, delivered: true } : row)) })
+      await deliverDirect({ client: directPay.client!, wallet, originator: adminOriginator, recipient: payment.recipient, amount: payment.amount, existing: payment, persist: () => {}, markDelivered: markOutgoingDelivered })
       notify('Saved payment delivered.'); window.dispatchEvent(new CustomEvent('balance-changed'))
     } catch (error) { setError((error as Error).message || 'Delivery is still pending.') } finally { release?.(); mutationLock.current = false; setBusy(false) }
   }

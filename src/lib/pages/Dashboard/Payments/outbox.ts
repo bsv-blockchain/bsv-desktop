@@ -28,19 +28,25 @@ export function readOutbox(key: string): OutgoingPayment[] | null {
 }
 
 /**
- * The only outbox write: applies `change` to the rows stored now and stores the result. An
- * unreadable outbox is replaced, as a page that loaded it showed it empty. Returns the rows
- * stored. Throws when they cannot be stored.
+ * The only outbox write: applies `change` to the rows stored now and stores the result.
+ * Returns the rows stored. Throws when they cannot be stored, and when the stored outbox
+ * cannot be read: replacing it would erase every saved payment, broadcast ones' only tokens
+ * among them (final review M18). `whenUnreadable` ends that error's first sentence.
  */
-export function updateOutbox(key: string, change: (rows: OutgoingPayment[]) => OutgoingPayment[]): OutgoingPayment[] {
-  const rows = change(readOutbox(key) ?? [])
+export function updateOutbox(key: string, change: (rows: OutgoingPayment[]) => OutgoingPayment[], whenUnreadable = 'they were left as they are'): OutgoingPayment[] {
+  const current = localStorage.getItem(key) === null ? [] : readOutbox(key)
+  if (!current) throw new Error(`Saved payments on this device could not be read, so ${whenUnreadable}. Check Activity before sending again.`)
+  const rows = change(current)
   localStorage.setItem(key, JSON.stringify(rows))
   window.dispatchEvent(new CustomEvent(CHANGED_EVENT, { detail: { key } }))
   return rows
 }
 
-/** Saves a newly prepared payment (before it is broadcast). */
-export const addToOutbox = (key: string, row: OutgoingPayment) => updateOutbox(key, rows => [...rows, row])
+/**
+ * Saves a newly prepared payment (before it is broadcast). When this throws, the payment flows
+ * release the prepared transaction instead of broadcasting it, so nothing is spent.
+ */
+export const addToOutbox = (key: string, row: OutgoingPayment) => updateOutbox(key, rows => [...rows, row], 'this payment was not saved, and nothing was spent')
 
 export const markOutboxDelivered = (key: string, txid: string) =>
   updateOutbox(key, rows => rows.map(row => (row.txid === txid ? { ...row, delivered: true } : row)))

@@ -94,10 +94,21 @@ describe('the outbox', () => {
     expect(readOutbox(KEY)).toBeNull()
   })
 
-  it('replaces an unreadable outbox on the next write, as the page shows it empty', () => {
-    local.set(KEY, '{not json')
-    addToOutbox(KEY, row(1))
-    expect(stored()).toEqual([row(1)])
+  // Final review M18: replacing it would erase every saved row, broadcast payments' only tokens
+  // among them. The write is refused instead: a new payment is then released, never broadcast.
+  it('never replaces an outbox it cannot read: it refuses the write, says nothing was saved or spent, and leaves it as it is', () => {
+    const heard = vi.fn()
+    subscribeOutbox(heard)
+    for (const unreadable of ['{not json', JSON.stringify([{ ...row(1), txid: 'not a txid' }])]) {
+      local.set(KEY, unreadable)
+
+      expect(() => addToOutbox(KEY, row(2))).toThrow('Saved payments on this device could not be read, so this payment was not saved, and nothing was spent. Check Activity before sending again.')
+      expect(() => markOutboxDelivered(KEY, row(1).txid)).toThrow(/^Saved payments on this device could not be read/)
+      expect(() => updateOutbox(KEY, rows => rows)).toThrow(/^Saved payments on this device could not be read/)
+
+      expect(local.get(KEY)).toBe(unreadable)
+    }
+    expect(heard).not.toHaveBeenCalled()
   })
 
   it('tells every view in this window about each write, until it stops listening', () => {

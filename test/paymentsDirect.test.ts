@@ -138,6 +138,13 @@ describe('Payments page wiring', () => {
     expect(receive.indexOf('{directLine.text}')).toBeLessThan(receive.indexOf('!messageBoxAvailable ?'))
   })
 
+  // Final review M18: switching tabs clears `error`; this warning must stay while it is true.
+  it('keeps warning that saved payments could not be read, across tab changes', () => {
+    expect(page).toMatch(/const rows = readOutbox\(outboxKey\); setOutboxUnreadable\(!rows\); if \(rows\) setOutgoing\(rows\)/)
+    expect(page).toMatch(/\{outboxUnreadable && <Alert severity="warning" sx=\{\{ mb: 2 \}\}>Saved payments on this device could not be read\./)
+    expect(page).not.toMatch(/setError\('Saved payments could not be read/)
+  })
+
   it('asks for a positive amount only when the requested amount is the problem', () => {
     expect(page).toMatch(/requestAmount !== null && !validAmount\(requestAmount\) \? 'Enter a positive amount or leave it blank\.' : 'Your payment link is not ready yet\.'/)
   })

@@ -67,6 +67,8 @@ export default function Payments() {
   const [inboxError, setInboxError] = useState('')
   const [inboxBusy, setInboxBusy] = useState('')
   const [outgoing, setOutgoing] = useState<OutgoingPayment[]>([])
+  /** Saved payments are stored but cannot be read: nothing new can be saved (see outbox.ts). */
+  const [outboxUnreadable, setOutboxUnreadable] = useState(false)
   const [allowedKey, setAllowedKey] = useState('')
   const refreshLock = useRef(false)
   const mutationLock = useRef(false)
@@ -85,7 +87,7 @@ export default function Payments() {
   useEffect(() => { setReview(null); setRecipient(''); setRecipientLabel(''); setAmount(null); setDelivery('messagebox'); setNearbyRequest(''); setError(''); setNotice(''); }, [wallet, chain])
   useEffect(() => { const onReceived = (event: Event) => announce(receivedNotice((event as CustomEvent<Record<string, unknown> | undefined>).detail ?? {})); window.addEventListener('direct-payment-received', onReceived); return () => window.removeEventListener('direct-payment-received', onReceived) }, [announce])
   useEffect(() => { let alive = true; setIdentity(''); if (wallet) wallet.getPublicKey({ identityKey: true }, adminOriginator).then(result => { if (alive) setIdentity(result.publicKey) }).catch(error => { if (alive) setError(error.message || 'Your wallet identity could not be loaded.') }); return () => { alive = false } }, [wallet, chain, adminOriginator])
-  useEffect(() => { setOutgoing([]); if (!outboxKey) return; const rows = readOutbox(outboxKey); if (rows) setOutgoing(rows); else setError('Saved payments could not be read. Check Activity before sending again.') }, [outboxKey])
+  useEffect(() => { setOutgoing([]); setOutboxUnreadable(false); if (!outboxKey) return; const rows = readOutbox(outboxKey); setOutboxUnreadable(!rows); if (rows) setOutgoing(rows) }, [outboxKey])
   // Show writes made elsewhere in this window too, such as a delivery that outlived an earlier visit to this page.
   useEffect(() => { if (!outboxKey) return; return subscribeOutbox(key => { if (key === outboxKey) setOutgoing(readOutbox(key) ?? []) }) }, [outboxKey])
   /** Every outbox write is one of outbox.ts's, which start from the rows stored at that moment; the page then shows what was stored. */
@@ -208,6 +210,7 @@ export default function Payments() {
     {notice && <Alert severity={noticeSeverity} onClose={() => setNotice('')} sx={{ mb: 2 }}>{notice}</Alert>}
     {/* While the review dialog is open it shows the error itself. */}
     {error && !review && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
+    {outboxUnreadable && <Alert severity="warning" sx={{ mb: 2 }}>Saved payments on this device could not be read. They are left as they are, and payments to wallet identities cannot be saved until they can be read. Check Activity before sending again.</Alert>}
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.3fr) minmax(0, .9fr)' }, gap: 3, alignItems: 'start' }}>
       <Paper elevation={0} sx={card}>
         <Tabs value={tab} onChange={(_, value) => { setTab(value); setError('') }} variant="fullWidth" sx={{ mb: 3, borderBottom: '1px solid', borderColor: 'divider' }} aria-label="Payment options"><Tab label="Send" value="send" icon={<ArrowOutwardOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /><Tab label="Receive" value="receive" icon={<ArrowDownwardOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /><Tab label="Nearby" value="nearby" icon={<QrCodeScannerOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /></Tabs>

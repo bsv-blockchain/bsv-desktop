@@ -7,6 +7,7 @@ import { createSeenStore, deliverDirect, keepDirectPayment, keptDirectPaymentsOn
 import type { KeptDirectPaymentInfo } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import { prepareMessageBoxPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
 import type { OutgoingPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
+import { addToOutbox, outboxStorageKey } from '../src/lib/pages/Dashboard/Payments/outbox'
 
 const ORIGIN = 'admin.test'
 const CHAIN = 'test'
@@ -285,6 +286,21 @@ describe('deliverDirect', () => {
     expect(error.message).not.toMatch(/payment code/)
     expect(error).not.toBeInstanceOf(NotSentError)
     expect(box.markDelivered).not.toHaveBeenCalled()
+    expect(payee.internalizeAction).not.toHaveBeenCalled()
+  })
+
+  // Final review M18, end to end: the save is refused, so the payment is released, not broadcast.
+  it('releases the payment and broadcasts nothing when the saved payments on this device cannot be read', async () => {
+    const hub = createMemoryHub()
+    const payer = await makePayer(), payee = await makePayee()
+    await receiving(hub, payee)
+    const key = outboxStorageKey(payer.identityKey, CHAIN)
+    local.set(key, '{not json')
+    const error = await deliverDirect({ client: client(hub, payer), wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 700, persist: row => { addToOutbox(key, row) }, markDelivered: vi.fn() }).catch(e => e)
+    expect(error.message).toBe('Saved payments on this device could not be read, so this payment was not saved, and nothing was spent. Check Activity before sending again.')
+    expect(payer.abortAction).toHaveBeenCalledOnce()
+    expect(payer.createAction.mock.calls.some(([args]) => args.options?.sendWith)).toBe(false)
+    expect(local.get(key)).toBe('{not json')
     expect(payee.internalizeAction).not.toHaveBeenCalled()
   })
 

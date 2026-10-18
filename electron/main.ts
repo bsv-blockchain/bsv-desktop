@@ -14,6 +14,7 @@ import { arcadeUrl } from './endpoints.js';
 import { getBootConfig } from './bootConfig.js';
 import { checkAndRepairCertTrust } from './sslCert.js';
 import { applyUserDataOverride } from './userDataOverride.js';
+import { hideLocalAddressesFromWebRtc } from './webrtcPrivacy.js';
 
 // BSV_DESKTOP_USER_DATA moves userData so a second copy of the app (a second
 // test wallet) can run on one machine. This has to stay ahead of everything
@@ -718,6 +719,9 @@ app.whenReady().then(async () => {
   // the toplevel is mapped, so a late-installed desktop entry is not picked up
   // until the next launch.
   integrateAppImageDesktopEntry();
+
+  // Before any page loads: WebRTC (direct payments) must not see raw local addresses.
+  hideLocalAddressesFromWebRtc(session.defaultSession);
 
   buildApplicationMenu({ getMainWindow: () => mainWindow });
   createWindow();

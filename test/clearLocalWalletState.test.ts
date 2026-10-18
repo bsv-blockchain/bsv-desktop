@@ -123,3 +123,56 @@ describe('_clearLocalWalletState', () => {
     expect(Object.fromEntries(local)).toEqual({ payReq_abc: 'keep' })
   })
 })
+
+describe('direct payments follow the wallet', () => {
+  it('stop on logout', () => {
+    const service = readyService()
+    const stop = vi.spyOn(service.directPay, 'stop')
+    service.logout()
+
+    expect(stop).toHaveBeenCalledOnce()
+  })
+
+  it('stop when the wallet is closed and removed', async () => {
+    const service = readyService()
+    const stop = vi.spyOn(service.directPay, 'stop')
+    await service.removeWalletFromDevice()
+
+    // Closing the wallet, then forgetting it.
+    expect(stop).toHaveBeenCalledTimes(2)
+  })
+
+  it('restart with the new message box client and host when the message box changes', async () => {
+    const service = readyService()
+    const start = vi.spyOn(service.directPay, 'start').mockResolvedValue()
+    const replacement = { name: 'new peer pay client' }
+    vi.spyOn(service.peerPay, 'replaceClient').mockImplementation(async () => {
+      ;(service.peerPay as any)._client = replacement
+    })
+    local.set('bsv-desktop-direct-pay-v1', JSON.stringify({ receiveEnabled: true }))
+
+    await service.updateMessageBoxUrl('https://box.example.com/')
+
+    expect(start).toHaveBeenCalledOnce()
+    expect(start.mock.calls[0][0]).toMatchObject({
+      wallet: (service as any)._managers.permissionsManager,
+      originator: service.adminOriginator,
+      identity,
+      chain: 'main',
+      peerPayClient: replacement,
+      messageBoxUrl: service.messageBoxUrl,
+      settings: { receiveEnabled: true, signaling: 'messagebox' }
+    })
+  })
+
+  it('restart without a message box when it is removed', async () => {
+    const service = readyService()
+    const start = vi.spyOn(service.directPay, 'start').mockResolvedValue()
+    vi.spyOn(service.peerPay, 'destroyClient').mockResolvedValue()
+
+    await service.removeMessageBoxUrl()
+
+    expect(start).toHaveBeenCalledOnce()
+    expect(start.mock.calls[0][0]).toMatchObject({ peerPayClient: null, messageBoxUrl: undefined })
+  })
+})

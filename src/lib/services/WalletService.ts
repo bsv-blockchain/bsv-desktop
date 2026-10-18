@@ -47,6 +47,7 @@ import { toast } from 'react-toastify'
 import { EventEmittable } from './EventEmittable'
 import { PermissionQueueManager } from './PermissionQueueManager'
 import { PeerPayManager } from './PeerPayManager'
+import { DirectPayManager } from './DirectPayManager'
 import { StorageElectronIPC } from '../StorageElectronIPC'
 import { WalletDataStorageManager } from '../walletPortability/WalletDataStorageManager'
 import { WalletDataSession, walletDataCall } from '../walletPortability/session'
@@ -61,7 +62,7 @@ import {
   seedDisplayPreferences,
   withDisplayPreferences,
 } from '../utils/displayPreferences'
-import { DIRECT_PAY_SETTINGS_KEY } from '../utils/directPaySettings'
+import { DIRECT_PAY_SETTINGS_KEY, loadDirectPaySettings } from '../utils/directPaySettings'
 import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
 import { defaultNetworkSettingsMap, isWalletNetwork, normalizeMessageBoxUrl, normalizeNetworkSettings, restoreNetworkSettings, type NetworkSettings, type NetworkSettingsMap, type WalletNetwork } from '../networkConfig'
@@ -136,6 +137,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   // ---- Service composition ----
   readonly permissionQueue: PermissionQueueManager
   readonly peerPay: PeerPayManager
+  readonly directPay: DirectPayManager
 
   // ---- Lifecycle ----
   private _lifecycle: WalletLifecycle = 'unconfigured'
@@ -188,10 +190,12 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     super()
     this.permissionQueue = new PermissionQueueManager()
     this.peerPay = new PeerPayManager()
+    this.directPay = new DirectPayManager()
 
     // Propagate sub-service changes as stateChanged
     this.permissionQueue.on('snapshot', () => this._emitState())
     this.peerPay.on('changed', () => this._emitState())
+    this.directPay.on('changed', () => this._emitState())
   }
 
   // ------------------------------------------------------------------
@@ -524,6 +528,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     this._emitState()
     const cleanup = await Promise.allSettled([
       this.peerPay.suspendClient(),
+      this.directPay.stop(),
       Promise.resolve().then(() => previousManager?.destroy?.()),
       (async () => {
         try { await previousSession?.close() }
@@ -731,6 +736,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     try {
       const cleanup = await Promise.allSettled([
         this.peerPay.suspendClient(),
+        this.directPay.stop(),
         (async () => {
           try { await previousSession?.close() }
           finally {
@@ -852,6 +858,10 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       }
 
       if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while starting services')
+      // After the check above (a superseded build's failure path does not stop it), and not
+      // awaited: receiving through a relay can take seconds to connect and the wallet is
+      // usable without it. Failures show in the direct-pay status.
+      this._startDirectPay()
       // Clear the initializing flag BEFORE the ready emit so React (e.g. Greeter)
       // does not stay stuck on the non-interactive initializingBackendServices screen.
       // Previously this was only cleared in `finally` without an emit, so the UI
@@ -874,6 +884,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       clearWalletForHttpRoute()
       this.permissionQueue.setPermissionsManager(null)
       await this.peerPay.suspendClient().catch(() => {})
+      await this.directPay.stop()
       this._managers = walletManager ? { walletManager } : {}
       this._startupError = error.message || 'Could not open the wallet services.'
       this._wallet = undefined
@@ -1247,6 +1258,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     if (walletForPeerPay) {
       await this.peerPay.replaceClient(walletForPeerPay, trimmedUrl, this._adminOriginator)
     }
+    // Direct payments signal through the message box client, so they follow it.
+    this._startDirectPay()
 
     const snapshot = this.saveEnhancedSnapshot({ messageBoxUrl: trimmedUrl, useMessageBox: true })
     secrets.setSnapshot(snapshot)
@@ -1258,6 +1271,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     await this.peerPay.destroyClient(this._messageBoxUrl)
     this._messageBoxUrl = MESSAGEBOX_HOST
     this._useMessageBox = false
+    this._startDirectPay()
 
     const snapshot = this.saveEnhancedSnapshot()
     secrets.setSnapshot(snapshot)
@@ -1381,11 +1395,31 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     this._activeProfile = null
     this._mnemonicProfiles = defaultMnemonicProfiles()
     this.peerPay.reset()
+    void this.directPay.stop()
   }
 
   // ------------------------------------------------------------------
   // Internal helpers
   // ------------------------------------------------------------------
+
+  /**
+   * Starts direct payments for the open wallet with the current message box client and
+   * device settings, or restarts them when one of those changed. Never throws.
+   */
+  private _startDirectPay() {
+    const wallet = this._managers.permissionsManager
+    const session = this.walletData
+    if (!wallet || !session) return
+    void this.directPay.start({
+      wallet,
+      originator: this._adminOriginator,
+      identity: session.identityKey,
+      chain: session.chain,
+      peerPayClient: this.peerPay.getSnapshot().peerPayClient,
+      messageBoxUrl: this._useMessageBox ? this._messageBoxUrl : undefined,
+      settings: loadDirectPaySettings(),
+    })
+  }
 
   private _tryAutoInitialize() {
     const directKeyMode = this._loginType === 'direct-key' || this._loginType === 'mnemonic'

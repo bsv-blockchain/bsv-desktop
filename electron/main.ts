@@ -15,6 +15,7 @@ import { getBootConfig } from './bootConfig.js';
 import { checkAndRepairCertTrust } from './sslCert.js';
 import { applyUserDataOverride } from './userDataOverride.js';
 import { hideLocalAddressesFromWebRtc } from './webrtcPrivacy.js';
+import { isDevMode } from './rendererSource.js';
 
 // BSV_DESKTOP_USER_DATA moves userData so a second copy of the app (a second
 // test wallet) can run on one machine. This has to stay ahead of everything
@@ -126,7 +127,8 @@ async function cleanupBeforeExit(): Promise<void> {
 // Store previous focused app on macOS
 let prevBundleId: string | null = null;
 
-const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+// Development mode loads the Vite dev server; BSV_DESKTOP_LOAD_DIST=1 loads the build instead.
+const isDev = isDevMode(app.isPackaged);
 
 // Linux display server configuration
 // Add command-line switches for better Wayland/X11 compatibility

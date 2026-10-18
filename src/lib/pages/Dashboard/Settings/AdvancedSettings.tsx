@@ -24,6 +24,7 @@ import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded'
 import { UserContext } from '../../../UserContext.js'
 import PageLoading from '../../../components/PageLoading.js'
 import MessageBoxConfig from '../../../components/MessageBoxConfig/index.tsx'
+import DirectPayConfig from '../../../components/DirectPayConfig/index.tsx'
 import WalletDiagnosis from './WalletDiagnosis.tsx'
 import FeeSettings from './FeeSettings.tsx'
 import { beginUserWalletOperation } from '../../../services/httpBridgeSession'
@@ -292,6 +293,10 @@ const AdvancedSettings = () => {
 
       <Box sx={{ my: 3 }}>
         <MessageBoxConfig />
+      </Box>
+
+      <Box sx={{ my: 3 }}>
+        <DirectPayConfig />
       </Box>
 
 

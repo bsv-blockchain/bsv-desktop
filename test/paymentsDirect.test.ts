@@ -1,0 +1,117 @@
+/**
+ * Direct delivery on the Payments page: the choice between the message box and a direct
+ * connection, the direct-payments status line on the Receive tab, and how the page is
+ * wired to the C3 flows. The repo has no DOM test environment, so the page's decisions
+ * live in delivery.ts and the wiring is checked in source.
+ */
+import { describe, expect, it } from 'vitest'
+import * as fs from 'fs'
+import * as path from 'path'
+import { DELIVERY_HELP, deliveryProblem, directStatusLine } from '../src/lib/pages/Dashboard/Payments/delivery'
+
+const ready = { client: {}, via: 'messagebox' as const, error: '' }
+
+describe('choosing how a wallet payment is delivered', () => {
+  it('explains each choice; Direct says it connects first and spends nothing if the recipient is offline', () => {
+    expect(DELIVERY_HELP.direct).toBe("Direct · connects to the recipient's wallet first; nothing is spent if they're offline")
+    expect(DELIVERY_HELP.messagebox).toMatch(/^Message box · /)
+    expect(DELIVERY_HELP.messagebox).toMatch(/offline/)
+  })
+
+  it('needs a connected message box for message box delivery only', () => {
+    expect(deliveryProblem('messagebox', { messageBoxAvailable: true, directPay: { client: null, via: null, error: '' } })).toBe('')
+    expect(deliveryProblem('messagebox', { messageBoxAvailable: false, directPay: ready })).toMatch(/Connect your message box in Settings/)
+    expect(deliveryProblem('direct', { messageBoxAvailable: false, directPay: ready })).toBe('')
+  })
+
+  it('needs a direct-pay client for direct delivery', () => {
+    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: null, via: null, error: '' } })).toMatch(/not ready/)
+  })
+
+  it('explains why direct delivery cannot reach anyone when no signaler is set up', () => {
+    const error = 'Enter a relay server address in Settings, or use the message box for direct payments.'
+    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: null, error } })).toBe(error)
+    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: null, error: '' } })).toMatch(/Settings/)
+  })
+
+  it('still allows direct sending while receiving is off or failing', () => {
+    expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: 'relay', error: 'Direct payments cannot be received: relay down' } })).toBe('')
+  })
+})
+
+describe('direct-payments status line on the Receive tab', () => {
+  it.each([
+    [{ status: 'online', via: 'messagebox', error: '' }, 'success', 'Direct payments: online via the message box.'],
+    [{ status: 'online', via: 'relay', error: '' }, 'success', 'Direct payments: online via the relay server.'],
+    [{ status: 'off', via: 'messagebox', error: '' }, 'info', 'Direct payments: off — enable in Settings.'],
+    [{ status: 'starting', via: 'relay', error: '' }, 'info', 'Direct payments: starting…'],
+    [{ status: 'error', via: null, error: 'Enter a relay server address in Settings, or use the message box for direct payments.' }, 'warning', 'Direct payments: not set up. Enter a relay server address in Settings, or use the message box for direct payments.'],
+    [{ status: 'error', via: 'relay', error: 'Direct payments cannot be received: Could not connect to the relay' }, 'error', 'Direct payments cannot be received: Could not connect to the relay']
+  ] as const)('%o', (snapshot, severity, text) => {
+    expect(directStatusLine(snapshot)).toEqual({ severity, text })
+  })
+})
+
+describe('Payments page wiring', () => {
+  const page = fs.readFileSync(path.resolve(__dirname, '../src/lib/pages/Dashboard/Payments/index.tsx'), 'utf8')
+
+  it('splits availability into the message box and direct delivery', () => {
+    expect(page).toMatch(/const messageBoxAvailable = !!peerPayClient && useMessageBox && !!messageBoxUrl/)
+    expect(page).toMatch(/const directAvailable = !!directPay\.client/)
+    expect(page).not.toMatch(/const available =/)
+    expect(page).not.toMatch(/[!(&|]\s*available\b/)
+  })
+
+  it('offers Message box or Direct for identity payments, Direct disabled without a client', () => {
+    expect(page).toMatch(/useState<Delivery>\('messagebox'\)/)
+    expect(page).toMatch(/<ToggleButtonGroup[^>]*aria-label="Delivery"/)
+    expect(page).toMatch(/<ToggleButton value="messagebox">Message box<\/ToggleButton><ToggleButton value="direct" disabled=\{!directAvailable\}>Direct<\/ToggleButton>/)
+    expect(page).toMatch(/DELIVERY_HELP\[delivery\]/)
+  })
+
+  it('fixes the delivery when the payment is reviewed, shows it, and pays requests through the message box', () => {
+    expect(page).toMatch(/setReview\(\{ target, amount: sendAmount!, delivery \}\)/)
+    expect(page).toMatch(/request, delivery: 'messagebox' \}\)/)
+    expect(page).toMatch(/Delivery: \{review\?\.delivery === 'direct' \? 'Direct \(peer-to-peer\)' : 'Message box'\}/)
+  })
+
+  it('sends a direct payment with deliverDirect, saving the row before broadcast and marking it delivered', () => {
+    expect(page).toMatch(/import \{ deliverDirect \} from '\.\/directPayments'/)
+    const branch = page.slice(page.indexOf("if (review.delivery === 'direct')"))
+    expect(branch).toMatch(/^if \(review\.delivery === 'direct'\) \{/)
+    const call = branch.slice(branch.indexOf('await deliverDirect({'), branch.indexOf('} else {'))
+    expect(call).toMatch(/client: directPay\.client/)
+    expect(call).toMatch(/recipient: review\.target\.recipient, amount: review\.amount/)
+    expect(call).toMatch(/persist: row => \{ nextRows = \[\.\.\.outgoing, row\]; saveOutgoing\(nextRows\); prepared = true \}/)
+    expect(call).toMatch(/markDelivered: txid => \{ nextRows = nextRows\.map\(row => row\.txid === txid \? \{ \.\.\.row, delivered: true \} : row\); saveOutgoing\(nextRows\) \}/)
+  })
+
+  it('records message box rows as such', () => {
+    expect(page).toMatch(/\{ \.\.\.original, via: 'messagebox' as const/)
+  })
+
+  it('shows how each saved payment was sent and retries it either way with the same transaction', () => {
+    expect(page).toMatch(/payment\.via === 'direct' \? 'sent directly' : 'sent via message box'/)
+    expect(page).toMatch(/>Retry via message box<\/Button>/)
+    expect(page).toMatch(/>Retry directly<\/Button>/)
+    expect(page).toMatch(/existing: payment/)
+  })
+
+  it('tells the user when a direct payment arrives, and stops listening when the page closes', () => {
+    expect(page).toMatch(/window\.addEventListener\('direct-payment-received', onReceived\)/)
+    expect(page).toMatch(/return \(\) => window\.removeEventListener\('direct-payment-received', onReceived\)/)
+    expect(page).toMatch(/notify\(validAmount\(amount\) \? `Direct payment received: \$\{amount\.toLocaleString\(\)\} satoshis\.` : 'Direct payment received\.'\)/)
+  })
+
+  it('shows the direct-payments status on the Receive tab, even without a message box', () => {
+    expect(page).toMatch(/const directLine = directStatusLine\(directPay\)/)
+    const receive = page.slice(page.indexOf("{tab === 'receive' &&"), page.indexOf("{tab === 'nearby' &&"))
+    expect(receive).toMatch(/<Alert severity=\{directLine\.severity\}[^\n]*>\{directLine\.text\}<\/Alert>/)
+    expect(receive.indexOf('{directLine.text}')).toBeGreaterThan(-1)
+    expect(receive.indexOf('{directLine.text}')).toBeLessThan(receive.indexOf('!messageBoxAvailable ?'))
+  })
+
+  it('asks for a positive amount only when the requested amount is the problem', () => {
+    expect(page).toMatch(/requestAmount !== null && !validAmount\(requestAmount\) \? 'Enter a positive amount or leave it blank\.' : 'Your payment link is not ready yet\.'/)
+  })
+})

@@ -35,6 +35,14 @@ export const DEFAULT_DIRECT_PAY_SETTINGS: DirectPaySettings = {
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
+/** A setting that cannot be saved, worded for the user; `field` names the one at fault. */
+export class DirectPaySettingsError extends Error {
+  constructor(message: string, readonly field?: keyof DirectPaySettings) {
+    super(message)
+    this.name = 'DirectPaySettingsError'
+  }
+}
+
 function checkReceiveEnabled(value: unknown): boolean {
   if (typeof value !== 'boolean') throw new Error('Receive direct payments must be on or off.')
   return value
@@ -49,19 +57,19 @@ function checkSignaling(value: unknown): DirectPaySettings['signaling'] {
 
 /** An empty string means no relay is configured. */
 function checkRelayUrl(value: unknown): string {
-  if (typeof value !== 'string') throw new Error('The relay URL is not a valid address.')
+  if (typeof value !== 'string') throw new DirectPaySettingsError('The relay URL is not a valid address.', 'relayUrl')
   const text = value.trim()
   if (!text) return ''
   let url: URL
   try {
     url = new URL(text)
   } catch {
-    throw new Error('The relay URL is not a valid address. Use a wss:// address.')
+    throw new DirectPaySettingsError('The relay URL is not a valid address. Use a wss:// address.', 'relayUrl')
   }
   const secure = url.protocol === 'wss:'
   const local = url.protocol === 'ws:' && LOCAL_HOSTS.has(url.hostname)
   if (!secure && !local) {
-    throw new Error('The relay URL must start with wss:// (ws:// is only allowed for localhost).')
+    throw new DirectPaySettingsError('The relay URL must start with wss:// (ws:// is only allowed for localhost).', 'relayUrl')
   }
   return text
 }
@@ -129,7 +137,8 @@ export function loadDirectPaySettings(): DirectPaySettings {
 /**
  * Validates and stores the settings. Fields left out take their defaults, so the
  * argument describes the whole stored state. Throws an Error with a message fit
- * for the user and stores nothing when a value is not acceptable.
+ * for the user and stores nothing when a value is not acceptable; relay signaling
+ * needs a relay URL. Relay URL problems are `DirectPaySettingsError`s naming the field.
  */
 export function saveDirectPaySettings(input: Partial<DirectPaySettings>): DirectPaySettings {
   const defaults = DEFAULT_DIRECT_PAY_SETTINGS
@@ -142,6 +151,9 @@ export function saveDirectPaySettings(input: Partial<DirectPaySettings>): Direct
     },
     checkTurn(input.turn)
   )
+  if (settings.signaling === 'relay' && !settings.relayUrl) {
+    throw new DirectPaySettingsError('Enter the relay server address, or choose the message box for signaling.', 'relayUrl')
+  }
   try {
     localStorage.setItem(DIRECT_PAY_SETTINGS_KEY, JSON.stringify(settings))
   } catch {

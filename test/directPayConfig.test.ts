@@ -12,7 +12,7 @@ import {
   loadDirectPaySettings,
   saveDirectPaySettings
 } from '../src/lib/utils/directPaySettings'
-import { followStoredSettings, formFromSettings, saveDirectPayForm, settingsFromForm } from '../src/lib/components/DirectPayConfig/form'
+import { followStoredSettings, formFromSettings, relayUrlError, saveDirectPayForm, settingsFromForm, showsTurn } from '../src/lib/components/DirectPayConfig/form'
 import { DIRECT_PAY_STATE_COLOR, directPayState } from '../src/lib/components/DirectPayConfig/status'
 
 let local: Map<string, string>
@@ -116,6 +116,7 @@ describe('saving the direct-pay form', () => {
   })
 
   it.each([
+    ['relay signaling without a relay URL', { relayUrl: '  ' }, /Enter the relay server address/],
     ['a relay URL that is not wss://', { relayUrl: 'http://relay.example.com' }, /wss:\/\//],
     ['a STUN server that is not stun:', { stunUrls: 'stun:ok.example:3478, https://bad.example' }, /stun: or stuns:/],
     ['a TURN server without a credential', { turnUrls: 'turn:t.example:3478', turnUsername: 'u', turnCredential: '' }, /username and a credential/]
@@ -125,6 +126,25 @@ describe('saving the direct-pay form', () => {
     await expect(saveDirectPayForm({ ...formFromSettings(stored), receiveEnabled: true, ...change }, apply)).rejects.toThrow(message)
     expect(apply).not.toHaveBeenCalled()
     expect(JSON.parse(local.get(DIRECT_PAY_SETTINGS_KEY)!)).toEqual(stored)
+  })
+})
+
+describe('relay URL field errors', () => {
+  it('shows a refused relay URL under the field, and nothing else there', async () => {
+    const empty = await saveDirectPayForm({ ...formFromSettings(stored), relayUrl: '' }, async () => {}).catch(e => e)
+    expect(relayUrlError(empty)).toBe('Enter the relay server address, or choose the message box for signaling.')
+    const insecure = await saveDirectPayForm({ ...formFromSettings(stored), relayUrl: 'ws://relay.example.com' }, async () => {}).catch(e => e)
+    expect(relayUrlError(insecure)).toMatch(/wss:\/\//)
+    const stun = await saveDirectPayForm({ ...formFromSettings(stored), stunUrls: 'https://bad.example' }, async () => {}).catch(e => e)
+    expect(relayUrlError(stun)).toBe('')
+    expect(relayUrlError(new Error('Direct payment settings could not be saved on this device.'))).toBe('')
+  })
+})
+
+describe('the TURN section', () => {
+  it('is open when the settings have a TURN server', () => {
+    expect(showsTurn(formFromSettings(stored))).toBe(true)
+    expect(showsTurn(formFromSettings(DEFAULT_DIRECT_PAY_SETTINGS))).toBe(false)
   })
 })
 
@@ -179,8 +199,9 @@ describe('Direct payments card wiring', () => {
 
   it('starts from the stored settings and saves the whole form, then applies it, while holding a wallet operation', () => {
     expect(card).toMatch(/formFromSettings\(loadDirectPaySettings\(\)\)/)
-    // Settings saved anywhere else show in the form too.
-    expect(card).toMatch(/useEffect\(\(\) => followStoredSettings\(setForm\), \[\]\)/)
+    // Settings saved anywhere else show in the form too, with the TURN section opened when they have a TURN server.
+    expect(card).toMatch(/const \[showTurn, setShowTurn\] = useState\(\(\) => showsTurn\(form\)\)/)
+    expect(card).toMatch(/useEffect\(\(\) => followStoredSettings\(next => \{ setForm\(next\); if \(showsTurn\(next\)\) setShowTurn\(true\) \}\), \[\]\)/)
     expect(card).toMatch(/saveDirectPayForm\(form, applyDirectPaySettings\)/)
     expect(card).toMatch(/release = beginUserWalletOperation\(\)/)
     expect(card).not.toMatch(/saveDirectPaySettings\(/)
@@ -193,6 +214,15 @@ describe('Direct payments card wiring', () => {
     // A failure is an error; a setup gap is information.
     expect(card).toMatch(/\{directPay\.error && \(\s*<Alert severity="error"[^>]*>\s*\{directPay\.error\}/)
     expect(card).toMatch(/\{directPay\.notice && \(\s*<Alert severity="info"[^>]*>\s*\{directPay\.notice\}/)
+  })
+
+  it('refuses to save a relay URL it cannot use, saying why under the field instead of reporting it saved', () => {
+    const save = card.slice(card.indexOf('const handleSave'), card.indexOf('const content'))
+    expect(save).toMatch(/const problem = relayUrlError\(error\)\s*if \(problem\) \{ setRelayUrlFieldError\(problem\); return \}\s*throw error/)
+    expect(save.indexOf('return }')).toBeLessThan(save.indexOf("toast.success(t('directpay_saved'))"))
+    expect(card).toMatch(/error=\{!!relayUrlFieldError\}\s*helperText=\{relayUrlFieldError \|\| t\('directpay_relay_url_helper'\)\}/)
+    // Editing the address or the signaling clears it.
+    expect(card).toMatch(/if \(key === 'relayUrl' \|\| key === 'signaling'\) setRelayUrlFieldError\(''\)/)
   })
 
   it('offers both signaling choices and the relay, STUN and TURN fields', () => {

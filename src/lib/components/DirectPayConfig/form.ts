@@ -1,4 +1,4 @@
-import { loadDirectPaySettings, saveDirectPaySettings, subscribeDirectPaySettings, type DirectPaySettings } from '../../utils/directPaySettings'
+import { DirectPaySettingsError, loadDirectPaySettings, saveDirectPaySettings, subscribeDirectPaySettings, type DirectPaySettings } from '../../utils/directPaySettings'
 
 /** The Direct payments card's fields, as the user edits them. */
 export interface DirectPayForm {
@@ -23,6 +23,9 @@ export function formFromSettings(s: DirectPaySettings): DirectPayForm {
     turnCredential: s.turn?.credential ?? ''
   }
 }
+
+/** The form has a TURN server (or part of one), so the card shows the TURN section open. */
+export const showsTurn = (f: DirectPayForm) => !!(f.turnUrls || f.turnUsername || f.turnCredential)
 
 /**
  * Every setting, always: saving resets anything left out to its default (Ruling 14).
@@ -56,4 +59,12 @@ export async function saveDirectPayForm(form: DirectPayForm, apply: (s: DirectPa
  */
 export function followStoredSettings(setForm: (form: DirectPayForm) => void): () => void {
   return subscribeDirectPaySettings(() => setForm(formFromSettings(loadDirectPaySettings())))
+}
+
+/**
+ * What to show under the Relay URL field after a failed save: the reason when the relay URL
+ * is at fault (missing for relay signaling, or not one the wallet can use), else ''.
+ */
+export function relayUrlError(error: unknown): string {
+  return error instanceof DirectPaySettingsError && error.field === 'relayUrl' ? error.message : ''
 }

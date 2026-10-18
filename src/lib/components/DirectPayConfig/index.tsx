@@ -19,8 +19,8 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import { toast } from 'react-toastify'
 import { WalletContext } from '../../WalletContext'
 import { beginUserWalletOperation } from '../../services/httpBridgeSession'
-import { loadDirectPaySettings } from '../../utils/directPaySettings'
-import { followStoredSettings, formFromSettings, saveDirectPayForm, type DirectPayForm } from './form'
+import { loadDirectPaySettings, type DirectPaySettings } from '../../utils/directPaySettings'
+import { followStoredSettings, formFromSettings, relayUrlError, saveDirectPayForm, showsTurn, type DirectPayForm } from './form'
 import { DIRECT_PAY_STATE_COLOR, directPayState } from './status'
 
 interface DirectPayConfigProps {
@@ -33,13 +33,14 @@ export default function DirectPayConfig({ showTitle = true, embedded = false }: 
   const { directPay, applyDirectPaySettings, switchingNetwork } = useContext(WalletContext)
 
   const [form, setForm] = useState<DirectPayForm>(() => formFromSettings(loadDirectPaySettings()))
-  const [showTurn, setShowTurn] = useState(() => !!form.turnUrls)
+  const [showTurn, setShowTurn] = useState(() => showsTurn(form))
+  const [relayUrlFieldError, setRelayUrlFieldError] = useState('')
   const [saving, setSaving] = useState(false)
   const [operationError, setOperationError] = useState('')
   const mutationLock = useRef(false)
   const busy = saving || switchingNetwork
 
-  useEffect(() => followStoredSettings(setForm), [])
+  useEffect(() => followStoredSettings(next => { setForm(next); if (showsTurn(next)) setShowTurn(true) }), [])
 
   const state = directPayState(directPay)
   const stateLabel = {
@@ -52,6 +53,7 @@ export default function DirectPayConfig({ showTitle = true, embedded = false }: 
   }[state]
 
   const change = <K extends keyof DirectPayForm>(key: K, value: DirectPayForm[K]) => {
+    if (key === 'relayUrl' || key === 'signaling') setRelayUrlFieldError('')
     setForm(current => ({ ...current, [key]: value }))
   }
 
@@ -74,7 +76,15 @@ export default function DirectPayConfig({ showTitle = true, embedded = false }: 
   }
 
   const handleSave = () => mutate(async () => {
-    const saved = await saveDirectPayForm(form, applyDirectPaySettings)
+    let saved: DirectPaySettings
+    try {
+      saved = await saveDirectPayForm(form, applyDirectPaySettings)
+    } catch (error) {
+      // A relay URL the wallet cannot use is shown under its field, and nothing is saved.
+      const problem = relayUrlError(error)
+      if (problem) { setRelayUrlFieldError(problem); return }
+      throw error
+    }
     setForm(formFromSettings(saved))
     toast.success(t('directpay_saved'))
   })
@@ -147,7 +157,8 @@ export default function DirectPayConfig({ showTitle = true, embedded = false }: 
           placeholder="wss://relay.example.com"
           value={form.relayUrl}
           onChange={(e) => change('relayUrl', e.target.value)}
-          helperText={t('directpay_relay_url_helper')}
+          error={!!relayUrlFieldError}
+          helperText={relayUrlFieldError || t('directpay_relay_url_helper')}
           disabled={busy}
         />
 

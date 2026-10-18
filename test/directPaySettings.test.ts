@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_DIRECT_PAY_SETTINGS,
   DIRECT_PAY_SETTINGS_KEY,
+  DirectPaySettingsError,
   iceServersFrom,
   loadDirectPaySettings,
   saveDirectPaySettings,
@@ -88,9 +89,39 @@ describe('direct-pay settings: loading', () => {
       stunUrls: ['stun:one.example:3478']
     })
   })
+
+  it('still loads relay signaling without an address stored before saving refused it (shown as an error, Ruling 14)', () => {
+    local.set(DIRECT_PAY_SETTINGS_KEY, JSON.stringify({ receiveEnabled: true, signaling: 'relay', relayUrl: '', stunUrls: [] }))
+    expect(loadDirectPaySettings()).toEqual({ receiveEnabled: true, signaling: 'relay', relayUrl: '', stunUrls: [] })
+  })
 })
 
 describe('direct-pay settings: saving', () => {
+  // A relay without an address can carry nothing: refuse it rather than store a setup that
+  // can only show as a failure.
+  it.each(['', '   '])('refuses relay signaling without a relay URL (%j), naming the field', relayUrl => {
+    const changed = vi.fn()
+    window.addEventListener('direct-pay-settings-changed', changed)
+    let error: unknown
+    try { saveDirectPaySettings({ signaling: 'relay', relayUrl }) } catch (e) { error = e }
+    expect(error).toBeInstanceOf(DirectPaySettingsError)
+    expect((error as DirectPaySettingsError).field).toBe('relayUrl')
+    expect((error as Error).message).toBe('Enter the relay server address, or choose the message box for signaling.')
+    expect(local.has(DIRECT_PAY_SETTINGS_KEY)).toBe(false)
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('names the relay URL field when the address itself is refused', () => {
+    let error: unknown
+    try { saveDirectPaySettings({ signaling: 'relay', relayUrl: 'ws://example.com' }) } catch (e) { error = e }
+    expect(error).toBeInstanceOf(DirectPaySettingsError)
+    expect((error as DirectPaySettingsError).field).toBe('relayUrl')
+  })
+
+  it('still saves message box signaling without a relay URL', () => {
+    expect(saveDirectPaySettings({ signaling: 'messagebox', relayUrl: '' }).relayUrl).toBe('')
+  })
+
   it('rejects a plain ws relay on a public host', () => {
     expect(() => saveDirectPaySettings({ relayUrl: 'ws://example.com' })).toThrow(/wss/)
     expect(local.has(DIRECT_PAY_SETTINGS_KEY)).toBe(false)

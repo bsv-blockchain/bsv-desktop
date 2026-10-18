@@ -11,6 +11,8 @@ import { beginUserWalletOperation } from '../../../services/httpBridgeSession'
 import AmountInput from '../../../components/AmountInput'
 import AmountDisplay from '../../../components/AmountDisplay'
 import QrScanner from './QrScanner'
+import DirectCodeExchange from './DirectCodeExchange'
+import type { DirectOutbox } from './directCodes'
 import { buildNearbyPayment, broadcastNearbyPayment, decodeNearbySession, encodeNearbySession, FOUNTAIN_BLOCK_BYTES, mintNearbySession, NearbyFrame, NearbySession, SavedNearbyPayment, resolveNearbyFrame, savedPaymentForSession, verifyNearbyPayment } from './nearbyProtocol'
 import { validAmount } from './paymentProtocol'
 
@@ -20,12 +22,13 @@ function FountainCode({ sealed }: { sealed: number[] }) {
   useEffect(() => { setSequence(0); if (encoder.blockCount === 1) return; const timer = setInterval(() => setSequence(value => (value + 1) % (encoder.blockCount * 64)), 200); return () => clearInterval(timer) }, [encoder])
   return <Box sx={{ textAlign: 'center' }}><Box sx={{ display: 'inline-flex', p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 3, bgcolor: '#fff' }}><QRCodeSVG value={encoder.partAt(sequence)} size={300} style={{ maxWidth: '100%', height: 'auto' }} level="M" marginSize={1} /></Box><Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>{encoder.blockCount === 1 ? 'Let the recipient scan this payment code.' : `Animated QR · ${encoder.blockCount} parts · keep this screen open`}</Typography></Box>
 }
-export default function NearbyPayments({ identity, onSuccess, initialRequest }: { identity: string; onSuccess: (message: string) => void; initialRequest?: string }) {
+export default function NearbyPayments({ identity, onSuccess, initialRequest, initialDirectCode, outbox }: { identity: string; onSuccess: (message: string) => void; initialRequest?: string; initialDirectCode?: string; outbox: DirectOutbox }) {
   const { managers, wallet: rawWallet, chain, adminOriginator, switchingNetwork } = useContext(WalletContext)
   const wallet = managers.permissionsManager!
   const storageKey = `nearby-payment-v1:${identity}:${chain}`
   const requestKey = `${storageKey}:request`
   const sessionArchiveKey = `${storageKey}:sessions`
+  const [mode, setMode] = useState<'airgap' | 'direct'>(initialDirectCode ? 'direct' : 'airgap')
   const [direction, setDirection] = useState<'receive' | 'send'>(initialRequest ? 'send' : 'receive')
   const [amount, setAmount] = useState<number | null>(null)
   const [session, setSession] = useState<NearbySession | null>(null)
@@ -143,7 +146,9 @@ export default function NearbyPayments({ identity, onSuccess, initialRequest }: 
     } catch (error) { setError((error as Error).message) } finally { release?.(); mutationLock.current = false; setBusy(false) }
   }
   return <Stack spacing={3}>
-    <Box><Typography variant="h6" sx={{ fontWeight: 700 }}>A payment, face to face</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: .5 }}>Exchange encrypted QR codes with BSV Wallet. Both wallets must use the same network. Network access is needed to verify transaction proofs.</Typography></Box>
+    <Box><Typography variant="h6" sx={{ fontWeight: 700 }}>A payment, face to face</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: .5 }}>{mode === 'direct' ? 'Exchange two QR codes to connect the two wallets directly. The payment goes straight to their wallet; no server stores it. The codes carry each wallet’s network address. Both wallets must use the same network.' : 'Exchange encrypted QR codes with BSV Wallet. Both wallets must use the same network. Network access is needed to verify transaction proofs.'}</Typography></Box>
+    <ToggleButtonGroup fullWidth exclusive size="small" value={mode} onChange={(_, value) => { if (value && !busy) { setMode(value); setError('') } }} aria-label="Nearby payment method"><ToggleButton value="airgap">Animated QR</ToggleButton><ToggleButton value="direct">Direct (WebRTC)</ToggleButton></ToggleButtonGroup>
+    {mode === 'direct' ? <DirectCodeExchange identity={identity} initialCode={initialDirectCode} outbox={outbox} onSuccess={onSuccess} /> : <>
     <ToggleButtonGroup fullWidth exclusive value={direction} onChange={(_, value) => { if (value && !busy) { setDirection(value); setError('') } }} aria-label="Nearby payment direction"><ToggleButton value="receive">Receive nearby</ToggleButton><ToggleButton value="send">Pay nearby</ToggleButton></ToggleButtonGroup>
     {error && <Alert severity="error">{error}</Alert>}
     {busy && <LinearProgress />}
@@ -170,5 +175,6 @@ export default function NearbyPayments({ identity, onSuccess, initialRequest }: 
     {records.length > 0 && <Box component="details"><Typography component="summary" sx={{ cursor: 'pointer', fontWeight: 650 }}>Saved nearby payments ({records.length})</Typography><Stack spacing={1} sx={{ pt: 2 }}>{records.slice().reverse().map(payment => <Box key={payment.txid} sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}><Stack direction="row" alignItems="center" justifyContent="space-between"><Box><Typography sx={{ fontWeight: 700 }}><AmountDisplay>{payment.amount}</AmountDisplay></Typography><Typography variant="caption" color="text.secondary">{payment.confirmed ? 'Recipient confirmed' : 'Awaiting receipt'} · {new Date(payment.createdAt).toLocaleDateString()}</Typography></Box><Button size="small" onClick={() => { setPrepared(payment); setBroadcastPending(payment.broadcastPending !== false); setDirection('send') }}>Show code</Button></Stack></Box>)}</Stack></Box>}
     <QrScanner open={scanner} onClose={closeScanner} onRead={value => void read(value)} continuous={direction === 'receive'} progress={direction === 'receive' && progress ? `${progress}% collected` : undefined} />
     <Dialog open={review} onClose={() => { if (!busy) setReview(false) }} fullWidth maxWidth="xs"><DialogTitle>Confirm nearby payment</DialogTitle><DialogContent><Stack spacing={2}><Typography variant="h4" sx={{ fontWeight: 700 }}><AmountDisplay>{request?.amount ?? amount ?? 0}</AmountDisplay></Typography><Typography variant="body2" sx={{ wordBreak: 'break-all' }}>{request?.identityKey}</Typography><Divider /><Typography variant="body2" color="text.secondary">Network: {chain === 'main' ? 'Mainnet' : chain.toUpperCase()}. {request?.chain ? '' : 'The request does not specify its network. Check it with the recipient. '}A network fee will be added. After preparing, keep the code until the recipient confirms receipt.</Typography></Stack></DialogContent><DialogActions><Button disabled={busy} onClick={() => setReview(false)}>Back</Button><Button variant="contained" disabled={busy || switchingNetwork} onClick={prepare}>{busy ? 'Preparing…' : 'Confirm & prepare'}</Button></DialogActions></Dialog>
+    </>}
   </Stack>
 }

@@ -19,11 +19,12 @@ import AmountDisplay from '../../../components/AmountDisplay'
 import AddressReceive from './AddressReceive'
 import NearbyPayments from './NearbyPayments'
 import QrScanner from './QrScanner'
-import { identityKey, parsePaymentTarget, PaymentTarget, peerPayLink, validAmount } from './paymentProtocol'
+import { identityKey, isDirectCode, parsePaymentTarget, PaymentTarget, peerPayLink, validAmount } from './paymentProtocol'
 import { broadcastNearbyPayment } from './nearbyProtocol'
 import { deliverMessageBoxPayment, OutgoingPayment, prepareMessageBoxPayment } from './messageBoxPayments'
 import { deliverDirect } from './directPayments'
 import { DELIVERY_HELP, Delivery, deliveryProblem, directStatusLine } from './delivery'
+import type { DirectOutbox } from './directCodes'
 
 const card = { border: '1px solid', borderColor: 'divider', borderRadius: 4, p: { xs: 2.5, md: 4 }, boxShadow: '0 8px 30px rgba(15, 23, 42, 0.035)' }
 const short = (value: string) => `${value.slice(0, 12)}…${value.slice(-6)}`
@@ -62,6 +63,9 @@ export default function Payments() {
   const [inboxError, setInboxError] = useState('')
   const [inboxBusy, setInboxBusy] = useState('')
   const [outgoing, setOutgoing] = useState<OutgoingPayment[]>([])
+  /** The saved rows as last written, for Nearby → Direct, whose delivery can outlive a render. */
+  const outgoingRef = useRef(outgoing)
+  outgoingRef.current = outgoing
   const [allowedKey, setAllowedKey] = useState('')
   const refreshLock = useRef(false)
   const mutationLock = useRef(false)
@@ -78,14 +82,15 @@ export default function Payments() {
   useEffect(() => { const onReceived = (event: Event) => { const amount = (event as CustomEvent<{ amount?: unknown }>).detail?.amount; notify(validAmount(amount) ? `Direct payment received: ${amount.toLocaleString()} satoshis.` : 'Direct payment received.') }; window.addEventListener('direct-payment-received', onReceived); return () => window.removeEventListener('direct-payment-received', onReceived) }, [notify])
   useEffect(() => { let alive = true; setIdentity(''); if (wallet) wallet.getPublicKey({ identityKey: true }, adminOriginator).then(result => { if (alive) setIdentity(result.publicKey) }).catch(error => { if (alive) setError(error.message || 'Your wallet identity could not be loaded.') }); return () => { alive = false } }, [wallet, chain, adminOriginator])
   useEffect(() => { setOutgoing([]); if (!outboxKey) return; try { const rows = JSON.parse(localStorage.getItem(outboxKey) || '[]'); if (!Array.isArray(rows) || rows.some(row => !row || !/^[0-9a-f]{64}$/.test(row.txid) || !validAmount(row.amount) || !row.token || !Array.isArray(row.token.transaction))) throw new Error(); setOutgoing(rows) } catch { setError('Saved payments could not be read. Check Activity before sending again.'); } }, [outboxKey])
-  const saveOutgoing = useCallback((rows: OutgoingPayment[]) => { if (!outboxKey) throw new Error('Your wallet identity is still loading.'); localStorage.setItem(outboxKey, JSON.stringify(rows)); setOutgoing(rows) }, [outboxKey])
+  const saveOutgoing = useCallback((rows: OutgoingPayment[]) => { if (!outboxKey) throw new Error('Your wallet identity is still loading.'); localStorage.setItem(outboxKey, JSON.stringify(rows)); outgoingRef.current = rows; setOutgoing(rows) }, [outboxKey])
+  const nearbyOutbox = useMemo<DirectOutbox>(() => ({ rows: outgoing, add: row => saveOutgoing([...outgoingRef.current, row]), markDelivered: txid => saveOutgoing(outgoingRef.current.map(row => row.txid === txid ? { ...row, delivered: true } : row)) }), [outgoing, saveOutgoing])
   const target = useMemo(() => { try { return parsePaymentTarget(recipient, chain) } catch { return null } }, [recipient, chain])
   const targetError = useMemo(() => { if (!recipient.trim()) return ''; try { parsePaymentTarget(recipient, chain); return '' } catch (error) { return (error as Error).message } }, [recipient, chain])
   const looksLikeCode = /^[a-z][a-z0-9+.-]*:/i.test(recipient) || /^(0[23][a-f0-9]{10,}|[1mn][1-9A-HJ-NP-Za-km-z]{24,})$/i.test(recipient)
   const changeRecipient = (_event: React.SyntheticEvent, value: string, reason: string) => {
     if (reason === 'clear') { setRecipient(''); setRecipientLabel(''); identitySearch.handleInputChange(null, '', 'clear'); return }
     if (reason !== 'input') return
-    if (value.startsWith('bsvpay1:')) { identitySearch.handleInputChange(null, '', 'clear'); adoptCode(value); return }
+    if (value.startsWith('bsvpay1:') || isDirectCode(value)) { identitySearch.handleInputChange(null, '', 'clear'); adoptCode(value); return }
     setRecipient(value); setRecipientLabel(''); setError('')
     let direct = false
     try { parsePaymentTarget(value, chain); direct = true } catch { direct = /^[a-z][a-z0-9+.-]*:/i.test(value) || /^(0[23][a-f0-9]{10,}|[1mn][1-9A-HJ-NP-Za-km-z]{24,})$/i.test(value) }
@@ -94,7 +99,7 @@ export default function Payments() {
   const fixedAmount = target?.amount
   const sendAmount = fixedAmount ?? amount
   const receiveLink = useMemo(() => { try { return useMessageBox && identity && messageBoxUrl ? peerPayLink(identity, messageBoxUrl, requestAmount ?? undefined) : '' } catch { return '' } }, [useMessageBox, identity, messageBoxUrl, requestAmount])
-  const adoptCode = useCallback((value: string) => { setError(''); setNotice(''); if (value.startsWith('bsvpay1:')) { setNearbyRequest(value); history.replace({ pathname: location.pathname, search: '?tab=nearby' }); return } setRecipient(value); setRecipientLabel(''); try { const parsed = parsePaymentTarget(value, chain); if (parsed.amount !== undefined) setAmount(parsed.amount) } catch (error) { setError((error as Error).message) } }, [history, location.pathname, chain])
+  const adoptCode = useCallback((value: string) => { setError(''); setNotice(''); if (value.startsWith('bsvpay1:') || isDirectCode(value)) { setNearbyRequest(value); history.replace({ pathname: location.pathname, search: '?tab=nearby' }); return } setRecipient(value); setRecipientLabel(''); try { const parsed = parsePaymentTarget(value, chain); if (parsed.amount !== undefined) setAmount(parsed.amount) } catch (error) { setError((error as Error).message) } }, [history, location.pathname, chain])
 
   const refresh = useCallback(async () => {
     if (!peerPayClient || !messageBoxAvailable || switchingNetwork || refreshLock.current) return
@@ -217,7 +222,7 @@ export default function Payments() {
             </>}
           </>}
         </Stack>}
-        {tab === 'nearby' && identity && <NearbyPayments key={`${identity}:${chain}:${nearbyRequest}`} identity={identity} onSuccess={notify} initialRequest={nearbyRequest || undefined} />}
+        {tab === 'nearby' && identity && <NearbyPayments key={`${identity}:${chain}:${nearbyRequest}`} identity={identity} onSuccess={notify} initialRequest={nearbyRequest && !isDirectCode(nearbyRequest) ? nearbyRequest : undefined} initialDirectCode={isDirectCode(nearbyRequest) ? nearbyRequest : undefined} outbox={nearbyOutbox} />}
       </Paper>
       <Stack spacing={3}>
         {pending.length > 0 && <Paper elevation={0} sx={card}><Typography variant="h6" sx={{ fontWeight: 700 }}>Saved payments</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: .5, mb: 2 }}>Retry delivery of the original payment, through the message box or directly. Each retry uses the same transaction.</Typography>{pending.map(payment => <Box key={payment.txid} sx={{ py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}><Typography sx={{ fontWeight: 700 }}><AmountDisplay>{payment.amount}</AmountDisplay></Typography><Typography color="text.secondary" variant="caption">To {short(payment.recipient)} · {payment.via === 'direct' ? 'sent directly' : 'sent via message box'}</Typography><Stack direction="row" spacing={1} useFlexGap sx={{ mt: 1, flexWrap: 'wrap' }}><Button size="small" variant="outlined" disabled={busy || !messageBoxAvailable || switchingNetwork} onClick={async () => { if (mutationLock.current) return; mutationLock.current = true; setBusy(true); try { await deliver(payment); notify('Saved payment delivered.'); void refresh() } catch (error) { setError((error as Error).message || 'Delivery is still pending.') } finally { mutationLock.current = false; setBusy(false) } }}>Retry via message box</Button>{!payment.request && <Button size="small" variant="outlined" disabled={busy || !!deliveryProblem('direct', { messageBoxAvailable, directPay }) || switchingNetwork} onClick={() => void retryDirect(payment)}>Retry directly</Button>}</Stack></Box>)}</Paper>}

@@ -443,8 +443,8 @@ describe('Nearby → Direct (WebRTC) wiring', () => {
   })
 
   it('lets Nearby save and mark payments through the page’s outbox, reading the latest rows', () => {
-    expect(page).toMatch(/const addOutgoing = useCallback\(\(row: OutgoingPayment\) => updateOutgoing\(rows => \[\.\.\.rows, row\]\), \[updateOutgoing\]\)/)
-    expect(page).toMatch(/const markOutgoingDelivered = useCallback\(\(txid: string\) => updateOutgoing\(rows => rows\.map\(row => row\.txid === txid \? \{ \.\.\.row, delivered: true \} : row\)\), \[updateOutgoing\]\)/)
+    expect(page).toMatch(/const addOutgoing = useCallback\(\(row: OutgoingPayment\) => writeOutbox\(key => addToOutbox\(key, row\)\), \[writeOutbox\]\)/)
+    expect(page).toMatch(/const markOutgoingDelivered = useCallback\(\(txid: string\) => writeOutbox\(key => markOutboxDelivered\(key, txid\)\), \[writeOutbox\]\)/)
     expect(page).toMatch(/const nearbyOutbox = useMemo<DirectOutbox>\(\(\) => \(\{ rows: outgoing, add: addOutgoing, markDelivered: markOutgoingDelivered \}\)/)
   })
 
@@ -455,22 +455,23 @@ describe('Nearby → Direct (WebRTC) wiring', () => {
   it('builds every outbox write from the rows stored at that moment, never from a render’s copy', () => {
     // The page never touches storage itself: it reads and writes through outbox.ts.
     expect(page).not.toMatch(/localStorage/)
-    expect(page).toMatch(/import \{ outboxStorageKey, readOutbox, subscribeOutbox, updateOutbox \} from '\.\/outbox'/)
-    expect([...page.matchAll(/updateOutbox\(/g)].map(m => callText(page, m.index!))).toEqual(['updateOutbox(outboxKey, change)'])
-    expect(page).toMatch(/const updateOutgoing = useCallback\(\(change: \(rows: OutgoingPayment\[\]\) => OutgoingPayment\[\]\) => \{ if \(!outboxKey\) throw new Error\('Your wallet identity is still loading\.'\); setOutgoing\(updateOutbox\(outboxKey, change\)\) \}, \[outboxKey\]\)/)
+    // It writes with outbox.ts's own helpers, never an updater of its own (C9 review).
+    expect(page).toMatch(/import \{ addToOutbox, markOutboxDelivered, outboxStorageKey, readOutbox, subscribeOutbox \} from '\.\/outbox'/)
+    expect(page).not.toMatch(/updateOutbox|updateOutgoing/)
+    expect(page).not.toMatch(/rows => \[\.\.\.rows, row\]|row\.txid === txid \?/)
+    expect(page).toMatch(/const writeOutbox = useCallback\(\(write: \(key: string\) => OutgoingPayment\[\]\) => \{ if \(!outboxKey\) throw new Error\('Your wallet identity is still loading\.'\); setOutgoing\(write\(outboxKey\)\) \}, \[outboxKey\]\)/)
     // The state shows the stored rows: on load, after its own writes, and after writes made elsewhere in the window.
     expect([...page.matchAll(/setOutgoing\(/g)].map(m => callText(page, m.index!))).toEqual([
       'setOutgoing([])',
       'setOutgoing(rows)',
       'setOutgoing(readOutbox(key) ?? [])',
-      'setOutgoing(updateOutbox(outboxKey, change))'
+      'setOutgoing(write(outboxKey))'
     ])
     expect(page).toMatch(/return subscribeOutbox\(key => \{ if \(key === outboxKey\) setOutgoing\(readOutbox\(key\) \?\? \[\]\) \}\) \}, \[outboxKey\]\)/)
-    // updateOutgoing is called only with an updater of the rows it is given, and only by the two helpers.
-    const updates = [...page.matchAll(/updateOutgoing\(/g)].map(m => callText(page, m.index!))
-    expect(updates).toEqual([
-      'updateOutgoing(rows => [...rows, row])',
-      'updateOutgoing(rows => rows.map(row => row.txid === txid ? { ...row, delivered: true } : row))'
+    // writeOutbox is called only by the two helpers, each with one outbox.ts write.
+    expect([...page.matchAll(/writeOutbox\(/g)].map(m => callText(page, m.index!))).toEqual([
+      'writeOutbox(key => addToOutbox(key, row))',
+      'writeOutbox(key => markOutboxDelivered(key, txid))'
     ])
     // Every writer goes through the helpers; none passes rows of its own.
     const adds = [...page.matchAll(/addOutgoing\(/g)].map(m => callText(page, m.index!))

@@ -339,8 +339,13 @@ function sameInputs(a: DirectPayStartOptions, b: DirectPayStartOptions): boolean
 /** Why the relay connection is down, for the user. */
 function relayProblem(e: WebRTPayError, url: string): string {
   switch (e.code) {
-    case 'auth_failed':
+    case 'auth_failed': {
+      // The signaler gives a cause (the wallet's error) only when this wallet could not sign
+      // the relay's challenge; a relay that refused the signature sends no reason.
+      const { cause } = e as WebRTPayError & { cause?: unknown }
+      if (cause !== undefined) return `this wallet could not sign in to the relay server. The wallet said: ${messageOf(cause).replace(/\.$/, '')}. Trying again…`
       return `the relay server did not accept this wallet at ${url}. The address in Settings must be exactly one the relay serves (its PUBLIC_URLS). Trying again…`
+    }
     case 'rate_limited':
       return 'the relay server is limiting connections from this network. Trying again…'
     case 'peer_unreachable':

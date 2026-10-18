@@ -208,6 +208,21 @@ describe('DirectPayManager.start', () => {
     expect(status).toBe('error')
     expect(error).toContain(RELAY)
     expect(error).toMatch(/PUBLIC_URLS/)
+    expect(error).not.toMatch(/could not sign/)
+  })
+
+  // The signaler reports both as auth_failed; only this wallet's own failure carries a cause.
+  it('says this wallet could not sign in, not that the relay refused it, when signing the challenge fails', async () => {
+    h.startReceiving = async () => {
+      h.made.relays[0].options.onStateChange('offline', new WebRTPayError('auth_failed', 'Could not sign the relay challenge', { cause: new Error('User is not authenticated.') }))
+    }
+
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY }) }))
+
+    const { status, error } = manager.getSnapshot()
+    expect(status).toBe('error')
+    expect(error).toBe('Direct payments cannot be received: this wallet could not sign in to the relay server. The wallet said: User is not authenticated. Trying again…')
+    expect(error).not.toMatch(/PUBLIC_URLS|did not accept/)
   })
 
   it('leaves the status off while not receiving, whatever the relay connection does during a payment', async () => {

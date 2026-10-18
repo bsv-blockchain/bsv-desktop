@@ -25,7 +25,7 @@ import { deliverMessageBoxPayment, OutgoingPayment, prepareMessageBoxPayment } f
 import { deliverDirect } from './directPayments'
 import { DELIVERY_HELP, Delivery, deliveryProblem, directStatusLine } from './delivery'
 import type { DirectOutbox } from './directCodes'
-import { outboxStorageKey, readOutbox, subscribeOutbox, updateOutbox } from './outbox'
+import { addToOutbox, markOutboxDelivered, outboxStorageKey, readOutbox, subscribeOutbox } from './outbox'
 
 const card = { border: '1px solid', borderColor: 'divider', borderRadius: 4, p: { xs: 2.5, md: 4 }, boxShadow: '0 8px 30px rgba(15, 23, 42, 0.035)' }
 const short = (value: string) => `${value.slice(0, 12)}…${value.slice(-6)}`
@@ -82,10 +82,10 @@ export default function Payments() {
   useEffect(() => { setOutgoing([]); if (!outboxKey) return; const rows = readOutbox(outboxKey); if (rows) setOutgoing(rows); else setError('Saved payments could not be read. Check Activity before sending again.') }, [outboxKey])
   // Show writes made elsewhere in this window too, such as a delivery that outlived an earlier visit to this page.
   useEffect(() => { if (!outboxKey) return; return subscribeOutbox(key => { if (key === outboxKey) setOutgoing(readOutbox(key) ?? []) }) }, [outboxKey])
-  /** Every outbox write goes through updateOutbox, which starts from the rows stored at that moment (see outbox.ts). */
-  const updateOutgoing = useCallback((change: (rows: OutgoingPayment[]) => OutgoingPayment[]) => { if (!outboxKey) throw new Error('Your wallet identity is still loading.'); setOutgoing(updateOutbox(outboxKey, change)) }, [outboxKey])
-  const addOutgoing = useCallback((row: OutgoingPayment) => updateOutgoing(rows => [...rows, row]), [updateOutgoing])
-  const markOutgoingDelivered = useCallback((txid: string) => updateOutgoing(rows => rows.map(row => row.txid === txid ? { ...row, delivered: true } : row)), [updateOutgoing])
+  /** Every outbox write is one of outbox.ts's, which start from the rows stored at that moment; the page then shows what was stored. */
+  const writeOutbox = useCallback((write: (key: string) => OutgoingPayment[]) => { if (!outboxKey) throw new Error('Your wallet identity is still loading.'); setOutgoing(write(outboxKey)) }, [outboxKey])
+  const addOutgoing = useCallback((row: OutgoingPayment) => writeOutbox(key => addToOutbox(key, row)), [writeOutbox])
+  const markOutgoingDelivered = useCallback((txid: string) => writeOutbox(key => markOutboxDelivered(key, txid)), [writeOutbox])
   const nearbyOutbox = useMemo<DirectOutbox>(() => ({ rows: outgoing, add: addOutgoing, markDelivered: markOutgoingDelivered }), [outgoing, addOutgoing, markOutgoingDelivered])
   const target = useMemo(() => { try { return parsePaymentTarget(recipient, chain) } catch { return null } }, [recipient, chain])
   const targetError = useMemo(() => { if (!recipient.trim()) return ''; try { parsePaymentTarget(recipient, chain); return '' } catch (error) { return (error as Error).message } }, [recipient, chain])

@@ -26,6 +26,7 @@ const h = vi.hoisted(() => {
     /** What every client's startReceiving does. */
     startReceiving: null as unknown as Fn,
     receive: null as unknown as Mock,
+    keep: null as unknown as Mock,
     retry: null as unknown as Mock,
     warning: null as unknown as Mock
   }
@@ -57,12 +58,15 @@ vi.mock('@bsv/webrtpay', async importOriginal => ({
 }))
 vi.mock('../src/lib/pages/Dashboard/Payments/directPayments', () => ({
   receiveDirectPayment: (...args: unknown[]) => h.receive(...args),
-  retryReceivedDirectPayments: (...args: unknown[]) => h.retry(...args)
+  keepDirectPayment: (...args: unknown[]) => h.keep(...args),
+  retryReceivedDirectPayments: (...args: unknown[]) => h.retry(...args),
+  RetryStopped: class RetryStopped extends Error {}
 }))
 vi.mock('react-toastify', () => ({ toast: { warning: (...args: unknown[]) => h.warning(...args) } }))
 
 import { DirectPayManager } from '../src/lib/services/DirectPayManager'
-import { activeUserWalletOperations, setHttpBridgePaused } from '../src/lib/services/httpBridgeSession'
+import { activeUserWalletOperations, beginUserWalletOperation, setHttpBridgePaused } from '../src/lib/services/httpBridgeSession'
+import { RetryStopped } from '../src/lib/pages/Dashboard/Payments/directPayments'
 
 const HOST = 'https://messagebox.babbage.systems'
 const IDENTITY = `02${'42'.repeat(32)}`
@@ -88,6 +92,7 @@ const payment = { messageId: 'p1', sender: SENDER, token: { amount: 1234, transa
 
 let events: Array<{ type: string; detail?: unknown }>
 let settingsListeners: Array<() => void>
+let onlineListeners: Array<() => void>
 let stored: Record<string, string>
 let manager: DirectPayManager
 
@@ -98,16 +103,24 @@ beforeEach(() => {
   h.made = { clients: [], messageBoxes: [], relays: [] }
   h.startReceiving = async () => {}
   h.receive = vi.fn(async () => ({ status: 'accepted', repeat: false, added: true }))
+  h.keep = vi.fn(async () => ({ status: 'received', repeat: false, added: false }))
   h.retry = vi.fn(async () => 0)
   h.warning = vi.fn()
   events = []
   settingsListeners = []
+  onlineListeners = []
   stored = {}
   vi.stubGlobal('CustomEvent', class { constructor(public type: string, init?: { detail?: unknown }) { this.detail = init?.detail } detail: unknown })
   vi.stubGlobal('window', {
     dispatchEvent: vi.fn((event: { type: string; detail?: unknown }) => { events.push(event); return true }),
-    addEventListener: vi.fn((type: string, fn: () => void) => { if (type === 'direct-pay-settings-changed') settingsListeners.push(fn) }),
-    removeEventListener: vi.fn((type: string, fn: () => void) => { settingsListeners = settingsListeners.filter(f => f !== fn) })
+    addEventListener: vi.fn((type: string, fn: () => void) => {
+      if (type === 'direct-pay-settings-changed') settingsListeners.push(fn)
+      if (type === 'online') onlineListeners.push(fn)
+    }),
+    removeEventListener: vi.fn((type: string, fn: () => void) => {
+      if (type === 'direct-pay-settings-changed') settingsListeners = settingsListeners.filter(f => f !== fn)
+      if (type === 'online') onlineListeners = onlineListeners.filter(f => f !== fn)
+    })
   })
   vi.stubGlobal('localStorage', { getItem: (k: string) => stored[k] ?? null, setItem: (k: string, v: string) => { stored[k] = v } })
   manager = new DirectPayManager()
@@ -359,7 +372,7 @@ describe('DirectPayManager.start', () => {
     expect(manager.getSnapshot().client).toBe(h.made.clients[1])
   })
 
-  it('retries kept payments when a wallet opens, not when its settings change', async () => {
+  it('retries kept payments when a wallet opens, those that need attention too, and not when its settings change', async () => {
     h.retry = vi.fn(async () => 2)
     await manager.start(startOptions())
     await vi.waitFor(() => expect(events.map(e => e.type)).toEqual(['balance-changed']))
@@ -369,24 +382,96 @@ describe('DirectPayManager.start', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(h.retry).toHaveBeenCalledOnce()
-    expect(h.retry.mock.calls[0][0]).toMatchObject({ wallet, originator: 'admin.local', identity: IDENTITY, chain: 'main' })
+    expect(h.retry.mock.calls[0][0]).toMatchObject({ wallet, originator: 'admin.local', identity: IDENTITY, chain: 'main', includeNeedsAttention: true })
   })
 
-  it('retries kept payments inside a wallet operation, so a network switch cannot cut them off', async () => {
-    let held = -1
-    h.retry = vi.fn(async () => { held = activeUserWalletOperations(); return 0 })
+  // Final review D3/D5: a desktop wallet stays open for days; "retrying automatically" must be true.
+  it('keeps retrying while the wallet is open: after 60 s, backing off to 15 minutes, without those that need attention', async () => {
+    vi.useFakeTimers()
     await manager.start(startOptions())
-    await vi.waitFor(() => expect(h.retry).toHaveBeenCalledOnce())
-    await new Promise(resolve => setTimeout(resolve, 0))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.retry).toHaveBeenCalledTimes(1)
 
-    expect(held).toBe(1)
+    const calls: number[] = []
+    for (const wait of [60, 120, 240, 480, 900, 900].map(s => s * 1000)) {
+      await vi.advanceTimersByTimeAsync(wait - 1)
+      calls.push(h.retry.mock.calls.length)
+      await vi.advanceTimersByTimeAsync(1)
+      calls.push(h.retry.mock.calls.length)
+    }
+    expect(calls).toEqual([1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7])
+    expect(h.retry.mock.calls.slice(1).map(([o]) => o.includeNeedsAttention)).toEqual([false, false, false, false, false, false])
+  })
+
+  it('retries at once, those that need attention too, when the network comes back, and starts the back-off over', async () => {
+    vi.useFakeTimers()
+    await manager.start(startOptions())
+    await vi.advanceTimersByTimeAsync(60_000 + 120_000)
+    expect(h.retry).toHaveBeenCalledTimes(3)
+
+    expect(onlineListeners).toHaveLength(1)
+    onlineListeners[0]()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.retry).toHaveBeenCalledTimes(4)
+    expect(h.retry.mock.calls[3][0]).toMatchObject({ includeNeedsAttention: true })
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(h.retry).toHaveBeenCalledTimes(5)
+  })
+
+  it('brings the next retry forward to 60 s when a payment is newly kept', async () => {
+    vi.useFakeTimers()
+    h.receive = vi.fn(async () => ({ status: 'received', repeat: false, added: false }))
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
+    await vi.advanceTimersByTimeAsync(60_000 + 120_000 + 240_000)
+    expect(h.retry).toHaveBeenCalledTimes(4) // the next one is 480 s away
+
+    await handlersOf().onPayment(payment, { txid: 'ab'.repeat(32) })
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(h.retry).toHaveBeenCalledTimes(5)
+  })
+
+  it('takes a wallet operation for each wallet call of a retry, never across the waits between them', async () => {
+    const held: number[] = []
+    h.retry = vi.fn(async (o: any) => {
+      held.push(activeUserWalletOperations())
+      await o.run(async () => { held.push(activeUserWalletOperations()) })
+      held.push(activeUserWalletOperations())
+      await o.run(async () => { held.push(activeUserWalletOperations()) })
+      return 0
+    })
+    await manager.start(startOptions())
+    await vi.waitFor(() => expect(held).toHaveLength(4))
+
+    expect(held).toEqual([0, 1, 0, 1])
     expect(activeUserWalletOperations()).toBe(0)
   })
 
-  it('waits for a network switch to finish before retrying kept payments of the wallet it opened', async () => {
+  // Final review M12: a stalled wallet call must not hold off Lock, a switch or removal for long.
+  it('ends a pass whose wallet call stalls, releasing its operation, and tries again later', async () => {
+    vi.useFakeTimers()
+    let stopped: unknown
+    h.retry = vi.fn().mockImplementationOnce(async (o: any) => {
+      try { await o.run(() => new Promise(() => {})) } catch (e) { stopped = e }
+      return 0
+    }).mockResolvedValue(0)
+    await manager.start(startOptions())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(activeUserWalletOperations()).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    expect(stopped).toBeInstanceOf(RetryStopped)
+    expect(activeUserWalletOperations()).toBe(0)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(h.retry).toHaveBeenCalledTimes(2)
+  })
+
+  it('skips a retry while the wallet is paused or busy, and tries again a second after it is free', async () => {
     vi.useFakeTimers()
     let held = -1
-    h.retry = vi.fn(async () => { held = activeUserWalletOperations(); return 0 })
+    h.retry = vi.fn(async (o: any) => { await o.run(async () => { held = activeUserWalletOperations() }); return 0 })
     setHttpBridgePaused(true)
     try {
       await manager.start(startOptions())
@@ -395,15 +480,49 @@ describe('DirectPayManager.start', () => {
     } finally {
       setHttpBridgePaused(false)
     }
+    const release = beginUserWalletOperation() // a payment in progress
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(h.retry).not.toHaveBeenCalled()
+    release()
 
     await vi.advanceTimersByTimeAsync(1000)
 
     expect(h.retry).toHaveBeenCalledOnce()
+    expect(h.retry.mock.calls[0][0]).toMatchObject({ includeNeedsAttention: true })
     expect(held).toBe(1)
     expect(activeUserWalletOperations()).toBe(0)
   })
 
-  it('stops waiting to retry when the wallet closes, and retries when it opens again', async () => {
+  it('stops a pass between payments when the wallet becomes busy, and goes on a second after it is free', async () => {
+    vi.useFakeTimers()
+    let other: (() => void) | undefined
+    const outcomes: string[] = []
+    h.retry = vi.fn(async (o: any) => {
+      for (const n of [1, 2]) {
+        try {
+          await o.run(async () => { if (n === 1 && !other) other = beginUserWalletOperation() })
+          outcomes.push(`ran ${n}`)
+        } catch (e) {
+          outcomes.push(e instanceof RetryStopped ? `stopped at ${n}` : 'other')
+          break
+        }
+      }
+      return 0
+    })
+    await manager.start(startOptions())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(outcomes).toEqual(['ran 1', 'stopped at 2'])
+    other!()
+
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(h.retry).toHaveBeenCalledTimes(2)
+    expect(h.retry.mock.calls[1][0]).toMatchObject({ includeNeedsAttention: true }) // that pass did not get to them
+    expect(outcomes).toEqual(['ran 1', 'stopped at 2', 'ran 1', 'ran 2'])
+    expect(activeUserWalletOperations()).toBe(0)
+  })
+
+  it('stops retrying when the wallet closes, and retries when it opens again', async () => {
     vi.useFakeTimers()
     setHttpBridgePaused(true)
     try {
@@ -415,16 +534,20 @@ describe('DirectPayManager.start', () => {
     await vi.advanceTimersByTimeAsync(5000)
     expect(h.retry).not.toHaveBeenCalled()
     expect(vi.getTimerCount()).toBe(0)
+    expect(onlineListeners).toHaveLength(0)
 
     await manager.start(startOptions())
     await vi.advanceTimersByTimeAsync(0)
 
     expect(h.retry).toHaveBeenCalledOnce()
+    await manager.stop()
+    expect(vi.getTimerCount()).toBe(0)
+    expect(onlineListeners).toHaveLength(0)
   })
 
-  it('never runs two retries for one wallet at once', async () => {
+  it('never runs two retries for one wallet at once, and runs the reopened wallet\'s once the first ends', async () => {
     let finish!: (added: number) => void
-    h.retry = vi.fn(() => new Promise<number>(resolve => { finish = resolve }))
+    h.retry = vi.fn().mockImplementationOnce(() => new Promise<number>(resolve => { finish = resolve })).mockResolvedValue(0)
     await manager.start(startOptions())
     await vi.waitFor(() => expect(h.retry).toHaveBeenCalledOnce())
     await manager.stop()
@@ -433,7 +556,8 @@ describe('DirectPayManager.start', () => {
 
     expect(h.retry).toHaveBeenCalledOnce()
     finish(0)
-    await vi.waitFor(() => expect(activeUserWalletOperations()).toBe(0))
+    await vi.waitFor(() => expect(h.retry).toHaveBeenCalledTimes(2))
+    expect(activeUserWalletOperations()).toBe(0)
   })
 
   // Final review D4: the details stay in the kept list (and its Copy recovery details), not in
@@ -558,7 +682,7 @@ describe('receiving a payment', () => {
     expect(events.map(e => e.type)).toEqual(['direct-payment-received'])
   })
 
-  it('holds off a network switch while it takes the payment, and refuses during one', async () => {
+  it('holds off a network switch while it takes the payment', async () => {
     await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
     await vi.waitFor(() => expect(activeUserWalletOperations()).toBe(0)) // the kept-payment retry is done
     h.receive = vi.fn(async () => { expect(activeUserWalletOperations()).toBe(1); return { status: 'accepted', repeat: false, added: true } })
@@ -566,14 +690,22 @@ describe('receiving a payment', () => {
     await handlersOf().onPayment(payment, { txid: 'ab'.repeat(32) })
     expect(h.receive).toHaveBeenCalledOnce()
     expect(activeUserWalletOperations()).toBe(0)
+  })
+
+  // Final review M10: by then the payer has broadcast it; refusing would strand it until a redelivery.
+  it('keeps, rather than refuses, a payment that arrives while a network or profile switch holds wallet work off', async () => {
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
+    await vi.waitFor(() => expect(h.retry).toHaveBeenCalledOnce())
 
     setHttpBridgePaused(true)
     try {
-      await expect(handlersOf().onPayment(payment, { txid: 'ab'.repeat(32) })).rejects.toThrow(/network is changing/)
+      await expect(handlersOf().onPayment(payment, { txid: 'ab'.repeat(32) })).resolves.toBe('received')
     } finally {
       setHttpBridgePaused(false)
     }
-    expect(h.receive).toHaveBeenCalledOnce()
+    expect(h.receive).not.toHaveBeenCalled()
+    expect(h.keep).toHaveBeenCalledWith({ wallet, originator: 'admin.local', identity: IDENTITY, chain: 'main', payment })
+    expect(events.map(e => e.type)).toEqual(['direct-payment-received'])
   })
 
   it.each(['accepted', 'received'] as const)('announces a payment once: a redelivery after a lost ack is acked %s, not announced again', async status => {

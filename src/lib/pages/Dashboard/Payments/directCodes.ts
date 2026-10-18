@@ -13,7 +13,7 @@ import type { WalletInterface } from '@bsv/sdk'
 import { decodeCode, WebRTPayError } from '@bsv/webrtpay'
 import type { DirectPayClient, OfferCode, OfferHandle, PaymentAck, ReceiveHandlers } from '@bsv/webrtpay'
 import { beginUserWalletOperation } from '../../../services/httpBridgeSession'
-import { deliverDirect, NotSentError, receiveDirectPayment } from './directPayments'
+import { deliverDirect, keepDirectPayment, NotSentError, receiveDirectPayment } from './directPayments'
 import type { DirectReceipt } from './directPayments'
 import type { OutgoingPayment } from './messageBoxPayments'
 import { networkLabel, validAmount } from './paymentProtocol'
@@ -119,13 +119,19 @@ export function createDirectRequest(o: {
   const { client, wallet, originator, identity, chain, amount } = o
   const handlers: ReceiveHandlers = {
     onPayment: async p => {
-      // Throws while the network is changing: the payer keeps the payment and can retry.
-      const release = beginUserWalletOperation()
+      let release: (() => void) | undefined
+      try {
+        release = beginUserWalletOperation()
+      } catch {
+        // A network or profile switch holds wallet work off. The payer has broadcast by now,
+        // so the payment is kept for a retry rather than refused (final review M10).
+      }
       let receipt: DirectReceipt
       try {
-        receipt = await receiveDirectPayment({ wallet, originator, identity, chain, payment: p })
+        const args = { wallet, originator, identity, chain, payment: p }
+        receipt = release ? await receiveDirectPayment(args) : await keepDirectPayment(args)
       } finally {
-        release()
+        release?.()
       }
       // The payment is taken: nothing below may turn the ack into a rejection.
       try {

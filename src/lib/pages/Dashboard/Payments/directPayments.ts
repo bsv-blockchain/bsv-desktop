@@ -19,7 +19,7 @@
  */
 import { Transaction, Utils } from '@bsv/sdk'
 import type { WalletInterface } from '@bsv/sdk'
-import { acceptDirectPayment, MAX_DIRECT_TRANSACTION_BYTES, paymentKey, validatePaymentToken, WebRTPayError } from '@bsv/webrtpay'
+import { acceptDirectPayment, MAX_DIRECT_TRANSACTION_BYTES, paymentKey, validatePaymentToken, verifyDirectPayment, WebRTPayError } from '@bsv/webrtpay'
 import type { AuthenticatedPeer, DirectPayClient, IncomingPayment, PaymentAck, SeenStore } from '@bsv/webrtpay'
 import { prepareMessageBoxPayment } from './messageBoxPayments'
 import type { OutgoingPayment } from './messageBoxPayments'
@@ -51,6 +51,8 @@ const retryStorageKey = (identity: string, chain: string) => `${KEPT_DIRECT_PAYM
 /** Reasons sent to the payer: fixed text, so nothing about this wallet's internals leaks. */
 const NOT_ACCEPTED = 'The wallet could not verify or record this payment'
 const CANNOT_KEEP = 'The wallet cannot take payments right now; try again later'
+/** Why a payment was kept without offering it to the wallet (kept on this device only). */
+const WALLET_CHANGING = 'It arrived while the wallet was changing networks or profiles.'
 
 // ---- sending -----------------------------------------------------------------------------
 
@@ -239,6 +241,43 @@ export async function receiveDirectPayment(o: {
   return { status: 'accepted', repeat: result.status === 'duplicate' || wasKept, added: result.status === 'accepted' }
 }
 
+/**
+ * Keeps a payment for {@link retryReceivedDirectPayments} without offering it to the wallet,
+ * which cannot take work right now (a network or profile switch holds it off). By then the
+ * payer has broadcast it, so it is kept rather than refused (final review M10). It is checked
+ * against this wallet's key first (key derivation, no storage): a payment that does not pay
+ * this wallet is refused, and its payer still has it. Returns the ack as
+ * {@link receiveDirectPayment} does.
+ */
+export async function keepDirectPayment(o: {
+  wallet: WalletInterface
+  originator: string
+  identity: string
+  chain: string
+  payment: IncomingPayment
+}): Promise<DirectReceipt> {
+  try {
+    const { txid } = await verifyDirectPayment(o.wallet, o.payment, { originator: o.originator })
+    if (await createSeenStore(o.identity, o.chain).has(keyOf(o.payment, txid))) return { status: 'accepted', repeat: true, added: false }
+  } catch (error) {
+    if (error instanceof WebRTPayError) throw error
+    if (!isTemporary(error)) throw new WebRTPayError('rejected', NOT_ACCEPTED, { cause: error })
+  }
+  const kept = keepForRetry(retryStorageKey(o.identity, o.chain), o.payment, new Error(WALLET_CHANGING))
+  return { status: 'received', repeat: !kept, added: false }
+}
+
+/**
+ * Thrown by a retry pass's `run` to end the pass early (the wallet is busy, or too slow); the
+ * payment it was about to offer, and every one after it, stays as it is for the next pass.
+ */
+export class RetryStopped extends Error {
+  constructor(message = 'The retry pass stopped early') {
+    super(message)
+    this.name = 'RetryStopped'
+  }
+}
+
 /** A kept payment as stored on this device: everything needed to take it into a wallet. */
 export interface KeptDirectPayment {
   messageId: string
@@ -294,7 +333,9 @@ export interface KeptDirectPaymentInfo {
  *
  * `onNeedsAttention` hears of each payment once, when it is first flagged. Payments that need
  * attention are offered again only with `includeNeedsAttention`, so a caller can try them less
- * often. Returns how many payments were added to the wallet. Run it single-flight.
+ * often. Each payment's wallet calls go through `run`, which may take and release a wallet
+ * operation around them, and may throw {@link RetryStopped} to end the pass there. Returns how
+ * many payments were added to the wallet. Run it single-flight.
  */
 export async function retryReceivedDirectPayments(o: {
   wallet: WalletInterface
@@ -303,16 +344,19 @@ export async function retryReceivedDirectPayments(o: {
   chain: string
   includeNeedsAttention?: boolean
   onNeedsAttention?: (kept: KeptDirectPaymentInfo) => void
+  run?: <T>(call: () => Promise<T>) => Promise<T>
 }): Promise<number> {
   const storageKey = retryStorageKey(o.identity, o.chain)
   const seen = createSeenStore(o.identity, o.chain)
+  const run = o.run ?? (<T>(call: () => Promise<T>) => call())
   let accepted = 0
   for (const entry of readRetries(storageKey)) {
     if (entry.needsAttention && !o.includeNeedsAttention) continue
     try {
-      const result = await acceptDirectPayment(o.wallet, toIncoming(entry), { originator: o.originator, seen })
+      const result = await run(() => acceptDirectPayment(o.wallet, toIncoming(entry), { originator: o.originator, seen }))
       if (result.status === 'accepted') accepted++
     } catch (error) {
+      if (error instanceof RetryStopped) break
       const verdict = retryVerdict(error)
       if (verdict === 'temporary') continue
       const failed: RetryEntry = { ...entry, error: messageOf(error).slice(0, 500) }

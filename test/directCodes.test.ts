@@ -12,9 +12,11 @@ import * as path from 'path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { QRCodeSVG } from 'qrcode.react'
-import { LockingScript, MerklePath, P2PKH, PrivateKey, ProtoWallet, Transaction, UnlockingScript } from '@bsv/sdk'
+import { LockingScript, MerklePath, P2PKH, PrivateKey, ProtoWallet, PublicKey, Random, Transaction, UnlockingScript, Utils } from '@bsv/sdk'
 import type { WalletInterface } from '@bsv/sdk'
 import { DirectPayClient, WebRTPayError } from '@bsv/webrtpay'
+import type { IncomingPayment, ReceiveHandlers } from '@bsv/webrtpay'
+import { setHttpBridgePaused } from '../src/lib/services/httpBridgeSession'
 import { answerDirectRequest, codeFitsQr, createDirectRequest, offerFailure, pendingPaymentFor, QR_MAX_CHARS, readOfferCode } from '../src/lib/pages/Dashboard/Payments/directCodes'
 import type { ReceivedDirectPayment } from '../src/lib/pages/Dashboard/Payments/directCodes'
 import { deliverDirect, NotSentError } from '../src/lib/pages/Dashboard/Payments/directPayments'
@@ -424,6 +426,31 @@ describe('receiving with an offer code', () => {
 
     await vi.waitFor(() => expect(again.received).toEqual([{ amount: 700, sender: payer.identityKey, status: 'accepted', repeat: true, added: false }]))
     expect(payee.internalizeAction).toHaveBeenCalledTimes(1)
+  })
+
+  // Final review M10: the payer has broadcast by now, so a payment that arrives while a network
+  // or profile switch holds wallet work off is kept for the retry, not refused.
+  it('keeps, rather than refuses, a payment that arrives while a network switch holds wallet work off', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    let handlers: ReceiveHandlers | undefined
+    const offering = { createOfferCode: vi.fn(async (o: { handlers: ReceiveHandlers }) => { handlers = o.handlers; return { code: 'webrtpay1:x', sid: 's', complete: vi.fn(), cancel: vi.fn() } }) } as unknown as DirectPayClient
+    const received: ReceivedDirectPayment[] = []
+    await createDirectRequest({ client: offering, wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN, amount: 1200, onReceived: r => { received.push(r) } })
+    const derivationPrefix = Utils.toBase64(Random(16)), derivationSuffix = Utils.toBase64(Random(16))
+    const { publicKey } = await payer.wallet.getPublicKey({ protocolID: [2, '3241645161d8'], keyID: `${derivationPrefix} ${derivationSuffix}`, counterparty: payee.identityKey })
+    const { tx } = paymentBeef(new P2PKH().lock(PublicKey.fromString(publicKey).toHash()).toHex(), 1200)
+    const payment: IncomingPayment = { messageId: 'm1', sender: payer.identityKey, token: { customInstructions: { derivationPrefix, derivationSuffix }, transaction: tx, amount: 1200, outputIndex: 0 } }
+
+    setHttpBridgePaused(true)
+    try {
+      await expect(handlers!.onPayment(payment, { txid: txidOf(tx) })).resolves.toBe('received')
+    } finally {
+      setHttpBridgePaused(false)
+    }
+
+    expect(payee.internalizeAction).not.toHaveBeenCalled()
+    expect(received).toEqual([{ amount: 1200, sender: payer.identityKey, status: 'received', repeat: false, added: false }])
+    expect(JSON.parse(local.get(`direct-pay-retry-v1:${payee.identityKey}:${CHAIN}`)!)).toHaveLength(1)
   })
 
   it('reports no requested amount when the payment matches it, or when none was asked for', async () => {

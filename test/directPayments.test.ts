@@ -3,7 +3,7 @@ import { LockingScript, MerklePath, OP, P2PKH, PrivateKey, ProtoWallet, PublicKe
 import type { WalletInterface } from '@bsv/sdk'
 import { createMemoryHub, DirectPayClient, MAX_DIRECT_TRANSACTION_BYTES, paymentKey, WebRTPayError } from '@bsv/webrtpay'
 import type { AuthenticatedPeer, IncomingPayment, InboundLimits, MemoryHub } from '@bsv/webrtpay'
-import { createSeenStore, deliverDirect, keptDirectPaymentsOnDevice, listKeptDirectPayments, NotSentError, receiveDirectPayment, retryReceivedDirectPayments, subscribeKeptDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
+import { createSeenStore, deliverDirect, keepDirectPayment, keptDirectPaymentsOnDevice, listKeptDirectPayments, NotSentError, receiveDirectPayment, retryReceivedDirectPayments, RetryStopped, subscribeKeptDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import type { KeptDirectPaymentInfo } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import { prepareMessageBoxPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
 import type { OutgoingPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
@@ -571,6 +571,43 @@ describe('receiveDirectPayment', () => {
   })
 })
 
+// Final review M10: a payment that arrives while a network or profile switch holds wallet work
+// off has already been broadcast by its payer, so it is kept for the retry, not refused.
+describe('keepDirectPayment', () => {
+  const keep = (payee: Payee, payment: IncomingPayment) =>
+    keepDirectPayment({ wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN, payment })
+
+  it('keeps a payment that pays this wallet for the retry, without offering it to the wallet, once', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const payment = await incoming(payer, payee, 1300)
+
+    await expect(keep(payee, payment)).resolves.toEqual({ status: 'received', repeat: false, added: false })
+    await expect(keep(payee, { ...payment, messageId: 'again' })).resolves.toEqual({ status: 'received', repeat: true, added: false })
+
+    expect(payee.internalizeAction).not.toHaveBeenCalled()
+    expect(retries(payee.identityKey)).toEqual([expect.objectContaining({ key: keyOf(payment), error: 'It arrived while the wallet was changing networks or profiles.', attempts: 0 })])
+    payee.internalizeAction.mockResolvedValue({ accepted: true })
+    await expect(retry(payee)).resolves.toBe(1)
+  })
+
+  it('refuses, and stores nothing for, a payment that does not pay this wallet', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const payment = await incoming(payer, payee, 1000)
+    const error = await keep(payee, { ...payment, token: { ...payment.token, amount: 999 } }).catch(e => e)
+    expect(error).toBeInstanceOf(WebRTPayError)
+    expect(error.code).toBe('invalid_payment')
+    expect(local.size).toBe(0)
+  })
+
+  it('acks a payment the wallet already took as a repeat, and keeps nothing', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const payment = await incoming(payer, payee)
+    await receive(payee, payment)
+    await expect(keep(payee, payment)).resolves.toEqual({ status: 'accepted', repeat: true, added: false })
+    expect(retries(payee.identityKey)).toEqual([])
+  })
+})
+
 describe('retryReceivedDirectPayments', () => {
   const HOUR = 60 * 60 * 1000
 
@@ -786,6 +823,29 @@ describe('retryReceivedDirectPayments', () => {
     expect(retries(payee.identityKey)).toEqual([
       expect.objectContaining({ key: keyOf(first), attempts: 1 }),
       expect.objectContaining({ key: keyOf(second), attempts: 0 })
+    ])
+  })
+
+  // DirectPayManager takes a wallet operation per call through `run`, and stops a pass when the
+  // wallet gets busy or a call stalls (final review M12).
+  it('makes each payment\'s wallet calls through run, and ends the pass where run stops it', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const [first, second, third] = await kept(payer, payee, 3)
+    payee.internalizeAction.mockResolvedValue({ accepted: true })
+    let calls = 0
+    const run = vi.fn(async <T,>(call: () => Promise<T>): Promise<T> => {
+      if (++calls === 2) throw new RetryStopped()
+      return call()
+    })
+
+    await expect(retryReceivedDirectPayments({ wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN, run })).resolves.toBe(1)
+
+    expect(run).toHaveBeenCalledTimes(2)
+    expect(payee.internalizeAction).toHaveBeenCalledTimes(1)
+    expect(txidOf(payee.internalizeAction.mock.calls[0][0].tx)).toBe(txidOf(first.token.transaction))
+    expect(retries(payee.identityKey)).toEqual([
+      expect.objectContaining({ key: keyOf(second), attempts: 0 }),
+      expect.objectContaining({ key: keyOf(third), attempts: 0 })
     ])
   })
 

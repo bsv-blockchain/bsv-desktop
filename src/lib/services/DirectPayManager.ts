@@ -9,6 +9,10 @@
  * Through a relay, receiving follows the relay connection, which reconnects by itself, and
  * every connection may use the short-lived TURN servers the relay hands out.
  *
+ * While a wallet is open, the payments kept for it (acknowledged, but not yet in the wallet)
+ * are retried in the background: when it opens, then on a backing-off timer and whenever the
+ * network comes back, one wallet call at a time and never while the wallet is busy.
+ *
  * React integration: subscribe to 'changed', like PeerPayManager.
  */
 
@@ -17,9 +21,9 @@ import type { WalletInterface } from '@bsv/sdk'
 import { DirectPayClient, MessageBoxSignaler, RelaySignaler } from '@bsv/webrtpay'
 import type { IncomingPayment, MessageBoxLike, PaymentDecision, RelayConnectionState, Signaler, WebRTPayError } from '@bsv/webrtpay'
 import { EventEmittable } from './EventEmittable'
-import { beginUserWalletOperation } from './httpBridgeSession'
+import { activeHttpBridgeRequests, activeUserWalletOperations, beginUserWalletOperation, isHttpBridgePaused } from './httpBridgeSession'
 import { iceServersFrom, loadDirectPaySettings, subscribeDirectPaySettings, type DirectPaySettings } from '../utils/directPaySettings'
-import { receiveDirectPayment, retryReceivedDirectPayments, type DirectReceipt, type KeptDirectPaymentInfo } from '../pages/Dashboard/Payments/directPayments'
+import { keepDirectPayment, receiveDirectPayment, retryReceivedDirectPayments, RetryStopped, type DirectReceipt, type KeptDirectPaymentInfo } from '../pages/Dashboard/Payments/directPayments'
 
 /**
  * `off`: not receiving (sending works if `via` is set; see `notice` when it is not);
@@ -63,13 +67,38 @@ export interface DirectPayStartOptions {
 
 const OFF: DirectPaySnapshot = { client: null, status: 'off', via: null, error: '', notice: '', received: 0 }
 
-/** How often a retry of kept payments checks whether a network switch has finished. */
-const OPERATION_WAIT_MS = 1000
+/**
+ * Kept payments (acknowledged, not yet in the wallet) are retried when a wallet opens, then
+ * after 60 s, doubling to every 15 minutes while it stays open; at once when the network
+ * comes back, and 60 s after a payment is newly kept.
+ */
+const RETRY_FIRST_MS = 60_000
+const RETRY_MAX_MS = 15 * 60_000
+/** How soon a retry skipped because the wallet was busy or paused is tried again. */
+const RETRY_BUSY_MS = 1000
+/**
+ * A retry's wallet call that takes longer ends the pass and releases its wallet operation, so
+ * a stalled wallet or chain tracker cannot hold off Lock, a switch or removal for longer.
+ */
+const RETRY_CALL_MS = 15_000
 
 const NO_RELAY = 'Enter a relay server address in Settings, or use the message box for direct payments.'
 const NO_MESSAGE_BOX = 'Direct payments reach other wallets through the message box. Connect a message box in Settings, or use a relay server.'
 
 type Started = { options: DirectPayStartOptions; relay: RelaySignaler | null; unsubscribe: () => void }
+
+/** The open wallet's kept-payment retries: the next pass, its wait, and what it includes. */
+type RetrySchedule = {
+  options: DirectPayStartOptions
+  /** The wait before the next timed pass; doubles after each, up to {@link RETRY_MAX_MS}. */
+  delay: number
+  timer?: ReturnType<typeof setTimeout>
+  /** The next pass also offers payments that need attention (when the wallet opens, or the network is back). */
+  withAttention: boolean
+  /** Asked for while a pass was running: run another as soon as it ends. */
+  again: boolean
+  onOnline: () => void
+}
 
 export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapshot }> {
   private _snapshot: DirectPaySnapshot = OFF
@@ -80,6 +109,8 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
   private _generation = 0
   /** `identity:chain` of wallets whose kept payments are being retried. */
   private readonly _retrying = new Set<string>()
+  /** Retries of the open wallet's kept payments; null while none is open. */
+  private _retry: RetrySchedule | null = null
 
   getSnapshot(): DirectPaySnapshot {
     return this._snapshot
@@ -100,7 +131,7 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     const received = sameWallet ? this._snapshot.received : 0
     const closing = this._teardown()
     this._starting = this._launch(o, received, closing)
-    if (!sameWallet) this._retryKeptPayments(o)
+    if (!sameWallet) this._startRetries(o)
     return this._starting
   }
 
@@ -112,6 +143,7 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
 
   /** Closes the client and signaler. The snapshot clears at once; never rejects. */
   async stop(): Promise<void> {
+    this._stopRetries()
     const closing = this._teardown()
     if (this._snapshot !== OFF) this._set(OFF)
     await closing
@@ -214,16 +246,23 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
 
   /** Takes a payment into the wallet; a throw becomes a `rejected` ack for the payer. */
   private async _onPayment(o: DirectPayStartOptions, p: IncomingPayment): Promise<PaymentDecision> {
-    // Throws while the network is changing: the payer keeps the payment and can retry.
-    const release = beginUserWalletOperation()
+    let release: (() => void) | undefined
+    try {
+      release = beginUserWalletOperation()
+    } catch {
+      // A network or profile switch holds wallet work off. The payer has broadcast by now, so
+      // the payment is kept for a retry rather than refused (final review M10).
+    }
     let receipt: DirectReceipt
     try {
-      receipt = await receiveDirectPayment({ wallet: o.wallet, originator: o.originator, identity: o.identity, chain: o.chain, payment: p })
+      const args = { wallet: o.wallet, originator: o.originator, identity: o.identity, chain: o.chain, payment: p }
+      receipt = release ? await receiveDirectPayment(args) : await keepDirectPayment(args)
     } finally {
-      release()
+      release?.()
     }
     // The payment is taken: nothing below may turn the ack into a rejection.
     try {
+      if (receipt.status === 'received' && !receipt.repeat) this._retrySoon(o)
       // In the wallet now, even when it is a redelivery of a payment kept earlier.
       if (receipt.added) window.dispatchEvent(new CustomEvent('balance-changed'))
       // Delivered again after a lost ack: it was announced the first time.
@@ -238,32 +277,103 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     return receipt.status
   }
 
-  /**
-   * Offers payments kept for a retry (acknowledged as received while the wallet could not
-   * take them) to the wallet again, once per wallet opening and never twice at once.
-   */
-  private _retryKeptPayments(o: DirectPayStartOptions): void {
-    const key = `${o.identity}:${o.chain}`
-    if (this._retrying.has(key)) return
-    this._retrying.add(key)
-    void this._runRetry(o).finally(() => this._retrying.delete(key))
+  /** Retries the kept payments of a wallet that just opened, now and while it stays open. */
+  private _startRetries(o: DirectPayStartOptions): void {
+    this._stopRetries()
+    const s: RetrySchedule = {
+      options: o,
+      delay: RETRY_FIRST_MS,
+      withAttention: true,
+      again: false,
+      onOnline: () => { s.delay = RETRY_FIRST_MS; this._retryNow(s, true) }
+    }
+    this._retry = s
+    window.addEventListener('online', s.onOnline)
+    this._retryNow(s, true)
+  }
+
+  /** The wallet closed: no more passes (one already running ends at its next payment). */
+  private _stopRetries(): void {
+    const s = this._retry
+    if (!s) return
+    this._retry = null
+    clearTimeout(s.timer)
+    window.removeEventListener('online', s.onOnline)
+  }
+
+  /** A payment was just kept: the next pass comes after the first wait again. */
+  private _retrySoon(o: DirectPayStartOptions): void {
+    const s = this._retry
+    if (!s || !isSameWallet(s.options, o)) return
+    s.delay = RETRY_FIRST_MS
+    if (s.timer === undefined) return // a pass is running; it schedules the next one
+    clearTimeout(s.timer)
+    s.timer = setTimeout(() => this._retryNow(s, false), s.delay)
   }
 
   /**
-   * Runs the retry inside a user wallet operation, so a network switch or wallet removal
-   * cannot cut storage off while a payment is being taken. A wallet opened by a network
-   * switch opens while the switch still holds wallet work off: the retry waits for the
-   * switch to finish, and is dropped if that wallet closes first. Never rejects.
+   * Runs a pass now, unless the wallet is paused or busy (then a second later), and never
+   * two for one wallet at once (then as soon as the running one ends).
    */
-  private async _runRetry(o: DirectPayStartOptions): Promise<void> {
-    let release: () => void
-    for (;;) {
-      if (!this._started || !isSameWallet(this._started.options, o)) return
+  private _retryNow(s: RetrySchedule, withAttention: boolean): void {
+    if (this._retry !== s) return
+    clearTimeout(s.timer)
+    s.timer = undefined
+    s.withAttention ||= withAttention
+    const key = `${s.options.identity}:${s.options.chain}`
+    if (this._retrying.has(key)) {
+      s.again = true
+      return
+    }
+    if (walletBusy()) {
+      s.timer = setTimeout(() => this._retryNow(s, false), RETRY_BUSY_MS)
+      return
+    }
+    const withAttentionNow = s.withAttention
+    s.withAttention = false
+    this._retrying.add(key)
+    void this._runRetry(s, withAttentionNow).then(outcome => {
+      this._retrying.delete(key)
+      // The wallet may have closed, or closed and opened again, while the pass ran.
+      const current = this._retry
+      if (!current || `${current.options.identity}:${current.options.chain}` !== key) return
+      if (outcome === 'busy') current.withAttention ||= withAttentionNow
+      if (current.again || current !== s) {
+        current.again = false
+        this._retryNow(current, false)
+      } else if (outcome === 'busy') {
+        current.timer = setTimeout(() => this._retryNow(current, false), RETRY_BUSY_MS)
+      } else {
+        current.timer = setTimeout(() => this._retryNow(current, false), current.delay)
+        current.delay = Math.min(current.delay * 2, RETRY_MAX_MS)
+      }
+    })
+  }
+
+  /**
+   * One pass over the wallet's kept payments. Each payment's wallet calls run inside their own
+   * user wallet operation, so a network switch or wallet removal cannot cut storage off under
+   * them, and none is held between payments or across waits. The pass ends early (`busy`)
+   * when the wallet is paused or busy with other work, or when a call takes longer than
+   * {@link RETRY_CALL_MS}, which releases its operation. Never rejects.
+   */
+  private async _runRetry(s: RetrySchedule, includeNeedsAttention: boolean): Promise<'done' | 'busy'> {
+    const o = s.options
+    let busy = false
+    const run = async <T>(call: () => Promise<T>): Promise<T> => {
+      if (this._retry !== s) throw new RetryStopped('The wallet closed')
+      let release: () => void
       try {
+        if (walletBusy()) throw new Error('busy')
         release = beginUserWalletOperation()
-        break
       } catch {
-        await new Promise(resolve => setTimeout(resolve, OPERATION_WAIT_MS))
+        busy = true
+        throw new RetryStopped('The wallet is busy')
+      }
+      try {
+        return await withDeadline(call(), RETRY_CALL_MS)
+      } finally {
+        release()
       }
     }
     try {
@@ -272,15 +382,15 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
         originator: o.originator,
         identity: o.identity,
         chain: o.chain,
-        includeNeedsAttention: true,
-        onNeedsAttention: kept => this._reportNeedsAttention(kept)
+        includeNeedsAttention,
+        onNeedsAttention: kept => this._reportNeedsAttention(kept),
+        run
       })
       if (added > 0) window.dispatchEvent(new CustomEvent('balance-changed'))
     } catch (e) {
       console.warn('[DirectPayManager] Retrying kept direct payments failed:', e)
-    } finally {
-      release()
     }
+    return busy ? 'busy' : 'done'
   }
 
   /**
@@ -324,6 +434,16 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
  * other wallets dial; the client also refuses a dial that names another network.
  */
 const signalBox = (chain: string) => (chain === 'main' ? 'webrtpay_signals' : `webrtpay_signals_${chain}`)
+
+/** Another payment, app request or a network switch is using the wallet. */
+const walletBusy = () => isHttpBridgePaused() || activeUserWalletOperations() > 0 || activeHttpBridgeRequests() > 0
+
+/** `p`, or a {@link RetryStopped} after `ms` (the call goes on, unobserved). */
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new RetryStopped('The wallet took too long')), ms) })
+  return Promise.race([p, late]).finally(() => clearTimeout(timer))
+}
 
 function isSameWallet(a: DirectPayStartOptions, b: DirectPayStartOptions): boolean {
   return a.wallet === b.wallet && a.identity === b.identity && a.chain === b.chain

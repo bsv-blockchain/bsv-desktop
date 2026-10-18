@@ -43,6 +43,20 @@ export function keptStatusText(p: KeptDirectPaymentInfo): string {
 }
 
 /**
+ * Whether the Payments page offers to dismiss a kept payment: only one that needs attention, and
+ * only once the user copied its recovery details (`copied`: keys copied in this view), so that
+ * dismissing it never leaves the payment with no way back.
+ */
+export function canDismissKept(p: KeptDirectPaymentInfo, copied: ReadonlySet<string>): boolean {
+  return p.needsAttention !== undefined && copied.has(p.key)
+}
+
+/** The question before a kept payment is dismissed. */
+export function dismissConfirmText(p: KeptDirectPaymentInfo): string {
+  return `Dismiss the payment of ${p.amount.toLocaleString()} satoshis from ${p.sender.slice(0, 12)}…? It is removed from this device and your wallet stops trying to add it. After this, only the recovery details you copied can add it to your wallet, so keep them somewhere safe.`
+}
+
+/**
  * The Payments page warning when this wallet's kept payments cannot be read (see
  * directPayments.ts): nothing writes over them, so payments the wallet cannot add at once are
  * refused, and their payers keep them.

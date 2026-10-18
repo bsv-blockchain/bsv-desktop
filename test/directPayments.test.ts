@@ -3,7 +3,7 @@ import { LockingScript, MerklePath, OP, P2PKH, PrivateKey, ProtoWallet, PublicKe
 import type { WalletInterface } from '@bsv/sdk'
 import { createMemoryHub, DirectPayClient, MAX_DIRECT_TRANSACTION_BYTES, paymentKey, WebRTPayError } from '@bsv/webrtpay'
 import type { AuthenticatedPeer, IncomingPayment, InboundLimits, MemoryHub } from '@bsv/webrtpay'
-import { createSeenStore, deliverDirect, keepDirectPayment, keptDirectPaymentsOnDevice, listKeptDirectPayments, NotSentError, receiveDirectPayment, retryReceivedDirectPayments, RetryStopped, subscribeKeptDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
+import { createSeenStore, deliverDirect, dismissKeptDirectPayment, keepDirectPayment, keptDirectPaymentsOnDevice, keptTowardLimit, listKeptDirectPayments, NotSentError, receiveDirectPayment, retryReceivedDirectPayments, RetryStopped, subscribeKeptDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import type { KeptDirectPaymentInfo } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import { prepareMessageBoxPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
 import type { OutgoingPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
@@ -589,6 +589,29 @@ describe('receiveDirectPayment', () => {
     expect(retries(payee.identityKey).map(entry => entry.key)).toEqual(kept)
   })
 
+  // Final review follow-up (C12): payments that need attention wait for the user, so they must
+  // not use up the room for new ones; the retry budget still bounds the list.
+  it('keeps a new payment while 50 that need attention wait, and those that do not are what counts', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    payee.internalizeAction.mockRejectedValue(new Error('User is not authenticated.'))
+    for (let i = 0; i < 50; i++) await receive(payee, await incoming(payer, payee))
+    const listKey = `direct-pay-retry-v1:${payee.identityKey}:${CHAIN}`
+    local.set(listKey, JSON.stringify(retries(payee.identityKey).map(entry => ({ ...entry, needsAttention: { since: 1, reason: 'unverifiable' } }))))
+    local.set(listKey, JSON.stringify([...retries(payee.identityKey), { key: 'from-a-newer-version' }]))
+
+    const payment = await incoming(payer, payee)
+    await expect(receive(payee, payment)).resolves.toEqual({ status: 'received', repeat: false, added: false })
+    expect(retries(payee.identityKey)).toHaveLength(52)
+    expect(retries(payee.identityKey)[51]).toMatchObject({ key: keyOf(payment) })
+  })
+
+  it('counts only payments that do not need attention towards the limit', () => {
+    const flagged = { needsAttention: { since: 1, reason: 'refused' as const } }
+    expect(keptTowardLimit([])).toBe(0)
+    expect(keptTowardLimit([{}, flagged, {}, flagged])).toBe(2)
+    expect(keptTowardLimit([flagged])).toBe(0)
+  })
+
   it('refuses rather than acks received when the retry list cannot be written', async () => {
     const payer = await makePayer(), payee = await makePayee()
     payee.internalizeAction.mockRejectedValue(new Error('User is not authenticated.'))
@@ -974,6 +997,52 @@ describe('a kept list this device cannot read', () => {
     const [{ attempts: _, ...early }] = retries(payee.identityKey)
     local.set(listKey(payee), JSON.stringify([early]))
     expect(listKeptDirectPayments(payee.identityKey, CHAIN)).toEqual({ payments: [expect.objectContaining({ key: keyOf(payment), attempts: 0 })], unreadable: false, unknown: 0 })
+  })
+})
+
+// Final review follow-up (C12): Ruling 36 rules out deleting a kept payment by giving up, not
+// the user removing one after copying its recovery details (the page offers it only then).
+describe('dismissKeptDirectPayment', () => {
+  const listKey = (payee: Payee) => `direct-pay-retry-v1:${payee.identityKey}:${CHAIN}`
+  const dismiss = (payee: Payee, key: string) => dismissKeptDirectPayment(payee.identityKey, CHAIN, key)
+
+  /** Two kept payments for `payee`, the first of them flagged as needing attention. */
+  async function flaggedAndWaiting(payer: Payer, payee: Payee): Promise<[IncomingPayment, IncomingPayment]> {
+    payee.internalizeAction.mockRejectedValue(new Error('User is not authenticated.'))
+    const payments: [IncomingPayment, IncomingPayment] = [await incoming(payer, payee), await incoming(payer, payee)]
+    for (const payment of payments) await receive(payee, payment)
+    local.set(listKey(payee), JSON.stringify(retries(payee.identityKey).map(entry => entry.key === keyOf(payments[0]) ? { ...entry, needsAttention: { since: 1, reason: 'refused' } } : entry)))
+    return payments
+  }
+
+  it('removes a payment that needs attention, and leaves the rest as they are', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const [flagged, waiting] = await flaggedAndWaiting(payer, payee)
+    local.set(listKey(payee), JSON.stringify(['foreign', ...retries(payee.identityKey)]))
+    expect(dismiss(payee, keyOf(flagged))).toBe(true)
+    expect(retries(payee.identityKey)).toEqual(['foreign', expect.objectContaining({ key: keyOf(waiting) })])
+    expect(dismiss(payee, keyOf(flagged))).toBe(false) // already gone
+  })
+
+  it('refuses a payment that is still being retried', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const [, waiting] = await flaggedAndWaiting(payer, payee)
+    const before = local.get(listKey(payee))
+    expect(() => dismiss(payee, keyOf(waiting))).toThrow('Only a payment that needs attention can be dismissed')
+    expect(local.get(listKey(payee))).toBe(before)
+  })
+
+  it('removes nothing from a list it cannot read, or cannot write', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const [flagged] = await flaggedAndWaiting(payer, payee)
+    const before = local.get(listKey(payee))!
+    setItem = () => { throw new DOMException('The quota has been exceeded.', 'QuotaExceededError') }
+    expect(() => dismiss(payee, keyOf(flagged))).toThrow('could not be removed')
+    expect(local.get(listKey(payee))).toBe(before)
+
+    local.set(listKey(payee), before.slice(0, -1))
+    expect(() => dismiss(payee, keyOf(flagged))).toThrow('could not be read, so nothing was removed')
+    expect(local.get(listKey(payee))).toBe(before.slice(0, -1))
   })
 })
 

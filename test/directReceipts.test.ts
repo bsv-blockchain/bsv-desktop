@@ -10,7 +10,7 @@ import * as path from 'path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Utils } from '@bsv/sdk'
-import { KEPT_UNREADABLE, keptPaymentsRemovalNote, keptStatusText, keptUnknownText, payeeReceipt, payerReceipt, receivedNotice, recoveryDetails } from '../src/lib/pages/Dashboard/Payments/directReceipts'
+import { canDismissKept, dismissConfirmText, KEPT_UNREADABLE, keptPaymentsRemovalNote, keptStatusText, keptUnknownText, payeeReceipt, payerReceipt, receivedNotice, recoveryDetails } from '../src/lib/pages/Dashboard/Payments/directReceipts'
 import type { KeptDirectPaymentInfo } from '../src/lib/pages/Dashboard/Payments/directPayments'
 
 // AmountDisplay reads the wallet's settings and exchange rates; the amount is what matters here.
@@ -154,11 +154,42 @@ describe('the Payments page list of kept payments, as first shown', () => {
     expect(html).toContain('1500 sats')
   })
 
+  it('offers a payment that needs attention its recovery details, and no Dismiss before they were copied', () => {
+    const html = render({ [listKey]: JSON.stringify([entry({ needsAttention: { since: 1, reason: 'unverifiable' } })]) })
+    expect(html).toContain('Copy recovery details')
+    expect(html).not.toContain('Dismiss')
+  })
+
   it('words the unreadable states plainly', () => {
     expect(KEPT_UNREADABLE).toMatch(/could not be read\. They are left as they are\./)
     expect(KEPT_UNREADABLE).toMatch(/refused, and its sender keeps it/)
     expect(keptUnknownText(1)).toBe('One entry in the direct payments kept on this device could not be read by this version of BSV Desktop. It is left as it is.')
     expect(keptUnknownText(3)).toBe('3 entries in the direct payments kept on this device could not be read by this version of BSV Desktop. They are left as they are.')
+  })
+})
+
+// Final review follow-up (C12): a payment that will never verify can be removed, but only by the
+// user, only once it needs attention, and only after its recovery details were copied.
+describe('dismissing a kept payment', () => {
+  const flagged = kept({ needsAttention: { since: 1, reason: 'refused' } })
+
+  it('is offered only for a payment that needs attention, once its recovery details were copied', () => {
+    expect(canDismissKept(flagged, new Set())).toBe(false)
+    expect(canDismissKept(flagged, new Set(['another payment']))).toBe(false)
+    expect(canDismissKept(flagged, new Set([flagged.key]))).toBe(true)
+    expect(canDismissKept(kept(), new Set([kept().key]))).toBe(false) // still being retried
+  })
+
+  it('asks first, naming the payment and that only the copied details can add it afterwards', () => {
+    expect(dismissConfirmText(flagged)).toBe(`Dismiss the payment of 1,500 satoshis from ${SENDER.slice(0, 12)}…? It is removed from this device and your wallet stops trying to add it. After this, only the recovery details you copied can add it to your wallet, so keep them somewhere safe.`)
+  })
+
+  it('is wired in the Payments page list behind the gate and a confirmation', () => {
+    const list = fs.readFileSync(path.resolve(__dirname, '../src/lib/pages/Dashboard/Payments/KeptDirectPayments.tsx'), 'utf8')
+    expect(list).toMatch(/setCopiedKeys\(keys => new Set\(keys\)\.add\(p\.key\)\)/)
+    expect(list).toMatch(/\{canDismissKept\(p, copiedKeys\) && <Button[^>]*onClick=\{\(\) => setConfirming\(p\)\}>Dismiss<\/Button>\}/)
+    expect(list).toMatch(/dismissKeptDirectPayment\(identity, chain, confirming\.key\)/)
+    expect(list).toMatch(/\{confirming && dismissConfirmText\(confirming\)\}/)
   })
 })
 

@@ -14,7 +14,8 @@
  * has what is needed to add it (its derivation and transaction). It is therefore never
  * deleted until the wallet has it: a retry the wallet refuses outright, or that still cannot
  * verify it after several tries over more than a day, flags it as needing attention, and the
- * user can copy its recovery details (Ruling 36). The kept list also survives wallet removal
+ * user can copy its recovery details, after which the user (and only the user) may dismiss it
+ * (Ruling 36). The kept list also survives wallet removal
  * (see WalletService). A kept list this version cannot read is never written over, and entries
  * it does not recognise are passed through as they are: either may hold the only copy of a
  * payment.
@@ -30,7 +31,10 @@ import { identityKey, validAmount } from './paymentProtocol'
 
 /** Payment keys remembered per wallet and network, newest kept. */
 const SEEN_LIMIT = 5000
-/** Payments waiting for the wallet; a new one is refused while this many wait. */
+/**
+ * Payments waiting for the wallet; a new one is refused while this many wait. Payments that need
+ * attention do not count (see {@link keptTowardLimit}).
+ */
 const RETRY_LIMIT = 50
 /** Characters of stored retry JSON (transactions are kept as base64). */
 const RETRY_BUDGET = 1_000_000
@@ -409,6 +413,34 @@ export function listKeptDirectPayments(identity: string, chain: string): KeptDir
   return { payments: stored.entries.map(infoOf), unreadable: false, unknown: stored.unknown }
 }
 
+/**
+ * How many of `entries` count towards the limit on kept payments: those still being retried. One
+ * that needs attention waits for the user (who may dismiss it), so it does not hold off new
+ * payments; the size budget still bounds the stored list.
+ */
+export function keptTowardLimit(entries: { needsAttention?: NeedsAttention }[]): number {
+  return entries.filter(entry => !entry.needsAttention).length
+}
+
+/**
+ * Removes a kept payment because the user dismissed it. Ruling 36 rules out deleting one by
+ * giving up, not by the user's choice. Only a payment that needs attention can go (the others
+ * are still being retried); the Payments page offers it only after its recovery details were
+ * copied, with which it can still be added by hand. Returns false when it is no longer kept (the
+ * wallet took it meanwhile). Throws, removing nothing, when the payment does not need attention
+ * or the list cannot be read or written.
+ */
+export function dismissKeptDirectPayment(identity: string, chain: string, key: string): boolean {
+  const storageKey = retryStorageKey(identity, chain)
+  const stored = readRetries(storageKey)
+  if (!stored) throw new Error('The direct payments kept on this device could not be read, so nothing was removed.')
+  const entry = stored.entries.find(e => e.key === key)
+  if (!entry) return false
+  if (!entry.needsAttention) throw new Error('Only a payment that needs attention can be dismissed; this one is still being retried.')
+  if (rewrite(storageKey, key, () => undefined) !== true) throw new Error('This payment could not be removed from this device. Try again.')
+  return true
+}
+
 /** How many kept payments this device holds, for every wallet and network, and their total. */
 export function keptDirectPaymentsOnDevice(): { count: number; total: number } {
   let count = 0
@@ -502,7 +534,7 @@ function keepForRetry(storageKey: string, p: IncomingPayment, error: unknown): b
     const stored = readRetries(storageKey)
     if (!stored) throw new Error('The kept payments on this device cannot be read.')
     if (stored.entries.some(e => e.key === entry.key)) return false
-    if (stored.entries.length >= RETRY_LIMIT) throw new Error('Too many payments are waiting for the wallet.')
+    if (keptTowardLimit(stored.entries) >= RETRY_LIMIT) throw new Error('Too many payments are waiting for the wallet.')
     const text = JSON.stringify([...stored.items, entry])
     if (text.length > RETRY_BUDGET) throw new Error('No room to keep this payment.')
     localStorage.setItem(storageKey, text)

@@ -12,6 +12,8 @@ import AmountDisplay from '../../../components/AmountDisplay'
 import QrScanner from './QrScanner'
 import { answerDirectRequest, codeFitsQr, createDirectRequest, offerFailure, pendingPaymentFor, readOfferCode } from './directCodes'
 import { NotSentError } from './directPayments'
+import { payerReceipt } from './directReceipts'
+import DirectReceiptView from './DirectReceiptView'
 import type { DirectAnswer, DirectOutbox, ReceivedDirectPayment } from './directCodes'
 import type { OutgoingPayment } from './messageBoxPayments'
 import { networkLabel, validAmount } from './paymentProtocol'
@@ -102,7 +104,9 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
         onReceived: payment => {
           if (payment.added) window.dispatchEvent(new CustomEvent('balance-changed'))
           // Delivered again (their wallet lost the ack): it was announced when it first arrived.
-          if (!payment.repeat) onSuccess(payment.status === 'accepted' ? 'Direct payment received.' : 'Direct payment received. Your wallet will add it once it can be verified.')
+          // The page announces it like a payment by identity key, with its amount, whether it is
+          // in the wallet, and what was requested, also after this screen has closed.
+          if (!payment.repeat) window.dispatchEvent(new CustomEvent('direct-payment-received', { detail: { amount: payment.amount, sender: payment.sender, status: payment.status, requested: payment.requested } }))
           if (alive.current) { setReceived(payment); setPhase('received'); setError('') }
         },
         onError: e => { if (alive.current) setError(`A payment could not be received: ${messageOf(e)}`) }
@@ -161,7 +165,7 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
       next.delivered.then(result => {
         if (answerRef.current === next) answerRef.current = null
         window.dispatchEvent(new CustomEvent('balance-changed'))
-        onSuccess(result.ack.status === 'accepted' ? 'Direct payment delivered.' : 'Direct payment delivered. Their wallet will add it shortly.')
+        onSuccess(`Direct payment delivered. ${payerReceipt(result.ack.status)}`)
         if (alive.current) { setDone(result); setAnswer(null); setPayPhase('done') }
       }, failure => {
         const current = answerRef.current === next
@@ -195,15 +199,7 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
     {/* While the confirm dialog is open it shows the error itself. */}
     {error && !review && <Alert severity="error" onClose={() => setError('')}>{error}{errorDetail?.error === error && <Typography variant="body2" sx={{ mt: .5 }}>{errorDetail.detail}</Typography>}</Alert>}
     {busy && <LinearProgress />}
-    {direction === 'receive' ? phase === 'received' && received ? <Box sx={{ textAlign: 'center', py: 4 }}>
-      <CheckCircleOutline color="primary" sx={{ fontSize: 54 }} />
-      <Typography variant="h6" sx={{ mt: 2 }}>Payment received</Typography>
-      <Typography variant="h4" sx={{ my: 1.5, fontWeight: 700 }}><AmountDisplay>{received.amount}</AmountDisplay></Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all' }}>From {received.sender}</Typography>
-      {received.requested !== undefined && <Alert severity="warning" sx={{ mt: 2, textAlign: 'left' }}>Received {received.amount.toLocaleString()} satoshis — you requested {received.requested.toLocaleString()}.</Alert>}
-      {received.status === 'received' && <Alert severity="info" sx={{ mt: 2, textAlign: 'left' }}>Your wallet could not add it yet. It is kept on this device and added once it can be verified.</Alert>}
-      <Button sx={{ mt: 2 }} onClick={newRequest}>Receive another payment</Button>
-    </Box> : !offer ? <>
+    {direction === 'receive' ? phase === 'received' && received ? <DirectReceiptView received={received} onAgain={newRequest} /> : !offer ? <>
       <AmountInput label="Amount to request (optional)" fullWidth valueSats={requestAmount} onChangeSats={setRequestAmount} helperText="Leave blank to let the sender choose." />
       <Button variant="contained" startIcon={<QrCode2Outlined />} onClick={() => void createRequest()} disabled={!client || busy || switchingNetwork || requestAmount !== null && !validAmount(requestAmount)}>{busy ? 'Creating…' : 'Create direct request'}</Button>
     </> : <>
@@ -221,7 +217,7 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
       <Typography variant="h6" sx={{ mt: 2 }}>Payment delivered</Typography>
       <Typography variant="h4" sx={{ my: 1.5, fontWeight: 700 }}><AmountDisplay>{done.payment.amount}</AmountDisplay></Typography>
       <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all' }}>To {done.payment.recipient}</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>{done.ack.status === 'accepted' ? 'It is in their wallet.' : 'Their wallet received it and will add it shortly.'}</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>{payerReceipt(done.ack.status)}</Typography>
       <Button sx={{ mt: 2 }} onClick={payAgain}>Make another payment</Button>
     </Box> : payPhase === 'answer' && answer ? <>
       <CodeView code={answer.answerCode} caption="Ask them to scan this answer now" />

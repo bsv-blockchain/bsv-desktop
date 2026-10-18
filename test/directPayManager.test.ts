@@ -669,7 +669,7 @@ describe('receiving a payment', () => {
     expect(decision).toBe('accepted')
     expect(h.receive).toHaveBeenCalledWith({ wallet, originator: 'admin.local', identity: IDENTITY, chain: 'main', payment })
     expect(events.map(e => e.type)).toEqual(['balance-changed', 'direct-payment-received'])
-    expect(events[1].detail).toEqual({ amount: 1234, sender: SENDER })
+    expect(events[1].detail).toEqual({ amount: 1234, sender: SENDER, status: 'accepted' })
     expect(manager.getSnapshot().received).toBe(1)
   })
 
@@ -680,6 +680,8 @@ describe('receiving a payment', () => {
     await expect(handlersOf().onPayment(payment, { txid: 'ab'.repeat(32) })).resolves.toBe('received')
     expect(manager.getSnapshot().received).toBe(1)
     expect(events.map(e => e.type)).toEqual(['direct-payment-received'])
+    // Final review D6/M11: the page must not announce it as added.
+    expect(events[0].detail).toEqual({ amount: 1234, sender: SENDER, status: 'received' })
   })
 
   it('holds off a network switch while it takes the payment', async () => {

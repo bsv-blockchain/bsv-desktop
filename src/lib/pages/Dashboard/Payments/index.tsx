@@ -24,6 +24,7 @@ import { identityKey, isDirectCode, networkLabel, parsePaymentTarget, PaymentTar
 import { broadcastNearbyPayment } from './nearbyProtocol'
 import { deliverMessageBoxPayment, OutgoingPayment, prepareMessageBoxPayment } from './messageBoxPayments'
 import { deliverDirect } from './directPayments'
+import { payerReceipt, receivedNotice } from './directReceipts'
 import { DELIVERY_HELP, Delivery, deliveryProblem, directStatusLine } from './delivery'
 import type { DirectOutbox } from './directCodes'
 import { addToOutbox, markOutboxDelivered, outboxStorageKey, readOutbox, subscribeOutbox } from './outbox'
@@ -49,6 +50,7 @@ export default function Payments() {
   const [amount, setAmount] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [noticeSeverity, setNoticeSeverity] = useState<'success' | 'warning'>('success')
   const [busy, setBusy] = useState(false)
   const [review, setReview] = useState<Review | null>(null)
   const [delivery, setDelivery] = useState<Delivery>('messagebox')
@@ -73,12 +75,15 @@ export default function Payments() {
   const directAvailable = !!directPay.client
   const deliveryIssue = deliveryProblem(delivery, { messageBoxAvailable, directPay })
   const directLine = directStatusLine(directPay)
-  const notify = useCallback((message: string) => { setNotice(message); setError('') }, [])
+  /** The outcome of the user's own action: it replaces any earlier error. */
+  const notify = useCallback((message: string) => { setNotice(message); setNoticeSeverity('success'); setError('') }, [])
+  /** News from elsewhere (a payment arrived): it leaves an error, such as "do not send a new payment", in place. */
+  const announce = useCallback(({ text, severity }: { text: string; severity: 'success' | 'warning' }) => { setNotice(text); setNoticeSeverity(severity) }, [])
   const closeScan = useCallback(() => setScan(false), [])
   const identitySearch = useIdentitySearch({ wallet, originator: adminOriginator, onIdentitySelected: selected => { if (selected) { setRecipient(selected.identityKey); setRecipientLabel(selected.name || short(selected.identityKey)) } } })
 
   useEffect(() => { setReview(null); setRecipient(''); setRecipientLabel(''); setAmount(null); setDelivery('messagebox'); setNearbyRequest(''); setError(''); setNotice(''); }, [wallet, chain])
-  useEffect(() => { const onReceived = (event: Event) => { const amount = (event as CustomEvent<{ amount?: unknown }>).detail?.amount; notify(validAmount(amount) ? `Direct payment received: ${amount.toLocaleString()} satoshis.` : 'Direct payment received.') }; window.addEventListener('direct-payment-received', onReceived); return () => window.removeEventListener('direct-payment-received', onReceived) }, [notify])
+  useEffect(() => { const onReceived = (event: Event) => announce(receivedNotice((event as CustomEvent<Record<string, unknown> | undefined>).detail ?? {})); window.addEventListener('direct-payment-received', onReceived); return () => window.removeEventListener('direct-payment-received', onReceived) }, [announce])
   useEffect(() => { let alive = true; setIdentity(''); if (wallet) wallet.getPublicKey({ identityKey: true }, adminOriginator).then(result => { if (alive) setIdentity(result.publicKey) }).catch(error => { if (alive) setError(error.message || 'Your wallet identity could not be loaded.') }); return () => { alive = false } }, [wallet, chain, adminOriginator])
   useEffect(() => { setOutgoing([]); if (!outboxKey) return; const rows = readOutbox(outboxKey); if (rows) setOutgoing(rows); else setError('Saved payments could not be read. Check Activity before sending again.') }, [outboxKey])
   // Show writes made elsewhere in this window too, such as a delivery that outlived an earlier visit to this page.
@@ -137,6 +142,7 @@ export default function Payments() {
     if (!review || !wallet || mutationLock.current || switchingNetwork) return
     mutationLock.current = true; setBusy(true); setError(''); setNotice('')
     let prepared = false
+    let sent = 'Payment sent.'
     let release: (() => void) | undefined
     try {
       release = beginUserWalletOperation()
@@ -146,7 +152,8 @@ export default function Payments() {
         const problem = deliveryProblem(review.delivery, { messageBoxAvailable, directPay })
         if (problem) throw new Error(problem)
         if (review.delivery === 'direct') {
-          await deliverDirect({ client: directPay.client!, wallet, originator: adminOriginator, recipient: review.target.recipient, amount: review.amount, persist: row => { addOutgoing(row); prepared = true }, markDelivered: markOutgoingDelivered })
+          const { ack } = await deliverDirect({ client: directPay.client!, wallet, originator: adminOriginator, recipient: review.target.recipient, amount: review.amount, persist: row => { addOutgoing(row); prepared = true }, markDelivered: markOutgoingDelivered })
+          sent = `Payment sent. ${payerReceipt(ack.status)}`
         } else {
           if (review.request) {
             const fresh = (await peerPayClient!.listIncomingPaymentRequests(messageBoxUrl)).find(request => request.messageId === review.request!.messageId)
@@ -161,7 +168,7 @@ export default function Payments() {
       } else {
         await wallet.createAction({ description: 'Sent BSV to address', outputs: [{ lockingScript: new P2PKH().lock(review.target.recipient).toHex(), satoshis: review.amount, outputDescription: 'BSV payment' }], labels: ['legacy', 'outbound', `to-address:${review.target.recipient}`] }, adminOriginator)
       }
-      setReview(null); setRecipient(''); setRecipientLabel(''); setAmount(null); notify('Payment sent.'); window.dispatchEvent(new CustomEvent('balance-changed')); void refresh()
+      setReview(null); setRecipient(''); setRecipientLabel(''); setAmount(null); notify(sent); window.dispatchEvent(new CustomEvent('balance-changed')); void refresh()
     } catch (error) { setError(prepared ? `Your payment is saved below. Retry its delivery; do not send a new payment. ${(error as Error).message}` : (error as Error).message || 'The payment could not be sent.'); if (prepared) setReview(null) } finally { release?.(); mutationLock.current = false; setBusy(false) }
   }
   const retryDirect = async (payment: OutgoingPayment) => {
@@ -172,8 +179,8 @@ export default function Payments() {
       const problem = deliveryProblem('direct', { messageBoxAvailable, directPay })
       if (problem) throw new Error(problem)
       release = beginUserWalletOperation()
-      await deliverDirect({ client: directPay.client!, wallet, originator: adminOriginator, recipient: payment.recipient, amount: payment.amount, existing: payment, persist: () => {}, markDelivered: markOutgoingDelivered })
-      notify('Saved payment delivered.'); window.dispatchEvent(new CustomEvent('balance-changed'))
+      const { ack } = await deliverDirect({ client: directPay.client!, wallet, originator: adminOriginator, recipient: payment.recipient, amount: payment.amount, existing: payment, persist: () => {}, markDelivered: markOutgoingDelivered })
+      notify(`Saved payment delivered. ${payerReceipt(ack.status)}`); window.dispatchEvent(new CustomEvent('balance-changed'))
     } catch (error) { setError((error as Error).message || 'Delivery is still pending.') } finally { release?.(); mutationLock.current = false; setBusy(false) }
   }
   const receivePayment = async (payment: IncomingPayment) => {
@@ -197,7 +204,7 @@ export default function Payments() {
   if (!wallet) return <Alert severity="info">Unlock your wallet to make payments.</Alert>
   return <Box sx={{ maxWidth: 1100, mx: 'auto', pb: 5 }}>
     <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 3 }}><Box><Typography variant="h1" sx={{ fontWeight: 750, letterSpacing: '-.04em' }}>Payments</Typography><Typography color="text.secondary" sx={{ mt: .75 }}>Pay an address, a wallet, or someone nearby.</Typography></Box><Chip size="small" label={networkLabel(chain)} variant="outlined" /></Stack>
-    {notice && <Alert severity="success" onClose={() => setNotice('')} sx={{ mb: 2 }}>{notice}</Alert>}
+    {notice && <Alert severity={noticeSeverity} onClose={() => setNotice('')} sx={{ mb: 2 }}>{notice}</Alert>}
     {/* While the review dialog is open it shows the error itself. */}
     {error && !review && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.3fr) minmax(0, .9fr)' }, gap: 3, alignItems: 'start' }}>

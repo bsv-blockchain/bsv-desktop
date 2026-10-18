@@ -107,10 +107,15 @@ describe('Payments page wiring', () => {
     expect(page).toMatch(/existing: payment/)
   })
 
-  it('tells the user when a direct payment arrives, and stops listening when the page closes', () => {
-    expect(page).toMatch(/window\.addEventListener\('direct-payment-received', onReceived\)/)
+  // receivedNotice is tested in directReceipts.test.ts. A payment that arrives is news, not the
+  // outcome of the user's action, so its notice leaves an error in place (final review M24).
+  it('tells the user when a direct payment arrives, with receivedNotice and without clearing an error, and stops listening when the page closes', () => {
+    expect(page).toMatch(/const onReceived = \(event: Event\) => announce\(receivedNotice\([^;]*\.detail \?\? \{\}\)\); window\.addEventListener\('direct-payment-received', onReceived\)/)
     expect(page).toMatch(/return \(\) => window\.removeEventListener\('direct-payment-received', onReceived\)/)
-    expect(page).toMatch(/notify\(validAmount\(amount\) \? `Direct payment received: \$\{amount\.toLocaleString\(\)\} satoshis\.` : 'Direct payment received\.'\)/)
+    const announceLine = page.slice(page.indexOf('const announce = '), page.indexOf('\n', page.indexOf('const announce = ')))
+    expect(announceLine).toMatch(/setNotice\(text\); setNoticeSeverity\(severity\)/)
+    expect(announceLine).not.toMatch(/setError/)
+    expect(page).toMatch(/<Alert severity=\{noticeSeverity\}/)
   })
 
   it('shows the direct-payments status on the Receive tab, even without a message box', () => {

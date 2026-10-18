@@ -269,7 +269,8 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
       if (!receipt.repeat) {
         const current = this._started?.options
         if (current && isSameWallet(current, o)) this._set({ ...this._snapshot, received: this._snapshot.received + 1 })
-        window.dispatchEvent(new CustomEvent('direct-payment-received', { detail: { amount: p.token.amount, sender: p.sender } }))
+        // `status` tells the page whether the wallet took it or only kept it (final review D6).
+        window.dispatchEvent(new CustomEvent('direct-payment-received', { detail: { amount: p.token.amount, sender: p.sender, status: receipt.status } }))
       }
     } catch (e) {
       console.warn('[DirectPayManager] Could not announce a received direct payment:', e)

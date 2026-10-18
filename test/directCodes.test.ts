@@ -566,13 +566,15 @@ describe('Nearby → Direct (WebRTC) wiring', () => {
     expect(exchange).toMatch(/const chosenAmount = offerCode\?\.amount \?\? payAmount/)
   })
 
-  it('announces a payment on the page and reports a balance change once, not again for a redelivery', () => {
+  // The page words the notice (directReceipts.test.ts): with the amount, whether the wallet took
+  // it, and what was requested (final review D6), also once this screen has closed.
+  it('announces a payment on the page like one by identity key, and reports a balance change once, not again for a redelivery', () => {
     const received = exchange.slice(exchange.indexOf('onReceived: payment => {'), exchange.indexOf('onError: e =>'))
     expect(received).toMatch(/if \(payment\.added\) window\.dispatchEvent\(new CustomEvent\('balance-changed'\)\)/)
-    expect(received).toMatch(/if \(!payment\.repeat\) onSuccess\(/)
+    expect(received).toMatch(/if \(!payment\.repeat\) window\.dispatchEvent\(new CustomEvent\('direct-payment-received', \{ detail: \{ amount: payment\.amount, sender: payment\.sender, status: payment\.status, requested: payment\.requested \} \}\)\)/)
     // The screen still finishes its session either way.
     expect(received).toMatch(/if \(alive\.current\) \{ setReceived\(payment\); setPhase\('received'\); setError\(''\) \}/)
-    expect(received.match(/dispatchEvent/g)).toHaveLength(1)
+    expect(received).not.toMatch(/onSuccess/)
   })
 
   it('shows the wallet\'s own words under a failure that spent nothing', () => {
@@ -580,8 +582,9 @@ describe('Nearby → Direct (WebRTC) wiring', () => {
     expect(exchange).toMatch(/\{errorDetail\?\.error === error && <Typography variant="body2" sx=\{\{ mt: \.5 \}\}>\{errorDetail\.detail\}<\/Typography>\}/)
   })
 
-  it('shows the requested amount beside a payment of another amount (Ruling 29)', () => {
-    expect(exchange).toMatch(/\{received\.requested !== undefined && <Alert severity="warning"[^>]*>Received \{received\.amount\.toLocaleString\(\)\} satoshis — you requested \{received\.requested\.toLocaleString\(\)\}\./)
+  it('shows the payment that arrived with DirectReceiptView, which directReceipts.test.ts renders', () => {
+    expect(exchange).toMatch(/phase === 'received' && received \? <DirectReceiptView received=\{received\} onAgain=\{newRequest\} \/>/)
+    expect(exchange).not.toMatch(/Payment received/)
   })
 
   it('cancels unanswered codes when the screen closes', () => {

@@ -10,9 +10,12 @@
  * for a retry and acknowledged as received; anything the wallet refuses is rejected, so
  * a peer cannot fill this device's storage with payments that will never verify.
  *
- * A kept payment was acknowledged, so its payer will not send it again: a retry drops it
- * only when the wallet refuses it outright, or when it still cannot be verified after
- * several tries over more than a day. Every dropped payment is reported to the caller.
+ * A kept payment was acknowledged, so its payer will not send it again, and only this device
+ * has what is needed to add it (its derivation and transaction). It is therefore never
+ * deleted until the wallet has it: a retry the wallet refuses outright, or that still cannot
+ * verify it after several tries over more than a day, flags it as needing attention, and the
+ * user can copy its recovery details (Ruling 36). The kept list also survives wallet removal
+ * (see WalletService).
  */
 import { Transaction, Utils } from '@bsv/sdk'
 import type { WalletInterface } from '@bsv/sdk'
@@ -30,16 +33,20 @@ const RETRY_LIMIT = 50
 /** Characters of stored retry JSON (transactions are kept as base64). */
 const RETRY_BUDGET = 1_000_000
 /**
- * A kept payment the wallet still cannot verify is given up only after this many failed
+ * A kept payment the wallet still cannot verify needs attention only after this many failed
  * retries AND this long after it arrived, so a lagging or unreachable chain tracker has time
  * to catch up. Failures known to be temporary (wallet locked, storage or network down) do
  * not count as tries.
  */
-const RETRY_GIVE_UP_ATTEMPTS = 5
-const RETRY_GIVE_UP_AGE_MS = 24 * 60 * 60 * 1000
+const NEEDS_ATTENTION_ATTEMPTS = 5
+const NEEDS_ATTENTION_AGE_MS = 24 * 60 * 60 * 1000
+
+/** Every kept-payment list starts with this; such keys outlive logout and wallet removal. */
+export const KEPT_DIRECT_PAYMENTS_PREFIX = 'direct-pay-retry-v1:'
+const KEPT_CHANGED_EVENT = 'direct-pay-kept-changed'
 
 const seenStorageKey = (identity: string, chain: string) => `direct-pay-seen-v1:${identity}:${chain}`
-const retryStorageKey = (identity: string, chain: string) => `direct-pay-retry-v1:${identity}:${chain}`
+const retryStorageKey = (identity: string, chain: string) => `${KEPT_DIRECT_PAYMENTS_PREFIX}${identity}:${chain}`
 
 /** Reasons sent to the payer: fixed text, so nothing about this wallet's internals leaks. */
 const NOT_ACCEPTED = 'The wallet could not verify or record this payment'
@@ -246,51 +253,62 @@ export interface KeptDirectPayment {
   }
 }
 
-/** A kept payment that a retry gave up on. Its payer will not resend it, so report it. */
-export interface DroppedDirectPayment {
+/** Why the wallet could not add a kept payment after retrying, so the user should look at it. */
+export interface NeedsAttention {
+  since: number
   /**
    * `refused`: it does not pay this wallet, or the wallet refused one of its fixed arguments
-   * (never the transaction or its proof). `unverifiable`: the wallet still could not take it after
-   * {@link RETRY_GIVE_UP_ATTEMPTS} tries, more than a day after it arrived.
+   * (never the transaction or its proof). `unverifiable`: the wallet still could not take it
+   * after {@link NEEDS_ATTENTION_ATTEMPTS} tries, more than a day after it arrived.
    */
   reason: 'refused' | 'unverifiable'
+}
+
+/** A payment kept on this device, acknowledged as received, that the wallet has not taken yet. */
+export interface KeptDirectPaymentInfo {
+  /** {@link paymentKey}: one entry per payment output. */
+  key: string
   txid: string
   sender: string
   amount: number
   receivedAt: number
-  /** Failed retries counted towards giving up (temporary failures are not counted). */
+  /** Failed retries counted towards needing attention (temporary failures are not counted). */
   attempts: number
   /** The last failure (local text; never sent to the payer). */
   error: string
+  /** Set once retrying stopped looking likely to work; the payment is still kept and retried. */
+  needsAttention?: NeedsAttention
   payment: KeptDirectPayment
 }
 
 /**
- * Offers every kept payment to the wallet again. A payment the wallet takes (or already
- * has) leaves the list. Each kept payment was acknowledged as received, so its payer will
- * not resend it; a failed retry therefore drops it only when:
- * - the wallet refuses it outright (`invalid_payment`, or a check on an argument built
- *   from the kept payment, such as `outputs` or `paymentRemittance`; never `tx`), or
- * - the wallet still cannot verify it after {@link RETRY_GIVE_UP_ATTEMPTS} failed tries
- *   and more than {@link RETRY_GIVE_UP_AGE_MS} after it arrived. A failure known to be
+ * Offers kept payments to the wallet again. A payment the wallet takes (or already has) leaves
+ * the list; nothing else ever does. Each kept payment was acknowledged as received, so its
+ * payer will not resend it, and its derivation is on this device only. A failed retry flags
+ * it as needing attention when:
+ * - the wallet refuses it outright (`invalid_payment`, or a check on an argument built from
+ *   the kept payment, such as `outputs` or `paymentRemittance`; never `tx`), or
+ * - the wallet still cannot verify it after {@link NEEDS_ATTENTION_ATTEMPTS} failed tries
+ *   and more than {@link NEEDS_ATTENTION_AGE_MS} after it arrived. A failure known to be
  *   temporary (wallet locked, storage or network down) is not counted as a try.
  *
- * Any other failure, including an unknown one and every chain tracker or proof error,
- * keeps the payment. `onDropped` is called for every payment given up on, before it
- * leaves the list; if it throws, the payment stays and is reported again next time.
- * Returns how many payments were added to the wallet. Run it single-flight.
+ * `onNeedsAttention` hears of each payment once, when it is first flagged. Payments that need
+ * attention are offered again only with `includeNeedsAttention`, so a caller can try them less
+ * often. Returns how many payments were added to the wallet. Run it single-flight.
  */
 export async function retryReceivedDirectPayments(o: {
   wallet: WalletInterface
   originator: string
   identity: string
   chain: string
-  onDropped: (dropped: DroppedDirectPayment) => void
+  includeNeedsAttention?: boolean
+  onNeedsAttention?: (kept: KeptDirectPaymentInfo) => void
 }): Promise<number> {
   const storageKey = retryStorageKey(o.identity, o.chain)
   const seen = createSeenStore(o.identity, o.chain)
   let accepted = 0
   for (const entry of readRetries(storageKey)) {
+    if (entry.needsAttention && !o.includeNeedsAttention) continue
     try {
       const result = await acceptDirectPayment(o.wallet, toIncoming(entry), { originator: o.originator, seen })
       if (result.status === 'accepted') accepted++
@@ -298,24 +316,47 @@ export async function retryReceivedDirectPayments(o: {
       const verdict = retryVerdict(error)
       if (verdict === 'temporary') continue
       const failed: RetryEntry = { ...entry, error: messageOf(error).slice(0, 500) }
-      if (verdict === 'unproven') {
-        failed.attempts = entry.attempts + 1
-        if (failed.attempts < RETRY_GIVE_UP_ATTEMPTS || Date.now() - entry.receivedAt <= RETRY_GIVE_UP_AGE_MS) {
-          // If this write fails the try is just not counted; the payment stays either way.
-          update(storageKey, failed)
-          continue
+      if (!entry.needsAttention) {
+        if (verdict === 'unproven') failed.attempts = entry.attempts + 1
+        if (verdict === 'refused' || (failed.attempts >= NEEDS_ATTENTION_ATTEMPTS && Date.now() - entry.receivedAt > NEEDS_ATTENTION_AGE_MS)) {
+          failed.needsAttention = { since: Date.now(), reason: verdict === 'refused' ? 'refused' : 'unverifiable' }
         }
       }
-      try {
-        o.onDropped(dropped(failed, verdict === 'refused' ? 'refused' : 'unverifiable'))
-      } catch {
-        update(storageKey, failed)
-        continue // not reported, so not dropped
+      // Kept either way. If this write fails, the try is just not counted (or flagged) yet.
+      if (update(storageKey, failed) && failed.needsAttention && !entry.needsAttention) {
+        try { o.onNeedsAttention?.(infoOf(failed)) } catch { /* the flag is stored; the list shows it */ }
       }
+      continue
     }
     forget(storageKey, entry.key)
   }
   return accepted
+}
+
+/** The open wallet's kept payments, oldest first. */
+export function listKeptDirectPayments(identity: string, chain: string): KeptDirectPaymentInfo[] {
+  return readRetries(retryStorageKey(identity, chain)).map(infoOf)
+}
+
+/** How many kept payments this device holds, for every wallet and network, and their total. */
+export function keptDirectPaymentsOnDevice(): { count: number; total: number } {
+  let count = 0
+  let total = 0
+  for (const key of storageKeys()) {
+    if (!key.startsWith(KEPT_DIRECT_PAYMENTS_PREFIX)) continue
+    for (const entry of readRetries(key)) {
+      count++
+      if (validAmount(entry.payment.token.amount)) total += entry.payment.token.amount
+    }
+  }
+  return { count, total }
+}
+
+/** Calls `fn` after every change to a kept-payment list in this window; returns the unsubscribe. */
+export function subscribeKeptDirectPayments(fn: () => void): () => void {
+  const listener = () => fn()
+  window.addEventListener(KEPT_CHANGED_EVENT, listener)
+  return () => window.removeEventListener(KEPT_CHANGED_EVENT, listener)
 }
 
 /** Wording of argument and proof checks, which can arrive wrapped in a storage IPC error. */
@@ -360,7 +401,7 @@ function retryVerdict(error: unknown): 'refused' | 'temporary' | 'unproven' {
   return isTemporary(error) ? 'temporary' : 'unproven'
 }
 
-/** A payment acknowledged as received that the wallet has not taken yet. */
+/** A payment acknowledged as received that the wallet has not taken yet, as stored. */
 interface RetryEntry {
   /** {@link paymentKey}: one entry per payment output. */
   key: string
@@ -368,13 +409,14 @@ interface RetryEntry {
   /** The latest reason the wallet could not take it (kept on this device only). */
   error: string
   receivedAt: number
-  /** Failed retries counted towards giving up; see {@link retryReceivedDirectPayments}. */
+  /** Failed retries counted towards needing attention; see {@link retryReceivedDirectPayments}. */
   attempts: number
+  needsAttention?: NeedsAttention
 }
 
-function dropped(entry: RetryEntry, reason: DroppedDirectPayment['reason']): DroppedDirectPayment {
-  const { key, payment, error, receivedAt, attempts } = entry
-  return { reason, txid: key.split(':')[0], sender: payment.sender, amount: payment.token.amount, receivedAt, attempts, error, payment }
+function infoOf(entry: RetryEntry): KeptDirectPaymentInfo {
+  const { key, payment, error, receivedAt, attempts, needsAttention } = entry
+  return { key, txid: key.split(':')[0], sender: payment.sender, amount: payment.token.amount, receivedAt, attempts, error, ...(needsAttention && { needsAttention }), payment }
 }
 
 /**
@@ -392,6 +434,7 @@ function keepForRetry(storageKey: string, p: IncomingPayment, error: unknown): b
     const text = JSON.stringify([...entries, entry])
     if (text.length > RETRY_BUDGET) throw new Error('No room to keep this payment.')
     localStorage.setItem(storageKey, text)
+    announceKept()
     return true
   } catch (cause) {
     throw new WebRTPayError('rejected', CANNOT_KEEP, { cause })
@@ -409,6 +452,7 @@ function forget(storageKey: string, key: string): boolean {
   try {
     if (rest.length) localStorage.setItem(storageKey, JSON.stringify(rest))
     else localStorage.removeItem(storageKey)
+    announceKept()
   } catch { /* see above */ }
   return true
 }
@@ -416,19 +460,56 @@ function forget(storageKey: string, key: string): boolean {
 /**
  * Replaces a kept payment's entry, re-reading the list first so a payment kept meanwhile
  * (the retry awaits the wallet) is not lost. If the entry is gone, nothing is written.
+ * Returns whether the entry was written.
  */
-function update(storageKey: string, entry: RetryEntry): void {
+function update(storageKey: string, entry: RetryEntry): boolean {
   const entries = readRetries(storageKey)
   const index = entries.findIndex(e => e.key === entry.key)
-  if (index < 0) return
+  if (index < 0) return false
   entries[index] = entry
-  try { localStorage.setItem(storageKey, JSON.stringify(entries)) } catch { /* the old entry stays */ }
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(entries))
+  } catch {
+    return false // the old entry stays
+  }
+  announceKept()
+  return true
 }
 
 function readRetries(storageKey: string): RetryEntry[] {
   return readArray(storageKey)
     .filter((e: any): e is RetryEntry => typeof e?.key === 'string' && typeof e?.payment?.token?.transaction === 'string')
-    .map(e => ({ ...e, attempts: Number.isSafeInteger(e.attempts) && e.attempts > 0 ? e.attempts : 0, receivedAt: Number.isFinite(e.receivedAt) ? e.receivedAt : Date.now() }))
+    .map(e => {
+      const { needsAttention, ...rest } = e
+      return {
+        ...rest,
+        attempts: Number.isSafeInteger(e.attempts) && e.attempts > 0 ? e.attempts : 0,
+        receivedAt: Number.isFinite(e.receivedAt) ? e.receivedAt : Date.now(),
+        ...(isNeedsAttention(needsAttention) && { needsAttention })
+      }
+    })
+}
+
+function isNeedsAttention(x: any): x is NeedsAttention {
+  return Number.isFinite(x?.since) && (x.reason === 'refused' || x.reason === 'unverifiable')
+}
+
+/** Tells this window's views (the Payments page) that a kept-payment list changed; never throws. */
+function announceKept(): void {
+  try {
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(KEPT_CHANGED_EVENT))
+  } catch { /* the list is stored; a view reads it when it next opens */ }
+}
+
+function storageKeys(): string[] {
+  const keys: string[] = []
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key !== null) keys.push(key)
+    }
+  } catch { /* storage unavailable: nothing is kept */ }
+  return keys
 }
 
 function readArray(storageKey: string): unknown[] {

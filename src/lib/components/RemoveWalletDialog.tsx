@@ -3,6 +3,8 @@ import { Link as RouterLink } from 'react-router-dom'
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography } from '@mui/material'
 import { WalletContext } from '../WalletContext'
 import { getWalletService } from '../hooks/useWalletService'
+import { keptDirectPaymentsOnDevice } from '../pages/Dashboard/Payments/directPayments'
+import { keptPaymentsRemovalNote } from '../pages/Dashboard/Payments/directReceipts'
 
 const CONFIRM_WORD = 'remove'
 
@@ -15,12 +17,15 @@ export default function RemoveWalletDialog({ open, onClose }: { open: boolean; o
   const [typed, setTyped] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  /** Received direct payments not in the wallet yet; they stay on this device (Ruling 36). */
+  const [kept, setKept] = useState({ count: 0, total: 0 })
   const modern = loginType === 'mnemonic'
+  const keptNote = keptPaymentsRemovalNote(kept, modern)
   let profileCount = 1
   try { profileCount = managers.walletManager?.listProfiles?.()?.length || 1 } catch { }
 
   useEffect(() => {
-    if (open) { setTyped(''); setError('') }
+    if (open) { setTyped(''); setError(''); setKept(keptDirectPaymentsOnDevice()) }
   }, [open])
 
   const remove = async () => {
@@ -44,6 +49,7 @@ export default function RemoveWalletDialog({ open, onClose }: { open: boolean; o
       <Alert severity="warning" sx={{ mb: 2 }}>
         Your {modern ? 'recovery phrase and keys are' : 'saved keys are'} deleted from this device. Your funds stay on the blockchain, but you can only get them back with {modern ? 'your recovery phrase, backup shares,' : 'your original recovery material'} or a wallet data file.
       </Alert>
+      {keptNote && <Alert severity="info" sx={{ mb: 2 }}>{keptNote}</Alert>}
       {profileCount > 1 && <Typography variant="body2" sx={{ mb: 1.5 }}>All {profileCount} profiles of this wallet are removed from this device.</Typography>}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
         Wallet history files stay on this computer. Importing the same wallet again reconnects to them. Afterwards you can create a new wallet or import another one.

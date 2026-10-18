@@ -436,17 +436,25 @@ describe('DirectPayManager.start', () => {
     await vi.waitFor(() => expect(activeUserWalletOperations()).toBe(0))
   })
 
-  it('reports a kept payment the retry gives up on, without its transaction in the notice', async () => {
+  // Final review D4: the details stay in the kept list (and its Copy recovery details), not in
+  // a console nobody keeps. The notice names the payer, so the user knows whom it came from.
+  it('tells the user when a kept payment needs attention, naming its amount and sender, and logs nothing', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await manager.start(startOptions())
-    const dropped = { reason: 'unverifiable', txid: 'ab'.repeat(32), sender: SENDER, amount: 500, payment: { token: { transaction: 'AQID' } } }
+    await vi.waitFor(() => expect(h.retry).toHaveBeenCalledOnce())
+    expect(h.retry.mock.calls[0][0]).toMatchObject({ includeNeedsAttention: true })
+    const kept = { needsAttention: { since: 1, reason: 'unverifiable' }, txid: 'ab'.repeat(32), sender: SENDER, amount: 1500, payment: { token: { transaction: 'AQID' } } }
 
-    h.retry.mock.calls[0][0].onDropped(dropped)
+    h.retry.mock.calls[0][0].onNeedsAttention(kept)
 
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[DirectPayManager]'), dropped)
+    expect(warn).not.toHaveBeenCalled()
     expect(h.warning).toHaveBeenCalledOnce()
-    expect(h.warning.mock.calls[0][0]).toContain('500')
-    expect(h.warning.mock.calls[0][0]).not.toContain('AQID')
+    const notice = h.warning.mock.calls[0][0]
+    expect(notice).toContain('1,500 satoshis')
+    expect(notice).toContain(SENDER.slice(0, 12))
+    expect(notice).toMatch(/needs attention/)
+    expect(notice).toMatch(/Payments/)
+    expect(notice).not.toContain('AQID')
   })
 })
 

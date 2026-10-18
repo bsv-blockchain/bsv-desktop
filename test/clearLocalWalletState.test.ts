@@ -18,16 +18,26 @@ vi.mock('../src/onWalletReady', () => ({ clearWalletForHttpRoute: vi.fn() }))
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() } }))
 
 import { WalletService } from '../src/lib/services/WalletService'
+import { listKeptDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
 
 const identity = `02${'12'.repeat(32)}`
 
+// Direct payments this device acknowledged as received but the wallet has not added yet. The
+// payer will not resend them and only this device has their derivation, so they outlive a
+// logout and a removal (final review D1, Ruling 36). Keyed by identity and network.
+const keptPayment = { key: `${'ab'.repeat(32)}:0:cHJl:c3Vm`, payment: { messageId: 'm1', sender: `03${'34'.repeat(32)}`, token: { customInstructions: { derivationPrefix: 'cHJl', derivationSuffix: 'c3Vm' }, transaction: 'AQID', amount: 700, outputIndex: 0 } }, error: 'fetch failed', receivedAt: 1, attempts: 0 }
+const keptPayments: Record<string, string> = {
+  [`direct-pay-retry-v1:${identity}:main`]: JSON.stringify([keptPayment]),
+  [`direct-pay-retry-v1:${identity}:test`]: '[{"key":"k","payment":{"token":{"transaction":"AQ=="}}}]'
+}
 // What a signed-in device holds: payment state that must outlive a logout,
 // and wallet state that must not.
 const paymentState: Record<string, string> = {
   [`peerpay-outbox-v1:${identity}:main`]: '[{"id":"out-1"}]',
   [`nearby-payment-v1:${identity}:main`]: '{"id":"near-1"}',
   'direct-pay-seen-v1:abc': '["k1"]',
-  'direct-pay-retry-v1:abc': '[{"token":"t"}]',
+  ...keptPayments,
+  'direct-pay-retry-v2:x': '[]', // kept on logout like all direct-pay state, but not a kept-payment list
   'bsv-desktop-direct-pay-v1': '{"receiveEnabled":true}'
 }
 const walletState: Record<string, string> = {
@@ -98,10 +108,16 @@ describe('local state on logout', () => {
 })
 
 describe('local state when the wallet is removed from the device', () => {
-  it('keeps only payment requests: outboxes and direct-pay state are scrubbed too', async () => {
+  it('keeps payment requests and kept direct payments: outboxes and the rest of direct-pay state are scrubbed', async () => {
     await readyService().removeWalletFromDevice()
 
-    expect(Object.fromEntries(local)).toEqual({ payReq_abc: 'keep' })
+    expect(Object.fromEntries(local)).toEqual({ payReq_abc: 'keep', ...keptPayments })
+  })
+
+  it('leaves a kept direct payment for the same wallet to add when it is opened here again', async () => {
+    await readyService().removeWalletFromDevice()
+
+    expect(listKeptDirectPayments(identity, 'main')).toEqual([expect.objectContaining({ txid: 'ab'.repeat(32), sender: keptPayment.payment.sender, amount: 700, payment: keptPayment.payment })])
   })
 
   it('does not touch the payment state when the vault cannot be wiped', async () => {
@@ -120,7 +136,7 @@ describe('_clearLocalWalletState', () => {
     expect(Object.fromEntries(local)).toEqual({ payReq_abc: 'keep', ...paymentState })
 
     service._clearLocalWalletState({ preservePayments: false })
-    expect(Object.fromEntries(local)).toEqual({ payReq_abc: 'keep' })
+    expect(Object.fromEntries(local)).toEqual({ payReq_abc: 'keep', ...keptPayments })
   })
 })
 

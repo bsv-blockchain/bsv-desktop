@@ -19,7 +19,7 @@ import type { IncomingPayment, MessageBoxLike, PaymentDecision, RelayConnectionS
 import { EventEmittable } from './EventEmittable'
 import { beginUserWalletOperation } from './httpBridgeSession'
 import { iceServersFrom, loadDirectPaySettings, subscribeDirectPaySettings, type DirectPaySettings } from '../utils/directPaySettings'
-import { receiveDirectPayment, retryReceivedDirectPayments, type DirectReceipt, type DroppedDirectPayment } from '../pages/Dashboard/Payments/directPayments'
+import { receiveDirectPayment, retryReceivedDirectPayments, type DirectReceipt, type KeptDirectPaymentInfo } from '../pages/Dashboard/Payments/directPayments'
 
 /**
  * `off`: not receiving (sending works if `via` is set; see `notice` when it is not);
@@ -272,7 +272,8 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
         originator: o.originator,
         identity: o.identity,
         chain: o.chain,
-        onDropped: dropped => this._reportDropped(dropped)
+        includeNeedsAttention: true,
+        onNeedsAttention: kept => this._reportNeedsAttention(kept)
       })
       if (added > 0) window.dispatchEvent(new CustomEvent('balance-changed'))
     } catch (e) {
@@ -282,11 +283,12 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     }
   }
 
-  /** The payer will not send a dropped payment again, so keep its details for recovery. */
-  private _reportDropped(d: DroppedDirectPayment): void {
-    console.warn('[DirectPayManager] Gave up on a kept direct payment; its transaction and derivation are kept here for manual recovery:', d)
-    const why = d.reason === 'refused' ? 'was refused by your wallet' : 'still could not be verified after repeated tries'
-    toast.warning(`A direct payment of ${d.amount} satoshis ${why} and was not added to your wallet.`)
+  /**
+   * The payer will not send a kept payment again, so its details stay in the kept list, where
+   * the Payments page offers them for recovery by hand.
+   */
+  private _reportNeedsAttention(p: KeptDirectPaymentInfo): void {
+    toast.warning(`A direct payment of ${p.amount.toLocaleString()} satoshis from ${p.sender.slice(0, 12)}… needs attention: your wallet could not add it. It stays on this device; open Payments to copy its recovery details.`)
   }
 
   /** Detaches the current client and signaler; returns their closing (never rejects). */

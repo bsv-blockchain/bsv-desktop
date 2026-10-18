@@ -1,14 +1,14 @@
 # Testing direct (WebRTC) payments
 
-Direct payments send the same payment data as a message-box payment, but straight from one BSV Desktop wallet to the other over a WebRTC data channel. The payment is encrypted end to end between the two wallets, and no server can read it: the message box or the relay only carries the two wallets' encrypted connection details (the offer and the answer), and the message box keeps them only until they are read. When the two networks cannot connect directly, a TURN server may relay the encrypted connection; it cannot read the payment either. Nothing is spent unless the channel to the recipient is up first. The design is in [`docs/superpowers/specs/2026-10-17-webrtc-direct-payments-design.md`](superpowers/specs/2026-10-17-webrtc-direct-payments-design.md).
+Direct payments send the same payment data as a message-box payment, but straight from one BSV Desktop wallet to the other over a WebRTC data channel. The payment is encrypted end to end between the two wallets, and no server can read it: the message box or the relay only carries the two wallets' encrypted connection details (the offer and the answer), and the message box keeps them only until they are read. When the two networks cannot connect directly, a TURN server may relay the encrypted connection; it cannot read the payment either. Nothing is spent unless the channel to the recipient is up first. The design is in [`docs/webrtc-direct-payments-design.md`](webrtc-direct-payments-design.md).
 
 This recipe walks through every path: signaling through the message box, signaling through the relay, and the face-to-face code exchange. The sandbox this was built in drops UDP to non-loopback addresses, so a real network between two wallets could only be tried by you.
 
 ## What you need
 
 - **Two wallets that are different identities.** Two machines is the better test, because it exercises real NATs. One machine works too (see [Two wallets on one machine](#two-wallets-on-one-machine)).
-- **The same build on both**: this branch (`feat/webrtc-direct-payments`) run from source, or a package built from it (`npm run package`).
-- **The same network on both**: Mainnet, or Testnet. The chip at the top of the Payments page shows which. Wallets on different networks cannot pay each other, and a code made for the other network is refused.
+- **The same build on both**: this branch (`feat/webrtc-direct-payments`) run from source, or a package built from it (`npm run package`). Direct payments name the wallet's network, so an older build of this branch cannot pay, or be paid by, this one directly; update both.
+- **The same network on both**: Mainnet, or Testnet. The chip at the top of the Payments page shows which. Wallets on different networks cannot pay each other directly: a direct send to a wallet on the other network is refused before anything is spent (**The recipient's wallet is on a different network. Nothing was spent.**), and a code made for the other network is refused. Each network also signals through its own message box (`webrtpay_signals` on Mainnet, `webrtpay_signals_test` on Testnet), so a wallet listening on one network never sees the other's dials.
 - **Funds in the payer wallet.** Use small amounts (a few hundred satoshis is enough). Testnet is fine if you have testnet coins.
 - **A message box on both wallets** for the message-box signaling tests (Settings → Advanced settings → **Message Box Configuration**). Check it with an ordinary message-box payment first (test 0).
 - **Each wallet's identity key**, from Settings → Your identity. Paste it into the other wallet's Send tab as the recipient.
@@ -16,7 +16,7 @@ This recipe walks through every path: signaling through the message box, signali
 
 Direct payments need **both wallets online and unlocked at the same moment**. If the recipient is offline, use the message box; that is what it is for.
 
-**What the other side learns.** Sending directly shows your IP address to the recipient's wallet, and the codes in a face-to-face exchange show each wallet's network address to anyone who can read them. While receiving is on, any wallet that knows your identity key can learn your public IP address and when your wallet is unlocked by starting a connection, without paying you. The app says so next to the switches; use test wallets if that matters to you.
+**What the other side learns.** Sending directly shows your IP address to the recipient's wallet, and the codes in a face-to-face exchange show each wallet's network address to anyone who can read them. While receiving is on, any wallet that knows your identity key can learn your public IP address and when your wallet is unlocked by starting a connection, without paying you; the switch applies to every wallet profile on the device. The STUN servers see each wallet's IP address when it connects, and the message box, relay and any TURN server see which wallets connect, their addresses and when, never the payment. The app says so next to the switches; use test wallets if that matters to you.
 
 ## Two wallets on one machine
 
@@ -80,11 +80,11 @@ On the wallet that will **receive** (do the same on both for the reverse test):
 1. Settings → Advanced settings → the **Direct Payments** card (below Message Box Configuration).
 2. Turn on **Receive direct payments**. The warning under the switch explains what that discloses.
 3. Leave **Signaling** on **Message box** for now. STUN servers stay at their defaults (`stun:stun.l.google.com:19302, stun:stun.cloudflare.com:3478`); once the BSVA STUN service is deployed you can add `stun:stun-us-1.bsvb.tech:3478`.
-4. **Save**. The **Status** chip should read **Online via message box**, and the Receive tab of the Payments page should say **Direct payments: online via the message box.**
+4. **Save**. The **Status** chip reads **Starting...** until the wallet has checked its message box once (a few seconds), then **Online via message box**, and the Receive tab of the Payments page says **Direct payments: online via the message box.** If the message box cannot be reached, the chip reads **Cannot receive** with *the message box cannot be reached (…). Trying again…*, and it recovers by itself.
 
 If the wallet has no message box, the chip reads **Not set up** and a note explains that direct payments reach other wallets through the message box: connect one, or use a relay server. That is not an error; face-to-face codes (test 4) still work.
 
-Settings are stored on the device, survive logout, and are removed with **Remove wallet from this device**.
+Settings are stored on the device, survive logout, and are removed with **Remove wallet from this device**. They are one set for the device: turning receiving on applies to every wallet profile on it.
 
 ## The tests
 
@@ -106,8 +106,8 @@ Before it broadcasts anything, the payer checks the payment as the payee will, a
 
 Success looks like this:
 
-- **Payer**: the notice **Payment sent.**, and the payment is not listed under **Saved payments**. Activity shows the outgoing payment. Behind that, the payee replied with an **accepted** acknowledgement (the payment is in its wallet). A **received** acknowledgement is also a success: the payee has the payment and adds it to its wallet as soon as it can.
-- **Payee**: the balance goes up, and Activity shows **Received direct BSV** (the entry carries the wallet labels `peerpay`, `direct` and `inbound`, which only the wallet interface shows). If its Payments page is open, it also shows **Direct payment received: … satoshis.** There is no pop-up on other pages.
+- **Payer**: the notice **Payment sent. It is in their wallet.**, and the payment is not listed under **Saved payments**. Activity shows the outgoing payment. Behind that, the payee replied with an **accepted** acknowledgement. A **received** acknowledgement means the payee has the payment but could not add it yet; the payer then reads **Payment sent. Their wallet received it but has not added it yet; …** (see test 6).
+- **Payee**: the balance goes up, and Activity shows **Received direct BSV** (the entry carries the wallet labels `peerpay`, `direct` and `inbound`, which only the wallet interface shows). If its Payments page is open, it also shows **Direct payment added to your wallet: … satoshis.** There is no pop-up on other pages.
 - No message-box payment appears on the payee, because the payment never went through the message box.
 
 Repeat in the other direction (payee becomes payer) so both NATs get tested.
@@ -122,14 +122,14 @@ Expected: the send fails with **The recipient's wallet could not be reached dire
 
 See [Relay tests](#relay-tests). This swaps the carrier of the offer and answer; the payment path is the same.
 
-### 4. Face to face, code exchange (no server)
+### 4. Face to face, code exchange (no message box or relay)
 
-The payee makes the code; the payer answers it. Neither wallet needs receiving turned on, and neither needs a message box or relay: the codes are the invitation.
+The payee makes the code; the payer answers it. Neither wallet needs receiving turned on, and neither needs a message box or relay: the codes are the invitation. The wallets still ask the STUN servers (Google and Cloudflare by default) for their public addresses, so those servers see each wallet's IP address, and with relay signaling set the relay is asked for TURN servers (below).
 
 1. **Payee**: Payments → **Nearby** → **Direct (WebRTC)** → **Receive directly**. Optionally fill in **Amount to request (optional)**, then **Create direct request**. A QR code (a `webrtpay1:` code) appears with **Copy code** and **Show the code as text**. It can wait on screen for minutes.
 2. **Payer**: Payments → **Nearby** → **Direct (WebRTC)** → **Pay directly**. **Scan their request**, or paste the code into **Recipient’s direct request**. Check the amount (it is fixed when the code carries one), then **Review direct payment** → **Confirm & show answer**. The answer appears as a QR code: **Ask them to scan this answer now**.
 3. **Payee**: **2. Scan their answer**, and scan it (or paste it into the scanner's **Or paste a code** field) **within about 15 seconds of it appearing**. After that the connecting side gives up. Scanning from across a table works; pasting between chat windows usually misses the window, and the page says so.
-4. The payee shows **Connected to a verified wallet** with the payer's identity key, then **Waiting for their payment…**; the payer sends the payment, then the payee shows **Payment received** and the payer **Payment delivered**.
+4. The payee shows **Connected to a verified wallet** with the payer's identity key, then **Waiting for their payment…**; the payer sends the payment, then the payee shows **Payment added to your wallet** with the amount, and the payer **Payment delivered** with **It is in their wallet.** The payee's Payments page also shows **Direct payment added to your wallet: … satoshis.**, even if it has left the Nearby tab.
 
 On one machine you can copy the code from one window and paste it into the other; hold the answer back no longer than the 15 seconds.
 
@@ -140,8 +140,8 @@ Things to check:
 - A code made on Testnet pasted into a Mainnet wallet (or the reverse) is **refused** before any payment is made, with a message naming both networks.
 - A code with an amount makes the payer pay **exactly** that amount.
 - A request code serves one payment. After a success, make a new request.
-- If another wallet pays a different amount than requested, the payee still takes the payment (it is already on the network and pays this wallet) and shows **Received X satoshis — you requested Y.** BSV Desktop as payer always pays the requested amount, so you will only see this from other wallets.
-- If the payer's wallet cannot make the payment once the payee has connected (for example, too few funds), the payer shows **Your wallet could not make the payment, so nothing was spent. Ask them for a new code and try again.**, with the wallet's own reason underneath. The payee shows **The connection closed before a payment arrived.**
+- If another wallet pays a different amount than requested, the payee still takes the payment (it is already on the network and pays this wallet) and shows **Received X satoshis — you requested Y.**, and the page notice ends **You requested Y satoshis.** BSV Desktop as payer always pays the requested amount, so you will only see this from other wallets.
+- If the payer's wallet cannot make the payment once the payee has connected (for example, too few funds), the payer shows **Your wallet could not make the payment, so nothing was spent. Ask them for a new code and try again.**, with the wallet's own reason underneath. The payee says that the connection closed before a payment arrived (whichever of the two closes it sees first).
 
 ### 5. A payment interrupted after broadcast (optional, hard to time)
 
@@ -152,6 +152,16 @@ If the connection drops after the payer has broadcast but before the acknowledge
 - Saved payments survive logout: log out and back in on the payer and they are still there.
 
 A payee that receives the same payment twice (the payer retried after losing the acknowledgement) takes it once and shows it once.
+
+### 6. A payment received but not yet added (optional, needs a broken connection)
+
+When the payee's wallet cannot add a payment at once because its network or storage is briefly unavailable (for example, the chain tracker cannot be reached), it keeps the payment on the device and acknowledges it as **received**. To try it, take the payee's internet away just after the two wallets connect (on one LAN, a code exchange still connects).
+
+- **Payee**: the notice is a warning, **Direct payment received, not yet added: … satoshis. It is not in your balance yet; it will be added when your wallet can verify it — retrying automatically.** The code-exchange screen shows **Received, not yet added** (no green check) and says not to treat it as paid until then. The Payments page lists it under **Received, not yet in your wallet**.
+- **Payer**: **Their wallet received it but has not added it yet; it will be added when their wallet can verify it, which it retries automatically.** The payment counts as delivered.
+- Bring the payee's network back. While the wallet is open it retries at once when it notices the network is back (the computer's own connection coming back), and otherwise 60 s after the payment was kept, then less often, up to every 15 minutes. Once a retry works, the balance goes up and the list empties.
+- A kept payment survives logout and **Remove wallet from this device** (the remove dialog says how many are waiting and their total); opening the same wallet on this device again adds it.
+- If the wallet still cannot add it after 5 tries over more than a day, or refuses it outright, the list marks it **Needs attention** and offers **Copy recovery details** (the transaction, its derivation, the payer and the amount, as JSON). It is never deleted; it is tried again when the wallet opens or the network comes back.
 
 ## Relay tests
 
@@ -230,6 +240,8 @@ Notes:
 | The direct send fails with "not taking direct payments right now" | The payee is busy (too many connections at once) or has receiving off while it is itself paying someone. Try again in a minute. |
 | The chip reads **Not set up** | The wallet has no message box and signaling is **Message box**. Connect a message box, or switch signaling to a relay server. |
 | A code is refused as being for a different network | The code was made on the other network (Mainnet versus Testnet). Compare the chips on the Payments page of both wallets and make a new code on the right one. |
+| The direct send fails with "is on a different network" | The two wallets are on different networks; nothing was spent. Switch one of them in Settings. A wallet from an older build of this branch also refuses (both need this build). |
+| The payee shows "Received, not yet added" | Its wallet could not verify the payment yet (network or storage unavailable). It retries by itself; see test 6. If it stays **Needs attention**, copy the recovery details and report them. |
 | Message-box signaling never connects | Baseline test 0 first: if a plain message-box payment does not arrive, the message box is the problem. Both wallets need one. The payee only checks every few seconds, so allow 5–10 s. |
 | The recipient rejected the payment | The payee received the payment and refused it (for example, it does not pay that wallet); the error names the reason. Please report it with the console output from both wallets. |
 | Connects on the same Wi-Fi in one direction only, or never | Wi-Fi client isolation, a VPN, or a firewall. Allow incoming connections for BSV Desktop (macOS asks the first time; allow it), open outbound UDP, turn off the VPN, and try a phone hotspot for both machines. BSV Desktop hides local addresses behind `.local` names, so a network that blocks multicast DNS can break same-network connections that would otherwise work. |
@@ -247,4 +259,4 @@ For anything else, open the developer tools (they open by themselves when the UI
 
 ## What to report back
 
-Please send: the build or commit on both sides, the operating system on each, whether the two were on one network, the network (Mainnet or Testnet), the signaling used (message box, relay, code), how long the connection took, whether it needed TURN, and the console output from both wallets for anything that failed. Say which of tests 0 to 5 passed.
+Please send: the build or commit on both sides, the operating system on each, whether the two were on one network, the network (Mainnet or Testnet), the signaling used (message box, relay, code), how long the connection took, whether it needed TURN, and the console output from both wallets for anything that failed. Say which of tests 0 to 6 passed.

@@ -105,12 +105,22 @@ type RetrySchedule = {
   timer?: ReturnType<typeof setTimeout>
   /** When `timer` fires (ms since the epoch). */
   due?: number
-  /** The next pass also offers payments that need attention (when the wallet opens, or the network is back). */
+  /**
+   * The next pass also offers payments that need attention: when the wallet opens, the network
+   * is back, or a pass that offered them was cut short by other wallet work or a wallet change.
+   */
   withAttention: boolean
   /** Asked for while a pass was running: run another as soon as it ends. */
   again: boolean
   onOnline: () => void
 }
+
+/**
+ * How a retry pass ended: `done` (it went through the list), `busy` (other wallet work holds the
+ * wallet), `yielded` (Lock, a switch or removal was asked for) or `stopped` (its time was up, or
+ * a call stalled). See DirectPayManager._runRetry.
+ */
+type RetryOutcome = 'done' | 'busy' | 'yielded' | 'stopped'
 
 export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapshot }> {
   private _snapshot: DirectPaySnapshot = OFF
@@ -376,10 +386,15 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
       // The wallet may have closed, or closed and opened again, while the pass ran.
       const current = this._retry
       if (!current || `${current.options.identity}:${current.options.chain}` !== key) return
-      if (outcome !== 'done') current.withAttention ||= withAttentionNow
-      // A stopped pass (its time was up, or a wallet change was asked for) is not run again at
-      // once, even when asked for meanwhile: that would hold the wallet again.
-      if (current !== s || (current.again && outcome !== 'stopped')) {
+      // Only a pass cut short from outside hands the payments that need attention on to the next.
+      // One that ran out of time, or whose call stalled, does not: those payments are usually the
+      // oldest, so they come first, and carrying them would start every pass on the same ones and
+      // never reach the payments behind them. They are offered again when the wallet opens or
+      // the network comes back.
+      if (outcome === 'busy' || outcome === 'yielded') current.withAttention ||= withAttentionNow
+      // A pass that stopped or gave way is not run again at once, even when asked for meanwhile:
+      // that would hold the wallet again.
+      if (current !== s || (current.again && (outcome === 'done' || outcome === 'busy'))) {
         current.again = false
         this._retryNow(current, false)
       } else if (outcome === 'busy') {
@@ -398,24 +413,27 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
    * under them, and none is held between payments or across waits. The pass ends early when:
    * - the wallet closes;
    * - it is paused or busy with other work (`busy`: tried again a second later);
-   * - at the next payment once Lock, a switch or removal is asked for (see walletChangeBlocker)
-   *   or {@link RETRY_PASS_MS} have passed, or when a call takes longer than
-   *   {@link RETRY_CALL_MS}, which releases its operation (`stopped`: the next pass comes after
-   *   the usual wait, so the user's change gets the wallet).
+   * - at the next payment once Lock, a switch or removal is asked for (`yielded`; see
+   *   walletChangeBlocker);
+   * - at the next payment once {@link RETRY_PASS_MS} have passed, or when a call takes longer
+   *   than {@link RETRY_CALL_MS}, which releases its operation (`stopped`).
+   * After `yielded` or `stopped` the next pass comes after the usual wait, so the user's change
+   * gets the wallet. After `busy` or `yielded` it also offers the payments that need attention
+   * if this one did; after `stopped` it does not (see _retryNow).
    * Never rejects.
    */
-  private async _runRetry(s: RetrySchedule, includeNeedsAttention: boolean): Promise<'done' | 'busy' | 'stopped'> {
+  private async _runRetry(s: RetrySchedule, includeNeedsAttention: boolean): Promise<RetryOutcome> {
     const o = s.options
     const deadline = Date.now() + RETRY_PASS_MS
     const changes = walletChangeRequests()
-    let outcome: 'done' | 'busy' | 'stopped' = 'done'
-    const stop = (why: 'busy' | 'stopped', message: string): never => {
+    let outcome: RetryOutcome = 'done'
+    const stop = (why: Exclude<RetryOutcome, 'done'>, message: string): never => {
       outcome = why
       throw new RetryStopped(message)
     }
     const run = async <T>(call: () => Promise<T>): Promise<T> => {
       if (this._retry !== s) throw new RetryStopped('The wallet closed')
-      if (walletChangeRequests() !== changes) stop('stopped', 'Lock, a switch or removal was asked for')
+      if (walletChangeRequests() !== changes) stop('yielded', 'Lock, a switch or removal was asked for')
       if (Date.now() >= deadline) stop('stopped', 'The pass took its time')
       let release: () => void
       try {

@@ -104,6 +104,25 @@ const handlersOf = (n = 0) => h.made.clients[n].startReceiving.mock.calls[0][0]
 /** What a message box signaler does once it listens: it polls the box. */
 const pollOnce = async (client: any) => { await client.options.signaler?.client?.listMessages?.({ messageBox: 'webrtpay_signals' }) }
 
+/**
+ * Stands in for retryReceivedDirectPayments over a kept list, as it walks one: in stored order,
+ * leaving out the payments that need attention unless the pass includes them, and ending the
+ * pass at a RetryStopped. `offered` records each payment as its wallet call starts.
+ */
+const retryOver = (list: Array<{ key: string; needsAttention?: boolean; call: () => Promise<unknown> }>, offered: string[]) =>
+  async (o: any) => {
+    for (const entry of list) {
+      if (entry.needsAttention && !o.includeNeedsAttention) continue
+      try {
+        await o.run(() => { offered.push(entry.key); return entry.call() })
+      } catch (e) {
+        if (e instanceof RetryStopped) break
+        throw e
+      }
+    }
+    return 0
+  }
+
 beforeEach(() => {
   h.made = { clients: [], messageBoxes: [], relays: [] }
   h.startReceiving = pollOnce
@@ -557,6 +576,8 @@ describe('DirectPayManager.start', () => {
     expect(activeUserWalletOperations()).toBe(0)
     await vi.advanceTimersByTimeAsync(60_000)
     expect(h.retry).toHaveBeenCalledTimes(2)
+    // A stall is not handed on: the payment that stalled may be one that needs attention.
+    expect(h.retry.mock.calls[1][0]).toMatchObject({ includeNeedsAttention: false })
   })
 
   // Final review follow-up (C12): a pass of many payments must not hold off Lock, a switch or
@@ -588,7 +609,60 @@ describe('DirectPayManager.start', () => {
 
     await vi.advanceTimersByTimeAsync(60_000)
     expect(h.retry).toHaveBeenCalledTimes(2)
-    expect(h.retry.mock.calls[1][0]).toMatchObject({ includeNeedsAttention: true }) // that pass did not get to them all
+    // Running out of time is not handed on: the payments that need attention come first in the
+    // list, so the next pass would spend its time on them again (C12 review round 1).
+    expect(h.retry.mock.calls[1][0]).toMatchObject({ includeNeedsAttention: false })
+  })
+
+  // C12 review round 1: payments that need attention are usually the oldest, so they head the
+  // list. A pass that offers them and stops on them must not hand them on to the next pass, or
+  // every pass would start on them again and never offer the payments behind them.
+  it('reaches the payment behind one that needs attention and stalls: the next pass leaves that one out', async () => {
+    vi.useFakeTimers()
+    const offered: string[] = []
+    h.retry = vi.fn(retryOver([
+      { key: 'flagged', needsAttention: true, call: () => new Promise(() => {}) },
+      { key: 'plain', call: async () => {} }
+    ], offered))
+    await manager.start(startOptions())
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(offered).toEqual(['flagged'])
+    expect(activeUserWalletOperations()).toBe(0)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(h.retry).toHaveBeenCalledTimes(2)
+    expect(h.retry.mock.calls[1][0]).toMatchObject({ includeNeedsAttention: false })
+    expect(offered).toEqual(['flagged', 'plain'])
+
+    // It is offered again, as before, when the network comes back.
+    onlineListeners[0]()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(h.retry.mock.calls[2][0]).toMatchObject({ includeNeedsAttention: true })
+    expect(offered).toEqual(['flagged', 'plain', 'flagged'])
+    expect(activeUserWalletOperations()).toBe(0)
+  })
+
+  it('reaches the payment behind those that need attention when they use up a pass\'s 15 s', async () => {
+    vi.useFakeTimers()
+    const offered: string[] = []
+    const slow = () => new Promise(resolve => setTimeout(resolve, 6000))
+    h.retry = vi.fn(retryOver([
+      { key: 'flagged 1', needsAttention: true, call: slow },
+      { key: 'flagged 2', needsAttention: true, call: slow },
+      { key: 'flagged 3', needsAttention: true, call: slow },
+      { key: 'plain', call: async () => {} }
+    ], offered))
+    await manager.start(startOptions())
+    await vi.advanceTimersByTimeAsync(18_000)
+    expect(offered).toEqual(['flagged 1', 'flagged 2', 'flagged 3']) // the third began 12 s in
+    expect(activeUserWalletOperations()).toBe(0)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(h.retry).toHaveBeenCalledTimes(2)
+    expect(h.retry.mock.calls[1][0]).toMatchObject({ includeNeedsAttention: false })
+    expect(offered).toEqual(['flagged 1', 'flagged 2', 'flagged 3', 'plain'])
   })
 
   it('gives way to Lock, a switch or removal: says the background retry holds the wallet, stops at its next payment and waits its usual interval', async () => {
@@ -621,6 +695,7 @@ describe('DirectPayManager.start', () => {
     expect(h.retry).toHaveBeenCalledOnce() // not a second later, which would hold the wallet again
     await vi.advanceTimersByTimeAsync(1)
     expect(h.retry).toHaveBeenCalledTimes(2)
+    // Cut short from outside, like a busy wallet: the next pass offers what this one did not get to.
     expect(h.retry.mock.calls[1][0]).toMatchObject({ includeNeedsAttention: true })
   })
 

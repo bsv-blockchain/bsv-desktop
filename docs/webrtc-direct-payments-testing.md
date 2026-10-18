@@ -1,6 +1,6 @@
 # Testing direct (WebRTC) payments
 
-Direct payments send the same payment data as a message-box payment, but straight from one BSV Desktop wallet to the other over an encrypted WebRTC data channel. The payment itself never passes through a server: the message box or the relay only carries the two wallets' encrypted connection details (the offer and the answer), and the message box keeps them only until they are read. Nothing is spent unless the channel to the recipient is up first. The design is in [`docs/superpowers/specs/2026-10-17-webrtc-direct-payments-design.md`](superpowers/specs/2026-10-17-webrtc-direct-payments-design.md).
+Direct payments send the same payment data as a message-box payment, but straight from one BSV Desktop wallet to the other over a WebRTC data channel. The payment is encrypted end to end between the two wallets, and no server can read it: the message box or the relay only carries the two wallets' encrypted connection details (the offer and the answer), and the message box keeps them only until they are read. When the two networks cannot connect directly, a TURN server may relay the encrypted connection; it cannot read the payment either. Nothing is spent unless the channel to the recipient is up first. The design is in [`docs/superpowers/specs/2026-10-17-webrtc-direct-payments-design.md`](superpowers/specs/2026-10-17-webrtc-direct-payments-design.md).
 
 This recipe walks through every path: signaling through the message box, signaling through the relay, and the face-to-face code exchange. The sandbox this was built in drops UDP to non-loopback addresses, so a real network between two wallets could only be tried by you.
 
@@ -20,27 +20,50 @@ Direct payments need **both wallets online and unlocked at the same moment**. If
 
 ## Two wallets on one machine
 
-BSV Desktop reads `BSV_DESKTOP_USER_DATA` at startup. When it is set, Electron's `userData` directory is moved there, before anything reads it. Unset, nothing changes.
+Two environment variables let a second copy of BSV Desktop run beside the first:
+
+- `BSV_DESKTOP_USER_DATA=/path` moves Electron's `userData` directory there, before anything reads it. Each copy then has its own wallet snapshot, settings, outboxes, vault and certificates.
+- `BSV_DESKTOP_LOAD_DIST=1` makes a copy run from source load the built UI (`dist/index.html`). Without it, `npx electron .` always loads the Vite dev server at `http://localhost:5173`, because a copy run from source is never "packaged". It loads whatever answers there, even another project's dev server.
+
+Unset, neither changes anything.
+
+**Recommended: build once, then start two copies from the build.** From the repository root:
 
 ```bash
-# Terminal 1: Vite (port 5173) and the first wallet, with the normal data directory
-npm run dev
+npm ci          # first time only
+npm run build   # the UI into dist/, the main process into dist-electron/
 
-# Terminal 2: the second wallet, with its own data directory
-BSV_DESKTOP_USER_DATA=$HOME/.bsv-desktop-b npm run dev:electron
+# Terminal 1: wallet A
+BSV_DESKTOP_LOAD_DIST=1 BSV_DESKTOP_USER_DATA=$HOME/bsv-test/a npx electron .
+
+# Terminal 2: wallet B
+BSV_DESKTOP_LOAD_DIST=1 BSV_DESKTOP_USER_DATA=$HOME/bsv-test/b npx electron .
 ```
+
+No Vite server is involved, and port 5173 is never contacted. After pulling changes, run `npm run build` again and restart both copies. DevTools do not open by themselves in this mode; use **View → Toggle Developer Tools** (Cmd+Opt+I or Ctrl+Shift+I).
+
+Optionally, also give each copy its own `HOME`. That moves the shared `~/.bsv-desktop` folder (the SQLite databases, fee settings, and the rest of the right-hand column below) and the app's logs as well, so the test wallets share nothing with your everyday wallet. Put `HOME=…` last on the line: zsh (the macOS default) expands later values on the same line with the new `HOME` already set.
+
+```bash
+BSV_DESKTOP_LOAD_DIST=1 BSV_DESKTOP_USER_DATA=$HOME/bsv-test/b HOME=$HOME/bsv-test/b-home npx electron .
+```
+
+On macOS a copy with its own `HOME` cannot add its local certificate to your login keychain. If it owns the wallet bridge (no other BSV Desktop is running) and offers to trust its certificate, choose **Not Now**; direct payments do not need it.
+
+**Alternative, with hot reload:** run `npm run dev` (Vite on port 5173 and wallet A), then start wallet B with `BSV_DESKTOP_USER_DATA=$HOME/bsv-test/b npx electron .` (no `BSV_DESKTOP_LOAD_DIST`). Both windows then load their UI from that Vite server, so start it first. Make sure port 5173 is this repository's Vite server: if another project's dev server holds the port, the wallet window shows that project instead, with the wallet's bridge exposed to it.
+
+**Real WebRTC between the two copies needs a normal desktop session.** Both copies connect like two separate machines would, through STUN and the network stack. A sandbox that drops UDP to non-loopback addresses (as the one this feature was built in does) lets the settings, codes and error paths work but makes most connections between the two windows fail. Run the payment tests on an ordinary, non-sandboxed machine.
 
 Notes:
 
-- The second window loads its UI from the Vite server that terminal 1 started, so start that first. `dev:electron` also rebuilds `dist-electron`; the first window is not affected until you restart it. Once built, `BSV_DESKTOP_USER_DATA=$HOME/.bsv-desktop-b npx electron .` starts a second window without rebuilding.
-- Use an absolute path, or an unquoted `~/…` that your shell expands. The app does not expand `~` itself, so a quoted `"~/dir"` becomes a folder named `~` inside the working directory. A packaged app can be started from a terminal the same way, by running its executable with the variable set. On Windows set the variable in your shell first; the dev scripts use `cp`, so run them from Git Bash or WSL, or use a packaged build.
+- Use an absolute path, or an unquoted `~/…` that your shell expands. The app does not expand `~` itself, so a quoted `"~/dir"` becomes a folder named `~` inside the working directory. A packaged app can be started from a terminal the same way, by running its executable with `BSV_DESKTOP_USER_DATA` set; it loads its built-in UI (unless `NODE_ENV=development` is set). On Windows set the variables in your shell first; the build scripts use `cp`, so run them from Git Bash or WSL, or use a packaged build.
 - There is no single-instance lock, which is why a second copy starts at all.
 - A build run from source and an installed BSV Desktop share the same default data directory (`bsv-desktop-electron`). On a machine that has your everyday wallet, give **both** test wallets their own `BSV_DESKTOP_USER_DATA` so the test cannot touch it.
 - **The second wallet must be a new identity** (create a new wallet, or restore a different recovery phrase). Do not restore the same phrase in both: both copies would open the same database file.
 
 What moves and what stays shared:
 
-| Moves with `BSV_DESKTOP_USER_DATA` | Stays in `~/.bsv-desktop` (shared) |
+| Moves with `BSV_DESKTOP_USER_DATA` | Stays in `~/.bsv-desktop` (shared unless `HOME` differs) |
 | --- | --- |
 | Wallet snapshot, payment outboxes and direct-pay settings (the window's localStorage) | One SQLite database per identity and network (`wallet-<identityKey>-main.db`), so two identities never touch the same file |
 | `vault.dat`, `secrets.dat`, `boot-config.json`, `network-settings.json` | `fee-settings.json` |
@@ -79,6 +102,8 @@ Both wallets: receiving on, signaling **Message box**, both unlocked.
 2. **Review payment**. The dialog shows **Delivery: Direct (peer-to-peer)** with the same text. **Confirm & send**; the button reads **Connecting…** while it works.
 3. Expect a few seconds of connecting (the payee checks for the offer every 2.5 s), then the payment.
 
+Before it broadcasts anything, the payer checks the payment as the payee will, and that the connection is still open. The payee hangs up when no payment arrives within 60 seconds of connecting. If the payer's wallet takes longer than that (a slow wallet or a long prompt), the send fails with **The recipient's wallet closed the connection before the payment was sent. Nothing was spent.**, and the prepared transaction is released. A payment over about 12 MB is refused the same way, as too large to deliver directly.
+
 Success looks like this:
 
 - **Payer**: the notice **Payment sent.**, and the payment is not listed under **Saved payments**. Activity shows the outgoing payment. Behind that, the payee replied with an **accepted** acknowledgement (the payment is in its wallet). A **received** acknowledgement is also a success: the payee has the payment and adds it to its wallet as soon as it can.
@@ -108,12 +133,15 @@ The payee makes the code; the payer answers it. Neither wallet needs receiving t
 
 On one machine you can copy the code from one window and paste it into the other; hold the answer back no longer than the 15 seconds.
 
+With **Signaling: Relay server** set in Settings, a code exchange also asks that relay for TURN servers before each code is made; the codes themselves never go through the relay. If the relay cannot be reached, a code can take up to 5 seconds longer to appear.
+
 Things to check:
 
 - A code made on Testnet pasted into a Mainnet wallet (or the reverse) is **refused** before any payment is made, with a message naming both networks.
 - A code with an amount makes the payer pay **exactly** that amount.
 - A request code serves one payment. After a success, make a new request.
 - If another wallet pays a different amount than requested, the payee still takes the payment (it is already on the network and pays this wallet) and shows **Received X satoshis — you requested Y.** BSV Desktop as payer always pays the requested amount, so you will only see this from other wallets.
+- If the payer's wallet cannot make the payment once the payee has connected (for example, too few funds), the payer shows **Your wallet could not make the payment, so nothing was spent. Ask them for a new code and try again.**, with the wallet's own reason underneath. The payee shows **The connection closed before a payment arrived.**
 
 ### 5. A payment interrupted after broadcast (optional, hard to time)
 
@@ -158,7 +186,7 @@ docker compose -f docker/docker-compose.yml down             # when finished
 
 The stack runs coturn 4.18.0 (STUN and TURN, relay ports 49160–49200) with the public dev secret `webrtpay-dev-secret`, and a relay with `PUBLIC_URLS=ws://127.0.0.1:8787` that hands out TURN credentials for `turn:127.0.0.1:3478`. Everything is published on 127.0.0.1 only, so as shipped it serves wallets on that one machine. Never deploy it.
 
-**Point the wallets at it.** On both wallets: Settings → Advanced settings → Direct Payments → **Signaling: Relay server**, **Relay URL**, **Save**, keeping **Receive direct payments** on for the payee. The chip should read **Online via relay server**, and the Receive tab **Direct payments: online via the relay server.**
+**Point the wallets at it.** On both wallets: Settings → Advanced settings → Direct Payments → **Signaling: Relay server**, **Relay URL**, **Save**, keeping **Receive direct payments** on for the payee. The chip should read **Online via relay server**, and the Receive tab **Direct payments: online via the relay server.** Saving **Relay server** with an empty **Relay URL**, or with an address the wallet cannot use, is refused, and the reason shows under the **Relay URL** field.
 
 - **One machine**: relay URL `ws://127.0.0.1:8787`, exactly (with the Docker relay, `ws://localhost:8787` is refused because it is not in its `PUBLIC_URLS`). Plain `ws://` is only accepted for localhost.
 - **Two machines**: the wallet only accepts `wss://` for anything but localhost, and the relay checks that the URL a wallet signed is one it serves. Two ways to satisfy both:
@@ -173,11 +201,17 @@ Then repeat test 1 (Delivery: Direct). Also check:
 
 ### TURN (connections that cannot go direct)
 
-TURN carries the payment data when two NATs cannot be punched through, which is typical on mobile carrier networks. The relay hands out TURN credentials itself, which is the easy way to test it: run the Docker stack above (or the relay with `TURN_SECRET` and `TURN_URLS` set) and use **Signaling: Relay server**. Before each connection the wallet asks the relay for TURN credentials and reuses them while they are valid (10 minutes by default), so it does not use up the relay's hourly allowance per address (6 by default; the Docker stack sets 600). You enter nothing in the TURN fields.
+TURN relays the encrypted connection when two NATs cannot be punched through, which is typical on mobile carrier networks. The TURN server carries only ciphertext and cannot read the payment. The relay hands out TURN credentials itself, which is the easy way to test it: run the Docker stack above (or the relay with `TURN_SECRET` and `TURN_URLS` set) and use **Signaling: Relay server**. Before each connection, face-to-face code exchanges included, the wallet asks the relay for TURN credentials and reuses them while they are valid (10 minutes by default), so it does not use up the relay's hourly allowance per address (6 by default; the Docker stack sets 600). You enter nothing in the TURN fields.
 
 Notes:
 
-- As shipped, the Docker stack publishes everything on 127.0.0.1 and coturn advertises `127.0.0.1`, so TURN only helps a same-machine test. For two machines, publish the relay port (8787), 3478 (UDP and TCP) and 49160–49200 (UDP) on an address the other machine can reach in `docker/docker-compose.yml`, set `external-ip` in `docker/turnserver.conf` and the relay's `TURN_URLS` to that address (for example `turn:192.168.1.20:3478`), set the relay's `PUBLIC_URLS` to the URL the wallets dial, and allow those ports through the host firewall.
+- As shipped, the Docker stack publishes everything on 127.0.0.1 and coturn advertises `127.0.0.1`, so TURN only helps a same-machine test.
+- **Two machines (not verified; the sandbox this was built in cannot run it).** Pick the address the other machine reaches this one on, say `192.168.1.20`.
+  - In `docker/docker-compose.yml`, publish the relay port (8787), 3478 (UDP and TCP) and 49160–49200 (UDP) on that address instead of 127.0.0.1.
+  - In `docker/turnserver.conf`, keep `relay-ip=172.30.78.10` and set `external-ip=<reachable address>/172.30.78.10`, here `external-ip=192.168.1.20/172.30.78.10`. The part after the slash is coturn's own container address: coturn maps the advertised address back to it, so two relayed wallets can reach each other through it. A bare `external-ip=192.168.1.20` makes coturn refuse peers with `403 Forbidden IP`.
+  - Set the relay's `TURN_URLS` to `turn:192.168.1.20:3478` and its `PUBLIC_URLS` to the URL the wallets dial.
+  - Allow those ports through the host firewall.
+- The shipped `turnserver.conf` never relays to private addresses: its `denied-peer-ip` lines cover 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 and the other private and reserved ranges. Two relayed wallets still reach each other, because both relayed addresses map back to coturn itself, which `allowed-peer-ip=172.30.78.10` permits. But coturn will not relay to a wallet's own LAN address (such as 192.168.1.21), so on one LAN only relay-to-relay connections use TURN. For a LAN test that needs more, add `allowed-peer-ip=<that wallet's address>` for the test only, never in a deployment, or test across networks.
 - The wallet has no "force relay" switch. To see TURN used, make a direct path impossible (put the wallets on different networks, such as a phone hotspot, or block UDP between them while allowing it to the TURN host) and confirm the payment still completes. The coturn log (`docker compose -f docker/docker-compose.yml logs coturn`) shows an allocation for the test.
 - A relay without a TURN server hands out STUN servers only, and the wallet connects without TURN. When the relay refuses TURN credentials (its allowance for your address is used up) or does not answer within 5 seconds, the wallet connects without them too, and the developer console logs `Connecting without the relay's TURN servers`.
 - To use the **TURN server (optional, for testing)** fields yourself (they take a fixed username and credential), mint coturn REST credentials for the dev secret that last an hour:
@@ -200,13 +234,16 @@ Notes:
 | The recipient rejected the payment | The payee received the payment and refused it (for example, it does not pay that wallet); the error names the reason. Please report it with the console output from both wallets. |
 | Connects on the same Wi-Fi in one direction only, or never | Wi-Fi client isolation, a VPN, or a firewall. Allow incoming connections for BSV Desktop (macOS asks the first time; allow it), open outbound UDP, turn off the VPN, and try a phone hotspot for both machines. BSV Desktop hides local addresses behind `.local` names, so a network that blocks multicast DNS can break same-network connections that would otherwise work. |
 | Works on the same network but not across networks | Both NATs are strict, so you need TURN: see [TURN](#turn-connections-that-cannot-go-direct). |
-| The chip reads **Cannot receive** with a relay | The message under it says why. *Cannot be reached*: the relay is down or the URL is wrong; the wallet keeps trying. *Did not accept this wallet*: the **Relay URL** is not exactly one of the relay's `PUBLIC_URLS` (a different host name, `localhost` instead of `127.0.0.1`, or a trailing path). *Limiting connections*: too many connections from your address; wait. |
+| The chip reads **Cannot receive** with a relay | The message under it says why. *Cannot be reached*: the relay is down or the URL is wrong; the wallet keeps trying. *Did not accept this wallet*: the **Relay URL** is not exactly one of the relay's `PUBLIC_URLS` (a different host name, `localhost` instead of `127.0.0.1`, or a trailing path). *This wallet could not sign in*: the wallet itself failed to sign the relay's challenge (the wallet's reason follows); it keeps trying. *Limiting connections*: too many connections from your address; wait. |
+| The direct send fails with "closed the connection before the payment was sent. Nothing was spent." | The payee hung up before the payer's wallet had made the payment (it waits 60 seconds after connecting). Nothing was broadcast. Send again. |
+| The direct send fails with "too large to deliver directly" | The transaction is over about 12 MB, more than a payee takes over a direct connection. Nothing was broadcast. Use the message box. |
 | The relay will not start: "PUBLIC_URLS is required…" | Set `PUBLIC_URLS`, or `HOST=127.0.0.1` for a test on one machine. |
 | **Wallet Bridge Unavailable** dialog on the second wallet | Expected when two copies run on one machine; see [Two wallets on one machine](#two-wallets-on-one-machine). Click **OK**. |
+| A wallet window shows another project, or a blank page | It was started from source without `BSV_DESKTOP_LOAD_DIST=1` and loaded whatever answers on port 5173 (or nothing does). Run `npm run build` and start it with `BSV_DESKTOP_LOAD_DIST=1`; see [Two wallets on one machine](#two-wallets-on-one-machine). |
 | Code exchange: nothing happens after scanning the answer | The answer was applied more than about 15 seconds after it appeared. Make a new request and scan the answer straight away. |
 | The second wallet starts empty, or the first wallet looks different | Each data directory is its own wallet. Start each copy with the same `BSV_DESKTOP_USER_DATA` value every time. |
 
-For anything else, open the developer tools (they open by themselves in `npm run dev`; Cmd+Opt+I or Ctrl+Shift+I otherwise) and read the console on both wallets.
+For anything else, open the developer tools (they open by themselves when the UI comes from the Vite dev server; otherwise **View → Toggle Developer Tools**, Cmd+Opt+I or Ctrl+Shift+I) and read the console on both wallets.
 
 ## What to report back
 

@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest'
-import { AuthenticatedPeer, DEFAULT_INBOUND_LIMITS, DirectPayClient, MAX_DIRECT_TRANSACTION_BYTES, RelaySignaler, validatePaymentToken, VERSION } from '@bsv/webrtpay'
+import { afterAll, describe, expect, it } from 'vitest'
+import { PrivateKey, ProtoWallet } from '@bsv/sdk'
+import * as webrtpay from '@bsv/webrtpay'
+import { AuthenticatedPeer, createMemoryHub, DEFAULT_INBOUND_LIMITS, DirectPayClient, MAX_DIRECT_TRANSACTION_BYTES, RelaySignaler, validatePaymentToken, VERSION, WebRTPayError } from '@bsv/webrtpay'
 
 const identityKey = `02${'42'.repeat(32)}`
 const wallet = {
@@ -181,4 +183,43 @@ describe('vendored @bsv/webrtpay', () => {
       await relay.close()
     }
   })
+
+  // Desktop passes the wallet's chain to DirectPayClient, and deliverDirect names the network
+  // when a recipient refuses for this reason (final review D2, Ruling 38).
+  it('binds dials to the network: a payee on another network refuses before anything connects, saying why', async () => {
+    const isSignalChain = (webrtpay as { isSignalChain?: (x: unknown) => boolean }).isSignalChain
+    expect(isSignalChain).toBeTypeOf('function')
+    for (const chain of ['main', 'test', 'ttn', 'tstn']) expect(isSignalChain!(chain)).toBe(true)
+
+    const { RTCPeerConnection } = await import('node-datachannel/polyfill')
+    const hub = createMemoryHub()
+    const party = async (chain: string) => {
+      const proto = new ProtoWallet(PrivateKey.fromRandom())
+      const { publicKey } = await proto.getPublicKey({ identityKey: true })
+      const client = new DirectPayClient({
+        wallet: proto,
+        originator: 'admin.test',
+        chain,
+        signaler: hub.signaler(publicKey),
+        rtc: { RTCPeerConnection: RTCPeerConnection as unknown as typeof globalThis.RTCPeerConnection, iceServers: [], extraConfig: { bindAddress: '127.0.0.1' } },
+        timeouts: { connectMs: 10_000 }
+      })
+      return { client, identityKey: publicKey }
+    }
+    const payee = await party('test'), payer = await party('main')
+    try {
+      await payee.client.startReceiving({ onPayment: async () => 'accepted' as const })
+      const error = await payer.client.connect(payee.identityKey).catch(e => e)
+
+      expect(error).toBeInstanceOf(WebRTPayError)
+      expect(error.code).toBe('rejected')
+      expect(error.reason).toBe('wrong_network')
+    } finally {
+      await Promise.all([payer.client.close(), payee.client.close()])
+    }
+  })
+})
+
+afterAll(async () => {
+  (await import('node-datachannel')).cleanup()
 })

@@ -72,7 +72,11 @@ export function pendingPaymentFor(rows: OutgoingPayment[], recipient: string, am
   return rows.find(row => !row.delivered && !row.request && row.recipient === recipient && (amount === undefined || row.amount === amount))
 }
 
-/** The Payments page's saved payments: the payer's side saves and delivers through it. */
+/**
+ * The Payments page's saved payments: the payer's side saves and delivers through it. `add`
+ * and `markDelivered` write through outbox.ts, from the rows stored at that moment, so a
+ * delivery that ends after other payments were saved keeps them.
+ */
 export interface DirectOutbox {
   rows: OutgoingPayment[]
   /** Saves a newly prepared payment (before it is broadcast). */

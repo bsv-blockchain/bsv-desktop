@@ -217,7 +217,7 @@ Payee auto-accepts direct payments (decision, my call): unlike MessageBox there 
 ## 8. Infrastructure
 
 - **Phase 1 (this PR): STUN** — `coturn/coturn` in STUN-only mode on **bsva-us-1** (the cluster with every MessageBox network), UDP+TCP 3478 behind an internet-facing NLB (teranode `p2p-nlb` annotation pattern, not Traefik's typo), DNS `stun-${app_suffix}.bsvb.tech` via the Route53 external-dns (Cloudflare tunnels cannot carry UDP). Hardened pod (non-root, read-only root fs, drop ALL caps), pinned image, resource limits. Draft PR; merging deploys.
-- **Phase 2: TURN** — open questions documented in the PR: nodes have no public IPs and Traefik holds all three EIPs, an NLB has at most 50 listeners (so the relay port range must be narrow, ~40 ports), coturn needs `external-ip` = a dedicated EIP, and the NLB drops hairpin traffic (two relayed peers on one server). Credentials must be ephemeral (`use-auth-secret`, `static-auth-secret` from SSM `/apps/turn/STATIC_AUTH_SECRET`, TTL ~1 h) and vended by an authenticated endpoint — the relay's job. Cloudflare's managed TURN is the low-effort alternative (still needs a vending endpoint). Locally, `docker compose` in the package runs coturn (STUN+TURN, REST credentials) + relay for end-to-end tests.
+- **Phase 2: TURN — decided (2026-10-18): Cloudflare managed TURN, credentials minted by the WebRTPay relay** (`TURN_PROVIDER=cloudflare`; decision record and prepared wiring in bsv-blockchain/bsva-infra-flux#427). Self-hosted coturn on bsva-us-1 was ruled out as built: the workers are private behind one NAT gateway, so packets coturn sends first from a relay port would leave from the NAT gateway rather than the TURN address and be dropped by exactly the restrictive NATs TURN is for; only one Elastic IP is free and an NLB caps at 50 listeners. The coturn REST credential format (`<expiry>:<pseudonym>`, HMAC-SHA1) applies only to the coturn provider used for local tests and self-hosting. Enable Cloudflare mode only after clients that read `ice.expiresAt` have shipped. Locally, `docker compose` in the package runs coturn (STUN+TURN, REST credentials) for end-to-end tests.
 - **Relay (P1)**: image and manifests prepared but not added to a cluster until the image is published from ts-stack.
 
 ## 9. Testing and verification
@@ -251,7 +251,7 @@ Known gap: this sandbox drops UDP to non-loopback addresses, so Electron-to-Elec
 
 1. Is MessageBox-carried signaling acceptable as the default remote path, or should remote direct payments wait for our own relay?
 2. Should direct payments be auto-accepted, or land in the inbox for a click like MessageBox payments?
-3. TURN: self-hosted coturn (needs an EIP and an NLB with a narrow port range) or Cloudflare's managed TURN?
+3. TURN: self-hosted coturn (needs an EIP and an NLB with a narrow port range) or Cloudflare's managed TURN? Decided 2026-10-18: Cloudflare (see §8); override if you disagree.
 4. Package name `@bsv/webrtpay` OK?
 
 

@@ -18,6 +18,9 @@ export function validateHost(value: string): string {
   return url.toString().replace(/\/+$/, '')
 }
 
+/** The network's name on the Payments page: its chip and every confirmation use this. */
+export const networkLabel = (chain: string) => chain === 'main' ? 'Mainnet' : chain === 'test' ? 'Testnet' : chain === 'ttn' ? 'TeraTestnet' : 'TeraScaling Testnet'
+
 /** A face-to-face direct payment code (an offer or an answer); Nearby → Direct (WebRTC) takes it. */
 export const isDirectCode = (text: string) => text.trim().startsWith(CODE_PREFIX)
 export const DIRECT_CODE_HINT = 'This is a face-to-face direct payment code. Open Nearby and choose Direct (WebRTC) to use it.'

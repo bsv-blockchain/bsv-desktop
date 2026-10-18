@@ -14,7 +14,7 @@ import QrScanner from './QrScanner'
 import { answerDirectRequest, codeFitsQr, createDirectRequest, pendingPaymentFor, readOfferCode } from './directCodes'
 import type { DirectAnswer, DirectOutbox, ReceivedDirectPayment } from './directCodes'
 import type { OutgoingPayment } from './messageBoxPayments'
-import { validAmount } from './paymentProtocol'
+import { networkLabel, validAmount } from './paymentProtocol'
 
 const short = (value: string) => `${value.slice(0, 12)}…${value.slice(-6)}`
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
@@ -182,12 +182,12 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
     else { setInput(value.trim()); setError('') }
   }
   const closeScanner = useCallback(() => setScanFor(null), [])
-  const network = chain === 'main' ? 'Mainnet' : chain.toUpperCase()
 
   return <Stack spacing={3}>
     <ToggleButtonGroup fullWidth exclusive value={direction} onChange={(_, value) => { if (value) { setDirection(value); setError('') } }} aria-label="Direct payment direction"><ToggleButton value="receive">Receive directly</ToggleButton><ToggleButton value="send">Pay directly</ToggleButton></ToggleButtonGroup>
     {!client && <Alert severity="info">Direct payments are not ready yet. Try again in a moment.</Alert>}
-    {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
+    {/* While the confirm dialog is open it shows the error itself. */}
+    {error && !review && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
     {busy && <LinearProgress />}
     {direction === 'receive' ? phase === 'received' && received ? <Box sx={{ textAlign: 'center', py: 4 }}>
       <CheckCircleOutline color="primary" sx={{ fontSize: 54 }} />
@@ -240,10 +240,11 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
     </>}
     <QrScanner open={scanFor !== null} onClose={closeScanner} onRead={read} title={scanFor === 'answer' ? 'Scan their answer' : 'Scan their request'} description={scanFor === 'answer' ? 'Scan the answer code their wallet shows. Scan their answer within 15 seconds of it appearing.' : 'Scan the direct request code their wallet shows.'} />
     <Dialog open={!!review} onClose={() => { if (!busy) setReview(null) }} fullWidth maxWidth="xs"><DialogTitle>{review?.saved ? 'Deliver your saved payment' : 'Confirm direct payment'}</DialogTitle><DialogContent><Stack spacing={2}>
+      {error && <Alert severity="error">{error}</Alert>}
       <Typography variant="h4" sx={{ fontWeight: 700 }}><AmountDisplay>{review?.amount ?? 0}</AmountDisplay></Typography>
       <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>To {review?.offer.identityKey}</Typography>
       <Divider />
-      <Typography variant="body2" color="text.secondary">Network: {network}. {review?.saved ? 'This delivers the payment you already made, with the same transaction; nothing new is spent. ' : `${review?.offer.amount !== undefined ? 'The amount comes from their request. ' : ''}A network fee will be added. Nothing is spent until their wallet connects and proves it is theirs. `}Next, show them your answer code.</Typography>
+      <Typography variant="body2" color="text.secondary">Network: {networkLabel(chain)}. {review?.saved ? 'This delivers the payment you already made, with the same transaction; nothing new is spent. ' : `${review?.offer.amount !== undefined ? 'The amount comes from their request. ' : ''}A network fee will be added. Nothing is spent until their wallet connects and proves it is theirs. `}Next, show them your answer code.</Typography>
     </Stack></DialogContent><DialogActions><Button disabled={busy} onClick={() => setReview(null)}>Back</Button><Button variant="contained" disabled={busy || switchingNetwork || !client} onClick={() => void confirm()}>{busy ? 'Preparing…' : 'Confirm & show answer'}</Button></DialogActions></Dialog>
   </Stack>
 }

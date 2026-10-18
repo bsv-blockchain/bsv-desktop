@@ -12,11 +12,10 @@
 import type { WalletInterface } from '@bsv/sdk'
 import { decodeCode, WebRTPayError } from '@bsv/webrtpay'
 import type { DirectPayClient, OfferCode, OfferHandle, PaymentAck, ReceiveHandlers } from '@bsv/webrtpay'
-import { NETWORKS } from '../../../networkConfig'
 import { beginUserWalletOperation } from '../../../services/httpBridgeSession'
 import { deliverDirect, receiveDirectPayment } from './directPayments'
 import type { OutgoingPayment } from './messageBoxPayments'
-import { validAmount } from './paymentProtocol'
+import { networkLabel, validAmount } from './paymentProtocol'
 
 /**
  * The longest code a level M QR code holds (version 40, byte mode). qrcode.react throws while
@@ -25,8 +24,6 @@ import { validAmount } from './paymentProtocol'
  */
 export const QR_MAX_CHARS = 2331
 export const codeFitsQr = (code: string) => code.length <= QR_MAX_CHARS
-
-const networkName = (chain: string) => NETWORKS.find(network => network.id === chain)?.label ?? chain
 
 const UNREADABLE = 'This code could not be read. Scan it again, or copy the whole code.'
 
@@ -59,7 +56,7 @@ function whyUnpayable(text: string, chain: string): string {
   if (code.kind !== 'offer') return UNREADABLE
   if (code.expiresAt !== undefined && Date.now() >= code.expiresAt) return 'This request has expired. Ask them for a new one.'
   if (code.chain === undefined) return 'This request does not say which network it is for, so it cannot be paid safely.'
-  return `This request is for ${networkName(code.chain)}, but your wallet is on ${networkName(chain)}. Switch networks in Settings first.`
+  return `This request is for ${networkLabel(code.chain)}, but your wallet is on ${networkLabel(chain)}. Switch networks in Settings first.`
 }
 
 /**

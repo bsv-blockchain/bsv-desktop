@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import { DELIVERY_HELP, deliveryProblem, directStatusLine } from '../src/lib/pages/Dashboard/Payments/delivery'
+import { networkLabel } from '../src/lib/pages/Dashboard/Payments/paymentProtocol'
 
 const ready = { client: {}, via: 'messagebox' as const, error: '', notice: '' }
 
@@ -122,5 +123,48 @@ describe('Payments page wiring', () => {
 
   it('asks for a positive amount only when the requested amount is the problem', () => {
     expect(page).toMatch(/requestAmount !== null && !validAmount\(requestAmount\) \? 'Enter a positive amount or leave it blank\.' : 'Your payment link is not ready yet\.'/)
+  })
+})
+
+describe('network names on the Payments page', () => {
+  it('names each network as the Payments chip always has', () => {
+    expect(networkLabel('main')).toBe('Mainnet')
+    expect(networkLabel('test')).toBe('Testnet')
+    expect(networkLabel('ttn')).toBe('TeraTestnet')
+    expect(networkLabel('tstn')).toBe('TeraScaling Testnet')
+  })
+
+  it('uses those names in the chip and in every confirmation, never the raw chain id', () => {
+    const read = (file: string) => fs.readFileSync(path.resolve(__dirname, '../src/lib/pages/Dashboard/Payments', file), 'utf8')
+    const page = read('index.tsx'), exchange = read('DirectCodeExchange.tsx'), nearby = read('NearbyPayments.tsx'), codes = read('directCodes.ts')
+    expect(page).toMatch(/<Chip size="small" label=\{networkLabel\(chain\)\} variant="outlined" \/>/)
+    expect(page).toMatch(/Network: \{networkLabel\(chain\)\}\. Confirm the recipient and network before sending\./)
+    expect(exchange).toMatch(/Network: \{networkLabel\(chain\)\}\. /)
+    expect(nearby).toMatch(/Network: \{networkLabel\(chain\)\}\. /)
+    expect(codes).toMatch(/This request is for \$\{networkLabel\(code\.chain\)\}, but your wallet is on \$\{networkLabel\(chain\)\}\./)
+    for (const source of [page, exchange, nearby, codes]) {
+      expect(source).not.toMatch(/chain\.toUpperCase\(\)/)
+      expect(source).not.toMatch(/chain === 'main' \?/)
+    }
+  })
+})
+
+describe('a payment error is shown once', () => {
+  const read = (file: string) => fs.readFileSync(path.resolve(__dirname, '../src/lib/pages/Dashboard/Payments', file), 'utf8')
+
+  it('Send: in the review dialog while it is open, on the page otherwise', () => {
+    const page = read('index.tsx')
+    expect(page).toMatch(/\{error && !review && <Alert severity="error" onClose=\{\(\) => setError\(''\)\} sx=\{\{ mb: 2 \}\}>\{error\}<\/Alert>\}/)
+    const dialog = page.slice(page.indexOf('<DialogTitle>Review your payment</DialogTitle>'))
+    expect(dialog).toMatch(/^[^\n]*\{error && <Alert severity="error">\{error\}<\/Alert>\}[^\n]*<\/Dialog>/)
+    expect(page.match(/\{error && /g)).toHaveLength(2)
+  })
+
+  it('Nearby → Direct: in the confirm dialog while it is open, on the screen otherwise', () => {
+    const exchange = read('DirectCodeExchange.tsx')
+    expect(exchange).toMatch(/\{error && !review && <Alert severity="error" onClose=\{\(\) => setError\(''\)\}>/)
+    const dialog = exchange.slice(exchange.indexOf('<Dialog open={!!review}'))
+    expect(dialog).toMatch(/^[^\n]*<DialogContent><Stack spacing=\{2\}>\n\s*\{error && <Alert severity="error">\{error\}<\/Alert>\}/)
+    expect(exchange.match(/\{error && /g)).toHaveLength(2)
   })
 })

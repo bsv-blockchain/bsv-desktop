@@ -178,10 +178,12 @@ describe('deliverDirect', () => {
 
   it('spends nothing when the recipient refuses the connection', async () => {
     const hub = createMemoryHub()
-    const payer = await makePayer(), payee = await makePayee()
-    await receiving(hub, payee, { offersPerMinutePerSender: 1 })
+    const payer = await makePayer(), payee = await makePayee(), earlier = await makePayer()
+    // A payee over its overall limits answers `busy`. (A sender over its own limits gets no
+    // answer at all, which reads as unreachable.)
+    await receiving(hub, payee, { offersPerMinute: 1 })
+    ;(await client(hub, earlier).connect(payee.identityKey)).close() // uses up the payee's one offer
     const payerClient = client(hub, payer)
-    ;(await payerClient.connect(payee.identityKey)).close() // uses up this payer's one offer
     const box = outbox()
     await expect(deliverDirect({ client: payerClient, wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 1500, persist: box.persist, markDelivered: box.markDelivered }))
       .rejects.toThrow(/not taking direct payments right now\. Nothing was spent/)

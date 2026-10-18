@@ -19,7 +19,8 @@ vi.mock('../src/onWalletReady', () => ({ clearWalletForHttpRoute: vi.fn() }))
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() } }))
 
 import { WalletService } from '../src/lib/services/WalletService'
-import { beginHttpBridgeSession, beginUserWalletOperation, isHttpBridgePaused, _test_resetHttpBridgeSessions } from '../src/lib/services/httpBridgeSession'
+import { BACKGROUND_RETRY_BUSY, beginBackgroundWalletOperation, beginHttpBridgeSession, beginUserWalletOperation, isHttpBridgePaused, walletChangeRequests, _test_resetHttpBridgeSessions } from '../src/lib/services/httpBridgeSession'
+import { defaultNetworkSettings } from '../src/lib/networkConfig'
 import { clearWalletForHttpRoute } from '../src/onWalletReady'
 
 const identity = `02${'12'.repeat(32)}`
@@ -101,6 +102,24 @@ describe('removeWalletFromDevice', () => {
     expect(vault.endSession).not.toHaveBeenCalled()
   })
 
+  // Final review follow-up (C12): the background retry of kept direct payments gives way within
+  // 15 s, and the refusal says that is what holds the wallet.
+  it('refuses while only the background retry holds the wallet, naming it, and asks it to stop', async () => {
+    const { service } = readyService()
+    beginBackgroundWalletOperation()
+    const asked = walletChangeRequests()
+    await expect(service.removeWalletFromDevice()).rejects.toThrow(BACKGROUND_RETRY_BUSY)
+    expect(walletChangeRequests()).toBe(asked + 1)
+    expect(vault.endSession).not.toHaveBeenCalled()
+  })
+
+  it('names the payment, not the background retry, when both hold the wallet', async () => {
+    const { service } = readyService()
+    beginBackgroundWalletOperation()
+    beginUserWalletOperation()
+    await expect(service.removeWalletFromDevice()).rejects.toThrow('Finish the current app request')
+  })
+
   it('refuses before the wallet has opened', async () => {
     const service = new WalletService()
     await expect(service.removeWalletFromDevice()).rejects.toThrow()
@@ -115,5 +134,23 @@ describe('removeWalletFromDevice', () => {
     expect(vault.clearCache).not.toHaveBeenCalled()
     expect(service.lifecycle).not.toBe('unconfigured')
     expect(isHttpBridgePaused()).toBe(false)
+  })
+})
+
+describe('a network switch while the background retry holds the wallet', () => {
+  it('is refused with a message naming the retry, which is asked to stop', async () => {
+    const { service } = readyService()
+    beginBackgroundWalletOperation()
+    const asked = walletChangeRequests()
+    await expect(service.applyNetworkSettings('test', defaultNetworkSettings('test'))).rejects.toThrow(BACKGROUND_RETRY_BUSY)
+    expect(walletChangeRequests()).toBe(asked + 1)
+    expect(isHttpBridgePaused()).toBe(false)
+  })
+
+  it('names the app request, not the background retry, when both hold the wallet', async () => {
+    const { service } = readyService()
+    beginBackgroundWalletOperation()
+    beginHttpBridgeSession(1, 'https://app.example')
+    await expect(service.applyNetworkSettings('test', defaultNetworkSettings('test'))).rejects.toThrow('Finish the current app request')
   })
 })

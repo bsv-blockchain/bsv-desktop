@@ -1,4 +1,5 @@
 import { PublicKey, Utils } from '@bsv/sdk'
+import { CODE_PREFIX } from '@bsv/webrtpay'
 
 export const MAX_PAYMENT_SATS = 2_100_000_000_000_000
 export const validAmount = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= MAX_PAYMENT_SATS
@@ -17,6 +18,16 @@ export function validateHost(value: string): string {
   return url.toString().replace(/\/+$/, '')
 }
 
+const NETWORK_LABELS = new Map([['main', 'Mainnet'], ['test', 'Testnet'], ['ttn', 'TeraTestnet'], ['tstn', 'TeraScaling Testnet']])
+/** A network this wallet can be on. Codes from other wallets may name any network. */
+export const isKnownNetwork = (chain: string) => NETWORK_LABELS.has(chain)
+/** The network's name on the Payments page: its chip and every confirmation use this. Any other network keeps its own id. */
+export const networkLabel = (chain: string) => NETWORK_LABELS.get(chain) ?? chain
+
+/** A face-to-face direct payment code (an offer or an answer); Nearby → Direct (WebRTC) takes it. */
+export const isDirectCode = (text: string) => text.trim().startsWith(CODE_PREFIX)
+export const DIRECT_CODE_HINT = 'This is a face-to-face direct payment code. Open Nearby and choose Direct (WebRTC) to use it.'
+
 export type PaymentTarget = { kind: 'identity'; recipient: string; amount?: number; host?: string } | { kind: 'address'; recipient: string; amount?: number }
 
 function satsFromBsv(text: string): number {
@@ -30,6 +41,7 @@ function satsFromBsv(text: string): number {
 export function parsePaymentTarget(input: string, chain: string): PaymentTarget {
   const text = input.trim()
   if (!text) throw new Error('Enter a recipient to continue.')
+  if (isDirectCode(text)) throw new Error(DIRECT_CODE_HINT)
   if (/^peerpay:/i.test(text)) {
     const [key, query = ''] = text.slice(8).split('?')
     const params = new URLSearchParams(query)

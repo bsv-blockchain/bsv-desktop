@@ -11,7 +11,7 @@ import * as secrets from '../services/secrets'
 import { getWalletService } from '../hooks/useWalletService'
 import RemoveWalletDialog from '../components/RemoveWalletDialog'
 import { MnemonicProfileWalletManager } from '../services/MnemonicProfileWalletManager'
-import { activeUserWalletOperations, activeHttpBridgeRequests, beginUserWalletOperation, isHttpBridgePaused, setHttpBridgePaused } from '../services/httpBridgeSession'
+import { beginUserWalletOperation, setHttpBridgePaused, walletChangeBlocker } from '../services/httpBridgeSession'
 
 export const SIDEBAR_WIDTH = 248
 const items = [
@@ -47,8 +47,10 @@ export default function Menu({ menuOpen, setMenuOpen }: { menuOpen: boolean; set
     return () => { cancelled = true }
   }, [profileOpen, managers.walletManager, activeProfile, supportsProfiles])
 
+  /** Refuses while other work holds the wallet; the background retry of kept direct payments is asked to stop. */
   const assertIdle = () => {
-    if (isHttpBridgePaused() || switchingNetwork || activeUserWalletOperations() || activeHttpBridgeRequests() || [basketRequests, protocolRequests, certificateRequests, spendingRequests, groupPermissionRequests, counterpartyPermissionRequests].some(queue => queue.length)) throw new Error('Finish your current payment or app request before changing or locking the wallet.')
+    const blocker = walletChangeBlocker('Finish your current payment or app request before changing or locking the wallet.', switchingNetwork || [basketRequests, protocolRequests, certificateRequests, spendingRequests, groupPermissionRequests, counterpartyPermissionRequests].some(queue => queue.length > 0))
+    if (blocker) throw new Error(blocker)
   }
   const switchProfile = async (profile: WalletProfile) => {
     setBusy(true)

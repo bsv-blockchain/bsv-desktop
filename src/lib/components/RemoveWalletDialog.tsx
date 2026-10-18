@@ -3,25 +3,32 @@ import { Link as RouterLink } from 'react-router-dom'
 import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography } from '@mui/material'
 import { WalletContext } from '../WalletContext'
 import { getWalletService } from '../hooks/useWalletService'
+import { keptDirectPaymentsOnDevice } from '../pages/Dashboard/Payments/directPayments'
+import { keptPaymentsRemovalNote } from '../pages/Dashboard/Payments/directReceipts'
 
 const CONFIRM_WORD = 'remove'
+const NONE_KEPT = { count: 0, total: 0, unreadable: 0 }
 
 /**
  * Remove the open wallet from this device so another can be created or imported.
  * Funds stay on chain; only the user's backup can bring this wallet back.
  */
 export default function RemoveWalletDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { loginType, managers } = useContext(WalletContext)
+  const { activeProfile, loginType, managers } = useContext(WalletContext)
   const [typed, setTyped] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  /** Received direct payments not in a wallet yet: this one's, and other wallets'. All stay on this device (Ruling 36). */
+  const [kept, setKept] = useState(() => ({ open: NONE_KEPT, others: NONE_KEPT }))
+  const identity = activeProfile?.identityKey || ''
   const modern = loginType === 'mnemonic'
+  const keptNote = keptPaymentsRemovalNote(kept, modern)
   let profileCount = 1
   try { profileCount = managers.walletManager?.listProfiles?.()?.length || 1 } catch { }
 
   useEffect(() => {
-    if (open) { setTyped(''); setError('') }
-  }, [open])
+    if (open) { setTyped(''); setError(''); setKept(keptDirectPaymentsOnDevice(identity)) }
+  }, [open, identity])
 
   const remove = async () => {
     if (typed.trim().toLowerCase() !== CONFIRM_WORD || busy) return
@@ -44,6 +51,7 @@ export default function RemoveWalletDialog({ open, onClose }: { open: boolean; o
       <Alert severity="warning" sx={{ mb: 2 }}>
         Your {modern ? 'recovery phrase and keys are' : 'saved keys are'} deleted from this device. Your funds stay on the blockchain, but you can only get them back with {modern ? 'your recovery phrase, backup shares,' : 'your original recovery material'} or a wallet data file.
       </Alert>
+      {keptNote && <Alert severity="info" sx={{ mb: 2 }}>{keptNote}</Alert>}
       {profileCount > 1 && <Typography variant="body2" sx={{ mb: 1.5 }}>All {profileCount} profiles of this wallet are removed from this device.</Typography>}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
         Wallet history files stay on this computer. Importing the same wallet again reconnects to them. Afterwards you can create a new wallet or import another one.

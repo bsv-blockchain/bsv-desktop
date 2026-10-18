@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DirectPayClient, RelaySignaler, VERSION } from '@bsv/webrtpay'
+import { AuthenticatedPeer, DEFAULT_INBOUND_LIMITS, DirectPayClient, MAX_DIRECT_TRANSACTION_BYTES, RelaySignaler, validatePaymentToken, VERSION } from '@bsv/webrtpay'
 
 const identityKey = `02${'42'.repeat(32)}`
 const wallet = {
@@ -113,22 +113,53 @@ describe('vendored @bsv/webrtpay', () => {
     }
   })
 
-  it('reports auth_failed when the relay refuses the url this wallet signed', async () => {
-    const states: Array<[string, string | undefined]> = []
+  // DirectPayManager tells the two auth_failed cases apart by `cause`: the relay refusing the
+  // signature has none, this wallet failing to sign carries the wallet's error.
+  it('reports auth_failed without a cause when the relay refuses the url this wallet signed', async () => {
+    const states: Array<[string, string | undefined, unknown]> = []
     const relay = new RelaySignaler({
       url: 'wss://relay.example.com',
       wallet,
       originator: 'admin.local',
       WebSocket: fakeRelay([relayRefuses]).WebSocket,
       random: () => 0.999, // the next try waits about a second; the test is done by then
-      onStateChange: (state, error) => { states.push([state, error?.code]) }
+      onStateChange: (state, error) => { states.push([state, error?.code, error?.cause]) }
     })
     try {
       await relay.listen(() => {})
-      expect(states).toEqual([['connecting', undefined], ['offline', 'auth_failed']])
+      expect(states).toEqual([['connecting', undefined, undefined], ['offline', 'auth_failed', undefined]])
     } finally {
       await relay.close()
     }
+  })
+
+  it('reports auth_failed with the wallet error as its cause when this wallet cannot sign the challenge', async () => {
+    const locked = new Error('User is not authenticated.')
+    const states: Array<[string, string | undefined, unknown]> = []
+    const relay = new RelaySignaler({
+      url: 'wss://relay.example.com',
+      wallet: { ...wallet, createSignature: async () => { throw locked } },
+      originator: 'admin.local',
+      WebSocket: fakeRelay([relayRefuses]).WebSocket,
+      random: () => 0.999,
+      onStateChange: (state, error) => { states.push([state, error?.code, error?.cause]) }
+    })
+    try {
+      await relay.listen(() => {})
+      expect(states).toEqual([['connecting', undefined, undefined], ['offline', 'auth_failed', locked]])
+    } finally {
+      await relay.close()
+    }
+  })
+
+  // deliverDirect checks a payment with these before it broadcasts it, and the payee's
+  // first-message window has to leave the payer time to make and broadcast it.
+  it('has the payer-side checks and the first-message window desktop sending relies on', () => {
+    expect(MAX_DIRECT_TRANSACTION_BYTES).toBe(12_579_840)
+    const token = { transaction: [1, 2, 3], amount: 500, outputIndex: 0, customInstructions: { derivationPrefix: 'cHJlZml4', derivationSuffix: 'c3VmZml4' } }
+    expect(() => validatePaymentToken(token)).toThrow(expect.objectContaining({ code: 'invalid_payment' }))
+    expect(Object.getOwnPropertyDescriptor(AuthenticatedPeer.prototype, 'isOpen')?.get).toBeTypeOf('function')
+    expect(DEFAULT_INBOUND_LIMITS.firstMessageTimeoutMs).toBe(60_000)
   })
 
   // DirectPayManager passes turnProvider() as the client's iceServersProvider. Every

@@ -441,18 +441,34 @@ export function dismissKeptDirectPayment(identity: string, chain: string, key: s
   return true
 }
 
-/** How many kept payments this device holds, for every wallet and network, and their total. */
-export function keptDirectPaymentsOnDevice(): { count: number; total: number } {
-  let count = 0
-  let total = 0
+/** Kept payments counted together: how many, their total, and how many could not be read. */
+export interface KeptCount {
+  count: number
+  total: number
+  /** Kept lists (each counted once) and entries this version cannot read. */
+  unreadable: number
+}
+
+/**
+ * The kept payments this device holds, on every network: those of `identity` (the open wallet)
+ * and those of every other wallet. Every one of them stays when a wallet is removed.
+ */
+export function keptDirectPaymentsOnDevice(identity: string): { open: KeptCount; others: KeptCount } {
+  const open: KeptCount = { count: 0, total: 0, unreadable: 0 }
+  const others: KeptCount = { count: 0, total: 0, unreadable: 0 }
   for (const key of storageKeys()) {
     if (!key.startsWith(KEPT_DIRECT_PAYMENTS_PREFIX)) continue
-    for (const entry of readRetries(key)?.entries ?? []) {
-      count++
-      if (validAmount(entry.payment.token.amount)) total += entry.payment.token.amount
+    const list = key.slice(KEPT_DIRECT_PAYMENTS_PREFIX.length) // `${identity}:${chain}`
+    const counted = identity !== '' && list.slice(0, list.lastIndexOf(':')) === identity ? open : others
+    const stored = readRetries(key)
+    if (!stored) { counted.unreadable++; continue }
+    counted.unreadable += stored.unknown
+    for (const entry of stored.entries) {
+      counted.count++
+      if (validAmount(entry.payment.token.amount)) counted.total += entry.payment.token.amount
     }
   }
-  return { count, total }
+  return { open, others }
 }
 
 /** Calls `fn` after every change to a kept-payment list in this window; returns the unsubscribe. */

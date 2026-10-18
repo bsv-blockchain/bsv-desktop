@@ -4,7 +4,7 @@
  * and how to recover a kept payment by hand when retrying stops working.
  */
 import { Utils } from '@bsv/sdk'
-import type { KeptDirectPaymentInfo } from './directPayments'
+import type { KeptCount, KeptDirectPaymentInfo } from './directPayments'
 import { validAmount } from './paymentProtocol'
 
 const RETRYING = 'it will be added when your wallet can verify it — retrying automatically'
@@ -96,12 +96,18 @@ export function recoveryDetails(p: KeptDirectPaymentInfo, o: { identity: string;
 /**
  * The remove-wallet dialog's note about kept payments (empty when there are none). They stay
  * on this device when the wallet is removed (Ruling 36), so the dialog must not imply they go.
+ * Only the open wallet's (`open`) come back when it is opened here again; other wallets' are
+ * mentioned apart, and kept payments that cannot be read are said, never counted as none.
  */
-export function keptPaymentsRemovalNote(kept: { count: number; total: number }, recoveryPhrase: boolean): string {
-  if (kept.count === 0) return ''
+export function keptPaymentsRemovalNote(kept: { open: KeptCount; others: KeptCount }, recoveryPhrase: boolean): string {
+  const { open, others } = kept
+  const notes: string[] = []
   const backup = recoveryPhrase ? 'the same recovery phrase' : 'the same recovery material'
-  const total = kept.total.toLocaleString()
-  return kept.count === 1
-    ? `A direct payment you received (${total} satoshis) is not in your wallet yet. It stays on this device and is added when you open this wallet here again with ${backup}.`
-    : `${kept.count} direct payments you received (${total} satoshis in total) are not in your wallet yet. They stay on this device and are added when you open this wallet here again with ${backup}.`
+  if (open.count === 1) notes.push(`A direct payment you received (${open.total.toLocaleString()} satoshis) is not in your wallet yet. It stays on this device and is added when you open this wallet here again with ${backup}.`)
+  if (open.count > 1) notes.push(`${open.count} direct payments you received (${open.total.toLocaleString()} satoshis in total) are not in your wallet yet. They stay on this device and are added when you open this wallet here again with ${backup}.`)
+  if (open.unreadable > 0) notes.push('Some direct payments kept on this device for this wallet could not be read. They stay on this device as they are.')
+  if (others.count === 1) notes.push(`Removing this wallet does not touch the direct payment kept for another wallet on this device (${others.total.toLocaleString()} satoshis).`)
+  else if (others.count > 1) notes.push(`Removing this wallet does not touch the ${others.count} direct payments kept for other wallets on this device (${others.total.toLocaleString()} satoshis in total).`)
+  else if (others.unreadable > 0) notes.push('Removing this wallet does not touch the direct payments kept for other wallets on this device.')
+  return notes.join(' ')
 }

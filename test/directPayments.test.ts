@@ -1072,17 +1072,24 @@ describe('kept payments for display', () => {
     expect(listKeptDirectPayments('other', CHAIN)).toEqual(none)
   })
 
-  it('counts and totals every kept payment on this device, for every wallet and network', async () => {
+  // Final review follow-up (C12): the remove dialog promises the open wallet's kept payments come
+  // back with it; other wallets' are counted apart, and what cannot be read is never counted as none.
+  it('counts and totals the kept payments on this device: the open wallet\'s on every network, and every other wallet\'s', async () => {
     const payer = await makePayer(), a = await makePayee(), b = await makePayee()
     for (const payee of [a, b]) payee.internalizeAction.mockRejectedValue(new TypeError('fetch failed'))
     await receive(a, await incoming(payer, a, 1000))
     await receive(a, await incoming(payer, a, 500))
+    await receiveDirectPayment({ wallet: a.wallet, originator: ORIGIN, identity: a.identityKey, chain: 'main', payment: await incoming(payer, a, 20) })
     await receive(b, await incoming(payer, b, 250))
     await receiveDirectPayment({ wallet: b.wallet, originator: ORIGIN, identity: b.identityKey, chain: 'main', payment: await incoming(payer, b, 4) })
-    local.set('direct-pay-retry-v1:broken:test', '{not json')
     local.set('direct-pay-seen-v1:x:test', '["k"]')
 
-    expect(keptDirectPaymentsOnDevice()).toEqual({ count: 4, total: 1754 })
+    expect(keptDirectPaymentsOnDevice(a.identityKey)).toEqual({ open: { count: 3, total: 1520, unreadable: 0 }, others: { count: 2, total: 254, unreadable: 0 } })
+    expect(keptDirectPaymentsOnDevice(b.identityKey)).toEqual({ open: { count: 2, total: 254, unreadable: 0 }, others: { count: 3, total: 1520, unreadable: 0 } })
+
+    local.set(`direct-pay-retry-v1:${a.identityKey}:main`, '{not json')
+    local.set(`direct-pay-retry-v1:${b.identityKey}:main`, JSON.stringify([{ key: 'from-a-newer-version' }, ...stored(`direct-pay-retry-v1:${b.identityKey}:main`), 3]))
+    expect(keptDirectPaymentsOnDevice(a.identityKey)).toEqual({ open: { count: 2, total: 1500, unreadable: 1 }, others: { count: 2, total: 254, unreadable: 2 } })
   })
 
   it('tells listeners in this window when the kept list changes', async () => {

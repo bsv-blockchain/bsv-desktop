@@ -7,26 +7,28 @@ import { keptDirectPaymentsOnDevice } from '../pages/Dashboard/Payments/directPa
 import { keptPaymentsRemovalNote } from '../pages/Dashboard/Payments/directReceipts'
 
 const CONFIRM_WORD = 'remove'
+const NONE_KEPT = { count: 0, total: 0, unreadable: 0 }
 
 /**
  * Remove the open wallet from this device so another can be created or imported.
  * Funds stay on chain; only the user's backup can bring this wallet back.
  */
 export default function RemoveWalletDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { loginType, managers } = useContext(WalletContext)
+  const { activeProfile, loginType, managers } = useContext(WalletContext)
   const [typed, setTyped] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  /** Received direct payments not in the wallet yet; they stay on this device (Ruling 36). */
-  const [kept, setKept] = useState({ count: 0, total: 0 })
+  /** Received direct payments not in a wallet yet: this one's, and other wallets'. All stay on this device (Ruling 36). */
+  const [kept, setKept] = useState(() => ({ open: NONE_KEPT, others: NONE_KEPT }))
+  const identity = activeProfile?.identityKey || ''
   const modern = loginType === 'mnemonic'
   const keptNote = keptPaymentsRemovalNote(kept, modern)
   let profileCount = 1
   try { profileCount = managers.walletManager?.listProfiles?.()?.length || 1 } catch { }
 
   useEffect(() => {
-    if (open) { setTyped(''); setError(''); setKept(keptDirectPaymentsOnDevice()) }
-  }, [open])
+    if (open) { setTyped(''); setError(''); setKept(keptDirectPaymentsOnDevice(identity)) }
+  }, [open, identity])
 
   const remove = async () => {
     if (typed.trim().toLowerCase() !== CONFIRM_WORD || busy) return

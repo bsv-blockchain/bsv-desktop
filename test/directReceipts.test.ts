@@ -215,13 +215,28 @@ describe('recovery details', () => {
 })
 
 describe('the remove-wallet dialog', () => {
+  const none = { count: 0, total: 0, unreadable: 0 }
+  const note = (open: Partial<typeof none>, others: Partial<typeof none> = {}, phrase = true) => keptPaymentsRemovalNote({ open: { ...none, ...open }, others: { ...none, ...others } }, phrase)
+
   it('says nothing when no direct payment is waiting', () => {
-    expect(keptPaymentsRemovalNote({ count: 0, total: 0 }, true)).toBe('')
+    expect(note({})).toBe('')
   })
 
-  it('names how many are waiting and their total, and that they stay here for the same recovery phrase', () => {
-    expect(keptPaymentsRemovalNote({ count: 1, total: 700 }, true)).toBe('A direct payment you received (700 satoshis) is not in your wallet yet. It stays on this device and is added when you open this wallet here again with the same recovery phrase.')
-    expect(keptPaymentsRemovalNote({ count: 3, total: 900 }, false)).toBe('3 direct payments you received (900 satoshis in total) are not in your wallet yet. They stay on this device and are added when you open this wallet here again with the same recovery material.')
+  it('names how many are waiting for this wallet and their total, and that they stay here for the same recovery phrase', () => {
+    expect(note({ count: 1, total: 700 })).toBe('A direct payment you received (700 satoshis) is not in your wallet yet. It stays on this device and is added when you open this wallet here again with the same recovery phrase.')
+    expect(note({ count: 3, total: 900 }, {}, false)).toBe('3 direct payments you received (900 satoshis in total) are not in your wallet yet. They stay on this device and are added when you open this wallet here again with the same recovery material.')
+  })
+
+  // Final review follow-up (C12): other wallets' kept payments are not this wallet's to bring back.
+  it('mentions other wallets\' kept payments apart, as kept for them', () => {
+    expect(note({ count: 1, total: 700 }, { count: 2, total: 50 })).toBe('A direct payment you received (700 satoshis) is not in your wallet yet. It stays on this device and is added when you open this wallet here again with the same recovery phrase. Removing this wallet does not touch the 2 direct payments kept for other wallets on this device (50 satoshis in total).')
+    expect(note({}, { count: 1, total: 30 })).toBe('Removing this wallet does not touch the direct payment kept for another wallet on this device (30 satoshis).')
+    expect(note({}, { unreadable: 1 })).toBe('Removing this wallet does not touch the direct payments kept for other wallets on this device.')
+  })
+
+  it('says when some of this wallet\'s kept payments could not be read, rather than counting them as none', () => {
+    expect(note({ unreadable: 1 })).toBe('Some direct payments kept on this device for this wallet could not be read. They stay on this device as they are.')
+    expect(note({ count: 1, total: 700, unreadable: 2 })).toMatch(/is added when you open this wallet here again with the same recovery phrase\. Some direct payments kept on this device for this wallet could not be read\. They stay on this device as they are\.$/)
   })
 })
 
@@ -238,7 +253,8 @@ describe('where kept payments are shown', () => {
 
   it('the remove-wallet dialog counts them on this device each time it opens', () => {
     const dialog = read('components/RemoveWalletDialog.tsx')
-    expect(dialog).toMatch(/if \(open\) \{ setTyped\(''\); setError\(''\); setKept\(keptDirectPaymentsOnDevice\(\)\) \}/)
+    expect(dialog).toMatch(/const identity = activeProfile\?\.identityKey \|\| ''/)
+    expect(dialog).toMatch(/if \(open\) \{ setTyped\(''\); setError\(''\); setKept\(keptDirectPaymentsOnDevice\(identity\)\) \}\s+\}, \[open, identity\]\)/)
     expect(dialog).toMatch(/\{keptNote && <Alert severity="info"[^>]*>\{keptNote\}<\/Alert>\}/)
   })
 })

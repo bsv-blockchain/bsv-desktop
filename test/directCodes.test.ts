@@ -14,8 +14,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { QRCodeSVG } from 'qrcode.react'
 import { LockingScript, MerklePath, P2PKH, PrivateKey, ProtoWallet, Transaction, UnlockingScript } from '@bsv/sdk'
 import type { WalletInterface } from '@bsv/sdk'
-import { DirectPayClient } from '@bsv/webrtpay'
-import { answerDirectRequest, codeFitsQr, createDirectRequest, pendingPaymentFor, QR_MAX_CHARS, readOfferCode } from '../src/lib/pages/Dashboard/Payments/directCodes'
+import { DirectPayClient, WebRTPayError } from '@bsv/webrtpay'
+import { answerDirectRequest, codeFitsQr, createDirectRequest, offerFailure, pendingPaymentFor, QR_MAX_CHARS, readOfferCode } from '../src/lib/pages/Dashboard/Payments/directCodes'
 import type { ReceivedDirectPayment } from '../src/lib/pages/Dashboard/Payments/directCodes'
 import { deliverDirect, NotSentError } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import { prepareMessageBoxPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
@@ -216,6 +216,24 @@ describe('a saved payment for the same recipient', () => {
   })
 })
 
+describe('what the payee sees when their answer does not connect', () => {
+  it('asks for their answer again when the scanned code is not it', () => {
+    expect(offerFailure(new WebRTPayError('invalid_code', 'This answer code is for another offer'))).toEqual({ message: 'This is not their answer to your request. Scan the code their wallet shows after scanning yours.', again: true })
+  })
+
+  it('says the connection closed, not that the scan was late, when the link closed after the answer was taken', () => {
+    for (const closed of [new WebRTPayError('closed', 'Data channel closed'), new WebRTPayError('closed', 'Link closed during the handshake')]) {
+      expect(offerFailure(closed)).toEqual({ message: 'The connection closed before a payment arrived. Create a new request to try again.', again: false })
+    }
+  })
+
+  it('points at the 15-second window when their wallet never connected', () => {
+    for (const failure of [new WebRTPayError('timeout', 'Handshake not finished within 30000 ms'), new WebRTPayError('auth_failed', 'bad signature'), new Error('anything else')]) {
+      expect(offerFailure(failure)).toEqual({ message: 'Their wallet did not connect. Scan their answer within 15 seconds of it appearing. Create a new request to try again.', again: false })
+    }
+  })
+})
+
 // ---- the exchange --------------------------------------------------------------------------
 
 describe('paying a recipient’s offer code', () => {
@@ -313,12 +331,20 @@ describe('paying a recipient’s offer code', () => {
     const { offer } = await request(payee, { amount: 1200 })
     const box = outbox()
     const answer = await answerDirectRequest({ client: client(payer), wallet: payer.wallet, originator: ORIGIN, identity: payer.identityKey, chain: CHAIN, code: offer.code, persist: box.persist, markDelivered: box.markDelivered })
-    await offer.complete(answer.answerCode)
+    // The payer closes the connection as soon as its wallet fails, which can be before its last
+    // handshake message reaches the payee (final review D8): the payee's side may then fail with
+    // `closed`, and its screen must say the connection closed, not that a scan came too late.
+    const [completed, delivered] = await Promise.allSettled([offer.complete(answer.answerCode), answer.delivered])
 
-    const error = await answer.delivered.catch(e => e)
+    expect(delivered.status).toBe('rejected')
+    const error = (delivered as PromiseRejectedResult).reason
     expect(error).toBeInstanceOf(NotSentError)
     expect(error.message).toBe('Your wallet could not make the payment, so nothing was spent. Ask them for a new code and try again.')
     expect(error.detail).toMatch(/^Insufficient funds in the available inputs/)
+    if (completed.status === 'rejected') {
+      expect(completed.reason).toMatchObject({ code: 'closed' })
+      expect(offerFailure(completed.reason)).toEqual({ message: 'The connection closed before a payment arrived. Create a new request to try again.', again: false })
+    }
     expect(box.persist).not.toHaveBeenCalled()
     expect(payer.createAction.mock.calls.some(([args]) => args.options?.sendWith)).toBe(false)
     expect(payee.internalizeAction).not.toHaveBeenCalled()

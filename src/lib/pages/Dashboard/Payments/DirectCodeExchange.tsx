@@ -5,13 +5,12 @@ import QrCode2Outlined from '@mui/icons-material/QrCode2Outlined'
 import CheckCircleOutline from '@mui/icons-material/CheckCircleOutline'
 import ContentCopyOutlined from '@mui/icons-material/ContentCopyOutlined'
 import { QRCodeSVG } from 'qrcode.react'
-import { WebRTPayError } from '@bsv/webrtpay'
 import type { DirectPayClient, OfferCode, OfferHandle, PaymentAck } from '@bsv/webrtpay'
 import { WalletContext } from '../../../WalletContext'
 import AmountInput from '../../../components/AmountInput'
 import AmountDisplay from '../../../components/AmountDisplay'
 import QrScanner from './QrScanner'
-import { answerDirectRequest, codeFitsQr, createDirectRequest, pendingPaymentFor, readOfferCode } from './directCodes'
+import { answerDirectRequest, codeFitsQr, createDirectRequest, offerFailure, pendingPaymentFor, readOfferCode } from './directCodes'
 import { NotSentError } from './directPayments'
 import type { DirectAnswer, DirectOutbox, ReceivedDirectPayment } from './directCodes'
 import type { OutgoingPayment } from './messageBoxPayments'
@@ -131,9 +130,10 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
       })
     } catch (e) {
       if (!alive.current || offerRef.current !== handle) return
-      if (e instanceof WebRTPayError && e.code === 'invalid_code') { setError('This is not their answer to your request. Scan the code their wallet shows after scanning yours.'); setPhase('offer'); return }
+      const failure = offerFailure(e)
+      if (failure.again) { setError(failure.message); setPhase('offer'); return }
       dropOffer(); setPhase('idle')
-      setError('Their wallet did not connect. Scan their answer within 15 seconds of it appearing. Create a new request to try again.')
+      setError(failure.message)
     }
   }
   const newRequest = () => { dropOffer(); setPhase('idle'); setReceived(null); setError('') }

@@ -141,6 +141,19 @@ export function createDirectRequest(o: {
   return client.createOfferCode({ chain, amount, handlers })
 }
 
+/**
+ * What the payee's screen says when completing its offer with the payer's answer failed.
+ * `again`: the scanned code was not their answer, so the same request can still take it.
+ * A link that closed after the answer was taken (`closed`) is not a late scan: their wallet
+ * may have connected and then hung up, say because it could not make the payment.
+ */
+export function offerFailure(error: unknown): { message: string; again: boolean } {
+  const code = error instanceof WebRTPayError ? error.code : undefined
+  if (code === 'invalid_code') return { message: 'This is not their answer to your request. Scan the code their wallet shows after scanning yours.', again: true }
+  if (code === 'closed') return { message: 'The connection closed before a payment arrived. Create a new request to try again.', again: false }
+  return { message: 'Their wallet did not connect. Scan their answer within 15 seconds of it appearing. Create a new request to try again.', again: false }
+}
+
 /** The payer's answer to an offer code, and the delivery that follows once the payee connects. */
 export interface DirectAnswer {
   /** The recipient's offer, as read from their code. */

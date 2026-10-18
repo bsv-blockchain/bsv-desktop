@@ -113,6 +113,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await manager.stop()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
@@ -149,6 +150,93 @@ describe('DirectPayManager.start', () => {
 
     expect(manager.getSnapshot()).toMatchObject({ status: 'error', via: 'relay', client: h.made.clients[0] })
     expect(manager.getSnapshot().error).toContain('The relay could not be reached')
+  })
+
+  it('keeps trying to receive on the same client until it can, and then goes online', async () => {
+    vi.useFakeTimers()
+    let failures = 2
+    h.startReceiving = async () => { if (failures-- > 0) throw new Error('The relay could not be reached') }
+    const changes: string[] = []
+    manager.on('changed', snapshot => changes.push(snapshot.status))
+
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY }) }))
+    const [client] = h.made.clients
+    expect(manager.getSnapshot()).toMatchObject({ client, status: 'error', via: 'relay' })
+    expect(manager.getSnapshot().error).toContain('The relay could not be reached')
+
+    await vi.advanceTimersByTimeAsync(999)
+    expect(client.startReceiving).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(client.startReceiving).toHaveBeenCalledTimes(2)
+    // Between tries the status stays `error`, with the message.
+    expect(manager.getSnapshot()).toMatchObject({ status: 'error', error: expect.stringContaining('could not be reached') })
+
+    await vi.advanceTimersByTimeAsync(1999)
+    expect(client.startReceiving).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(client.startReceiving).toHaveBeenCalledTimes(3)
+
+    expect(manager.getSnapshot()).toMatchObject({ client, status: 'online', via: 'relay', error: '' })
+    expect(h.made.clients).toHaveLength(1)
+    expect(h.made.relays).toHaveLength(1)
+    expect(changes).toEqual(['starting', 'error', 'online'])
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('waits twice as long after each failed try to receive, at most 30 s', async () => {
+    vi.useFakeTimers()
+    h.startReceiving = async () => { throw new Error('The relay could not be reached') }
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY }) }))
+    const [client] = h.made.clients
+
+    for (const [i, pause] of [1000, 2000, 4000, 8000, 16000, 30000, 30000].entries()) {
+      await vi.advanceTimersByTimeAsync(pause - 1)
+      expect(client.startReceiving).toHaveBeenCalledTimes(i + 1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(client.startReceiving).toHaveBeenCalledTimes(i + 2)
+    }
+    expect(manager.getSnapshot().status).toBe('error')
+  })
+
+  it('stops trying to receive when stopped', async () => {
+    vi.useFakeTimers()
+    h.startReceiving = async () => { throw new Error('The relay could not be reached') }
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY }) }))
+    const [client] = h.made.clients
+
+    await manager.stop()
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(60000)
+
+    expect(client.startReceiving).toHaveBeenCalledOnce()
+    expect(manager.getSnapshot().status).toBe('off')
+  })
+
+  it('starts over at once when the same settings are applied after receiving failed', async () => {
+    let down = true
+    h.startReceiving = async () => { if (down) throw new Error('The relay could not be reached') }
+    const relaySettings = settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY })
+    await manager.start(startOptions({ settings: relaySettings }))
+    expect(manager.getSnapshot().status).toBe('error')
+
+    down = false
+    // Saving settings applies them twice (the saved-settings event, then C5's explicit apply).
+    await Promise.all([manager.applySettings(relaySettings), manager.applySettings(relaySettings)])
+
+    expect(h.made.clients).toHaveLength(2)
+    expect(h.made.clients[0].close).toHaveBeenCalledOnce()
+    expect(h.made.clients[1].startReceiving).toHaveBeenCalledOnce()
+    expect(manager.getSnapshot()).toMatchObject({ client: h.made.clients[1], status: 'online', via: 'relay', error: '' })
+    expect(h.retry).toHaveBeenCalledOnce()
+  })
+
+  it('does not rebuild for the same settings when they cannot work', async () => {
+    const noRelay = settings({ receiveEnabled: true, signaling: 'relay', relayUrl: '' })
+    await manager.start(startOptions({ settings: noRelay }))
+    await manager.applySettings(noRelay)
+
+    expect(h.made.clients).toHaveLength(1)
+    expect(manager.getSnapshot()).toMatchObject({ status: 'error', via: null })
   })
 
   it('reports an error with a message for relay signaling without a relay URL (Ruling 14)', async () => {

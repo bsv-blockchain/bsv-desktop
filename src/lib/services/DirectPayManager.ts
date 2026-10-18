@@ -55,6 +55,11 @@ export interface DirectPayStartOptions {
 
 const OFF: DirectPaySnapshot = { client: null, status: 'off', via: null, error: '', received: 0 }
 
+/** First pause before trying to receive again after a failure; doubles with each failure. */
+const RECEIVE_RETRY_MIN_MS = 1000
+/** Longest pause between tries to receive. */
+const RECEIVE_RETRY_MAX_MS = 30000
+
 const NO_RELAY = 'Enter a relay server address in Settings, or use the message box for direct payments.'
 const NO_MESSAGE_BOX = 'Direct payments reach other wallets through the message box. Connect a message box in Settings, or use a relay server.'
 
@@ -69,6 +74,8 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
   private _generation = 0
   /** `identity:chain` of wallets whose kept payments are being retried. */
   private readonly _retrying = new Set<string>()
+  /** The next try to receive after a failure; cleared by every start and stop. */
+  private _receiveRetry: ReturnType<typeof setTimeout> | undefined
 
   getSnapshot(): DirectPaySnapshot {
     return this._snapshot
@@ -76,12 +83,13 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
 
   /**
    * Starts direct payments for a wallet. Called again with the same inputs it does
-   * nothing; with different inputs it replaces the client. Never rejects: problems
-   * show as `status: 'error'`. Resolves once receiving is set up (or failed).
+   * nothing, unless receiving failed: then it starts over at once. With different inputs
+   * it replaces the client. Never rejects: problems show as `status: 'error'`. Resolves
+   * once the first try to receive has finished; a failed one is tried again later.
    */
   start(o: DirectPayStartOptions): Promise<void> {
     const previous = this._started?.options
-    if (previous && sameInputs(previous, o)) return this._starting
+    if (previous && sameInputs(previous, o) && !receiveFailed(this._snapshot)) return this._starting
     const sameWallet = previous !== undefined && isSameWallet(previous, o)
     const received = sameWallet ? this._snapshot.received : 0
     const closing = this._teardown()
@@ -157,16 +165,31 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     // The previous client stops listening first, so two never answer the same offer.
     await closing
     if (generation !== this._generation) return
+    await this._receive(o, client, generation, 0)
+  }
+
+  /**
+   * Tries once to start receiving on `client`. After a failure (say, the relay cannot be
+   * reached yet) the status is `error` and the same client tries again after a pause that
+   * doubles up to 30 s, for as long as this start is current. The spec's service "keeps
+   * listening while the wallet is unlocked", and a relay down at unlock must not end that.
+   */
+  private async _receive(o: DirectPayStartOptions, client: DirectPayClient, generation: number, failures: number): Promise<void> {
     try {
       await client.startReceiving({
         onPayment: p => this._onPayment(o, p),
         onError: e => console.warn('[DirectPayManager] Inbound direct payment session failed:', e)
       })
-      if (generation === this._generation) this._set({ ...this._snapshot, status: 'online' })
+      if (generation === this._generation) this._set({ ...this._snapshot, status: 'online', error: '' })
     } catch (e) {
-      if (generation === this._generation) {
-        this._set({ ...this._snapshot, status: 'error', error: `Direct payments cannot be received: ${messageOf(e)}` })
-      }
+      if (generation !== this._generation) return
+      const error = `Direct payments cannot be received: ${messageOf(e)}`
+      if (this._snapshot.status !== 'error' || this._snapshot.error !== error) this._set({ ...this._snapshot, status: 'error', error })
+      const pause = Math.min(RECEIVE_RETRY_MIN_MS * 2 ** failures, RECEIVE_RETRY_MAX_MS)
+      this._receiveRetry = setTimeout(() => {
+        this._receiveRetry = undefined
+        if (generation === this._generation) void this._receive(o, client, generation, failures + 1)
+      }, pause)
     }
   }
 
@@ -222,6 +245,8 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
   /** Detaches the current client and signaler; returns their closing (never rejects). */
   private _teardown(): Promise<void> {
     this._generation++
+    clearTimeout(this._receiveRetry)
+    this._receiveRetry = undefined
     const started = this._started
     const client = this._snapshot.client
     this._started = null
@@ -242,6 +267,14 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
 
 function isSameWallet(a: DirectPayStartOptions, b: DirectPayStartOptions): boolean {
   return a.wallet === b.wallet && a.identity === b.identity && a.chain === b.chain
+}
+
+/**
+ * Receiving was set up and failed. A setup problem (no relay address, no message box)
+ * leaves `via` null instead, and starting over with the same inputs would not fix it.
+ */
+function receiveFailed(s: DirectPaySnapshot): boolean {
+  return s.status === 'error' && s.via !== null
 }
 
 function sameInputs(a: DirectPayStartOptions, b: DirectPayStartOptions): boolean {

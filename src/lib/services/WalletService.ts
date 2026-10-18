@@ -68,7 +68,7 @@ import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
 import { defaultNetworkSettingsMap, isWalletNetwork, normalizeMessageBoxUrl, normalizeNetworkSettings, restoreNetworkSettings, type NetworkSettings, type NetworkSettingsMap, type WalletNetwork } from '../networkConfig'
 import { setWocEndpoints } from '../utils/woc'
-import { activeHttpBridgeRequests, activeUserWalletOperations, isHttpBridgePaused, setHttpBridgePaused } from './httpBridgeSession'
+import { isHttpBridgePaused, setHttpBridgePaused, walletChangeBlocker } from './httpBridgeSession'
 import { clearWalletForHttpRoute } from '../../onWalletReady'
 
 // Device-local payment state a logout must not drop: the MessageBox and nearby outboxes,
@@ -450,9 +450,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     const identityWallet = this._wallet
     const identityKey = (await identityWallet.getPublicKey({ identityKey: true })).publicKey
     if (isHttpBridgePaused() || this._switchingNetwork || this._lifecycle !== 'ready' || this._wallet !== identityWallet) throw new Error('The wallet is already changing. Try again when it is ready.')
-    if (this._hasPendingWalletWork()) {
-      throw new Error('Finish the current app request or payment approval before changing networks.')
-    }
+    const pending = this._pendingWalletWork('changing networks')
+    if (pending) throw new Error(pending)
 
     // Pause synchronously so another app cannot start between the guard and
     // snapshot capture. Storage close drains already-running in-app operations.
@@ -551,10 +550,15 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     if (failed) throw failed.reason
   }
 
-  /** An app request, payment or permission decision that a wallet change would cut off. */
-  private _hasPendingWalletWork(): boolean {
+  /**
+   * Why a wallet change (`action`) must wait: an app request, payment or permission decision it
+   * would cut off, or the background retry of kept direct payments (which is asked to stop);
+   * '' when nothing holds the wallet.
+   */
+  private _pendingWalletWork(action: string): string {
     const queues = this.permissionQueue.getSnapshot()
-    return !!(activeHttpBridgeRequests() || activeUserWalletOperations() || queues.groupPhase === 'pending' || Object.entries(queues).some(([key, value]) => key.endsWith('Requests') && Array.isArray(value) && value.length > 0))
+    const decisions = queues.groupPhase === 'pending' || Object.entries(queues).some(([key, value]) => key.endsWith('Requests') && Array.isArray(value) && value.length > 0)
+    return walletChangeBlocker(`Finish the current app request or payment approval before ${action}.`, decisions)
   }
 
   /**
@@ -1343,9 +1347,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     if (this._removingWallet || isHttpBridgePaused() || this._switchingNetwork || this._initInFlight || this._lifecycle !== 'ready' || !this._wallet) {
       throw new Error('Wait for the wallet to finish opening before removing it.')
     }
-    if (this._hasPendingWalletWork()) {
-      throw new Error('Finish the current app request or payment approval before removing this wallet.')
-    }
+    const pending = this._pendingWalletWork('removing this wallet')
+    if (pending) throw new Error(pending)
 
     this._removingWallet = true
     setHttpBridgePaused(true)

@@ -65,7 +65,9 @@ vi.mock('../src/lib/pages/Dashboard/Payments/directPayments', () => ({
 vi.mock('react-toastify', () => ({ toast: { warning: (...args: unknown[]) => h.warning(...args) } }))
 
 import { DirectPayManager } from '../src/lib/services/DirectPayManager'
-import { activeUserWalletOperations, beginUserWalletOperation, setHttpBridgePaused } from '../src/lib/services/httpBridgeSession'
+import * as fs from 'fs'
+import * as path from 'path'
+import { activeUserWalletOperations, BACKGROUND_RETRY_BUSY, beginHttpBridgeSession, beginUserWalletOperation, endHttpBridgeSession, setHttpBridgePaused, walletChangeBlocker } from '../src/lib/services/httpBridgeSession'
 import { RetryStopped } from '../src/lib/pages/Dashboard/Payments/directPayments'
 
 const HOST = 'https://messagebox.babbage.systems'
@@ -555,6 +557,98 @@ describe('DirectPayManager.start', () => {
     expect(activeUserWalletOperations()).toBe(0)
     await vi.advanceTimersByTimeAsync(60_000)
     expect(h.retry).toHaveBeenCalledTimes(2)
+  })
+
+  // Final review follow-up (C12): a pass of many payments must not hold off Lock, a switch or
+  // removal for long either. It stops between payments once 15 s have passed; a payment already
+  // running finishes (only a stalled call is cut, after 15 s of its own).
+  it('stops a pass between payments once 15 s have passed, and goes on after the usual wait', async () => {
+    vi.useFakeTimers()
+    const outcomes: string[] = []
+    h.retry = vi.fn().mockImplementationOnce(async (o: any) => {
+      for (const n of [1, 2, 3, 4, 5, 6]) {
+        try {
+          await o.run(() => new Promise(resolve => setTimeout(resolve, 4000)))
+          outcomes.push(`ran ${n}`)
+        } catch (e) {
+          outcomes.push(e instanceof RetryStopped ? `stopped at ${n}` : 'other')
+          break
+        }
+      }
+      return 0
+    }).mockResolvedValue(0)
+    await manager.start(startOptions())
+
+    await vi.advanceTimersByTimeAsync(15_999)
+    expect(outcomes).toEqual(['ran 1', 'ran 2', 'ran 3'])
+    expect(activeUserWalletOperations()).toBe(1) // the fourth payment, begun 12 s into the pass, runs to its end
+    await vi.advanceTimersByTimeAsync(1)
+    expect(outcomes).toEqual(['ran 1', 'ran 2', 'ran 3', 'ran 4', 'stopped at 5'])
+    expect(activeUserWalletOperations()).toBe(0)
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(h.retry).toHaveBeenCalledTimes(2)
+    expect(h.retry.mock.calls[1][0]).toMatchObject({ includeNeedsAttention: true }) // that pass did not get to them all
+  })
+
+  it('gives way to Lock, a switch or removal: says the background retry holds the wallet, stops at its next payment and waits its usual interval', async () => {
+    vi.useFakeTimers()
+    let blocker = ''
+    const outcomes: string[] = []
+    h.retry = vi.fn().mockImplementationOnce(async (o: any) => {
+      for (const n of [1, 2, 3]) {
+        try {
+          await o.run(async () => { if (n === 1) blocker = walletChangeBlocker('Finish your current payment first.') })
+          outcomes.push(`ran ${n}`)
+        } catch (e) {
+          outcomes.push(e instanceof RetryStopped ? `stopped at ${n}` : 'other')
+          break
+        }
+      }
+      return 0
+    }).mockResolvedValue(0)
+    await manager.start(startOptions())
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(blocker).toBe(BACKGROUND_RETRY_BUSY)
+    expect(BACKGROUND_RETRY_BUSY).toMatch(/retrying received direct payments in the background/)
+    expect(BACKGROUND_RETRY_BUSY).toMatch(/within 15 seconds/)
+    expect(outcomes).toEqual(['ran 1', 'stopped at 2'])
+    expect(activeUserWalletOperations()).toBe(0)
+    expect(walletChangeBlocker('Finish your current payment first.')).toBe('') // the user's next try goes ahead
+
+    await vi.advanceTimersByTimeAsync(59_999)
+    expect(h.retry).toHaveBeenCalledOnce() // not a second later, which would hold the wallet again
+    await vi.advanceTimersByTimeAsync(1)
+    expect(h.retry).toHaveBeenCalledTimes(2)
+    expect(h.retry.mock.calls[1][0]).toMatchObject({ includeNeedsAttention: true })
+  })
+
+  it('names the user\'s own work, not the background retry, when that holds the wallet too', async () => {
+    const seen: string[] = []
+    h.retry = vi.fn(async (o: any) => {
+      await o.run(async () => {
+        seen.push(walletChangeBlocker('Finish your current payment first.', true)) // a permission prompt is open
+        const release = beginUserWalletOperation()
+        seen.push(walletChangeBlocker('Finish your current payment first.'))
+        release()
+        beginHttpBridgeSession(7, 'https://app.example')
+        seen.push(walletChangeBlocker('Finish your current payment first.'))
+        endHttpBridgeSession(7)
+      })
+      return 0
+    })
+    await manager.start(startOptions())
+    await vi.waitFor(() => expect(h.retry).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(activeUserWalletOperations()).toBe(0))
+
+    expect(seen).toEqual(['Finish your current payment first.', 'Finish your current payment first.', 'Finish your current payment first.'])
+  })
+
+  it('Lock and profile changes ask the background retry to stop, and say so when it alone holds the wallet', () => {
+    const menu = fs.readFileSync(path.resolve(__dirname, '../src/lib/navigation/Menu.tsx'), 'utf8')
+    expect(menu).toMatch(/const blocker = walletChangeBlocker\('Finish your current payment or app request before changing or locking the wallet\.', switchingNetwork \|\| \[basketRequests, protocolRequests, certificateRequests, spendingRequests, groupPermissionRequests, counterpartyPermissionRequests\]\.some\(queue => queue\.length > 0\)\)\s+if \(blocker\) throw new Error\(blocker\)/)
+    expect(menu.match(/assertIdle\(\)/g)).toHaveLength(3) // switch, create, lock
   })
 
   it('skips a retry while the wallet is paused or busy, and tries again a second after it is free', async () => {

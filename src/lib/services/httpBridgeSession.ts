@@ -17,6 +17,12 @@ export type HttpBridgeSession = {
 const sessions = new Map<number, HttpBridgeSession>()
 let bridgePaused = false
 let userOperations = 0
+/** The part of `userOperations` that is background work (see beginBackgroundWalletOperation). */
+let backgroundOperations = 0
+let changeRequests = 0
+
+/** Why Lock, a switch or removal must wait while only background work holds the wallet. */
+export const BACKGROUND_RETRY_BUSY = 'Your wallet is retrying received direct payments in the background. That stops within 15 seconds; try again then.'
 
 /** A network change cannot straddle an app request or a permission decision. */
 export function activeHttpBridgeRequests(): number { return sessions.size }
@@ -29,6 +35,35 @@ export function beginUserWalletOperation(): () => void {
   userOperations++
   let released = false
   return () => { if (!released) { released = true; userOperations-- } }
+}
+
+/**
+ * Wallet work the app starts by itself: retrying kept direct payments (DirectPayManager). It
+ * holds a network switch off like a user operation, and counts as one, but gives way to Lock, a
+ * switch or removal (see {@link walletChangeBlocker}).
+ */
+export function beginBackgroundWalletOperation(): () => void {
+  const release = beginUserWalletOperation()
+  backgroundOperations++
+  let released = false
+  return () => { if (!released) { released = true; backgroundOperations--; release() } }
+}
+
+/** Counts every Lock, profile or network switch, and removal asked for; background work stops when it changes. */
+export function walletChangeRequests(): number { return changeRequests }
+
+/**
+ * Lock, a profile or network switch, or wallet removal was asked for. Background work is asked to
+ * stop at its next step (it then waits its usual interval before it starts again), and this
+ * returns why the change must wait, or '' when nothing holds the wallet:
+ * - `foreground` while an app request, a user's payment, a paused bridge or (`pending`) a
+ *   permission decision or a switch is in progress;
+ * - {@link BACKGROUND_RETRY_BUSY} when background work alone holds the wallet.
+ */
+export function walletChangeBlocker(foreground: string, pending = false): string {
+  changeRequests++
+  if (pending || bridgePaused || sessions.size > 0 || userOperations > backgroundOperations) return foreground
+  return backgroundOperations > 0 ? BACKGROUND_RETRY_BUSY : ''
 }
 
 export function normalizeBridgeOrigin(originator: string): string {
@@ -94,4 +129,5 @@ export function _test_resetHttpBridgeSessions(): void {
   sessions.clear()
   bridgePaused = false
   userOperations = 0
+  backgroundOperations = 0
 }

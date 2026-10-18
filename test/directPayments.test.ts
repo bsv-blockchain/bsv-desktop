@@ -272,6 +272,7 @@ describe('deliverDirect', () => {
     const hub = createMemoryHub()
     const payer = await makePayer(), payee = await makePayee(), other = await makePayee()
     await receiving(hub, payee)
+    await receiving(hub, other)
     const payerClient = client(hub, payer)
     const connect = vi.spyOn(payerClient, 'connect')
     const box = outbox()
@@ -282,8 +283,10 @@ describe('deliverDirect', () => {
     await closedSoon(wrongPeer)
     expect(payer.createAction).not.toHaveBeenCalled()
 
-    const peer = await payerClient.connect(payee.identityKey)
-    const { ack } = await deliverDirect({ client: payerClient, wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 700, peer, persist: box.persist, markDelivered: box.markDelivered })
+    // Another payee: `payee` keeps this sender's one session until it notices the close, and
+    // drops a second offer from it without an answer until then.
+    const peer = await payerClient.connect(other.identityKey)
+    const { ack } = await deliverDirect({ client: payerClient, wallet: payer.wallet, originator: ORIGIN, recipient: other.identityKey, amount: 700, peer, persist: box.persist, markDelivered: box.markDelivered })
     expect(ack.status).toBe('accepted')
     expect(connect).toHaveBeenCalledTimes(2) // only the test's own dials
     await closedSoon(peer)

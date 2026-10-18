@@ -15,10 +15,9 @@
  * deleted until the wallet has it: a retry the wallet refuses outright, or that still cannot
  * verify it after several tries over more than a day, flags it as needing attention, and the
  * user can copy its recovery details, after which the user (and only the user) may dismiss it
- * (Ruling 36). The kept list also survives wallet removal
- * (see WalletService). A kept list this version cannot read is never written over, and entries
- * it does not recognise are passed through as they are: either may hold the only copy of a
- * payment.
+ * (Ruling 36). The kept list also survives wallet removal (see WalletService). A kept list this
+ * version cannot read is never written over, and entries it does not recognise are passed
+ * through as they are: either may hold the only copy of a payment.
  */
 import { Transaction, Utils } from '@bsv/sdk'
 import type { WalletInterface } from '@bsv/sdk'

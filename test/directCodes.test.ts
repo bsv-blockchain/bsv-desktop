@@ -17,7 +17,7 @@ import type { WalletInterface } from '@bsv/sdk'
 import { DirectPayClient } from '@bsv/webrtpay'
 import { answerDirectRequest, codeFitsQr, createDirectRequest, pendingPaymentFor, QR_MAX_CHARS, readOfferCode } from '../src/lib/pages/Dashboard/Payments/directCodes'
 import type { ReceivedDirectPayment } from '../src/lib/pages/Dashboard/Payments/directCodes'
-import { deliverDirect } from '../src/lib/pages/Dashboard/Payments/directPayments'
+import { deliverDirect, NotSentError } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import { prepareMessageBoxPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
 import type { OutgoingPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
 import { DIRECT_CODE_HINT, isDirectCode, parsePaymentTarget } from '../src/lib/pages/Dashboard/Payments/paymentProtocol'
@@ -243,7 +243,7 @@ describe('paying a recipient’s offer code', () => {
     expect(onConnected).toHaveBeenCalledTimes(1)
     expect(payee.internalizeAction).toHaveBeenCalledTimes(1)
     expect(payee.internalizeAction.mock.calls[0][0].outputs[0].paymentRemittance.senderIdentityKey).toBe(payer.identityKey)
-    await vi.waitFor(() => expect(received).toEqual([{ amount: 1200, sender: payer.identityKey, status: 'accepted' }]))
+    await vi.waitFor(() => expect(received).toEqual([{ amount: 1200, sender: payer.identityKey, status: 'accepted', repeat: false, added: true }]))
   })
 
   it('pays the amount the payer chose when the offer names none', async () => {
@@ -273,7 +273,7 @@ describe('paying a recipient’s offer code', () => {
     expect(box.persist).not.toHaveBeenCalled()
     expect(box.markDelivered).toHaveBeenCalledWith(existing.txid)
     expect(txidOf(payee.internalizeAction.mock.calls[0][0].tx)).toBe(existing.txid)
-    await vi.waitFor(() => expect(received).toEqual([{ amount: 800, sender: payer.identityKey, status: 'accepted' }]))
+    await vi.waitFor(() => expect(received).toEqual([{ amount: 800, sender: payer.identityKey, status: 'accepted', repeat: false, added: true }]))
   })
 
   it('refuses an offer for another network before answering it', async () => {
@@ -303,6 +303,25 @@ describe('paying a recipient’s offer code', () => {
     const smaller = await prepareMessageBoxPayment(payer.wallet, payee.identityKey, 300, ORIGIN, undefined, () => {})
     await expect(answerDirectRequest({ ...base, code: fixed.offer.code, existing: smaller })).rejects.toThrow(/another amount than the request/)
     expect(answerOfferCode).not.toHaveBeenCalled()
+  })
+
+  // The payee connected, so the screen must say what happened to the money: a wallet failure
+  // while making the payment (here insufficient funds) spent nothing.
+  it('says nothing was spent when the wallet cannot make the payment after the payee connected, keeping the wallet\'s words', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    payer.createAction.mockRejectedValueOnce(Object.assign(new Error('Insufficient funds in the available inputs to cover the cost of the required outputs and the transaction fee (1245 more satoshis are needed).'), { name: 'WERR_INSUFFICIENT_FUNDS' }))
+    const { offer } = await request(payee, { amount: 1200 })
+    const box = outbox()
+    const answer = await answerDirectRequest({ client: client(payer), wallet: payer.wallet, originator: ORIGIN, identity: payer.identityKey, chain: CHAIN, code: offer.code, persist: box.persist, markDelivered: box.markDelivered })
+    await offer.complete(answer.answerCode)
+
+    const error = await answer.delivered.catch(e => e)
+    expect(error).toBeInstanceOf(NotSentError)
+    expect(error.message).toBe('Your wallet could not make the payment, so nothing was spent. Ask them for a new code and try again.')
+    expect(error.detail).toMatch(/^Insufficient funds in the available inputs/)
+    expect(box.persist).not.toHaveBeenCalled()
+    expect(payer.createAction.mock.calls.some(([args]) => args.options?.sendWith)).toBe(false)
+    expect(payee.internalizeAction).not.toHaveBeenCalled()
   })
 
   it('spends nothing when the payee never scans the answer', async () => {
@@ -360,8 +379,25 @@ describe('receiving with an offer code', () => {
 
     expect(ack.status).toBe('accepted')
     expect(payee.internalizeAction).toHaveBeenCalledTimes(1)
-    await vi.waitFor(() => expect(received).toEqual([{ amount: 500, requested: 1200, sender: payer.identityKey, status: 'accepted' }]))
+    await vi.waitFor(() => expect(received).toEqual([{ amount: 500, requested: 1200, sender: payer.identityKey, status: 'accepted', repeat: false, added: true }]))
     expect(errors).toEqual([])
+  })
+
+  it('reports a payment delivered again (the payer lost the ack) as a repeat the wallet did not add again', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const box = outbox()
+    const first = await request(payee)
+    const answer = await answerDirectRequest({ client: client(payer), wallet: payer.wallet, originator: ORIGIN, identity: payer.identityKey, chain: CHAIN, code: first.offer.code, amount: 700, persist: box.persist, markDelivered: box.markDelivered })
+    await first.offer.complete(answer.answerCode)
+    const { payment } = await answer.delivered
+
+    const again = await request(payee)
+    const redelivery = await answerDirectRequest({ client: client(payer), wallet: payer.wallet, originator: ORIGIN, identity: payer.identityKey, chain: CHAIN, code: again.offer.code, existing: payment, persist: box.persist, markDelivered: box.markDelivered })
+    await again.offer.complete(redelivery.answerCode)
+    await expect(redelivery.delivered).resolves.toMatchObject({ ack: { status: 'accepted' } })
+
+    await vi.waitFor(() => expect(again.received).toEqual([{ amount: 700, sender: payer.identityKey, status: 'accepted', repeat: true, added: false }]))
+    expect(payee.internalizeAction).toHaveBeenCalledTimes(1)
   })
 
   it('reports no requested amount when the payment matches it, or when none was asked for', async () => {
@@ -474,6 +510,20 @@ describe('Nearby → Direct (WebRTC) wiring', () => {
     expect(exchange).toMatch(/answerDirectRequest\(\{ client, wallet, originator: adminOriginator, identity, chain, code: review\.code, amount: review\.amount, existing: review\.saved,\s+persist: row => \{ outbox\.add\(row\); prepared = true \}, markDelivered: outbox\.markDelivered,/)
     expect(exchange).toMatch(/const amount = saved \? saved\.amount : chosenAmount/)
     expect(exchange).toMatch(/const chosenAmount = offerCode\?\.amount \?\? payAmount/)
+  })
+
+  it('announces a payment on the page and reports a balance change once, not again for a redelivery', () => {
+    const received = exchange.slice(exchange.indexOf('onReceived: payment => {'), exchange.indexOf('onError: e =>'))
+    expect(received).toMatch(/if \(payment\.added\) window\.dispatchEvent\(new CustomEvent\('balance-changed'\)\)/)
+    expect(received).toMatch(/if \(!payment\.repeat\) onSuccess\(/)
+    // The screen still finishes its session either way.
+    expect(received).toMatch(/if \(alive\.current\) \{ setReceived\(payment\); setPhase\('received'\); setError\(''\) \}/)
+    expect(received.match(/dispatchEvent/g)).toHaveLength(1)
+  })
+
+  it('shows the wallet\'s own words under a failure that spent nothing', () => {
+    expect(exchange).toMatch(/setErrorDetail\(failure instanceof NotSentError && failure\.detail \? \{ error: text, detail: failure\.detail \} : null\)/)
+    expect(exchange).toMatch(/\{errorDetail\?\.error === error && <Typography variant="body2" sx=\{\{ mt: \.5 \}\}>\{errorDetail\.detail\}<\/Typography>\}/)
   })
 
   it('shows the requested amount beside a payment of another amount (Ruling 29)', () => {

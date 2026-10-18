@@ -49,10 +49,11 @@ const CANNOT_KEEP = 'The wallet cannot take payments right now; try again later'
 
 /**
  * A direct payment that stopped before anything was broadcast. The message says so, for the
- * user: "Nothing was spent", or that a saved payment is unchanged.
+ * user ("Nothing was spent", or that a saved payment is unchanged); `detail` holds the
+ * wallet's own words when the wallet is what stopped it.
  */
 export class NotSentError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly detail = '') {
     super(message)
     this.name = 'NotSentError'
   }
@@ -186,6 +187,11 @@ export interface DirectReceipt {
    * losing the ack. Announce a payment only when this is false, so it is announced once.
    */
   repeat: boolean
+  /**
+   * The wallet took the payment just now, so its balance changed. Also true for a repeat:
+   * a payment kept earlier and taken on its redelivery.
+   */
+  added: boolean
 }
 
 /**
@@ -213,11 +219,11 @@ export async function receiveDirectPayment(o: {
     if (error instanceof WebRTPayError) throw error
     if (!isTemporary(error)) throw new WebRTPayError('rejected', NOT_ACCEPTED, { cause: error })
     const kept = keepForRetry(retryStorageKey(o.identity, o.chain), o.payment, error)
-    return { status: 'received', repeat: !kept }
+    return { status: 'received', repeat: !kept, added: false }
   }
   // A payment kept for a retry earlier was announced when it was kept.
   const wasKept = forget(retryStorageKey(o.identity, o.chain), keyOf(o.payment, result.txid))
-  return { status: 'accepted', repeat: result.status === 'duplicate' || wasKept }
+  return { status: 'accepted', repeat: result.status === 'duplicate' || wasKept, added: result.status === 'accepted' }
 }
 
 /** A kept payment as stored on this device: everything needed to take it into a wallet. */

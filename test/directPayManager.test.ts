@@ -97,7 +97,7 @@ const handlersOf = (n = 0) => h.made.clients[n].startReceiving.mock.calls[0][0]
 beforeEach(() => {
   h.made = { clients: [], messageBoxes: [], relays: [] }
   h.startReceiving = async () => {}
-  h.receive = vi.fn(async () => ({ status: 'accepted', repeat: false }))
+  h.receive = vi.fn(async () => ({ status: 'accepted', repeat: false, added: true }))
   h.retry = vi.fn(async () => 0)
   h.warning = vi.fn()
   events = []
@@ -517,18 +517,19 @@ describe('receiving a payment', () => {
     expect(manager.getSnapshot().received).toBe(1)
   })
 
-  it('acks a payment kept for a retry as received', async () => {
-    h.receive = vi.fn(async () => ({ status: 'received', repeat: false }))
+  it('acks a payment kept for a retry as received, and announces it without a balance change', async () => {
+    h.receive = vi.fn(async () => ({ status: 'received', repeat: false, added: false }))
     await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
 
     await expect(handlersOf().onPayment(payment, { txid: 'ab'.repeat(32) })).resolves.toBe('received')
     expect(manager.getSnapshot().received).toBe(1)
+    expect(events.map(e => e.type)).toEqual(['direct-payment-received'])
   })
 
   it('holds off a network switch while it takes the payment, and refuses during one', async () => {
     await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
     await vi.waitFor(() => expect(activeUserWalletOperations()).toBe(0)) // the kept-payment retry is done
-    h.receive = vi.fn(async () => { expect(activeUserWalletOperations()).toBe(1); return { status: 'accepted', repeat: false } })
+    h.receive = vi.fn(async () => { expect(activeUserWalletOperations()).toBe(1); return { status: 'accepted', repeat: false, added: true } })
 
     await handlersOf().onPayment(payment, { txid: 'ab'.repeat(32) })
     expect(h.receive).toHaveBeenCalledOnce()
@@ -544,12 +545,23 @@ describe('receiving a payment', () => {
   })
 
   it.each(['accepted', 'received'] as const)('announces a payment once: a redelivery after a lost ack is acked %s, not announced again', async status => {
-    h.receive = vi.fn(async () => ({ status, repeat: true }))
+    h.receive = vi.fn(async () => ({ status, repeat: true, added: false }))
     await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
 
     await expect(handlersOf().onPayment(payment, { txid: 'ab'.repeat(32) })).resolves.toBe(status)
 
     expect(events).toEqual([])
+    expect(manager.getSnapshot().received).toBe(0)
+  })
+
+  it('reports the balance change when a redelivery is what the wallet finally adds, without announcing it again', async () => {
+    // Kept earlier (announced then); the payer delivered it again and this time the wallet took it.
+    h.receive = vi.fn(async () => ({ status: 'accepted', repeat: true, added: true }))
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
+
+    await expect(handlersOf().onPayment(payment, { txid: 'ab'.repeat(32) })).resolves.toBe('accepted')
+
+    expect(events.map(e => e.type)).toEqual(['balance-changed'])
     expect(manager.getSnapshot().received).toBe(0)
   })
 

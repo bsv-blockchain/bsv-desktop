@@ -222,14 +222,16 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     } finally {
       release()
     }
-    // Delivered again after a lost ack: it was announced the first time.
-    if (receipt.repeat) return receipt.status
     // The payment is taken: nothing below may turn the ack into a rejection.
     try {
-      const current = this._started?.options
-      if (current && isSameWallet(current, o)) this._set({ ...this._snapshot, received: this._snapshot.received + 1 })
-      window.dispatchEvent(new CustomEvent('balance-changed'))
-      window.dispatchEvent(new CustomEvent('direct-payment-received', { detail: { amount: p.token.amount, sender: p.sender } }))
+      // In the wallet now, even when it is a redelivery of a payment kept earlier.
+      if (receipt.added) window.dispatchEvent(new CustomEvent('balance-changed'))
+      // Delivered again after a lost ack: it was announced the first time.
+      if (!receipt.repeat) {
+        const current = this._started?.options
+        if (current && isSameWallet(current, o)) this._set({ ...this._snapshot, received: this._snapshot.received + 1 })
+        window.dispatchEvent(new CustomEvent('direct-payment-received', { detail: { amount: p.token.amount, sender: p.sender } }))
+      }
     } catch (e) {
       console.warn('[DirectPayManager] Could not announce a received direct payment:', e)
     }

@@ -13,7 +13,8 @@ import type { WalletInterface } from '@bsv/sdk'
 import { decodeCode, WebRTPayError } from '@bsv/webrtpay'
 import type { DirectPayClient, OfferCode, OfferHandle, PaymentAck, ReceiveHandlers } from '@bsv/webrtpay'
 import { beginUserWalletOperation } from '../../../services/httpBridgeSession'
-import { deliverDirect, receiveDirectPayment } from './directPayments'
+import { deliverDirect, NotSentError, receiveDirectPayment } from './directPayments'
+import type { DirectReceipt } from './directPayments'
 import type { OutgoingPayment } from './messageBoxPayments'
 import { networkLabel, validAmount } from './paymentProtocol'
 
@@ -90,11 +91,16 @@ export interface ReceivedDirectPayment {
   sender: string
   /** `received`: kept on this device until the wallet can take it (see receiveDirectPayment). */
   status: 'accepted' | 'received'
+  /** Delivered again (the payer lost the ack): announced when it first arrived. */
+  repeat: boolean
+  /** The wallet took it just now, so its balance changed. */
+  added: boolean
 }
 
 /**
  * Creates the payee's offer code for `amount` (any amount when absent). Payments on its
- * session go into the wallet through receiveDirectPayment, then `onReceived` is called.
+ * session go into the wallet through receiveDirectPayment, then `onReceived` is called, also
+ * for a repeat (the screen still has to finish its session).
  * A payment for another amount than requested is taken too, and reported with the
  * requested amount (Ruling 29): it pays this wallet, and its payer has already broadcast
  * it, so refusing it would only strand the funds. `onError` hears of failed sessions and
@@ -115,20 +121,20 @@ export function createDirectRequest(o: {
     onPayment: async p => {
       // Throws while the network is changing: the payer keeps the payment and can retry.
       const release = beginUserWalletOperation()
-      let status: 'accepted' | 'received'
+      let receipt: DirectReceipt
       try {
-        ({ status } = await receiveDirectPayment({ wallet, originator, identity, chain, payment: p }))
+        receipt = await receiveDirectPayment({ wallet, originator, identity, chain, payment: p })
       } finally {
         release()
       }
       // The payment is taken: nothing below may turn the ack into a rejection.
       try {
         const requested = amount !== undefined && amount !== p.token.amount ? { requested: amount } : {}
-        o.onReceived({ amount: p.token.amount, ...requested, sender: p.sender, status })
+        o.onReceived({ amount: p.token.amount, ...requested, sender: p.sender, ...receipt })
       } catch (e) {
         console.warn('[directCodes] Could not announce a received direct payment:', e)
       }
-      return status
+      return receipt.status
     },
     onError: o.onError
   }
@@ -144,7 +150,8 @@ export interface DirectAnswer {
   /**
    * Settles when the payment is delivered or has failed, with an `Error` for the user. A
    * recipient who never connects costs nothing; after the payment was saved, the error says
-   * to retry its delivery.
+   * to retry its delivery. A failure before anything was broadcast is a `NotSentError` that
+   * says so; when the wallet could not make the payment, its own words are the `detail`.
    */
   delivered: Promise<{ payment: OutgoingPayment; ack: PaymentAck }>
   /**
@@ -204,10 +211,14 @@ export async function answerDirectRequest(o: {
         release = beginUserWalletOperation()
       } catch (e) {
         peer.close()
-        throw e
+        throw saved ? e : notMade(e)
       }
+      let persisted = false
       try {
-        return await deliverDirect({ client: o.client, wallet: o.wallet, originator: o.originator, recipient, amount, existing: o.existing, persist: o.persist, markDelivered: o.markDelivered, peer })
+        return await deliverDirect({ client: o.client, wallet: o.wallet, originator: o.originator, recipient, amount, existing: o.existing, persist: p => { o.persist(p); persisted = true }, markDelivered: o.markDelivered, peer })
+      } catch (e) {
+        // A new payment is saved before it is broadcast, so one never saved was never broadcast.
+        throw saved || persisted ? e : notMade(e)
       } finally {
         release()
       }
@@ -227,6 +238,16 @@ export async function answerDirectRequest(o: {
       return true
     }
   }
+}
+
+/**
+ * A new payment that failed after the payee connected but before anything was saved or
+ * broadcast. deliverDirect's own refusals say so already; any other failure is the wallet's
+ * (insufficient funds, say), and its words go under a message that says nothing was spent.
+ */
+function notMade(error: unknown): NotSentError {
+  if (error instanceof NotSentError) return error
+  return new NotSentError('Your wallet could not make the payment, so nothing was spent. Ask them for a new code and try again.', error instanceof Error ? error.message : String(error))
 }
 
 function notConnected(error: unknown, saved: boolean): string {

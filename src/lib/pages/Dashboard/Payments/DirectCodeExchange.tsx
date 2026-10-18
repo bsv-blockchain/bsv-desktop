@@ -12,6 +12,7 @@ import AmountInput from '../../../components/AmountInput'
 import AmountDisplay from '../../../components/AmountDisplay'
 import QrScanner from './QrScanner'
 import { answerDirectRequest, codeFitsQr, createDirectRequest, pendingPaymentFor, readOfferCode } from './directCodes'
+import { NotSentError } from './directPayments'
 import type { DirectAnswer, DirectOutbox, ReceivedDirectPayment } from './directCodes'
 import type { OutgoingPayment } from './messageBoxPayments'
 import { networkLabel, validAmount } from './paymentProtocol'
@@ -51,6 +52,8 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
   const client = directPay.client
   const [direction, setDirection] = useState<'receive' | 'send'>(initialCode ? 'send' : 'receive')
   const [error, setError] = useState('')
+  /** The wallet's own words under `error`; shown only with the error it came with. */
+  const [errorDetail, setErrorDetail] = useState<{ error: string; detail: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [scanFor, setScanFor] = useState<'offer' | 'answer' | null>(null)
   const alive = useRef(true)
@@ -98,8 +101,9 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
     try {
       const handle = await createDirectRequest({ client, wallet, originator: adminOriginator, identity, chain, amount: requestAmount ?? undefined,
         onReceived: payment => {
-          window.dispatchEvent(new CustomEvent('balance-changed'))
-          onSuccess(payment.status === 'accepted' ? 'Direct payment received.' : 'Direct payment received. Your wallet will add it once it can be verified.')
+          if (payment.added) window.dispatchEvent(new CustomEvent('balance-changed'))
+          // Delivered again (their wallet lost the ack): it was announced when it first arrived.
+          if (!payment.repeat) onSuccess(payment.status === 'accepted' ? 'Direct payment received.' : 'Direct payment received. Your wallet will add it once it can be verified.')
           if (alive.current) { setReceived(payment); setPhase('received'); setError('') }
         },
         onError: e => { if (alive.current) setError(`A payment could not be received: ${messageOf(e)}`) }
@@ -165,7 +169,9 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
         if (prepared) window.dispatchEvent(new CustomEvent('balance-changed'))
         if (!alive.current || !current) return
         setAnswer(null); setPayPhase('enter')
-        setError(prepared ? `Your payment is saved under Saved payments. Retry its delivery; do not send a new payment. ${messageOf(failure)}` : messageOf(failure))
+        const text = prepared ? `Your payment is saved under Saved payments. Retry its delivery; do not send a new payment. ${messageOf(failure)}` : messageOf(failure)
+        setError(text)
+        setErrorDetail(failure instanceof NotSentError && failure.detail ? { error: text, detail: failure.detail } : null)
       })
     } catch (e) { setError(messageOf(e) || 'The answer could not be created.') } finally { setBusy(false) }
   }
@@ -187,7 +193,7 @@ export default function DirectCodeExchange({ identity, initialCode, outbox, onSu
     <ToggleButtonGroup fullWidth exclusive value={direction} onChange={(_, value) => { if (value) { setDirection(value); setError('') } }} aria-label="Direct payment direction"><ToggleButton value="receive">Receive directly</ToggleButton><ToggleButton value="send">Pay directly</ToggleButton></ToggleButtonGroup>
     {!client && <Alert severity="info">Direct payments are not ready yet. Try again in a moment.</Alert>}
     {/* While the confirm dialog is open it shows the error itself. */}
-    {error && !review && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
+    {error && !review && <Alert severity="error" onClose={() => setError('')}>{error}{errorDetail?.error === error && <Typography variant="body2" sx={{ mt: .5 }}>{errorDetail.detail}</Typography>}</Alert>}
     {busy && <LinearProgress />}
     {direction === 'receive' ? phase === 'received' && received ? <Box sx={{ textAlign: 'center', py: 4 }}>
       <CheckCircleOutline color="primary" sx={{ fontSize: 54 }} />

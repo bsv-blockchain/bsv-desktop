@@ -274,6 +274,75 @@ describe('MessageBoxAutoReceiver', () => {
     await receiver.stop()
   })
 
+  describe('review minors', () => {
+    it('acknowledges quietly a payment it took whose acknowledgement was lost', async () => {
+      const p = payment('m1')
+      const client = fakeClient([p])
+      client.acceptPayment.mockImplementationOnce(async () => {}) // internalized, but the ack was lost: still listed
+      const receiver = new MessageBoxAutoReceiver()
+      await start(receiver, client)
+      expect(client.inbox).toEqual([p])
+
+      window.dispatchEvent(new Event('focus'))
+      await vi.waitFor(() => expect(client.acknowledgeMessage).toHaveBeenCalledWith({ messageIds: ['m1'], host: HOST }))
+      expect(client.acceptPayment).toHaveBeenCalledTimes(1)
+      expect(receiver.records()).toEqual([expect.objectContaining({ messageId: 'm1', status: 'received' })])
+      expect(announced()).toHaveLength(1)
+      await receiver.stop()
+    })
+
+    it('shows no failure when acknowledging a copy of a payment it already has fails', async () => {
+      const p = payment('m1')
+      createSeenStore(IDENTITY, CHAIN).add(paymentKey(p.txid, 0, p.token.customInstructions.derivationPrefix, p.token.customInstructions.derivationSuffix))
+      const client = fakeClient([p])
+      client.acknowledgeMessage.mockRejectedValueOnce(new Error('offline'))
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const receiver = new MessageBoxAutoReceiver()
+      await start(receiver, client)
+      expect(receiver.records()).toEqual([])
+      warn.mockRestore()
+      await receiver.stop()
+    })
+
+    it('does not accept twice across a restart, and keeps the record of the accept that outlived it', async () => {
+      const client = fakeClient([payment('m1', 300)])
+      const gate = deferred()
+      client.acceptPayment.mockImplementationOnce(async () => { await gate.promise; client.inbox = [] })
+      const receiver = new MessageBoxAutoReceiver()
+      void start(receiver, client)
+      await vi.waitFor(() => expect(client.acceptPayment).toHaveBeenCalledTimes(1))
+
+      // Restarted (say, a new message box client) while the first accept still runs.
+      const restarted = start(receiver, client)
+      gate.resolve()
+      await restarted
+      await new Promise(r => setTimeout(r, 0))
+
+      expect(client.acceptPayment).toHaveBeenCalledTimes(1)
+      expect(receiver.records()).toEqual([expect.objectContaining({ messageId: 'm1', status: 'received', amount: 300 })])
+      // A later record of the new run keeps it.
+      const next = payment('m2')
+      client.inbox = [next]
+      client.deliver(next)
+      await vi.waitFor(() => expect(receiver.records().map(r => r.messageId)).toEqual(['m2', 'm1']))
+      expect(JSON.parse(local.get(recordsStorageKey(IDENTITY, CHAIN))!).map((r: any) => r.messageId)).toEqual(['m2', 'm1'])
+      await receiver.stop()
+    })
+
+    it('says to try again when Retry is pressed while it gives way to Lock', async () => {
+      const client = fakeClient([payment('m1')])
+      client.acceptPayment.mockRejectedValueOnce(new Error('busy'))
+      const receiver = new MessageBoxAutoReceiver()
+      await start(receiver, client)
+      walletChangeBlocker('Finish your current payment first.')
+
+      await receiver.retry('m1')
+      expect(client.acceptPayment).toHaveBeenCalledTimes(1)
+      expect(receiver.records()).toEqual([expect.objectContaining({ status: 'failed', error: 'Your wallet is busy. Try again in a few seconds.' })])
+      await receiver.stop()
+    })
+  })
+
   describe('takeWaiting (Wallet Check)', () => {
     it('is null while not running', async () => {
       expect(await new MessageBoxAutoReceiver().takeWaiting()).toBeNull()

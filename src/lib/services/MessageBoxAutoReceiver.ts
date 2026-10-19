@@ -76,7 +76,8 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
   private _generation = 0
   private _run: Run | null = null
   private _records: ReceivedRecord[] = NO_RECORDS
-  private _inFlight = new Set<string>()
+  /** Message ids being accepted, kept across restarts so a new run never starts one twice (review minor 4). */
+  private readonly _inFlight = new Set<string>()
   /** The listing in progress, if any (one at a time). */
   private _listing: Promise<void> | null = null
   private _timer: ReturnType<typeof setInterval> | null = null
@@ -136,6 +137,12 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
     let problem = ''
     try { [payment] = await run.client.findIncomingPaymentsByMessageId(messageId, run.host) } catch (error) { problem = messageOf(error) }
     if (!this._current(run.generation)) return
+    if (payment && this._yielding()) {
+      // Lock or a switch was just asked for (review minor 7): say so instead of doing nothing.
+      const existing = this._find(messageId)
+      if (existing?.status === 'failed') this._record(run, { ...existing, error: 'Your wallet is busy. Try again in a few seconds.' })
+      return
+    }
     if (payment) return this._take(payment, run.generation)
     const existing = this._find(messageId)
     if (existing?.status === 'failed') this._record(run, { ...existing, error: problem || 'This payment is no longer in your message box.' })
@@ -144,7 +151,6 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
   private _halt() {
     this._generation++
     this._run = null
-    this._inFlight = new Set()
     this._listing = null
     if (this._timer) clearInterval(this._timer)
     this._timer = null
@@ -183,7 +189,9 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
     const run = this._run
     const id = payment?.messageId
     if (!run || run.generation !== generation || typeof id !== 'string') return
-    if (this._inFlight.has(id) || this._find(id)?.status === 'received') return
+    if (this._inFlight.has(id)) return
+    // Taken, yet still listed: its acknowledgement was lost (acceptPayment does not retry it). Ack it quietly (review minor 3).
+    if (this._find(id)?.status === 'received') { await this._ackQuietly(run, id); return }
     const inFlight = this._inFlight
     inFlight.add(id)
     // Kept while an accept that took too long is still running, so it is not started twice.
@@ -192,7 +200,7 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
     try {
       const seen = createSeenStore(run.identity, run.chain)
       const key = keyOf(payment)
-      if (seen.has(key)) { await run.client.acknowledgeMessage({ messageIds: [id], host: run.host }); return }
+      if (seen.has(key)) { await this._ackQuietly(run, id); return } // already in the wallet: never a failure row (review minor 5)
       if (this._yielding()) return
       let release: () => void
       try { release = beginBackgroundWalletOperation('messagebox-receive') } catch { return } // busy or switching: the next listing tries again
@@ -230,13 +238,21 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
    */
   private _record(run: Run, record: ReceivedRecord) {
     const current = this._current(run.generation)
-    const rows = current ? this._records : readRecords(run.storageKey)
+    // A stopped run of the wallet that is open again (a restart) updates the shown list too, so
+    // the new run does not write over its record (review minor 4); it still announces nothing.
+    const shown = current || (this._run !== null && this._run.storageKey === run.storageKey)
+    const rows = shown ? this._records : readRecords(run.storageKey)
     const at = rows.findIndex(r => r.messageId === record.messageId)
     // A payment that keeps failing the same way on every listing changes nothing.
     if (at >= 0 && rows[at].status === record.status && rows[at].error === record.error && rows[at].at === record.at) return
     const next = (at < 0 ? [record, ...rows] : rows.map((r, i) => i === at ? record : r)).slice(0, RECORD_LIMIT)
     try { localStorage.setItem(run.storageKey, JSON.stringify(next)) } catch { /* the record is shown for this session only */ }
-    if (current) this._setRecords(next)
+    if (shown) this._setRecords(next)
+  }
+
+  /** Acknowledges a message whose payment the wallet already has; a failure only waits for the next listing. */
+  private async _ackQuietly(run: Run, messageId: string): Promise<void> {
+    try { await run.client.acknowledgeMessage({ messageIds: [messageId], host: run.host }) } catch (error) { console.warn('[MessageBoxAutoReceiver] Could not acknowledge a payment already received:', error) }
   }
 
   private _setRecords(rows: ReceivedRecord[]) {

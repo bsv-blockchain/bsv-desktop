@@ -147,10 +147,16 @@ describe('MessageBoxAutoReceiver', () => {
 
   it('retries a failure on the next listing', async () => {
     const client = fakeClient([payment('m1')])
-    client.acceptPayment.mockRejectedValueOnce(new Error('busy'))
+    client.acceptPayment.mockRejectedValueOnce(new Error('busy')).mockRejectedValueOnce(new Error('busy'))
     const receiver = new MessageBoxAutoReceiver()
     await start(receiver, client)
     expect(receiver.records()[0].status).toBe('failed')
+    // The same failure again leaves the records as they were.
+    const failed = receiver.records()
+    window.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() => expect(client.acceptPayment).toHaveBeenCalledTimes(2))
+    await new Promise(r => setTimeout(r, 0))
+    expect(receiver.records()).toBe(failed)
 
     window.dispatchEvent(new Event('focus'))
     await vi.waitFor(() => expect(receiver.records()[0].status).toBe('received'))

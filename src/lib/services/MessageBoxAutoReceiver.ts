@@ -155,6 +155,8 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
     const current = this._current(run.generation)
     const rows = current ? this._records : readRecords(run.storageKey)
     const at = rows.findIndex(r => r.messageId === record.messageId)
+    // A payment that keeps failing the same way on every listing changes nothing.
+    if (at >= 0 && rows[at].status === record.status && rows[at].error === record.error && rows[at].at === record.at) return
     const next = (at < 0 ? [record, ...rows] : rows.map((r, i) => i === at ? record : r)).slice(0, RECORD_LIMIT)
     try { localStorage.setItem(run.storageKey, JSON.stringify(next)) } catch { /* the record is shown for this session only */ }
     if (current) this._setRecords(next)

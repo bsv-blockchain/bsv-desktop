@@ -11,12 +11,18 @@
  * wallet already took another way (a direct payment delivered live, see createSeenStore) is
  * acknowledged silently, with no record or announcement. A failed accept is recorded with its
  * error, left in the message box, and tried again on the next listing or on `retry`.
+ *
+ * Accepting is background work (beginBackgroundWalletOperation): it yields to Lock, a profile
+ * or network switch and wallet removal. Once one is asked for (walletChangeRequests changes),
+ * it takes nothing new for {@link YIELD_MS}, so the user's next try gets the wallet; a wallet
+ * that is busy or changing networks is not a failure either. In both cases the payment stays
+ * in the message box for the next listing, with no record.
  */
 import { Transaction } from '@bsv/sdk'
 import type { IncomingPayment, PeerPayClient } from '@bsv/message-box-client'
 import { paymentKey } from '@bsv/webrtpay'
 import { EventEmittable } from './EventEmittable'
-import { beginUserWalletOperation } from './httpBridgeSession'
+import { beginBackgroundWalletOperation, walletChangeRequests } from './httpBridgeSession'
 import { createSeenStore } from '../pages/Dashboard/Payments/directPayments'
 
 export interface ReceivedRecord { messageId: string; sender: string; amount: number; at: number; status: 'received' | 'failed'; error?: string }
@@ -25,6 +31,8 @@ export type MessageBoxAutoReceiverOptions = { client: PeerPayClient; host: strin
 
 export const RECEIVED_RECORDS_PREFIX = 'messagebox-received-v1:'
 const RECORD_LIMIT = 200
+/** How long nothing new is accepted after Lock, a switch or removal was asked for. */
+export const YIELD_MS = 15_000
 const NO_RECORDS: ReceivedRecord[] = []
 
 export const recordsStorageKey = (identity: string, chain: string) => `${RECEIVED_RECORDS_PREFIX}${identity}:${chain}`
@@ -56,6 +64,8 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
   private _inFlight = new Set<string>()
   private _listing = false
   private _timer: ReturnType<typeof setInterval> | null = null
+  private _changes = walletChangeRequests()
+  private _pausedUntil = 0
   private _onFocus = () => { if (this._run) void this._relist(this._run.generation) }
 
   /** Newest first; the same array until something changes. */
@@ -105,6 +115,13 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
     events()?.removeEventListener('focus', this._onFocus)
   }
 
+  /** True while yielding to a Lock, switch or removal the user asked for. */
+  private _yielding(): boolean {
+    const changes = walletChangeRequests()
+    if (changes !== this._changes) { this._changes = changes; this._pausedUntil = Date.now() + YIELD_MS }
+    return Date.now() < this._pausedUntil
+  }
+
   private _current(generation: number) { return this._run !== null && this._run.generation === generation }
 
   private _find(messageId: string) { return this._records.find(r => r.messageId === messageId) }
@@ -115,7 +132,7 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
     this._listing = true
     try {
       const payments = await run.client.listIncomingPayments(run.host)
-      for (const payment of payments) { if (!this._current(generation)) return; await this._take(payment, generation) }
+      for (const payment of payments) { if (!this._current(generation) || this._yielding()) return; await this._take(payment, generation) }
     } catch (error) {
       console.warn('[MessageBoxAutoReceiver] Could not list message box payments:', error)
     } finally { if (this._current(generation)) this._listing = false }
@@ -133,7 +150,9 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
       const seen = createSeenStore(run.identity, run.chain)
       const key = keyOf(payment)
       if (seen.has(key)) { await run.client.acknowledgeMessage({ messageIds: [id], host: run.host }); return }
-      const release = beginUserWalletOperation()
+      if (this._yielding()) return
+      let release: () => void
+      try { release = beginBackgroundWalletOperation('messagebox-receive') } catch { return } // busy or switching: the next listing tries again
       try { await run.client.acceptPayment(payment) } finally { release() }
       seen.add(key)
       this._record(run, { ...base, at: Date.now(), status: 'received' })

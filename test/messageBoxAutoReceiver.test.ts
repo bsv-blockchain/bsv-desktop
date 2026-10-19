@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LockingScript, MerklePath, P2PKH, PrivateKey, Transaction, UnlockingScript } from '@bsv/sdk'
 import { paymentKey } from '@bsv/webrtpay'
-import { MessageBoxAutoReceiver, recordsStorageKey } from '../src/lib/services/MessageBoxAutoReceiver'
+import { MessageBoxAutoReceiver, recordsStorageKey, YIELD_MS } from '../src/lib/services/MessageBoxAutoReceiver'
+import { activeUserWalletOperations, BACKGROUND_RETRY_BUSY, beginBackgroundWalletOperation, MESSAGEBOX_RECEIVE_BUSY, setHttpBridgePaused, walletChangeBlocker, _test_resetHttpBridgeSessions } from '../src/lib/services/httpBridgeSession'
 import { createSeenStore } from '../src/lib/pages/Dashboard/Payments/directPayments'
 
 const IDENTITY = '02' + 'ab'.repeat(32)
@@ -12,6 +13,7 @@ let local: Map<string, string>
 let events: CustomEvent[]
 
 beforeEach(() => {
+  _test_resetHttpBridgeSessions()
   local = new Map()
   vi.stubGlobal('localStorage', {
     getItem: (k: string) => local.get(k) ?? null,
@@ -270,5 +272,70 @@ describe('MessageBoxAutoReceiver', () => {
     expect(receiver.records()).toHaveLength(1)
     warn.mockRestore()
     await receiver.stop()
+  })
+
+  describe('as background work', () => {
+    it('yields to Lock: the blocker names message box receiving, and nothing new is taken until the pause ends', async () => {
+      const [a, b] = [payment('m1', 1000), payment('m2', 2000)]
+      const client = fakeClient([a, b])
+      const gate = deferred()
+      client.acceptPayment.mockImplementationOnce(async () => { await gate.promise; client.inbox = client.inbox.filter(m => m !== a) })
+      const receiver = new MessageBoxAutoReceiver()
+      const started = start(receiver, client)
+      await vi.waitFor(() => expect(client.acceptPayment).toHaveBeenCalledTimes(1))
+
+      // Lock is asked for while the first payment is being accepted.
+      expect(activeUserWalletOperations()).toBe(1)
+      expect(walletChangeBlocker('Finish your current payment first.')).toBe(MESSAGEBOX_RECEIVE_BUSY)
+      gate.resolve()
+      await started
+
+      // The accept in progress finished; the next one was left in the message box, not failed.
+      expect(client.acceptPayment).toHaveBeenCalledTimes(1)
+      expect(receiver.records().map(r => [r.messageId, r.status])).toEqual([['m1', 'received']])
+      expect(client.inbox).toEqual([b])
+      expect(walletChangeBlocker('Finish your current payment first.')).toBe('') // the user's next try goes ahead
+
+      // Still paused: a live copy and a re-list take nothing.
+      client.deliver(b)
+      window.dispatchEvent(new Event('focus'))
+      await new Promise(r => setTimeout(r, 0))
+      expect(client.acceptPayment).toHaveBeenCalledTimes(1)
+
+      // After the pause the next listing takes it.
+      const now = Date.now()
+      vi.spyOn(Date, 'now').mockReturnValue(now + YIELD_MS + 1)
+      window.dispatchEvent(new Event('focus'))
+      await vi.waitFor(() => expect(receiver.records()).toHaveLength(2))
+      expect(client.acceptPayment).toHaveBeenCalledTimes(2)
+      vi.restoreAllMocks()
+      await receiver.stop()
+    })
+
+    it('treats a busy or switching wallet as no failure: the payment waits for the next listing', async () => {
+      const client = fakeClient([payment('m1')])
+      setHttpBridgePaused(true)
+      const receiver = new MessageBoxAutoReceiver()
+      await start(receiver, client)
+
+      expect(client.acceptPayment).not.toHaveBeenCalled()
+      expect(receiver.records()).toEqual([])
+      expect(client.inbox).toHaveLength(1)
+
+      setHttpBridgePaused(false)
+      window.dispatchEvent(new Event('focus'))
+      await vi.waitFor(() => expect(receiver.records()).toEqual([expect.objectContaining({ messageId: 'm1', status: 'received' })]))
+      await receiver.stop()
+    })
+
+    it('leaves the direct-pay busy message to direct-pay retries', () => {
+      const releaseReceive = beginBackgroundWalletOperation('messagebox-receive')
+      const releaseRetry = beginBackgroundWalletOperation()
+      expect(walletChangeBlocker('x')).toBe(BACKGROUND_RETRY_BUSY)
+      releaseRetry()
+      expect(walletChangeBlocker('x')).toBe(MESSAGEBOX_RECEIVE_BUSY)
+      releaseReceive()
+      expect(walletChangeBlocker('x')).toBe('')
+    })
   })
 })

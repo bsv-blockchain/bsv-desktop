@@ -40,6 +40,7 @@ const paymentState: Record<string, string> = {
   'direct-pay-retry-v2:x': '[]', // kept on logout like all direct-pay state, but not a kept-payment list
   'bsv-desktop-direct-pay-v1': '{"receiveEnabled":true}',
   'bsv-desktop-direct-pay-v2': '{"receiveEnabled":false}',
+  'bsv-desktop-direct-pay-v3': '{"receiveEnabled":false,"signaling":"messagebox"}',
   [`messagebox-received-v1:${identity}:main`]: '[]'
 }
 const walletState: Record<string, string> = {
@@ -168,7 +169,7 @@ describe('direct payments follow the wallet', () => {
     vi.spyOn(service.peerPay, 'replaceClient').mockImplementation(async () => {
       ;(service.peerPay as any)._client = replacement
     })
-    local.set('bsv-desktop-direct-pay-v2', JSON.stringify({ receiveEnabled: true }))
+    local.set('bsv-desktop-direct-pay-v3', JSON.stringify({ receiveEnabled: true, signaling: 'messagebox' }))
 
     await service.updateMessageBoxUrl('https://box.example.com/')
 

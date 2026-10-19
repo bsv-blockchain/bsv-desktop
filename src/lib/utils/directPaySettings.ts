@@ -8,9 +8,14 @@
  * learn this device's public IP address and when the wallet is unlocked by
  * starting a connection, without paying (audit F14); that now applies by
  * default. The settings are one per device, so receiving answers for every
- * wallet profile on it. Settings saved under the v1 key, when receiving was off
- * by default, are read once with receiving on; from then on the v2 key holds the
- * user's choice.
+ * wallet profile on it.
+ * Wallets find each other through the public WebRTPay relay by default (the
+ * user's decision, 2026-10-19), with the message box as the fallback while the
+ * relay cannot be reached (see DirectPayManager). Settings saved before then are
+ * read once, while the v3 key is absent, with relay signaling and, when they had
+ * no relay address, the default one: v2 settings keep their receiving choice, v1
+ * settings (when receiving was off by default) are read with receiving on. From
+ * then on the v3 key holds the user's choice, message box signaling included.
  * Sending directly needs no setting, and reveals the payer's IP address to the
  * recipient's wallet. When two wallets cannot connect directly, a TURN server
  * may relay the encrypted connection; the carriers see who connects, their
@@ -29,16 +34,23 @@ export interface DirectPaySettings {
   turn?: { urls: string; username: string; credential: string }
 }
 
-export const DIRECT_PAY_SETTINGS_KEY = 'bsv-desktop-direct-pay-v2'
-/** Read only while the v2 key is absent, with receiving forced on. Never written. */
-export const LEGACY_DIRECT_PAY_SETTINGS_KEY = 'bsv-desktop-direct-pay-v1'
+export const DIRECT_PAY_SETTINGS_KEY = 'bsv-desktop-direct-pay-v3'
+/** Read only while the v3 key is absent, with relay signaling forced (see the header). Never written. */
+export const V2_DIRECT_PAY_SETTINGS_KEY = 'bsv-desktop-direct-pay-v2'
+/** Read only while the v3 and v2 keys are absent, with relay signaling and receiving forced on. Never written. */
+export const V1_DIRECT_PAY_SETTINGS_KEY = 'bsv-desktop-direct-pay-v1'
+/** Every key direct-pay settings were ever stored under, newest first. */
+export const ALL_DIRECT_PAY_SETTINGS_KEYS = [DIRECT_PAY_SETTINGS_KEY, V2_DIRECT_PAY_SETTINGS_KEY, V1_DIRECT_PAY_SETTINGS_KEY] as const
+
+/** The public WebRTPay relay, the default way wallets find each other. */
+export const DEFAULT_RELAY_URL = 'wss://webrtpay-relay-us-1.bsvblockchain.tech'
 
 const CHANGED_EVENT = 'direct-pay-settings-changed'
 
 export const DEFAULT_DIRECT_PAY_SETTINGS: DirectPaySettings = {
   receiveEnabled: true,
-  signaling: 'messagebox',
-  relayUrl: '',
+  signaling: 'relay',
+  relayUrl: DEFAULT_RELAY_URL,
   stunUrls: [
     'stun:stun-us-1.bsvb.tech:3478',
     'stun:stun.l.google.com:19302',
@@ -87,6 +99,11 @@ function checkRelayUrl(value: unknown): string {
   return text
 }
 
+/** `value` as a relay URL, or '' when it is none or not valid. */
+function validRelayUrl(value: unknown): string {
+  try { return checkRelayUrl(value) } catch { return '' }
+}
+
 /** Blank entries are dropped, so a form can pass one line per server. */
 function checkStunUrls(value: unknown): string[] {
   if (!Array.isArray(value)) throw new Error('STUN servers must be a list of stun: or stuns: addresses.')
@@ -125,17 +142,28 @@ function withTurn(settings: Omit<DirectPaySettings, 'turn'>, turn: DirectPaySett
 
 /**
  * Falls back to the default for each stored field that is missing or no longer valid.
- * Without v2 settings, v1 settings are used with receiving on (see the header).
+ * Without v3 settings, v2 or else v1 settings are used with relay signaling (and v1 with
+ * receiving on); see the header.
  */
 export function loadDirectPaySettings(): DirectPaySettings {
   const defaults = DEFAULT_DIRECT_PAY_SETTINGS
   let stored: Record<string, unknown> = {}
   try {
-    const current = localStorage.getItem(DIRECT_PAY_SETTINGS_KEY)
-    const legacy = current === null ? localStorage.getItem(LEGACY_DIRECT_PAY_SETTINGS_KEY) : null
-    const parsed: unknown = JSON.parse(current ?? legacy ?? 'null')
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) stored = parsed as Record<string, unknown>
-    if (current === null && legacy !== null) stored = { ...stored, receiveEnabled: true }
+    let version = 3
+    let text = localStorage.getItem(DIRECT_PAY_SETTINGS_KEY)
+    if (text === null) { version = 2; text = localStorage.getItem(V2_DIRECT_PAY_SETTINGS_KEY) }
+    if (text === null) { version = 1; text = localStorage.getItem(V1_DIRECT_PAY_SETTINGS_KEY) }
+    if (text !== null && version < 3) {
+      // Older settings are migrated even when they cannot be read.
+      stored = { signaling: 'relay', ...(version === 1 && { receiveEnabled: true }) }
+    }
+    const parsed: unknown = JSON.parse(text ?? 'null')
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const fields = parsed as Record<string, unknown>
+      stored = version === 3 ? fields : { ...fields, ...stored }
+      // A relay address the user entered stays; none (or one no longer valid) becomes the default.
+      if (version < 3) stored.relayUrl = validRelayUrl(fields.relayUrl) || defaults.relayUrl
+    }
   } catch { /* corrupt or unreadable storage: the defaults apply */ }
 
   const field = <T>(check: (value: unknown) => T, value: unknown, fallback: T): T => {

@@ -63,7 +63,7 @@ import {
   seedDisplayPreferences,
   withDisplayPreferences,
 } from '../utils/displayPreferences'
-import { DIRECT_PAY_SETTINGS_KEY, LEGACY_DIRECT_PAY_SETTINGS_KEY, loadDirectPaySettings } from '../utils/directPaySettings'
+import { ALL_DIRECT_PAY_SETTINGS_KEYS, loadDirectPaySettings } from '../utils/directPaySettings'
 import { KEPT_DIRECT_PAYMENTS_PREFIX } from '../pages/Dashboard/Payments/directPayments'
 import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
@@ -79,7 +79,7 @@ import { clearWalletForHttpRoute } from '../../onWalletReady'
 const PAYMENT_STATE_KEY_PREFIXES = ['peerpay-outbox-v1:', 'nearby-payment-v1:', 'direct-pay-', RECEIVED_RECORDS_PREFIX]
 
 function isPaymentStateKey(key: string): boolean {
-  return key === DIRECT_PAY_SETTINGS_KEY || key === LEGACY_DIRECT_PAY_SETTINGS_KEY || PAYMENT_STATE_KEY_PREFIXES.some(prefix => key.startsWith(prefix))
+  return (ALL_DIRECT_PAY_SETTINGS_KEYS as readonly string[]).includes(key) || PAYMENT_STATE_KEY_PREFIXES.some(prefix => key.startsWith(prefix))
 }
 
 // Kept even when the wallet is removed: payment requests, and direct payments this device

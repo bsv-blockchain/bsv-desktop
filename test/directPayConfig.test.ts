@@ -39,8 +39,8 @@ describe('direct-pay settings form', () => {
   it('shows the defaults with the STUN servers comma-separated and no TURN server', () => {
     expect(formFromSettings(DEFAULT_DIRECT_PAY_SETTINGS)).toEqual({
       receiveEnabled: true,
-      signaling: 'messagebox',
-      relayUrl: '',
+      signaling: 'relay',
+      relayUrl: 'wss://webrtpay-relay-us-1.bsvblockchain.tech',
       stunUrls:
         'stun:stun-us-1.bsvb.tech:3478, stun:stun.l.google.com:19302, stun:stun.cloudflare.com:3478',
       turnUrls: '',

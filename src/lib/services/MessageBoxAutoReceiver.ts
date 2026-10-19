@@ -74,6 +74,10 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
   /** (Re)starts for this client and wallet. Never rejects. */
   async start(o: MessageBoxAutoReceiverOptions): Promise<void> {
     this._halt()
+    // A Lock or switch asked for before this start is over: the wallet is open again, so
+    // waiting payments are taken now, not after a pause (desktop review finding 2).
+    this._changes = walletChangeRequests()
+    this._pausedUntil = 0
     const generation = this._generation
     const run: Run = { relistMs: 60_000, ...o, generation, storageKey: recordsStorageKey(o.identity, o.chain) }
     this._run = run

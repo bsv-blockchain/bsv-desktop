@@ -312,6 +312,21 @@ describe('MessageBoxAutoReceiver', () => {
       await receiver.stop()
     })
 
+    it('takes waiting payments at once when it starts after a Lock or switch was asked for (desktop review finding 2)', async () => {
+      const client = fakeClient([payment('m1')])
+      const receiver = new MessageBoxAutoReceiver()
+      await start(receiver, client)
+      await receiver.stop()
+
+      // Lock (or a switch) is asked for, the wallet closes and opens again.
+      expect(walletChangeBlocker('Finish your current payment first.')).toBe('')
+      client.inbox = [payment('m2')]
+      await start(receiver, client)
+
+      expect(receiver.records().map(r => r.messageId)).toEqual(['m2', 'm1'])
+      await receiver.stop()
+    })
+
     it('treats a busy or switching wallet as no failure: the payment waits for the next listing', async () => {
       const client = fakeClient([payment('m1')])
       setHttpBridgePaused(true)

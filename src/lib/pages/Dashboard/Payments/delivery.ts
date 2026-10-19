@@ -33,14 +33,17 @@ export function codeExchangeProblem(directPay: Pick<DirectPaySnapshot, 'error'> 
   return directPay.error || 'Direct payments are not ready yet. Try again in a moment.'
 }
 
-/** The Receive tab's line about receiving direct payments. */
-export function directStatusLine(s: Pick<DirectPaySnapshot, 'status' | 'via' | 'error' | 'notice'>): { severity: 'success' | 'info' | 'warning' | 'error'; text: string } {
+export type LiveStatus = { tone: 'on' | 'off' | 'starting' | 'error'; title: string; body: string }
+
+/** The Receive tab's card about receiving live (direct) payments. */
+export function liveStatus(s: Pick<DirectPaySnapshot, 'status' | 'via' | 'error' | 'notice'>): LiveStatus {
   switch (directPayState(s)) {
-    case 'online_messagebox': return { severity: 'success', text: 'Direct payments: online via the message box.' }
-    case 'online_relay': return { severity: 'success', text: 'Direct payments: online via the relay server.' }
-    case 'starting': return { severity: 'info', text: 'Direct payments: starting…' }
-    case 'not_set_up': return { severity: 'info', text: `Direct payments: not set up. ${s.notice}` }
-    case 'failed': return { severity: 'error', text: s.error || 'Direct payments cannot be received right now.' }
-    default: return { severity: 'info', text: 'Direct payments: off — enable in Settings.' }
+    case 'online_messagebox':
+    case 'online_relay': return { tone: 'on', title: 'Open to live payments', body: 'People can pay you directly while this app is open.' }
+    case 'starting': return { tone: 'starting', title: 'Connecting…', body: 'Getting ready to take live payments.' }
+    // No message box to signal through: off, and the notice says why.
+    case 'not_set_up': return { tone: 'off', title: 'Live payments are off', body: s.notice }
+    case 'failed': return { tone: 'error', title: "Live payments aren't working right now", body: s.error || 'Live payments cannot be received right now.' }
+    default: return { tone: 'off', title: 'Live payments are off', body: 'Turn them on in Settings so people can pay you directly while this app is open.' }
   }
 }

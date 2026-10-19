@@ -21,6 +21,7 @@ import FundingHandler from './components/FundingHandler'
 import SpendingAuthorizationHandler from './components/SpendingAuthorizationHandler'
 import AuthRedirector from './navigation/AuthRedirector'
 import ThemedToastContainer from './components/ThemedToastContainer'
+import PaymentToasts from './components/PaymentToasts'
 import { WalletInterface } from '@bsv/sdk'
 import { AppThemeProvider } from './components/Theme'
 import type { PermissionModuleDefinition } from './permissionModules/types'
@@ -76,6 +77,7 @@ const UserInterface: React.FC<UserInterfaceProps> = ({ onWalletReady, nativeHand
                 <ProtocolPermissionHandler />
                 <SpendingAuthorizationHandler />
                 <ThemedToastContainer />
+                <PaymentToasts />
                 <GroupPermissionHandler />
                 <CounterpartyPermissionHandler />
                 <UpdateNotificationWrapper />

@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
-import { codeExchangeProblem, DELIVERY_HELP, deliveryProblem, directStatusLine } from '../src/lib/pages/Dashboard/Payments/delivery'
+import { codeExchangeProblem, DELIVERY_HELP, deliveryProblem } from '../src/lib/pages/Dashboard/Payments/delivery'
 import { networkLabel } from '../src/lib/pages/Dashboard/Payments/paymentProtocol'
 
 const ready = { client: {}, via: 'messagebox' as const, error: '', notice: '' }
@@ -54,20 +54,7 @@ describe('choosing how a wallet payment is delivered', () => {
   })
 })
 
-describe('direct-payments status line on the Receive tab', () => {
-  it.each([
-    [{ status: 'online', via: 'messagebox', error: '', notice: '' }, 'success', 'Direct payments: online via the message box.'],
-    [{ status: 'online', via: 'relay', error: '', notice: '' }, 'success', 'Direct payments: online via the relay server.'],
-    [{ status: 'off', via: 'messagebox', error: '', notice: '' }, 'info', 'Direct payments: off — enable in Settings.'],
-    [{ status: 'starting', via: 'relay', error: '', notice: '' }, 'info', 'Direct payments: starting…'],
-    // No message box: not set up, and nothing alarming.
-    [{ status: 'off', via: null, error: '', notice: 'Direct payments reach other wallets through the message box. Connect a message box in Settings, or use a relay server.' }, 'info', 'Direct payments: not set up. Direct payments reach other wallets through the message box. Connect a message box in Settings, or use a relay server.'],
-    [{ status: 'error', via: null, error: 'Enter a relay server address in Settings, or use the message box for direct payments.', notice: '' }, 'error', 'Enter a relay server address in Settings, or use the message box for direct payments.'],
-    [{ status: 'error', via: 'relay', error: 'Direct payments cannot be received: the relay server cannot be reached. Trying again…', notice: '' }, 'error', 'Direct payments cannot be received: the relay server cannot be reached. Trying again…']
-  ] as const)('%o', (snapshot, severity, text) => {
-    expect(directStatusLine(snapshot)).toEqual({ severity, text })
-  })
-})
+// The Receive tab's live payments card (liveStatus) is tested in delivery.test.ts.
 
 describe('Payments page wiring', () => {
   const page = fs.readFileSync(path.resolve(__dirname, '../src/lib/pages/Dashboard/Payments/index.tsx'), 'utf8')
@@ -115,28 +102,40 @@ describe('Payments page wiring', () => {
     expect(page).toMatch(/existing: payment/)
   })
 
-  // receivedNotice is tested in directReceipts.test.ts. A payment that arrives is news, not the
-  // outcome of the user's action, so its notice leaves an error in place (final review M24).
-  it('tells the user when a direct payment arrives, with receivedNotice and without clearing an error, and stops listening when the page closes', () => {
-    expect(page).toMatch(/const onReceived = \(event: Event\) => announce\(receivedNotice\([^;]*\.detail \?\? \{\}\)\); window\.addEventListener\('direct-payment-received', onReceived\)/)
-    expect(page).toMatch(/return \(\) => window\.removeEventListener\('direct-payment-received', onReceived\)/)
-    const announceLine = page.slice(page.indexOf('const announce = '), page.indexOf('\n', page.indexOf('const announce = ')))
-    expect(announceLine).toMatch(/setNotice\(text\); setNoticeSeverity\(severity\)/)
-    expect(announceLine).not.toMatch(/setError/)
-    expect(page).toMatch(/<Alert severity=\{noticeSeverity\}/)
+  // Arrivals are toasted app-wide by PaymentToasts (with receivedNotice for a payment only kept
+  // on this device), so the page no longer listens for them itself.
+  it('leaves announcing arrivals to PaymentToasts', () => {
+    expect(page).not.toMatch(/direct-payment-received/)
+    const toasts = fs.readFileSync(path.resolve(__dirname, '../src/lib/components/PaymentToasts.tsx'), 'utf8')
+    expect(toasts).toMatch(/window\.addEventListener\('direct-payment-received', onLive\)/)
+    expect(toasts).toMatch(/window\.addEventListener\('messagebox-payment-received', onMessageBox\)/)
+    expect(toasts).toMatch(/detail\.status !== 'accepted'\) \{ toast\.warning\(receivedNotice\(detail\)\.text\)/)
+    const ui = fs.readFileSync(path.resolve(__dirname, '../src/lib/UserInterface.tsx'), 'utf8')
+    expect(ui).toMatch(/<ThemedToastContainer \/>\n\s*<PaymentToasts \/>/)
   })
 
   it('says why Direct is unavailable under the delivery choice when it is disabled', () => {
     expect(page).toMatch(/\{!directAvailable && <Typography variant="caption" color="text\.secondary" sx=\{\{ display: 'block' \}\}>Direct is unavailable: \{deliveryProblem\('direct', \{ messageBoxAvailable, directPay \}\)\}<\/Typography>\}/)
   })
 
-  it('shows the direct-payments status on the Receive tab, even without a message box', () => {
-    expect(page).toMatch(/const directLine = directStatusLine\(directPay\)/)
+  it('shows the live payments card on the Receive tab, even without a message box, with Settings when off', () => {
+    expect(page).toMatch(/const live = liveStatus\(directPay\)/)
     const receive = page.slice(page.indexOf("{tab === 'receive' &&"), page.indexOf("{tab === 'nearby' &&"))
-    expect(receive).toMatch(/<Alert severity=\{directLine\.severity\}[^\n]*>\{directLine\.text\}<\/Alert>/)
-    expect(receive.indexOf('{directLine.text}')).toBeGreaterThan(-1)
-    expect(receive.indexOf('{directLine.text}')).toBeLessThan(receive.indexOf('!messageBoxAvailable ?'))
+    expect(receive).toMatch(/\{live\.title\}/)
+    expect(receive).toMatch(/\(live\.tone === 'off' \|\| live\.tone === 'error'\) && <Button size="small" onClick=\{\(\) => history\.push\('\/dashboard\/settings\/advanced'\)/)
+    expect(receive.indexOf('{live.title}')).toBeLessThan(receive.indexOf('!messageBoxAvailable ?'))
   })
+
+  it('lists message box payments received automatically, with Retry for failures, and no Add to wallet', () => {
+    expect(page).toMatch(/Arrived while you were away/)
+    expect(page).toMatch(/messageBoxReceived\.slice\(0, 20\)\.map\(record =>/)
+    expect(page).toMatch(/onClick=\{\(\) => void retryReceived\(record\.messageId\)\}/)
+    expect(page).not.toMatch(/Add to wallet|acceptPayment|listIncomingPayments\(/)
+    // refresh() lists payment requests only.
+    const refresh = page.slice(page.indexOf('const refresh = useCallback'), page.indexOf('const deliver = async'))
+    expect(refresh).toMatch(/listIncomingPaymentRequests\(messageBoxUrl\)/)
+  })
+
 
   // Final review M18: switching tabs clears `error`; this warning must stay while it is true.
   it('keeps warning that saved payments could not be read, across tab changes', () => {

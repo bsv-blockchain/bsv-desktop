@@ -33,6 +33,21 @@ export const RECEIVED_RECORDS_PREFIX = 'messagebox-received-v1:'
 const RECORD_LIMIT = 200
 /** How long nothing new is accepted after Lock, a switch or removal was asked for. */
 export const YIELD_MS = 15_000
+/**
+ * The longest a listing or an accept may hold the wallet. After that the wallet is released
+ * (so Lock or a switch is not held up) and the payment is left for the next listing; an accept
+ * that finishes later is still recorded.
+ */
+export const CALL_MS = 15_000
+
+class TookTooLong extends Error {}
+
+/** `p`, or a {@link TookTooLong} after `ms` (the call goes on, unobserved here). */
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new TookTooLong('The message box or wallet took too long')), ms) })
+  return Promise.race([p, late]).finally(() => clearTimeout(timer))
+}
 const NO_RECORDS: ReceivedRecord[] = []
 
 export const recordsStorageKey = (identity: string, chain: string) => `${RECEIVED_RECORDS_PREFIX}${identity}:${chain}`
@@ -135,7 +150,7 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
     if (!run || run.generation !== generation || this._listing) return
     this._listing = true
     try {
-      const payments = await run.client.listIncomingPayments(run.host)
+      const payments = await withDeadline(run.client.listIncomingPayments(run.host), CALL_MS)
       for (const payment of payments) { if (!this._current(generation) || this._yielding()) return; await this._take(payment, generation) }
     } catch (error) {
       console.warn('[MessageBoxAutoReceiver] Could not list message box payments:', error)
@@ -149,6 +164,8 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
     if (this._inFlight.has(id) || this._find(id)?.status === 'received') return
     const inFlight = this._inFlight
     inFlight.add(id)
+    // Kept while an accept that took too long is still running, so it is not started twice.
+    let settled: Promise<unknown> | undefined
     const base = { messageId: id, sender: String(payment.sender ?? ''), amount: Number(payment.token?.amount) || 0 }
     try {
       const seen = createSeenStore(run.identity, run.chain)
@@ -157,17 +174,32 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
       if (this._yielding()) return
       let release: () => void
       try { release = beginBackgroundWalletOperation('messagebox-receive') } catch { return } // busy or switching: the next listing tries again
-      try { await run.client.acceptPayment(payment) } finally { release() }
-      seen.add(key)
-      this._record(run, { ...base, at: Date.now(), status: 'received' })
-      const win = events()
-      if (this._current(generation) && win) {
-        win.dispatchEvent(new CustomEvent('messagebox-payment-received', { detail: { amount: base.amount, sender: base.sender } }))
-        win.dispatchEvent(new CustomEvent('balance-changed'))
+      const taken = () => {
+        seen.add(key)
+        this._record(run, { ...base, at: Date.now(), status: 'received' })
+        const win = events()
+        if (this._current(generation) && win) {
+          win.dispatchEvent(new CustomEvent('messagebox-payment-received', { detail: { amount: base.amount, sender: base.sender } }))
+          win.dispatchEvent(new CustomEvent('balance-changed'))
+        }
       }
+      const accepting = run.client.acceptPayment(payment)
+      try {
+        await withDeadline(accepting, CALL_MS)
+      } catch (error) {
+        if (!(error instanceof TookTooLong)) throw error
+        // Release the wallet now; record the payment if the accept finishes after all, else
+        // the next listing tries again. Not a failure.
+        settled = accepting.then(taken, () => {})
+        return
+      } finally { release() }
+      taken()
     } catch (error) {
       this._record(run, { ...base, at: this._find(id)?.at ?? Date.now(), status: 'failed', error: messageOf(error) })
-    } finally { inFlight.delete(id) }
+    } finally {
+      if (settled) void settled.finally(() => inFlight.delete(id))
+      else inFlight.delete(id)
+    }
   }
 
   /**

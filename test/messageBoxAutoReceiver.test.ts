@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LockingScript, MerklePath, P2PKH, PrivateKey, Transaction, UnlockingScript } from '@bsv/sdk'
 import { paymentKey } from '@bsv/webrtpay'
-import { MessageBoxAutoReceiver, recordsStorageKey, YIELD_MS } from '../src/lib/services/MessageBoxAutoReceiver'
+import { CALL_MS, MessageBoxAutoReceiver, recordsStorageKey, YIELD_MS } from '../src/lib/services/MessageBoxAutoReceiver'
 import { activeUserWalletOperations, BACKGROUND_RETRY_BUSY, beginBackgroundWalletOperation, MESSAGEBOX_RECEIVE_BUSY, setHttpBridgePaused, walletChangeBlocker, _test_resetHttpBridgeSessions } from '../src/lib/services/httpBridgeSession'
 import { createSeenStore } from '../src/lib/pages/Dashboard/Payments/directPayments'
 
@@ -341,6 +341,53 @@ describe('MessageBoxAutoReceiver', () => {
       window.dispatchEvent(new Event('focus'))
       await vi.waitFor(() => expect(receiver.records()).toEqual([expect.objectContaining({ messageId: 'm1', status: 'received' })]))
       await receiver.stop()
+    })
+
+    it('releases the wallet when an accept hangs, leaves no failure, and records it if it finishes later (desktop review finding 3)', async () => {
+      vi.useFakeTimers()
+      try {
+        const client = fakeClient([payment('m1', 900)])
+        const gate = deferred()
+        client.acceptPayment.mockImplementationOnce(async () => { await gate.promise; client.inbox = [] })
+        const receiver = new MessageBoxAutoReceiver()
+        const started = start(receiver, client)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(activeUserWalletOperations()).toBe(1)
+
+        await vi.advanceTimersByTimeAsync(CALL_MS)
+        await started
+        expect(activeUserWalletOperations()).toBe(0) // Lock or a switch can go ahead
+        expect(receiver.records()).toEqual([])
+
+        // Still running: a new listing does not start it twice.
+        window.dispatchEvent(new Event('focus'))
+        await vi.advanceTimersByTimeAsync(0)
+        expect(client.acceptPayment).toHaveBeenCalledTimes(1)
+
+        gate.resolve()
+        await vi.advanceTimersByTimeAsync(0)
+        expect(receiver.records()).toEqual([expect.objectContaining({ messageId: 'm1', status: 'received', amount: 900 })])
+        expect(announced()).toHaveLength(1)
+        await receiver.stop()
+      } finally { vi.useRealTimers() }
+    })
+
+    it('gives up on a listing that hangs, so the next one runs', async () => {
+      vi.useFakeTimers()
+      try {
+        const client = fakeClient([payment('m1')])
+        client.listIncomingPayments.mockImplementationOnce(() => new Promise(() => {}))
+        const receiver = new MessageBoxAutoReceiver()
+        const started = start(receiver, client)
+        await vi.advanceTimersByTimeAsync(CALL_MS)
+        await started
+        expect(receiver.records()).toEqual([])
+
+        window.dispatchEvent(new Event('focus'))
+        await vi.advanceTimersByTimeAsync(0)
+        expect(receiver.records()).toEqual([expect.objectContaining({ messageId: 'm1', status: 'received' })])
+        await receiver.stop()
+      } finally { vi.useRealTimers() }
     })
 
     it('leaves the direct-pay busy message to direct-pay retries', () => {

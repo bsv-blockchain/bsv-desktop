@@ -173,6 +173,9 @@ describe('direct-pay status chip', () => {
     [{ status: 'starting', via: 'relay', notice: '' }, 'starting', 'info'],
     [{ status: 'online', via: 'messagebox', notice: '' }, 'online_messagebox', 'success'],
     [{ status: 'online', via: 'relay', notice: '' }, 'online_relay', 'success'],
+    [{ status: 'online', via: 'messagebox', relayUnreachable: false, notice: '' }, 'online_messagebox', 'success'],
+    // Receiving through the message box while the relay the settings choose cannot be reached.
+    [{ status: 'online', via: 'messagebox', relayUnreachable: true, notice: '' }, 'online_fallback', 'warning'],
     // Real errors: relay signaling without an address (Ruling 14), or receiving failed (the relay is down).
     [{ status: 'error', via: null, notice: '' }, 'failed', 'error'],
     [{ status: 'error', via: 'relay', notice: '' }, 'failed', 'error'],

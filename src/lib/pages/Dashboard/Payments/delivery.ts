@@ -32,11 +32,14 @@ export function codeExchangeProblem(directPay: Pick<DirectPaySnapshot, 'error'> 
 
 export type LiveStatus = { tone: 'on' | 'off' | 'starting' | 'error'; title: string; body: string }
 
-/** The Receive tab's card about receiving live (direct) payments. */
-export function liveStatus(s: Pick<DirectPaySnapshot, 'status' | 'via' | 'error' | 'notice'>): LiveStatus {
+const OPEN = 'People can pay you directly while this app is open.'
+
+/** The Receive tab's card about receiving live (direct) payments, naming the way it receives. */
+export function liveStatus(s: Pick<DirectPaySnapshot, 'status' | 'via' | 'error' | 'notice'> & { relayUnreachable?: boolean }): LiveStatus {
   switch (directPayState(s)) {
-    case 'online_messagebox':
-    case 'online_relay': return { tone: 'on', title: 'Open to live payments', body: 'People can pay you directly while this app is open.' }
+    case 'online_relay': return { tone: 'on', title: 'Open to live payments', body: `${OPEN} Connected via relay.` }
+    case 'online_messagebox': return { tone: 'on', title: 'Open to live payments', body: `${OPEN} Connected via message box.` }
+    case 'online_fallback': return { tone: 'on', title: 'Open to live payments', body: `${OPEN} Connected via message box (relay unreachable).` }
     case 'starting': return { tone: 'starting', title: 'Connecting…', body: 'Getting ready to take live payments.' }
     // No message box to signal through: off, and the notice says why.
     case 'not_set_up': return { tone: 'off', title: 'Live payments are off', body: s.notice }

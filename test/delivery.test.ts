@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { liveStatus } from '../src/lib/pages/Dashboard/Payments/delivery'
 
 describe('live payments card on the Receive tab', () => {
-  const on = { tone: 'on', title: 'Open to live payments', body: 'People can pay you directly while this app is open.' }
+  const on = (via: string) => ({ tone: 'on', title: 'Open to live payments', body: `People can pay you directly while this app is open. Connected via ${via}.` })
   it.each([
-    [{ status: 'online', via: 'messagebox', error: '', notice: '' }, on],
-    [{ status: 'online', via: 'relay', error: '', notice: '' }, on],
+    [{ status: 'online', via: 'relay', error: '', notice: '' }, on('relay')],
+    [{ status: 'online', via: 'relay', relayUnreachable: false, error: '', notice: '' }, on('relay')],
+    // The user chose the message box.
+    [{ status: 'online', via: 'messagebox', relayUnreachable: false, error: '', notice: '' }, on('message box')],
+    // The relay the settings choose cannot be reached: the message box carries signals meanwhile.
+    [{ status: 'online', via: 'messagebox', relayUnreachable: true, error: '', notice: '' }, on('message box (relay unreachable)')],
     [{ status: 'starting', via: 'messagebox', error: '', notice: '' }, { tone: 'starting', title: 'Connecting…', body: 'Getting ready to take live payments.' }],
     [{ status: 'off', via: 'messagebox', error: '', notice: '' }, { tone: 'off', title: 'Live payments are off', body: 'Turn them on in Settings so people can pay you directly while this app is open.' }],
     // No message box to signal through: off, and the notice says why.

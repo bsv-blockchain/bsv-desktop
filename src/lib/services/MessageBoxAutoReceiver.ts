@@ -174,6 +174,8 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
     if (!run || run.generation !== generation) return Promise.resolve()
     if (this._listing) return this._listing
     const listing = (async () => {
+      // Yield first: a client that throws synchronously must not reach `finally` before `listing` is assigned.
+      await Promise.resolve()
       try {
         const payments = await withDeadline(run.client.listIncomingPayments(run.host), CALL_MS)
         for (const payment of payments) { if (!this._current(generation) || this._yielding()) return; await this._take(payment, generation) }

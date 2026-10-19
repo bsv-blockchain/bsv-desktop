@@ -86,6 +86,20 @@ describe('MessageBoxAutoReceiver', () => {
     await receiver.stop()
   })
 
+  it('survives a client that throws synchronously while listing, and lists again later', async () => {
+    const a = payment('m1', 1000)
+    const client = fakeClient([a])
+    client.listIncomingPayments.mockImplementationOnce(() => { throw new Error('no host') })
+    const receiver = new MessageBoxAutoReceiver()
+
+    await start(receiver, client)
+    expect(client.acceptPayment).not.toHaveBeenCalled()
+
+    await receiver.takeWaiting()
+    expect(client.acceptPayment).toHaveBeenCalledTimes(1)
+    await receiver.stop()
+  })
+
   it('accepts a live payment', async () => {
     const client = fakeClient()
     const receiver = new MessageBoxAutoReceiver()

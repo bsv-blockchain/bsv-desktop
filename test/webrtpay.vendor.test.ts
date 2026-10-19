@@ -127,6 +127,50 @@ describe('@bsv/webrtpay from npm', () => {
     }
   })
 
+  // DirectPayManager closes a relay (and its client) from inside that relay's onStateChange: on
+  // `offline` to fall back to the message box, and on the retry's `online` to move back.
+  it.each([
+    ['offline', [relayDown, relayUp()]],
+    ['online', [relayUp(), relayUp()]]
+  ] as const)('closes cleanly from inside onStateChange(%s): no reconnect, no unhandled error', async (closeOn, behaviours) => {
+    const relayFake = fakeRelay([...behaviours])
+    const states: string[] = []
+    const callbackErrors: unknown[] = []
+    const unhandled: unknown[] = []
+    const onUnhandled = (e: unknown) => { unhandled.push(e) }
+    process.on('unhandledRejection', onUnhandled)
+    let client: DirectPayClient | undefined
+    let closing: Promise<unknown> | undefined
+    const relay: RelaySignaler = new RelaySignaler({
+      url: 'wss://relay.example.com',
+      wallet,
+      originator: 'admin.local',
+      WebSocket: relayFake.WebSocket,
+      random: () => 0,
+      onCallbackError: e => { callbackErrors.push(e) },
+      onStateChange: state => {
+        states.push(state)
+        if (state === closeOn && !closing) closing = Promise.allSettled([client?.close(), relay.close()])
+      }
+    })
+    client = new DirectPayClient({ wallet, originator: 'admin.local', chain: 'main', signaler: relay })
+    try {
+      await client.startReceiving({ onPayment: async () => 'accepted' as const }).catch(() => {})
+      await expect.poll(() => closing).toBeDefined()
+      await closing
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      expect(relayFake.sockets).toHaveLength(1)
+      expect(states.at(-1)).toBe('offline')
+      expect(callbackErrors).toEqual([])
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+      await client.close()
+      await relay.close()
+    }
+  })
+
   // DirectPayManager tells the two auth_failed cases apart by `cause`: the relay refusing the
   // signature has none, this wallet failing to sign carries the wallet's error.
   it('reports auth_failed without a cause when the relay refuses the url this wallet signed', async () => {

@@ -67,9 +67,32 @@ const WALLET_CHANGING = 'It arrived while the wallet was changing networks or pr
  * wallet's own words when the wallet is what stopped it.
  */
 export class NotSentError extends Error {
-  constructor(message: string, readonly detail = '') {
+  constructor(message: string, readonly detail = '', readonly failure?: DialFailure) {
     super(message)
     this.name = 'NotSentError'
+  }
+}
+
+/**
+ * Why dialing the recipient failed, for choosing what to offer the user (see payFlow.ts):
+ * `offline` (no reply within the presence window), `not_receiving` (their wallet answered but
+ * is not taking direct payments, or is busy), `wrong_network`, `network` (the signal could not
+ * be posted: this side is offline or the message box host is down), or `link_failed` (they
+ * answered but the link or its identity handshake did not come up, or the dial was cancelled).
+ */
+export type DialFailure = 'offline' | 'not_receiving' | 'link_failed' | 'network' | 'wrong_network'
+
+/** The {@link DialFailure} for an error from `DirectPayClient.connect`. */
+export function dialFailure(error: unknown): DialFailure {
+  if (!(error instanceof WebRTPayError)) return 'link_failed'
+  switch (error.code) {
+    case 'peer_unreachable': return 'offline'
+    case 'unavailable': return 'network'
+    case 'rejected':
+      if (error.reason === 'wrong_network') return 'wrong_network'
+      if (error.reason === 'not_receiving' || error.reason === 'busy') return 'not_receiving'
+      return 'link_failed'
+    default: return 'link_failed'
   }
 }
 
@@ -98,6 +121,8 @@ export async function deliverDirect(o: {
   persist: (p: OutgoingPayment) => void
   markDelivered: (txid: string) => void
   peer?: AuthenticatedPeer
+  /** Cancels the dial; once connected, a cancelled payment is stopped before it is made. */
+  signal?: AbortSignal
 }): Promise<{ payment: OutgoingPayment; ack: PaymentAck }> {
   let recipient: string
   try {
@@ -108,9 +133,10 @@ export async function deliverDirect(o: {
     o.peer?.close()
     throw error
   }
-  const peer = o.peer ?? (await connect(o.client, recipient, o.existing !== undefined))
+  const peer = o.peer ?? (await connect(o.client, recipient, o.existing !== undefined, o.signal))
   try {
     if (peer.peerIdentityKey !== recipient) throw new NotSentError('The connected wallet is not the recipient. Nothing was sent.')
+    if (o.signal?.aborted) throw new NotSentError(o.existing ? 'Cancelled. Your saved payment is unchanged.' : 'Cancelled. Nothing was spent.', '', 'link_failed')
     let payment = o.existing
     if (payment) {
       const refusal = whyNotDeliverable(peer, payment.token)
@@ -146,22 +172,28 @@ export async function deliverDirect(o: {
 }
 
 /** Any connect failure happens before the payment exists (or before a saved one is resent). */
-async function connect(client: DirectPayClient, recipient: string, saved: boolean): Promise<AuthenticatedPeer> {
+async function connect(client: DirectPayClient, recipient: string, saved: boolean, signal?: AbortSignal): Promise<AuthenticatedPeer> {
   try {
-    return await client.connect(recipient)
+    return await client.connect(recipient, signal ? { signal } : undefined)
   } catch (error) {
-    const refused = error instanceof WebRTPayError && error.code === 'rejected'
+    const failure = dialFailure(error)
     // The recipient's wallet, or this one, refused a dial between two networks (the client is
     // bound to this wallet's chain): redialing cannot help until both are on one network.
-    if (refused && error.reason === 'wrong_network') {
+    if (failure === 'wrong_network') {
       throw new NotSentError(saved
         ? "The recipient's wallet is on a different network. Your saved payment is unchanged; deliver it when you are both on the same network, or through the message box."
-        : "The recipient's wallet is on a different network. Nothing was spent.")
+        : "The recipient's wallet is on a different network. Nothing was spent.", '', failure)
     }
-    const why = refused ? "The recipient's wallet is not taking direct payments right now." : "The recipient's wallet could not be reached directly."
+    // The signal could not be posted at all: this side's network or the message box host.
+    if (failure === 'network') {
+      throw new NotSentError(saved
+        ? "Couldn't reach the payment network — check your connection. Your saved payment is unchanged; retry when you are online."
+        : "Couldn't reach the payment network — check your connection. Nothing was spent.", '', failure)
+    }
+    const why = failure === 'not_receiving' ? "The recipient's wallet is not taking direct payments right now." : "The recipient's wallet could not be reached directly."
     throw new NotSentError(saved
       ? `${why} Your saved payment is unchanged; retry later or deliver it through the message box.`
-      : `${why} Nothing was spent. Send it through the message box instead.`)
+      : `${why} Nothing was spent. Send it through the message box instead.`, '', failure)
   }
 }
 

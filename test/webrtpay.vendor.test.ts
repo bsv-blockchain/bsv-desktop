@@ -1,4 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest'
+import * as fs from 'fs'
+import * as path from 'path'
 import { PrivateKey, ProtoWallet } from '@bsv/sdk'
 import * as webrtpay from '@bsv/webrtpay'
 import { AuthenticatedPeer, createMemoryHub, DEFAULT_INBOUND_LIMITS, DirectPayClient, MAX_DIRECT_TRANSACTION_BYTES, RelaySignaler, validatePaymentToken, VERSION, WebRTPayError } from '@bsv/webrtpay'
@@ -92,7 +94,10 @@ const relayRefuses = (ws: FakeSocket) => {
 
 describe('vendored @bsv/webrtpay', () => {
   it('resolves the package root entry', () => {
-    expect(VERSION).toBe('0.1.0')
+    // The installed build is 0.2.0 (knock/ring presence, per-dial AbortSignal). Its VERSION
+    // constant was not bumped in the 0.2.0 build, so check the package manifest instead.
+    expect(JSON.parse(fs.readFileSync(path.resolve(__dirname, '../node_modules/@bsv/webrtpay/package.json'), 'utf8')).version).toBe('0.2.0')
+    expect(typeof VERSION).toBe('string')
     expect(typeof DirectPayClient).toBe('function')
   })
 

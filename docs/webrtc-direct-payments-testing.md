@@ -168,10 +168,10 @@ When the payee's wallet cannot add a payment at once because its network or stor
 
 The relay is an optional rendezvous for the encrypted offer and answer, run from the `@bsv/webrtpay` package as `webrtpay-relay`. It stores nothing. It can also hand out short-lived TURN credentials.
 
-**Run it from the tarball** (the bsv-desktop repo carries it as `vendor/bsv-webrtpay-0.1.0.tgz`; `npm pack` in the WebRTPay repo makes the same file):
+**Run it from npm** (bsv-desktop depends on `@bsv/webrtpay` from npm; the public relay is `wss://webrtpay-relay-us-1.bsvblockchain.tech`, the default in Settings):
 
 ```bash
-HOST=127.0.0.1 PORT=8787 npx --yes --package ./vendor/bsv-webrtpay-0.1.0.tgz webrtpay-relay
+HOST=127.0.0.1 PORT=8787 npx --yes --package @bsv/webrtpay@0.2.1 webrtpay-relay
 ```
 
 The relay refuses to start without `PUBLIC_URLS` unless `HOST` is a loopback address: wallets sign the relay URL they dial, and without `PUBLIC_URLS` the relay would check that signature against a URL built from the request's `Host` header, which the client chooses. On loopback that is fine for a test; it logs a warning about it.

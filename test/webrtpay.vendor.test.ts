@@ -90,10 +90,11 @@ const relayRefuses = (ws: FakeSocket) => {
   ws.receive({ t: 'challenge', nonce: 'nonce-1' })
 }
 
-describe('vendored @bsv/webrtpay', () => {
+describe('@bsv/webrtpay from npm', () => {
   it('resolves the package root entry', () => {
     // 0.2.0: knock/ring presence, per-dial AbortSignal, live MessageBox signaling.
-    expect(VERSION).toBe('0.2.0')
+    // 0.2.1 (npm): relay HTTP /ready and CORS only; the client is unchanged.
+    expect(VERSION).toBe('0.2.1')
     expect(typeof DirectPayClient).toBe('function')
   })
 

@@ -336,7 +336,7 @@ const en = {
     directpay_receive_label: 'Receive direct payments',
     directpay_receive_warning: 'While this is on, any wallet that knows your identity key can learn your public IP address and when your wallet is unlocked by starting a connection, without paying you. This setting applies to every wallet profile on this device.',
     directpay_signaling_label: 'Signaling',
-    directpay_signaling_helper: 'How the two wallets find each other before they connect. With a relay server, both wallets must use the same one.',
+    directpay_signaling_helper: 'How the two wallets find each other before they connect. The relay server is the default; while it cannot be reached, the message box is used instead. Choose the message box to always use it.',
     directpay_signaling_messagebox: 'Message box',
     directpay_signaling_relay: 'Relay server',
     directpay_relay_url_label: 'Relay URL',

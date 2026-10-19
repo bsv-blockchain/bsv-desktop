@@ -12,9 +12,13 @@
  * The relay is the default. While receiving through it, a relay that cannot be reached (it
  * refuses or drops the connection, or this wallet is not online on it within
  * {@link RELAY_START_MS}) hands receiving to the message box, when this wallet has one
- * (`relayUnreachable` in the snapshot). The relay is then retried in the background, with
- * the relay signaler's own backoff, and receiving moves back to it once it accepts this
- * wallet. A user who chose the message box in Settings stays on it. Without receiving, the
+ * (`relayUnreachable` in the snapshot). The relay is then retried in the background, and
+ * receiving moves back to it once it accepts this wallet. The retry starts
+ * {@link RELAY_RETRY_FIRST_MS} after a fallback, doubling with each fallback in a row up to
+ * {@link RELAY_RETRY_MAX_MS}, so a relay that accepts and then drops this wallet does not
+ * cycle quickly; once the relay has stayed online for {@link RELAY_STABLE_MS} the wait starts
+ * over (as it does on every start). Between its tries the retry uses the relay signaler's own
+ * backoff. A user who chose the message box in Settings stays on it. Without receiving, the
  * relay is used only to send, and a payee it cannot reach already leads to the message box.
  *
  * While a wallet is open, the payments kept for it (acknowledged, but not yet in the wallet)
@@ -86,6 +90,11 @@ const OFF: DirectPaySnapshot = { client: null, status: 'off', via: null, relayUn
  * message box (when there is one).
  */
 export const RELAY_START_MS = 5000
+/** The wait before the relay is retried after a fallback; doubles per fallback in a row. */
+export const RELAY_RETRY_FIRST_MS = 5000
+export const RELAY_RETRY_MAX_MS = 5 * 60_000
+/** How long the relay must stay online before the retry wait starts over. */
+export const RELAY_STABLE_MS = 60_000
 
 /**
  * Kept payments (acknowledged, not yet in the wallet) are retried when a wallet opens, then
@@ -163,6 +172,10 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
   private readonly _retrying = new Set<string>()
   /** Retries of the open wallet's kept payments; null while none is open. */
   private _retry: RetrySchedule | null = null
+  /** Fallbacks to the message box in a row: sets the wait before the relay is retried. */
+  private _fallbacks = 0
+  /** Resets {@link _fallbacks} once the relay has stayed online; cleared by every teardown. */
+  private _stableTimer: ReturnType<typeof setTimeout> | undefined
 
   getSnapshot(): DirectPaySnapshot {
     return this._snapshot
@@ -182,6 +195,7 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     const sameWallet = previous !== undefined && isSameWallet(previous, o)
     const received = sameWallet ? this._snapshot.received : 0
     const closing = this._teardown()
+    this._fallbacks = 0
     this._starting = this._launch(o, received, closing, 'settings')
     if (!sameWallet) this._startRetries(o)
     return this._starting
@@ -216,18 +230,6 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     let notice = ''
     const fallback = carrier === 'fallback'
     try {
-      if (fallback) {
-        // Retries the relay: listening keeps it trying (with its backoff) until it accepts this wallet.
-        relay = new RelaySignaler({
-          url: o.settings.relayUrl,
-          wallet: o.wallet,
-          originator: o.originator,
-          onStateChange: (state, e) => this._relayRetried(generation, o, state, e)
-        })
-        relay.listen(() => {
-          // Signals that reach the retry before receiving moves back to the relay: payers dial again.
-        }).catch(() => { /* closed */ })
-      }
       if (o.settings.signaling === 'relay' && !fallback) {
         if (!o.settings.relayUrl) {
           error = NO_RELAY
@@ -288,9 +290,9 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
       const timer = setTimeout(() => {
         if (generation === this._generation && this._snapshot.status !== 'online') this._fallBack(generation, o, 'it did not accept this wallet in time')
       }, RELAY_START_MS)
-      const unsubscribe = this._started.unsubscribe
-      this._started.unsubscribe = () => { clearTimeout(timer); unsubscribe() }
+      this._onTeardown(() => clearTimeout(timer))
     }
+    if (fallback) this._retryRelayLater(generation, o)
 
     // The previous client stops listening first, so two never answer the same offer.
     await closing
@@ -314,10 +316,43 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
    */
   private _fallBack(generation: number, o: DirectPayStartOptions, why: string): void {
     if (generation !== this._generation) return
+    this._fallbacks++
     console.warn(`[DirectPayManager] Receiving through the message box: the relay cannot be reached (${why}).`)
     const received = this._snapshot.received
     const closing = this._teardown()
     this._starting = this._launch(o, received, closing, 'fallback')
+  }
+
+  /**
+   * After the wait for this many fallbacks in a row (see the header), retries the relay while
+   * receiving through the message box: listening keeps it trying, with the relay signaler's
+   * own backoff, until it accepts this wallet. Teardown cancels the wait or closes the retry.
+   */
+  private _retryRelayLater(generation: number, o: DirectPayStartOptions): void {
+    const wait = Math.min(RELAY_RETRY_FIRST_MS * 2 ** Math.max(0, this._fallbacks - 1), RELAY_RETRY_MAX_MS)
+    const timer = setTimeout(() => {
+      const started = this._started
+      if (generation !== this._generation || !started) return
+      const retry = new RelaySignaler({
+        url: o.settings.relayUrl,
+        wallet: o.wallet,
+        originator: o.originator,
+        onStateChange: (state, e) => this._relayRetried(generation, o, state, e)
+      })
+      started.relay = retry
+      retry.listen(() => {
+        // Signals that reach the retry before receiving moves back to the relay: payers dial again.
+      }).catch(() => { /* closed */ })
+    }, wait)
+    this._onTeardown(() => clearTimeout(timer))
+  }
+
+  /** Runs `fn` when the current client is torn down. */
+  private _onTeardown(fn: () => void): void {
+    const started = this._started
+    if (!started) return
+    const unsubscribe = started.unsubscribe
+    started.unsubscribe = () => { fn(); unsubscribe() }
   }
 
   /**
@@ -342,6 +377,13 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
    */
   private _relayChanged(generation: number, o: DirectPayStartOptions, url: string, state: RelayConnectionState, e?: WebRTPayError): void {
     if (generation !== this._generation || !o.settings.receiveEnabled) return
+    // Online long enough: the next fallback retries the relay after the shortest wait again.
+    if (state === 'online' && this._stableTimer === undefined) {
+      this._stableTimer = setTimeout(() => { this._stableTimer = undefined; if (generation === this._generation) this._fallbacks = 0 }, RELAY_STABLE_MS)
+    } else if (state !== 'online') {
+      clearTimeout(this._stableTimer)
+      this._stableTimer = undefined
+    }
     if (state === 'online') this._update({ status: 'online', error: '' })
     // With a message box to use, a relay that cannot be reached hands receiving to it.
     else if (state === 'offline' && e && o.peerPayClient) this._fallBack(generation, o, `${e.code}: ${e.message}`)
@@ -555,6 +597,8 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
   /** Detaches the current client and signaler; returns their closing (never rejects). */
   private _teardown(): Promise<void> {
     this._generation++
+    clearTimeout(this._stableTimer)
+    this._stableTimer = undefined
     const started = this._started
     const client = this._snapshot.client
     this._started = null

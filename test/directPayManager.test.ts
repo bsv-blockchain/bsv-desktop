@@ -197,6 +197,43 @@ describe('DirectPayManager.start', () => {
     expect(box.acknowledgeMessage).toHaveBeenCalledWith({ messageIds: ['1'], host: HOST })
   })
 
+  it('passes the live websocket calls and the host lookup on to the signaler, bound to the client (desktop review finding 1)', async () => {
+    const live = { sendMessage: vi.fn(), listMessages: vi.fn(async () => []), acknowledgeMessage: vi.fn(),
+      sendLiveMessage: vi.fn(async function (this: unknown) { return this }),
+      listenForLiveMessages: vi.fn(async function (this: unknown) { return this }),
+      joinRoom: vi.fn(async function (this: unknown) { return this }),
+      leaveRoom: vi.fn(async function (this: unknown) { return this }),
+      resolveHostForRecipient: vi.fn(async function (this: unknown) { return this }) }
+    await manager.start(startOptions({ peerPayClient: live }))
+    const { client } = h.made.messageBoxes[0]
+    const onMessage = () => {}
+
+    await expect(client.sendLiveMessage({ recipient: SENDER, messageBox: 'b', body: 'x' }, 'https://their.host')).resolves.toBe(live)
+    await expect(client.listenForLiveMessages({ messageBox: 'b', onMessage, overrideHost: HOST })).resolves.toBe(live)
+    await expect(client.joinRoom('b', HOST)).resolves.toBe(live)
+    await expect(client.leaveRoom('b')).resolves.toBe(live)
+    await expect(client.resolveHostForRecipient(SENDER)).resolves.toBe(live)
+    expect(live.sendLiveMessage).toHaveBeenCalledWith({ recipient: SENDER, messageBox: 'b', body: 'x' }, 'https://their.host')
+    expect(live.listenForLiveMessages).toHaveBeenCalledWith({ messageBox: 'b', onMessage, overrideHost: HOST })
+    expect(live.joinRoom).toHaveBeenCalledWith('b', HOST)
+    expect(live.leaveRoom).toHaveBeenCalledWith('b')
+    expect(live.resolveHostForRecipient).toHaveBeenCalledWith(SENDER)
+  })
+
+  it('leaves out the live calls a client does not have, so the signaler polls', async () => {
+    const box = { sendMessage: vi.fn(), listMessages: vi.fn(async () => []), acknowledgeMessage: vi.fn() }
+    await manager.start(startOptions({ peerPayClient: box }))
+    expect(Object.keys(h.made.messageBoxes[0].client).sort()).toEqual(['acknowledgeMessage', 'listMessages', 'sendMessage'])
+  })
+
+  // Type level: the real PeerPayClient has every call passed on.
+  it('finds every live call and the host lookup on message-box-client\'s PeerPayClient', async () => {
+    const { PeerPayClient } = await import('@bsv/message-box-client')
+    for (const name of ['sendLiveMessage', 'listenForLiveMessages', 'joinRoom', 'leaveRoom', 'resolveHostForRecipient']) {
+      expect(typeof (PeerPayClient.prototype as any)[name]).toBe('function')
+    }
+  })
+
   // Final review M13: an unreachable host, or a sign-in the host refuses, must not read "Online".
   it('says online through the message box only once a poll of the box has worked', async () => {
     h.startReceiving = async () => {}

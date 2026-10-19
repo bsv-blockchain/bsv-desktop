@@ -508,10 +508,19 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
 const signalBox = (chain: string) => (chain === 'main' ? 'webrtpay_signals' : `webrtpay_signals_${chain}`)
 
 /**
- * The message box client as the signaler sees it: the same calls, with each listing (a poll)
- * reported to `polled`, with its error when it failed.
+ * What the signaler may use of the message box client: webrtpay's MessageBoxLike, plus the
+ * recipient's host lookup (`resolveHostForRecipient`, public on message-box-client's
+ * MessageBoxClient), which webrtpay is adding as optional.
  */
-function watchingPolls(client: MessageBoxLike, polled: (error?: unknown) => void): MessageBoxLike {
+type SignalClient = MessageBoxLike & { resolveHostForRecipient?(recipient: string): Promise<string> }
+
+/**
+ * The message box client as the signaler sees it: the same calls, with each listing (a poll)
+ * reported to `polled`, with its error when it failed. The live websocket calls and the host
+ * lookup are passed on, bound to the client, when it has them: without them the signaler only
+ * polls, which is too slow for its presence window (desktop review finding 1).
+ */
+function watchingPolls(client: SignalClient, polled: (error?: unknown) => void): SignalClient {
   // The status is only shown: reporting it must never fail a poll (its messages would be lost).
   const report = (error?: unknown) => { try { polled(error) } catch (e) { console.warn('[DirectPayManager] Could not show the message box status:', e) } }
   return {
@@ -527,7 +536,12 @@ function watchingPolls(client: MessageBoxLike, polled: (error?: unknown) => void
       report()
       return messages
     },
-    acknowledgeMessage: a => client.acknowledgeMessage(a)
+    acknowledgeMessage: a => client.acknowledgeMessage(a),
+    ...(typeof client.sendLiveMessage === 'function' && { sendLiveMessage: (a: Parameters<NonNullable<MessageBoxLike['sendLiveMessage']>>[0], host?: string) => client.sendLiveMessage!(a, host) }),
+    ...(typeof client.listenForLiveMessages === 'function' && { listenForLiveMessages: (a: Parameters<NonNullable<MessageBoxLike['listenForLiveMessages']>>[0]) => client.listenForLiveMessages!(a) }),
+    ...(typeof client.joinRoom === 'function' && { joinRoom: (box: string, host?: string) => client.joinRoom!(box, host) }),
+    ...(typeof client.leaveRoom === 'function' && { leaveRoom: (box: string) => client.leaveRoom!(box) }),
+    ...(typeof client.resolveHostForRecipient === 'function' && { resolveHostForRecipient: (recipient: string) => client.resolveHostForRecipient!(recipient) })
   }
 }
 

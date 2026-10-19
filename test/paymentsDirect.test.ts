@@ -1,22 +1,21 @@
 /**
- * Direct delivery on the Payments page: the choice between the message box and a direct
- * connection, the direct-payments status line on the Receive tab, and how the page is
- * wired to the C3 flows. The repo has no DOM test environment, so the page's decisions
+ * Direct delivery on the Payments page: Pay tries live first and asks before using the message
+ * box (no delivery choice), saved payments retry either way, and how the page is wired to the
+ * C3 flows. The repo has no DOM test environment, so the page's decisions
  * live in delivery.ts and the wiring is checked in source.
  */
 import { describe, expect, it } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
-import { codeExchangeProblem, DELIVERY_HELP, deliveryProblem } from '../src/lib/pages/Dashboard/Payments/delivery'
+import * as delivery from '../src/lib/pages/Dashboard/Payments/delivery'
+import { codeExchangeProblem, deliveryProblem } from '../src/lib/pages/Dashboard/Payments/delivery'
 import { networkLabel } from '../src/lib/pages/Dashboard/Payments/paymentProtocol'
 
 const ready = { client: {}, via: 'messagebox' as const, error: '', notice: '' }
 
-describe('choosing how a wallet payment is delivered', () => {
-  it('explains each choice; Direct says it connects first, spends nothing if the recipient is offline, and shows them your IP address', () => {
-    expect(DELIVERY_HELP.direct).toBe("Direct · connects to the recipient's wallet first; nothing is spent if they're offline. A direct payment reveals your IP address to their wallet.")
-    expect(DELIVERY_HELP.messagebox).toMatch(/^Message box · /)
-    expect(DELIVERY_HELP.messagebox).toMatch(/offline/)
+describe('whether a wallet payment can be delivered', () => {
+  it('no longer offers a delivery choice to explain', () => {
+    expect('DELIVERY_HELP' in delivery).toBe(false)
   })
 
   it('needs a connected message box for message box delivery only', () => {
@@ -59,36 +58,61 @@ describe('choosing how a wallet payment is delivered', () => {
 describe('Payments page wiring', () => {
   const page = fs.readFileSync(path.resolve(__dirname, '../src/lib/pages/Dashboard/Payments/index.tsx'), 'utf8')
 
-  it('splits availability into the message box and direct delivery', () => {
+  it('splits availability into the message box and live sending, which needs a signaler', () => {
     expect(page).toMatch(/const messageBoxAvailable = !!peerPayClient && useMessageBox && !!messageBoxUrl/)
-    expect(page).toMatch(/const directAvailable = !!directPay\.client/)
+    expect(page).toMatch(/const directSendable = !!directPay\.client && directPay\.via !== null/)
     expect(page).not.toMatch(/const available =/)
     expect(page).not.toMatch(/[!(&|]\s*available\b/)
   })
 
-  it('offers Message box or Direct for identity payments, Direct disabled without a client', () => {
-    expect(page).toMatch(/useState<Delivery>\('messagebox'\)/)
-    expect(page).toMatch(/<ToggleButtonGroup[^>]*aria-label="Delivery"/)
-    expect(page).toMatch(/<ToggleButton value="messagebox">Message box<\/ToggleButton><ToggleButton value="direct" disabled=\{!directAvailable\}>Direct<\/ToggleButton>/)
-    expect(page).toMatch(/DELIVERY_HELP\[delivery\]/)
+  it('asks nobody how to deliver: no Delivery toggle, no delivery in the review', () => {
+    expect(page).not.toMatch(/aria-label="Delivery"/)
+    expect(page).not.toMatch(/DELIVERY_HELP|useState<Delivery>|Delivery: /)
+    expect(page).not.toMatch(/Confirm & send/)
+    expect(page).toMatch(/setReview\(\{ target, amount: sendAmount!, name: recipientLabel \|\| short\(target\.recipient\) \}\)/)
+    expect(page).toMatch(/request, name: short\(request\.sender\) \}\)/)
   })
 
-  it('fixes the delivery when the payment is reviewed, shows it, and pays requests through the message box', () => {
-    expect(page).toMatch(/setReview\(\{ target, amount: sendAmount!, delivery \}\)/)
-    expect(page).toMatch(/request, delivery: 'messagebox' \}\)/)
-    expect(page).toMatch(/Delivery: \{review\?\.delivery === 'direct' \? 'Direct \(peer-to-peer\)' : 'Message box'\}<\/Typography><Typography variant="caption" color="text\.secondary">\{DELIVERY_HELP\[review\.delivery\]\}/)
+  it('pays live first through payIdentity, and pays requests and the fallback through the message box only', () => {
+    expect(page).toMatch(/import \{ fallbackPrompt, payIdentity \} from '\.\/payFlow'/)
+    expect(page).toMatch(/const direct = !viaMessageBox && !review\.request && directSendable \? async \(\) => \{/)
+    expect(page).toMatch(/const messageBox = messageBoxAvailable \? async \(\) => \{/)
+    expect(page).toMatch(/const outcome = await payIdentity\(\{ direct, messageBox, name: review\.name \}\)/)
+    expect(page).toMatch(/if \(outcome\.kind === 'ask_fallback'\) \{ setFallback\(outcome\.reason\); return \}/)
+    expect(page).toMatch(/`Paid \$\{review\.name\} \$\{formatAmount\(review\.amount\)\} · live/)
   })
 
-  it('sends a direct payment with deliverDirect, saving the row before broadcast and marking it delivered', () => {
+  it('sends a live payment with deliverDirect, saving the row before broadcast, marking it delivered, cancellable', () => {
     expect(page).toMatch(/import \{ deliverDirect \} from '\.\/directPayments'/)
-    const branch = page.slice(page.indexOf("if (review.delivery === 'direct')"))
-    expect(branch).toMatch(/^if \(review\.delivery === 'direct'\) \{/)
-    const call = branch.slice(branch.indexOf('await deliverDirect({'), branch.indexOf('} else {'))
+    const call = page.slice(page.indexOf('await deliverDirect({'), page.indexOf('return { ackStatus: ack.status }'))
     expect(call).toMatch(/client: directPay\.client/)
-    expect(call).toMatch(/recipient: review\.target\.recipient, amount: review\.amount, host: review\.target\.host,/)
+    expect(call).toMatch(/recipient: target\.recipient, amount: review\.amount, host: target\.host,/)
     // Both write from the rows stored at that moment (see directCodes.test.ts wiring).
     expect(call).toMatch(/persist: row => \{ addOutgoing\(row\); prepared = true \}/)
-    expect(call).toMatch(/markDelivered: markOutgoingDelivered \}\)/)
+    expect(call).toMatch(/markDelivered: markOutgoingDelivered, signal: dial\.signal \}\)/)
+    // Cancel while reaching aborts the dial and says nothing more.
+    expect(page).toMatch(/if \(dial\.signal\.aborted && !prepared && outcome\.kind !== 'paid_live'\) \{ setReview\(null\); return \}/)
+  })
+
+  it('shows the fallback prompt inside the review, with Send to message box and Cancel, and Pay / Reaching otherwise', () => {
+    const dialog = page.slice(page.indexOf('<DialogTitle>Review your payment</DialogTitle>'))
+    expect(dialog).toMatch(/\{fallback && review && <Alert severity="warning">\{fallbackPrompt\(fallback, review\.name\)\}<\/Alert>\}/)
+    expect(dialog).toMatch(/onClick=\{\(\) => setReview\(null\)\}>Cancel<\/Button><Button variant="contained" disabled=\{busy \|\| switchingNetwork\} onClick=\{\(\) => void send\(true\)\}>\{busy \? 'Sending…' : 'Send to message box'\}/)
+    expect(dialog).toMatch(/\{busy \? reaching \? `Reaching \$\{review\?\.name\}…` : 'Sending…' : 'Pay'\}/)
+    expect(dialog).toMatch(/if \(reaching\) cancelReaching\(\); else setReview\(null\)/)
+  })
+
+  it('finds people by name, handle, email or a pasted identity key, and offers nearby payments', () => {
+    expect(page).toMatch(/placeholder="Name, @handle, email, or identity key"/)
+    expect(page).toMatch(/options=\{recipientOptions\}/)
+    expect(page).toMatch(/option\.badgeLabel/)
+    expect(page).toMatch(/>Pay someone nearby<\/Button>/)
+    expect(page).toMatch(/<IconButton aria-label="Scan a payment code"/)
+  })
+
+  it('says why a wallet identity cannot be paid only when neither live nor the message box can', () => {
+    expect(page).toMatch(/const identityIssue = !messageBoxAvailable && !directSendable \? deliveryProblem\('messagebox', \{ messageBoxAvailable, directPay \}\) : ''/)
+    expect(page).toMatch(/\{target\?\.kind === 'identity' && identityIssue && <Alert severity="warning">\{identityIssue\}<\/Alert>\}/)
   })
 
   it('records message box rows as such', () => {
@@ -112,10 +136,6 @@ describe('Payments page wiring', () => {
     expect(toasts).toMatch(/detail\.status !== 'accepted'\) \{ toast\.warning\(receivedNotice\(detail\)\.text\)/)
     const ui = fs.readFileSync(path.resolve(__dirname, '../src/lib/UserInterface.tsx'), 'utf8')
     expect(ui).toMatch(/<ThemedToastContainer \/>\n\s*<PaymentToasts \/>/)
-  })
-
-  it('says why Direct is unavailable under the delivery choice when it is disabled', () => {
-    expect(page).toMatch(/\{!directAvailable && <Typography variant="caption" color="text\.secondary" sx=\{\{ display: 'block' \}\}>Direct is unavailable: \{deliveryProblem\('direct', \{ messageBoxAvailable, directPay \}\)\}<\/Typography>\}/)
   })
 
   it('shows the live payments card on the Receive tab, even without a message box, with Settings when off', () => {
@@ -202,8 +222,8 @@ describe('a payment error is shown once', () => {
   // payment") must not appear inside a new review as if it were this payment's.
   it('Send: Review payment and Review & pay start without the last attempt\'s error', () => {
     const page = read('index.tsx')
-    expect(page).toMatch(/onClick=\{\(\) => \{ setNotice\(''\); setError\(''\); setReview\(\{ target, amount: sendAmount!, delivery \}\) \}\}>Review payment<\/Button>/)
-    expect(page).toMatch(/onClick=\{\(\) => \{ setError\(''\); setReview\(\{ target: \{ kind: 'identity', recipient: request\.sender \}, amount: request\.amount, request, delivery: 'messagebox' \}\) \}\}>Review & pay<\/Button>/)
+    expect(page).toMatch(/onClick=\{\(\) => \{ setNotice\(''\); setError\(''\); setReview\(\{ target, amount: sendAmount!, name: recipientLabel \|\| short\(target\.recipient\) \}\) \}\}>Review payment<\/Button>/)
+    expect(page).toMatch(/onClick=\{\(\) => \{ setError\(''\); setReview\(\{ target: \{ kind: 'identity', recipient: request\.sender \}, amount: request\.amount, request, name: short\(request\.sender\) \}\) \}\}>Review & pay<\/Button>/)
   })
 
   // Clearing the error drops its "do not send a new payment"; the review says it itself instead.

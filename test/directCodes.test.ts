@@ -535,7 +535,7 @@ describe('Nearby → Direct (WebRTC) wiring', () => {
     ])
     // Every writer goes through the helpers; none passes rows of its own.
     const adds = [...page.matchAll(/addOutgoing\(/g)].map(m => callText(page, m.index!))
-    expect(adds).toEqual(['addOutgoing(row)', 'addOutgoing(payment)'])
+    expect(adds).toEqual(['addOutgoing(payment)', 'addOutgoing(row)'])
     expect([...page.matchAll(/markOutgoingDelivered\(/g)].map(m => callText(page, m.index!))).toEqual(['markOutgoingDelivered(payment.txid)'])
     expect(page.match(/markDelivered: markOutgoingDelivered\b/g)).toHaveLength(3) // Send direct, Retry directly, Nearby
     // No writer captures the render's rows.

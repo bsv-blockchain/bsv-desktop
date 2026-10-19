@@ -1,16 +1,13 @@
 /**
- * How a wallet (identity) payment reaches its recipient: stored in their message box, or
- * delivered straight to their wallet over a direct connection (see directPayments.ts).
+ * How a wallet (identity) payment reaches its recipient: live, straight to their wallet over a
+ * direct connection (see directPayments.ts), or stored in their message box. The Send tab
+ * tries live first and asks before using the message box (see payFlow.ts); saved payments can
+ * be retried either way.
  */
 import type { DirectPaySnapshot } from '../../../services/DirectPayManager'
 import { directPayState } from '../../../components/DirectPayConfig/status'
 
 export type Delivery = 'messagebox' | 'direct'
-
-export const DELIVERY_HELP: Record<Delivery, string> = {
-  messagebox: "Message box · waits in the recipient's message box, so it arrives even if they're offline",
-  direct: "Direct · connects to the recipient's wallet first; nothing is spent if they're offline. A direct payment reveals your IP address to their wallet."
-}
 
 /**
  * Why a payment cannot be delivered the chosen way right now, for the user; empty when it

@@ -98,7 +98,9 @@ export default function Payments() {
   const closeScan = useCallback(() => setScan(false), [])
   const identitySearch = useIdentitySearch({ wallet, originator: adminOriginator, onIdentitySelected: selected => { if (selected) { setRecipient(selected.identityKey); setRecipientLabel(selected.name || short(selected.identityKey)) } } })
 
-  useEffect(() => { setReview(null); setRecipient(''); setRecipientLabel(''); setAmount(null); setNearbyRequest(''); setError(''); setNotice(''); }, [wallet, chain])
+  // A dial still reaching someone is for the wallet and network that were open: abort it (nothing is made before it connects).
+  useEffect(() => { dialAbort.current?.abort(); setReview(null); setRecipient(''); setRecipientLabel(''); setAmount(null); setNearbyRequest(''); setError(''); setNotice(''); }, [wallet, chain])
+  useEffect(() => () => dialAbort.current?.abort(), [])
   // Arrivals are announced app-wide by PaymentToasts; message box payments are taken by MessageBoxAutoReceiver.
   useEffect(() => { setFallback(null); setCancelling(false) }, [review])
   useEffect(() => { let alive = true; setIdentityLabel(''); if (identity) void identityName(wallet, adminOriginator, identity).then(name => { if (alive) setIdentityLabel(name) }); return () => { alive = false } }, [wallet, adminOriginator, identity])
@@ -198,13 +200,15 @@ export default function Payments() {
         const direct = !viaMessageBox && !review.request && directSendable ? async () => {
           dialAbort.current = dial; setReaching(true)
           try {
-            const { ack } = await deliverDirect({ client: directPay.client!, wallet, originator: adminOriginator, recipient: target.recipient, amount: review.amount, host: target.host, persist: row => { addOutgoing(row); prepared = true }, markDelivered: markOutgoingDelivered, signal: dial.signal })
+            const { ack } = await deliverDirect({ client: directPay.client!, wallet, originator: adminOriginator, recipient: target.recipient, amount: review.amount, host: target.host, persist: row => { addOutgoing(row); prepared = true; dialAbort.current = null; setReaching(false) }, markDelivered: markOutgoingDelivered, signal: dial.signal })
             return { ackStatus: ack.status }
           } finally { dialAbort.current = null; setReaching(false) }
         } : undefined
         const outcome = await payIdentity({ direct, messageBox, name: review.name })
         // Cancelled while reaching them: nothing was made, so there is nothing to say.
         if (dial.signal.aborted && !prepared && outcome.kind !== 'paid_live') { setReview(null); return }
+        // One payment, one transaction: never offer the message box once this payment exists.
+        if (outcome.kind === 'ask_fallback' && prepared) throw new Error('It could not be delivered directly.')
         if (outcome.kind === 'ask_fallback') { setFallback(outcome.reason); return }
         if (outcome.kind === 'failed') throw new Error(outcome.message)
         sent = outcome.kind === 'paid_live'

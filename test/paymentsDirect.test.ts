@@ -88,10 +88,20 @@ describe('Payments page wiring', () => {
     expect(call).toMatch(/client: directPay\.client/)
     expect(call).toMatch(/recipient: target\.recipient, amount: review\.amount, host: target\.host,/)
     // Both write from the rows stored at that moment (see directCodes.test.ts wiring).
-    expect(call).toMatch(/persist: row => \{ addOutgoing\(row\); prepared = true \}/)
+    // Once the payment exists, Cancel no longer applies (desktop review minor 2).
+    expect(call).toMatch(/persist: row => \{ addOutgoing\(row\); prepared = true; dialAbort\.current = null; setReaching\(false\) \}/)
     expect(call).toMatch(/markDelivered: markOutgoingDelivered, signal: dial\.signal \}\)/)
     // Cancel while reaching aborts the dial and says nothing more.
     expect(page).toMatch(/if \(dial\.signal\.aborted && !prepared && outcome\.kind !== 'paid_live'\) \{ setReview\(null\); return \}/)
+  })
+
+  // Desktop review minors 1 and 15.
+  it('never offers the message box once the payment exists, and aborts a dial on unmount or a wallet or network change', () => {
+    const guard = page.indexOf("if (outcome.kind === 'ask_fallback' && prepared) throw new Error(")
+    expect(guard).toBeGreaterThan(-1)
+    expect(guard).toBeLessThan(page.indexOf("if (outcome.kind === 'ask_fallback') { setFallback(outcome.reason); return }"))
+    expect(page).toMatch(/useEffect\(\(\) => \{ dialAbort\.current\?\.abort\(\); setReview\(null\);[^\n]*\}, \[wallet, chain\]\)/)
+    expect(page).toMatch(/useEffect\(\(\) => \(\) => dialAbort\.current\?\.abort\(\), \[\]\)/)
   })
 
   it('shows the fallback prompt inside the review, with Send to message box and Cancel, and Pay / Reaching otherwise', () => {

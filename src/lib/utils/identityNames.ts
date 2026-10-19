@@ -6,7 +6,8 @@
 import { IdentityClient } from '@bsv/sdk'
 import type { WalletInterface } from '@bsv/sdk'
 
-const names = new Map<string, Promise<string>>()
+/** Per wallet, since each wallet resolves on its own network (review minor 10). */
+const byWallet = new WeakMap<object, Map<string, Promise<string>>>()
 
 /** A key short enough for a toast or a list line. */
 export const shortKey = (key: string) => key.length > 16 ? `${key.slice(0, 10)}â€¦${key.slice(-4)}` : key
@@ -17,11 +18,14 @@ export const shortKey = (key: string) => key.length > 16 ? `${key.slice(0, 10)}â
  */
 export function identityName(wallet: WalletInterface | undefined, originator: string, identityKey: string, timeoutMs = 2500): Promise<string> {
   if (!wallet || !identityKey) return Promise.resolve('')
+  let names = byWallet.get(wallet)
+  if (!names) { names = new Map(); byWallet.set(wallet, names) }
+  const cache = names
   let lookup = names.get(identityKey)
   if (!lookup) {
     const started: Promise<string> = new IdentityClient(wallet, undefined, originator).resolveByIdentityKey({ identityKey })
       .then(results => results?.[0]?.name || '')
-      .catch(() => { if (names.get(identityKey) === started) names.delete(identityKey); return '' })
+      .catch(() => { if (cache.get(identityKey) === started) cache.delete(identityKey); return '' })
     lookup = started
     names.set(identityKey, lookup)
   }

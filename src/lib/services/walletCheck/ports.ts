@@ -25,6 +25,8 @@ export interface WalletCheckDeps {
   sleep: (ms: number) => Promise<void>
   storage: Pick<Storage, 'getItem'>
   hasLocalAdvertisement: () => Promise<boolean> // wallet's own overlay advertisement exists
+  /** The app-wide message box receiver's intake (MessageBoxAutoReceiver.takeWaiting); null when it is not running. */
+  receiveWaiting?: () => Promise<{ count: number; sats: number; failed: number } | null>
 }
 
 const NO_REMOTE: StepOutcome = { status: 'skipped', message: 'Not available with remote storage' }
@@ -108,6 +110,14 @@ export function createWalletCheckPorts(deps: WalletCheckDeps): WalletCheckPorts 
     async payments() {
       const client = deps.peerPay().client
       if (!client) return { status: 'skipped', message: 'No message box' }
+      // While payments are received automatically, take them the same way, so each is accepted
+      // once and recorded, toasted and deduplicated like any other (desktop review finding 4).
+      const received = await deps.receiveWaiting?.()
+      if (received) {
+        const fixed = received.count > 0 ? [`Received ${received.count} payment(s) (${received.sats} sats)`] : []
+        if (received.failed > 0) return { status: 'attention', message: `${received.failed} payment(s) could not be added to your wallet yet. Retry them under Arrived while you were away.`, fixed, action: { label: 'Open Payments', to: '/dashboard/payments?tab=receive' } }
+        return received.count > 0 ? { status: 'ok', message: 'Received payments', fixed } : { status: 'ok', message: 'No payments waiting' }
+      }
       const list = await client.listIncomingPayments()
       let n = 0
       let sats = 0
@@ -143,6 +153,7 @@ export function walletCheckDepsFromService(svc: WalletService, refreshAppWallet:
     fetch: (url, init) => window.fetch(url, init),
     sleep: ms => new Promise(r => setTimeout(r, ms)),
     storage: window.localStorage,
+    receiveWaiting: () => svc.messageBoxReceiver.takeWaiting(),
     hasLocalAdvertisement: async () => ((await wallet.listOutputs({ basket: 'overlay advertisements', limit: 10 })).outputs ?? []).some((o: any) => o.spendable !== false),
   }
 }

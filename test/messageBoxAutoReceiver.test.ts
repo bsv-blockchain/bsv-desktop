@@ -274,6 +274,31 @@ describe('MessageBoxAutoReceiver', () => {
     await receiver.stop()
   })
 
+  describe('takeWaiting (Wallet Check)', () => {
+    it('is null while not running', async () => {
+      expect(await new MessageBoxAutoReceiver().takeWaiting()).toBeNull()
+    })
+
+    it('takes what is waiting through the usual path and says what it added and what still fails', async () => {
+      const client = fakeClient()
+      const receiver = new MessageBoxAutoReceiver()
+      await start(receiver, client)
+      const [a, b, c] = [payment('m1', 500), payment('m2', 1000), payment('m3', 50)]
+      client.inbox = [a, b, c]
+      client.acceptPayment.mockImplementation(async (p: any) => {
+        if (p.messageId === 'm3') throw new Error('busy')
+        client.inbox = client.inbox.filter(m => m.messageId !== p.messageId)
+      })
+
+      expect(await receiver.takeWaiting()).toEqual({ count: 2, sats: 1500, failed: 1 })
+      expect(announced()).toHaveLength(2)
+      // Asked again, nothing new: each payment is taken once.
+      expect(await receiver.takeWaiting()).toEqual({ count: 0, sats: 0, failed: 1 })
+      expect(client.acceptPayment.mock.calls.filter(([p]) => p.messageId !== 'm3')).toHaveLength(2)
+      await receiver.stop()
+    })
+  })
+
   describe('as background work', () => {
     it('yields to Lock: the blocker names message box receiving, and nothing new is taken until the pause ends', async () => {
       const [a, b] = [payment('m1', 1000), payment('m2', 2000)]

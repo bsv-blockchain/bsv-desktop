@@ -77,7 +77,8 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
   private _run: Run | null = null
   private _records: ReceivedRecord[] = NO_RECORDS
   private _inFlight = new Set<string>()
-  private _listing = false
+  /** The listing in progress, if any (one at a time). */
+  private _listing: Promise<void> | null = null
   private _timer: ReturnType<typeof setInterval> | null = null
   private _changes = walletChangeRequests()
   private _pausedUntil = 0
@@ -111,6 +112,22 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
     this._setRecords(NO_RECORDS)
   }
 
+  /**
+   * For Wallet Check: takes what is waiting now, through the same path as every other intake
+   * (records, seen store, toasts), and says what was added during it and what is still failing.
+   * Null when not running (no open wallet or message box).
+   */
+  async takeWaiting(): Promise<{ count: number; sats: number; failed: number } | null> {
+    const run = this._run
+    if (!run) return null
+    const before = new Set(this._records.filter(r => r.status === 'received').map(r => r.messageId))
+    await this._listing // a listing already in progress may have started before a payment arrived
+    await this._relist(run.generation)
+    if (!this._current(run.generation)) return null
+    const added = this._records.filter(r => r.status === 'received' && !before.has(r.messageId))
+    return { count: added.length, sats: added.reduce((sum, r) => sum + r.amount, 0), failed: this._records.filter(r => r.status === 'failed').length }
+  }
+
   /** Tries a failed payment again, fetching it from the message box. */
   async retry(messageId: string): Promise<void> {
     const run = this._run
@@ -128,7 +145,7 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
     this._generation++
     this._run = null
     this._inFlight = new Set()
-    this._listing = false
+    this._listing = null
     if (this._timer) clearInterval(this._timer)
     this._timer = null
     events()?.removeEventListener('focus', this._onFocus)
@@ -145,16 +162,21 @@ export class MessageBoxAutoReceiver extends EventEmittable<{ changed: ReceivedRe
 
   private _find(messageId: string) { return this._records.find(r => r.messageId === messageId) }
 
-  private async _relist(generation: number): Promise<void> {
+  /** Lists and takes what is waiting; while a listing is in progress, that one. Never rejects. */
+  private _relist(generation: number): Promise<void> {
     const run = this._run
-    if (!run || run.generation !== generation || this._listing) return
-    this._listing = true
-    try {
-      const payments = await withDeadline(run.client.listIncomingPayments(run.host), CALL_MS)
-      for (const payment of payments) { if (!this._current(generation) || this._yielding()) return; await this._take(payment, generation) }
-    } catch (error) {
-      console.warn('[MessageBoxAutoReceiver] Could not list message box payments:', error)
-    } finally { if (this._current(generation)) this._listing = false }
+    if (!run || run.generation !== generation) return Promise.resolve()
+    if (this._listing) return this._listing
+    const listing = (async () => {
+      try {
+        const payments = await withDeadline(run.client.listIncomingPayments(run.host), CALL_MS)
+        for (const payment of payments) { if (!this._current(generation) || this._yielding()) return; await this._take(payment, generation) }
+      } catch (error) {
+        console.warn('[MessageBoxAutoReceiver] Could not list message box payments:', error)
+      } finally { if (this._listing === listing) this._listing = null }
+    })()
+    this._listing = listing
+    return listing
   }
 
   private async _take(payment: IncomingPayment, generation: number): Promise<void> {

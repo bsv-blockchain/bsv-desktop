@@ -26,12 +26,24 @@ describe('counterparty permission prompt', () => {
       { protocolName: 'ignored', protocolID: [1, 'named by id'] },
       { description: 'no protocol' },
       { protocolID: [2, ''] },
+      { protocolID: [2, 'blank'], description: '   ' },
     ])).toEqual([
-      { securityLevel: 2, protocolName: 'chat' },
-      { securityLevel: 2, protocolName: 'payments' },
+      { securityLevel: 2, protocolName: 'chat', description: 'Messages' },
+      { securityLevel: 2, protocolName: 'payments', description: 'Payments' },
       { securityLevel: 1, protocolName: 'named by id' },
+      { securityLevel: 2, protocolName: 'blank' },
     ])
     expect(displayProtocols(undefined)).toEqual([])
+  })
+
+  it('shows each manifest description under its protocol with the group reason label', () => {
+    const handler = fs.readFileSync(
+      path.resolve(__dirname, '../src/lib/components/CounterpartyPermissionHandler/index.tsx'),
+      'utf8'
+    )
+    expect(handler).toMatch(/t\('group_protocol_reason_label'\)/)
+    expect(handler).toMatch(/\{p\.description &&/)
+    expect(handler).not.toMatch(/<ProtoChip[\s\S]*?description=/)
   })
 })
 

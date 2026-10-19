@@ -1,4 +1,5 @@
 import { useContext, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { DialogActions, DialogContent, Button, Typography, Stack, Divider } from '@mui/material'
 import CustomDialog from '../CustomDialog'
 import AppChip from '../AppChip'
@@ -17,6 +18,7 @@ const CounterpartyPermissionHandler = () => {
   } = useContext(WalletContext)
 
   const { counterpartyPermissionModalOpen } = useContext(UserContext)
+  const { t } = useTranslation()
 
   const currentRequest = counterpartyPermissionRequests[0]
 
@@ -125,15 +127,28 @@ const CounterpartyPermissionHandler = () => {
               </Typography>
               <Stack spacing={1}>
                 {displayProtocols(protocols).map((p, i) => (
-                  <ProtoChip
-                    key={i}
-                    securityLevel={p.securityLevel}
-                    protocolID={p.protocolName}
-                    originator={currentRequest.originator}
-                    counterparty={currentRequest.counterparty}
-                    clickable={false}
-                    canRevoke={false}
-                  />
+                  <div key={i}>
+                    <ProtoChip
+                      securityLevel={p.securityLevel}
+                      protocolID={p.protocolName}
+                      originator={currentRequest.originator}
+                      counterparty={currentRequest.counterparty}
+                      clickable={false}
+                      canRevoke={false}
+                    />
+                    {p.description && (
+                      // Same reason line and inset as GroupPermissionHandler.
+                      <div style={{
+                        marginLeft: '2.5em',
+                        paddingLeft: '0.5em',
+                        borderLeft: '3px solid #bbb',
+                        paddingTop: '0.5em',
+                        marginBottom: '1em'
+                      }}>
+                        <p style={{ marginBottom: '0px' }}><b>{t('group_protocol_reason_label')}</b>{p.description}</p>
+                      </div>
+                    )}
+                  </div>
                 ))}
               </Stack>
             </>

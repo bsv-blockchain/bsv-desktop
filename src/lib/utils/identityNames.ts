@@ -11,23 +11,28 @@ const names = new Map<string, Promise<string>>()
 /** A key short enough for a toast or a list line. */
 export const shortKey = (key: string) => key.length > 16 ? `${key.slice(0, 10)}…${key.slice(-4)}` : key
 
+/**
+ * The name for `identityKey`, or '' when there is none or it takes longer than `timeoutMs`. The
+ * lookup itself keeps running and is cached, so a slow name is there for the next caller.
+ */
 export function identityName(wallet: WalletInterface | undefined, originator: string, identityKey: string, timeoutMs = 2500): Promise<string> {
   if (!wallet || !identityKey) return Promise.resolve('')
-  const cached = names.get(identityKey)
-  if (cached) return cached
-  const forget = () => { if (names.get(identityKey) === lookup) names.delete(identityKey) }
-  const lookup: Promise<string> = new Promise<string>(resolve => {
-    const timer = setTimeout(() => { forget(); resolve('') }, timeoutMs)
-    new IdentityClient(wallet, undefined, originator).resolveByIdentityKey({ identityKey })
-      .then(results => resolve(results?.[0]?.name || ''))
-      .catch(() => { forget(); resolve('') })
-      .finally(() => clearTimeout(timer))
+  let lookup = names.get(identityKey)
+  if (!lookup) {
+    const started: Promise<string> = new IdentityClient(wallet, undefined, originator).resolveByIdentityKey({ identityKey })
+      .then(results => results?.[0]?.name || '')
+      .catch(() => { if (names.get(identityKey) === started) names.delete(identityKey); return '' })
+    lookup = started
+    names.set(identityKey, lookup)
+  }
+  const found = lookup
+  return new Promise<string>(resolve => {
+    const timer = setTimeout(() => resolve(''), timeoutMs)
+    void found.then(name => { clearTimeout(timer); resolve(name) })
   })
-  names.set(identityKey, lookup)
-  return lookup
 }
 
 /** Name or short key. */
-export async function identityLabel(wallet: WalletInterface | undefined, originator: string, identityKey: string): Promise<string> {
-  return (await identityName(wallet, originator, identityKey)) || shortKey(identityKey)
+export async function identityLabel(wallet: WalletInterface | undefined, originator: string, identityKey: string, timeoutMs?: number): Promise<string> {
+  return (await identityName(wallet, originator, identityKey, timeoutMs)) || shortKey(identityKey)
 }

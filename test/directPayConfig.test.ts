@@ -38,7 +38,7 @@ const stored = {
 describe('direct-pay settings form', () => {
   it('shows the defaults with the STUN servers comma-separated and no TURN server', () => {
     expect(formFromSettings(DEFAULT_DIRECT_PAY_SETTINGS)).toEqual({
-      receiveEnabled: false,
+      receiveEnabled: true,
       signaling: 'messagebox',
       relayUrl: '',
       stunUrls:

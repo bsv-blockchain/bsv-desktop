@@ -78,7 +78,8 @@ const RELAY = 'wss://relay.example.com'
 const peerPayClient = { sendMessage: vi.fn(), listMessages: vi.fn(), acknowledgeMessage: vi.fn() }
 const wallet = { name: 'permissions manager' } as any
 
-const settings = (change: Partial<DirectPaySettings> = {}): DirectPaySettings => ({ ...DEFAULT_DIRECT_PAY_SETTINGS, ...change })
+// Receiving is on by default; these tests start from off and turn it on where they need it.
+const settings = (change: Partial<DirectPaySettings> = {}): DirectPaySettings => ({ ...DEFAULT_DIRECT_PAY_SETTINGS, receiveEnabled: false, ...change })
 const startOptions = (change: Record<string, unknown> = {}) => ({
   wallet,
   originator: 'admin.local',
@@ -933,7 +934,7 @@ describe('DirectPayManager.applySettings', () => {
 
   it('follows settings saved on this device', async () => {
     await manager.start(startOptions())
-    stored['bsv-desktop-direct-pay-v1'] = JSON.stringify(settings({ receiveEnabled: true }))
+    stored['bsv-desktop-direct-pay-v2'] = JSON.stringify(settings({ receiveEnabled: true }))
 
     settingsListeners.forEach(fn => fn())
     await vi.waitFor(() => expect(manager.getSnapshot().status).toBe('online'))

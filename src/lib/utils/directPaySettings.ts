@@ -3,17 +3,21 @@
  * localStorage like the display preferences. They are not part of the wallet,
  * so they work before sign-in and survive logout (see WalletService).
  *
- * Receiving is off by default: while it is on, any wallet that knows the
- * identity key can learn this device's public IP address and when the wallet is
- * unlocked by starting a connection, without paying (audit F14). The settings
- * are one per device, so receiving answers for every wallet profile on it.
+ * Receiving is on by default (the user's decision, 2026-10-18), and the switch
+ * is in Settings. While it is on, any wallet that knows the identity key can
+ * learn this device's public IP address and when the wallet is unlocked by
+ * starting a connection, without paying (audit F14); that now applies by
+ * default. The settings are one per device, so receiving answers for every
+ * wallet profile on it. Settings saved under the v1 key, when receiving was off
+ * by default, are read once with receiving on; from then on the v2 key holds the
+ * user's choice.
  * Sending directly needs no setting, and reveals the payer's IP address to the
  * recipient's wallet. When two wallets cannot connect directly, a TURN server
  * may relay the encrypted connection; the carriers see who connects, their
  * addresses and when, never the payment.
  */
 export interface DirectPaySettings {
-  /** Answer direct payments from other wallets. Off unless the user turns it on. */
+  /** Answer direct payments from other wallets. On unless the user turns it off. */
   receiveEnabled: boolean
   /** How the two wallets find each other before connecting. */
   signaling: 'messagebox' | 'relay'
@@ -25,12 +29,14 @@ export interface DirectPaySettings {
   turn?: { urls: string; username: string; credential: string }
 }
 
-export const DIRECT_PAY_SETTINGS_KEY = 'bsv-desktop-direct-pay-v1'
+export const DIRECT_PAY_SETTINGS_KEY = 'bsv-desktop-direct-pay-v2'
+/** Read only while the v2 key is absent, with receiving forced on. Never written. */
+export const LEGACY_DIRECT_PAY_SETTINGS_KEY = 'bsv-desktop-direct-pay-v1'
 
 const CHANGED_EVENT = 'direct-pay-settings-changed'
 
 export const DEFAULT_DIRECT_PAY_SETTINGS: DirectPaySettings = {
-  receiveEnabled: false,
+  receiveEnabled: true,
   signaling: 'messagebox',
   relayUrl: '',
   stunUrls: [
@@ -117,13 +123,19 @@ function withTurn(settings: Omit<DirectPaySettings, 'turn'>, turn: DirectPaySett
   return turn ? { ...settings, turn } : settings
 }
 
-/** Falls back to the default for each stored field that is missing or no longer valid. */
+/**
+ * Falls back to the default for each stored field that is missing or no longer valid.
+ * Without v2 settings, v1 settings are used with receiving on (see the header).
+ */
 export function loadDirectPaySettings(): DirectPaySettings {
   const defaults = DEFAULT_DIRECT_PAY_SETTINGS
   let stored: Record<string, unknown> = {}
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(DIRECT_PAY_SETTINGS_KEY) ?? 'null')
+    const current = localStorage.getItem(DIRECT_PAY_SETTINGS_KEY)
+    const legacy = current === null ? localStorage.getItem(LEGACY_DIRECT_PAY_SETTINGS_KEY) : null
+    const parsed: unknown = JSON.parse(current ?? legacy ?? 'null')
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) stored = parsed as Record<string, unknown>
+    if (current === null && legacy !== null) stored = { ...stored, receiveEnabled: true }
   } catch { /* corrupt or unreadable storage: the defaults apply */ }
 
   const field = <T>(check: (value: unknown) => T, value: unknown, fallback: T): T => {

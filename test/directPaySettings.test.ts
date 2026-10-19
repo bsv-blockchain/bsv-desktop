@@ -3,6 +3,7 @@ import {
   DEFAULT_DIRECT_PAY_SETTINGS,
   DIRECT_PAY_SETTINGS_KEY,
   DirectPaySettingsError,
+  LEGACY_DIRECT_PAY_SETTINGS_KEY,
   iceServersFrom,
   loadDirectPaySettings,
   saveDirectPaySettings,
@@ -29,10 +30,11 @@ beforeEach(() => {
 })
 
 describe('direct-pay settings: loading', () => {
-  it('uses the safe defaults when nothing is stored', () => {
-    expect(DIRECT_PAY_SETTINGS_KEY).toBe('bsv-desktop-direct-pay-v1')
+  it('defaults receive on when nothing is stored', () => {
+    expect(DIRECT_PAY_SETTINGS_KEY).toBe('bsv-desktop-direct-pay-v2')
+    expect(LEGACY_DIRECT_PAY_SETTINGS_KEY).toBe('bsv-desktop-direct-pay-v1')
     expect(DEFAULT_DIRECT_PAY_SETTINGS).toEqual({
-      receiveEnabled: false,
+      receiveEnabled: true,
       signaling: 'messagebox',
       relayUrl: '',
       stunUrls: [
@@ -68,14 +70,14 @@ describe('direct-pay settings: loading', () => {
     local.set(
       DIRECT_PAY_SETTINGS_KEY,
       JSON.stringify({
-        receiveEnabled: true,
+        receiveEnabled: false,
         signaling: 'carrier-pigeon',
         relayUrl: 'ws://example.com',
         stunUrls: ['http://not-stun.example'],
         turn: { urls: 'http://not-turn.example', username: 'u', credential: 'c' }
       })
     )
-    expect(loadDirectPaySettings()).toEqual({ ...DEFAULT_DIRECT_PAY_SETTINGS, receiveEnabled: true })
+    expect(loadDirectPaySettings()).toEqual({ ...DEFAULT_DIRECT_PAY_SETTINGS, receiveEnabled: false })
 
     local.set(
       DIRECT_PAY_SETTINGS_KEY,
@@ -87,7 +89,7 @@ describe('direct-pay settings: loading', () => {
       })
     )
     expect(loadDirectPaySettings()).toEqual({
-      receiveEnabled: false,
+      receiveEnabled: true,
       signaling: 'relay',
       relayUrl: 'wss://relay.example.com',
       stunUrls: ['stun:one.example:3478']
@@ -97,6 +99,31 @@ describe('direct-pay settings: loading', () => {
   it('still loads relay signaling without an address stored before saving refused it (shown as an error, Ruling 14)', () => {
     local.set(DIRECT_PAY_SETTINGS_KEY, JSON.stringify({ receiveEnabled: true, signaling: 'relay', relayUrl: '', stunUrls: [] }))
     expect(loadDirectPaySettings()).toEqual({ receiveEnabled: true, signaling: 'relay', relayUrl: '', stunUrls: [] })
+  })
+})
+
+describe('direct-pay settings: the v1 to v2 migration', () => {
+  const v1 = { receiveEnabled: false, signaling: 'relay', relayUrl: 'wss://relay.example.com', stunUrls: ['stun:a.example:3478'] }
+
+  it('migrates v1 off to on once, keeping the other v1 values', () => {
+    local.set(LEGACY_DIRECT_PAY_SETTINGS_KEY, JSON.stringify(v1))
+    expect(loadDirectPaySettings()).toEqual({ ...v1, receiveEnabled: true })
+    // Saving writes v2 only; v1 is left as it was and no longer read.
+    saveDirectPaySettings({ ...v1, signaling: 'relay', receiveEnabled: true })
+    expect(JSON.parse(local.get(DIRECT_PAY_SETTINGS_KEY)!).receiveEnabled).toBe(true)
+    expect(JSON.parse(local.get(LEGACY_DIRECT_PAY_SETTINGS_KEY)!)).toEqual(v1)
+  })
+
+  it('keeps v2 off when the user turned it off', () => {
+    local.set(LEGACY_DIRECT_PAY_SETTINGS_KEY, JSON.stringify({ ...v1, receiveEnabled: true }))
+    saveDirectPaySettings({ receiveEnabled: false })
+    expect(loadDirectPaySettings().receiveEnabled).toBe(false)
+    expect(loadDirectPaySettings().signaling).toBe('messagebox')
+  })
+
+  it('turns receiving on for corrupt v1 settings too', () => {
+    local.set(LEGACY_DIRECT_PAY_SETTINGS_KEY, '{not json')
+    expect(loadDirectPaySettings()).toEqual(DEFAULT_DIRECT_PAY_SETTINGS)
   })
 })
 

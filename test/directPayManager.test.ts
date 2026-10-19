@@ -51,7 +51,13 @@ vi.mock('@bsv/webrtpay', async importOriginal => ({
   }),
   RelaySignaler: vi.fn(function (options: any) {
     const provider = async () => []
-    const signaler = { options, provider, turnProvider: vi.fn(() => provider), close: vi.fn(async () => {}) }
+    const signaler = {
+      options,
+      provider,
+      turnProvider: vi.fn(() => provider),
+      listen: vi.fn(async () => async () => {}),
+      close: vi.fn(async () => {})
+    }
     h.made.relays.push(signaler)
     return signaler
   })
@@ -64,7 +70,7 @@ vi.mock('../src/lib/pages/Dashboard/Payments/directPayments', () => ({
 }))
 vi.mock('react-toastify', () => ({ toast: { warning: (...args: unknown[]) => h.warning(...args) } }))
 
-import { DirectPayManager } from '../src/lib/services/DirectPayManager'
+import { DirectPayManager, RELAY_START_MS } from '../src/lib/services/DirectPayManager'
 import * as fs from 'fs'
 import * as path from 'path'
 import { activeUserWalletOperations, BACKGROUND_RETRY_BUSY, beginHttpBridgeSession, beginUserWalletOperation, endHttpBridgeSession, setHttpBridgePaused, walletChangeBlocker } from '../src/lib/services/httpBridgeSession'
@@ -78,8 +84,9 @@ const RELAY = 'wss://relay.example.com'
 const peerPayClient = { sendMessage: vi.fn(), listMessages: vi.fn(), acknowledgeMessage: vi.fn() }
 const wallet = { name: 'permissions manager' } as any
 
-// Receiving is on by default; these tests start from off and turn it on where they need it.
-const settings = (change: Partial<DirectPaySettings> = {}): DirectPaySettings => ({ ...DEFAULT_DIRECT_PAY_SETTINGS, receiveEnabled: false, ...change })
+// Receiving through the relay is the default; these tests start from receiving off through
+// the message box and change what they need.
+const settings = (change: Partial<DirectPaySettings> = {}): DirectPaySettings => ({ ...DEFAULT_DIRECT_PAY_SETTINGS, receiveEnabled: false, signaling: 'messagebox', ...change })
 const startOptions = (change: Record<string, unknown> = {}) => ({
   wallet,
   originator: 'admin.local',
@@ -167,7 +174,7 @@ describe('DirectPayManager.start', () => {
     expect(client.options).toMatchObject({ wallet, originator: 'admin.local', chain: 'main', signaler: h.made.messageBoxes[0] })
     expect(client.options.rtc).toEqual({ iceServers: iceServersFrom(settings()) })
     expect(client.startReceiving).not.toHaveBeenCalled()
-    expect(manager.getSnapshot()).toEqual({ client, status: 'off', via: 'messagebox', error: '', notice: '', received: 0 })
+    expect(manager.getSnapshot()).toEqual({ client, status: 'off', via: 'messagebox', relayUnreachable: false, error: '', notice: '', received: 0 })
   })
 
   it('with receiving on over the message box polls the wallet\'s own host and goes online', async () => {
@@ -303,7 +310,7 @@ describe('DirectPayManager.start', () => {
     expect(manager.getSnapshot().error).toContain('The relay could not be reached')
   })
 
-  it('shows receiving through a relay from its connection: why it is offline, until it is online', async () => {
+  it('shows receiving through a relay from its connection: why it is offline, until it is online, without a message box to fall back to', async () => {
     const changes: Array<[string, string]> = []
     manager.on('changed', snapshot => changes.push([snapshot.status, snapshot.error]))
     // The relay cannot be reached at first: listen resolves anyway and keeps trying.
@@ -313,7 +320,7 @@ describe('DirectPayManager.start', () => {
       onStateChange('offline', new WebRTPayError('peer_unreachable', 'Could not connect to the relay'))
     }
 
-    await manager.start(startOptions({ settings: settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY }) }))
+    await manager.start(startOptions({ peerPayClient: null, settings: settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY }) }))
     const [relay] = h.made.relays
     expect(manager.getSnapshot()).toMatchObject({ status: 'error', via: 'relay', client: h.made.clients[0] })
     expect(manager.getSnapshot().error).toMatch(/relay server cannot be reached.*trying again/i)
@@ -346,12 +353,12 @@ describe('DirectPayManager.start', () => {
     expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'relay', error: '' })
   })
 
-  it('says the relay does not accept this wallet\'s address when it refuses the sign-in (its PUBLIC_URLS)', async () => {
+  it('says the relay does not accept this wallet\'s address when it refuses the sign-in (its PUBLIC_URLS), without a message box to fall back to', async () => {
     h.startReceiving = async () => {
       h.made.relays[0].options.onStateChange('offline', new WebRTPayError('auth_failed', 'Relay refused authentication'))
     }
 
-    await manager.start(startOptions({ settings: settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY }) }))
+    await manager.start(startOptions({ peerPayClient: null, settings: settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY }) }))
 
     const { status, error } = manager.getSnapshot()
     expect(status).toBe('error')
@@ -361,12 +368,12 @@ describe('DirectPayManager.start', () => {
   })
 
   // The signaler reports both as auth_failed; only this wallet's own failure carries a cause.
-  it('says this wallet could not sign in, not that the relay refused it, when signing the challenge fails', async () => {
+  it('says this wallet could not sign in, not that the relay refused it, when signing the challenge fails, without a message box to fall back to', async () => {
     h.startReceiving = async () => {
       h.made.relays[0].options.onStateChange('offline', new WebRTPayError('auth_failed', 'Could not sign the relay challenge', { cause: new Error('User is not authenticated.') }))
     }
 
-    await manager.start(startOptions({ settings: settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY }) }))
+    await manager.start(startOptions({ peerPayClient: null, settings: settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY }) }))
 
     const { status, error } = manager.getSnapshot()
     expect(status).toBe('error')
@@ -394,14 +401,14 @@ describe('DirectPayManager.start', () => {
     expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'messagebox', error: '' })
   })
 
-  it('starts over at once when the same settings are applied while the relay is unreachable', async () => {
+  it('starts over at once when the same settings are applied while the relay is unreachable, without a message box to fall back to', async () => {
     let down = true
     h.startReceiving = async () => {
       const relay = h.made.relays.at(-1)
       relay.options.onStateChange(down ? 'offline' : 'online', down ? new WebRTPayError('peer_unreachable', 'Could not connect to the relay') : undefined)
     }
     const relaySettings = settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY })
-    await manager.start(startOptions({ settings: relaySettings }))
+    await manager.start(startOptions({ peerPayClient: null, settings: relaySettings }))
     expect(manager.getSnapshot().status).toBe('error')
 
     down = false
@@ -902,6 +909,191 @@ describe('DirectPayManager.start', () => {
   })
 })
 
+describe('relay by default, message box as the fallback', () => {
+  const relayReceiving = (change: Partial<DirectPaySettings> = {}) => settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY, ...change })
+  const unreachable = () => new WebRTPayError('peer_unreachable', 'Could not connect to the relay')
+  /** The relay that client `c` signals through, if it signals through one. */
+  const relayOf = (c: any) => h.made.relays.find(r => r === c.options.signaler)
+
+  /**
+   * How a client's listen goes: through a relay, the relay reports `relayState` (and
+   * `offline` with an error); through the message box, a poll works.
+   */
+  let relayState: 'online' | 'offline' | 'connecting'
+  beforeEach(() => {
+    relayState = 'offline'
+    h.startReceiving = async (client: any) => {
+      const relay = relayOf(client)
+      if (!relay) return pollOnce(client)
+      relay.options.onStateChange('connecting')
+      if (relayState === 'online') relay.options.onStateChange('online')
+      if (relayState === 'offline') relay.options.onStateChange('offline', unreachable())
+    }
+  })
+
+  it('receives through the relay when it is reachable', async () => {
+    relayState = 'online'
+    await manager.start(startOptions({ settings: relayReceiving() }))
+
+    expect(h.made.relays).toHaveLength(1)
+    expect(h.made.messageBoxes).toHaveLength(0)
+    expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'relay', relayUnreachable: false, error: '' })
+  })
+
+  it('receives through the message box when the relay cannot be reached, and keeps retrying the relay', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await manager.start(startOptions({ settings: relayReceiving() }))
+    await vi.waitFor(() => expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'messagebox', relayUnreachable: true, error: '' }))
+
+    const [first, fallback] = h.made.clients
+    expect(h.made.clients).toHaveLength(2)
+    expect(first.close).toHaveBeenCalledOnce()
+    expect(h.made.relays[0].close).toHaveBeenCalledOnce()
+    // The message box client is the wallet's own, polling its own host.
+    expect(fallback.options.signaler).toBe(h.made.messageBoxes[0])
+    expect(h.made.messageBoxes[0].options).toEqual({ host: HOST, messageBox: 'webrtpay_signals' })
+    expect(fallback.options.iceServersProvider).toBeUndefined()
+    expect(manager.getSnapshot().client).toBe(fallback)
+    // A second relay signaler retries in the background: listening keeps it reconnecting.
+    expect(h.made.relays).toHaveLength(2)
+    expect(h.made.relays[1].options).toMatchObject({ url: RELAY, wallet, originator: 'admin.local' })
+    expect(h.made.relays[1].listen).toHaveBeenCalledOnce()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('the relay cannot be reached'))
+    warn.mockRestore()
+  })
+
+  it('moves receiving back to the relay once the retried relay accepts this wallet', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await manager.start(startOptions({ settings: relayReceiving() }))
+    await vi.waitFor(() => expect(manager.getSnapshot()).toMatchObject({ status: 'online', relayUnreachable: true }))
+    const retried = h.made.relays[1]
+
+    // Still down: the retry says nothing to the user, and nothing changes.
+    retried.options.onStateChange('connecting')
+    retried.options.onStateChange('offline', unreachable())
+    expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'messagebox', relayUnreachable: true })
+
+    relayState = 'online'
+    retried.options.onStateChange('online')
+    await vi.waitFor(() => expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'relay', relayUnreachable: false, error: '' }))
+
+    expect(retried.close).toHaveBeenCalledOnce()
+    expect(h.made.clients[1].close).toHaveBeenCalledOnce()
+    expect(h.made.clients).toHaveLength(3)
+    expect(h.made.relays).toHaveLength(3)
+    expect(h.made.clients[2].options.signaler).toBe(h.made.relays[2])
+    expect(h.made.clients[2].options.iceServersProvider).toBe(h.made.relays[2].provider)
+    // The retry of an older carrier no longer changes anything.
+    retried.options.onStateChange('online')
+    expect(h.made.clients).toHaveLength(3)
+  })
+
+  it(`falls back when the relay has not accepted this wallet within ${RELAY_START_MS} ms`, async () => {
+    vi.useFakeTimers()
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    relayState = 'connecting'
+    await manager.start(startOptions({ settings: relayReceiving() }))
+    expect(manager.getSnapshot()).toMatchObject({ status: 'starting', via: 'relay' })
+
+    await vi.advanceTimersByTimeAsync(RELAY_START_MS - 1)
+    expect(manager.getSnapshot()).toMatchObject({ status: 'starting', via: 'relay', relayUnreachable: false })
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'messagebox', relayUnreachable: true })
+    expect(h.made.relays[0].close).toHaveBeenCalledOnce()
+  })
+
+  it('does not fall back from a relay that came online in time', async () => {
+    vi.useFakeTimers()
+    relayState = 'online'
+    await manager.start(startOptions({ settings: relayReceiving() }))
+    await vi.advanceTimersByTimeAsync(RELAY_START_MS * 2)
+
+    expect(h.made.clients).toHaveLength(1)
+    expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'relay', relayUnreachable: false })
+  })
+
+  it('falls back when the relay drops later, and comes back the same way', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    relayState = 'online'
+    await manager.start(startOptions({ settings: relayReceiving() }))
+    h.made.relays[0].options.onStateChange('offline', new WebRTPayError('peer_unreachable', 'Relay connection closed'))
+
+    await vi.waitFor(() => expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'messagebox', relayUnreachable: true }))
+    h.made.relays[1].options.onStateChange('online')
+    await vi.waitFor(() => expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'relay', relayUnreachable: false }))
+  })
+
+  it('keeps the count of received payments across a fallback', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    relayState = 'online'
+    await manager.start(startOptions({ settings: relayReceiving() }))
+    await handlersOf(0).onPayment(payment, { txid: 'ab'.repeat(32) })
+    h.made.relays[0].options.onStateChange('offline', unreachable())
+
+    await vi.waitFor(() => expect(manager.getSnapshot()).toMatchObject({ via: 'messagebox', received: 1 }))
+  })
+
+  it('does not rebuild for the same settings while on the fallback', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await manager.start(startOptions({ settings: relayReceiving() }))
+    await vi.waitFor(() => expect(manager.getSnapshot().relayUnreachable).toBe(true))
+
+    await manager.applySettings(relayReceiving())
+
+    expect(h.made.clients).toHaveLength(2)
+    expect(manager.getSnapshot()).toMatchObject({ via: 'messagebox', relayUnreachable: true })
+  })
+
+  it('stays on the message box, never trying the relay, when the user chose it', async () => {
+    vi.useFakeTimers()
+    peerPayClient.listMessages.mockRejectedValue(new Error('message box down'))
+    await manager.start(startOptions({ settings: relayReceiving({ signaling: 'messagebox' }) }))
+    await pollOnce(h.made.clients[0]).catch(() => {})
+    await pollOnce(h.made.clients[0]).catch(() => {})
+    await vi.advanceTimersByTimeAsync(RELAY_START_MS * 4)
+
+    expect(h.made.relays).toHaveLength(0)
+    expect(h.made.clients).toHaveLength(1)
+    expect(manager.getSnapshot()).toMatchObject({ status: 'error', via: 'messagebox', relayUnreachable: false })
+  })
+
+  it('stays on the relay, showing why, without a message box to fall back to', async () => {
+    vi.useFakeTimers()
+    await manager.start(startOptions({ peerPayClient: null, settings: relayReceiving() }))
+    await vi.advanceTimersByTimeAsync(RELAY_START_MS * 2)
+
+    expect(h.made.clients).toHaveLength(1)
+    expect(h.made.relays).toHaveLength(1)
+    expect(manager.getSnapshot()).toMatchObject({ status: 'error', via: 'relay', relayUnreachable: false })
+  })
+
+  it('does not fall back while not receiving: sending through the relay leads to the message box itself', async () => {
+    vi.useFakeTimers()
+    await manager.start(startOptions({ settings: relayReceiving({ receiveEnabled: false }) }))
+    h.made.relays[0].options.onStateChange('offline', unreachable())
+    await vi.advanceTimersByTimeAsync(RELAY_START_MS * 2)
+
+    expect(h.made.clients).toHaveLength(1)
+    expect(manager.getSnapshot()).toMatchObject({ status: 'off', via: 'relay', relayUnreachable: false })
+  })
+
+  it('closes the relay being retried when the wallet closes', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await manager.start(startOptions({ settings: relayReceiving() }))
+    await vi.waitFor(() => expect(manager.getSnapshot().relayUnreachable).toBe(true))
+
+    await manager.stop()
+
+    expect(h.made.relays[1].close).toHaveBeenCalledOnce()
+    expect(h.made.clients[1].close).toHaveBeenCalledOnce()
+    // A late "online" from the closed retry changes nothing.
+    h.made.relays[1].options.onStateChange('online')
+    expect(h.made.clients).toHaveLength(2)
+    expect(manager.getSnapshot().client).toBeNull()
+  })
+})
+
 describe('DirectPayManager.stop', () => {
   it('closes the client and the relay and clears the snapshot', async () => {
     await manager.start(startOptions({ settings: settings({ receiveEnabled: true, signaling: 'relay', relayUrl: RELAY }) }))
@@ -912,7 +1104,7 @@ describe('DirectPayManager.stop', () => {
 
     expect(client.close).toHaveBeenCalledOnce()
     expect(relay.close).toHaveBeenCalledOnce()
-    expect(manager.getSnapshot()).toEqual({ client: null, status: 'off', via: null, error: '', notice: '', received: 0 })
+    expect(manager.getSnapshot()).toEqual({ client: null, status: 'off', via: null, relayUnreachable: false, error: '', notice: '', received: 0 })
   })
 
   it('clears the snapshot before the client has finished closing', async () => {
@@ -937,7 +1129,7 @@ describe('DirectPayManager.stop', () => {
     await pending
 
     expect(client.close).toHaveBeenCalledOnce()
-    expect(manager.getSnapshot()).toEqual({ client: null, status: 'off', via: null, error: '', notice: '', received: 0 })
+    expect(manager.getSnapshot()).toEqual({ client: null, status: 'off', via: null, relayUnreachable: false, error: '', notice: '', received: 0 })
   })
 
   it('stops following settings changes', async () => {
@@ -971,7 +1163,7 @@ describe('DirectPayManager.applySettings', () => {
 
   it('follows settings saved on this device', async () => {
     await manager.start(startOptions())
-    stored['bsv-desktop-direct-pay-v2'] = JSON.stringify(settings({ receiveEnabled: true }))
+    stored['bsv-desktop-direct-pay-v3'] = JSON.stringify(settings({ receiveEnabled: true }))
 
     settingsListeners.forEach(fn => fn())
     await vi.waitFor(() => expect(manager.getSnapshot().status).toBe('online'))

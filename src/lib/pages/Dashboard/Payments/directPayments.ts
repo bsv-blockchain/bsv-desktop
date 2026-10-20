@@ -177,6 +177,9 @@ async function connect(client: DirectPayClient, recipient: string, saved: boolea
     return await client.connect(recipient, signal ? { signal } : undefined)
   } catch (error) {
     const failure = dialFailure(error)
+    // The user sees a short prompt; the console keeps what actually failed, for diagnosis.
+    const e = error as Partial<WebRTPayError> & { cause?: unknown }
+    console.warn('[DirectPay] Direct connection failed', { recipient, failure, code: e?.code, reason: e?.reason, message: e?.message, cause: e?.cause })
     // The recipient's wallet, or this one, refused a dial between two networks (the client is
     // bound to this wallet's chain): redialing cannot help until both are on one network.
     if (failure === 'wrong_network') {

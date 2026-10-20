@@ -70,7 +70,7 @@ vi.mock('../src/lib/pages/Dashboard/Payments/directPayments', () => ({
 }))
 vi.mock('react-toastify', () => ({ toast: { warning: (...args: unknown[]) => h.warning(...args) } }))
 
-import { DirectPayManager, RELAY_RETRY_FIRST_MS, RELAY_RETRY_MAX_MS, RELAY_STABLE_MS, RELAY_START_MS } from '../src/lib/services/DirectPayManager'
+import { DIAL_MS, DirectPayManager, RELAY_RETRY_FIRST_MS, RELAY_RETRY_MAX_MS, RELAY_STABLE_MS, RELAY_START_MS } from '../src/lib/services/DirectPayManager'
 import * as fs from 'fs'
 import * as path from 'path'
 import { activeUserWalletOperations, BACKGROUND_RETRY_BUSY, beginHttpBridgeSession, beginUserWalletOperation, endHttpBridgeSession, setHttpBridgePaused, walletChangeBlocker } from '../src/lib/services/httpBridgeSession'
@@ -173,6 +173,8 @@ describe('DirectPayManager.start', () => {
     const [client] = h.made.clients
     expect(client.options).toMatchObject({ wallet, originator: 'admin.local', chain: 'main', signaler: h.made.messageBoxes[0] })
     expect(client.options.rtc).toEqual({ iceServers: iceServersFrom(settings()) })
+    expect(client.options.timeouts).toEqual({ dialMs: DIAL_MS })
+    expect(DIAL_MS).toBe(10_000)
     expect(client.startReceiving).not.toHaveBeenCalled()
     expect(manager.getSnapshot()).toEqual({ client, status: 'off', via: 'messagebox', relayUnreachable: false, error: '', notice: '', received: 0 })
   })

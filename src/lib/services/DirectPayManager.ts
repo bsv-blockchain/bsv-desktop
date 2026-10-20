@@ -90,6 +90,8 @@ const OFF: DirectPaySnapshot = { client: null, status: 'off', via: null, relayUn
  * message box (when there is one).
  */
 export const RELAY_START_MS = 5000
+/** How long a dial may take to open the link once the recipient has answered (package default 6 s). */
+export const DIAL_MS = 10_000
 /** The wait before the relay is retried after a fallback; doubles per fallback in a row. */
 export const RELAY_RETRY_FIRST_MS = 5000
 export const RELAY_RETRY_MAX_MS = 5 * 60_000
@@ -261,6 +263,10 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
         chain: o.chain,
         signaler,
         rtc: { iceServers: iceServersFrom(o.settings) },
+        // Once the recipient has answered the knock, give the link 10 s (the package default is
+        // 6 s) to come up: a slow STUN or TURN answer on either side otherwise ends a payment the
+        // recipient is online for.
+        timeouts: { dialMs: DIAL_MS },
         // The relay's TURN servers, asked for before each ICE gather (Ruling 27). One provider
         // for the client's life: it reuses live credentials, because each request spends one
         // of this address's few an hour and strangers can make a payee gather.

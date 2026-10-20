@@ -39,6 +39,8 @@ interface MonitorConfig {
   /** Where the Arcade SSE resume cursor is kept; chosen by the parent process. */
   sseCursorPath?: string;
   serviceSettings?: import('./networkConfig.js').NetworkSettings;
+  /** The wallet's Arcade callback token, derived by the renderer and passed on by the parent. */
+  callbackToken: string;
 }
 
 let monitor: Monitor | null = null;
@@ -76,7 +78,7 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
   try {
     const [
       { StorageKnex, Monitor, WalletStorageManager },
-      { arcadeCallbackToken, createArcadeServices },
+      { createArcadeServices },
       { arcadeSseCursorPath, createArcadeMonitorOptions, startArcadeSsePump, tolerateTransientArcadeRejections },
       { DEFAULT_MONITOR_FEE_RATE, getConfiguredFeeRate }
     ] = await Promise.all([
@@ -133,7 +135,7 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     // merkle proofs, so it needs the same Arcade-first Services as the main
     // process — and the same callback token, or it would subscribe to a stream
     // the main process's broadcasts never report into.
-    const services = createArcadeServices(chain, identityKey, config.serviceSettings);
+    const services = createArcadeServices(chain, config.callbackToken, config.serviceSettings);
     console.log(`[Monitor Worker] Broadcasting, proofs and SSE via Arcade at ${services.options.arcadeUrl}`);
 
     // Set services on storage
@@ -155,7 +157,7 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     // Monitor options on the same Services (and so the same ChainTracks client),
     // with live status events from Arcade (TaskArcadeSSE, one of the default tasks).
     const monitorOptions = createArcadeMonitorOptions(chain, storageManager, services, {
-      callbackToken: arcadeCallbackToken(identityKey),
+      callbackToken: config.callbackToken,
       cursorPath: config.sseCursorPath ?? arcadeSseCursorPath(identityKey, chain),
       onStatusChanged: (txid, status) => {
         tellParent({ type: 'tx-status-changed', txid, status });

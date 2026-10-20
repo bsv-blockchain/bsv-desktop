@@ -75,19 +75,19 @@ describe('installTxStatusBridge', () => {
 })
 
 describe('renderer createServices', () => {
-  const IDENTITY_KEY = '02' + 'ef'.repeat(32)
+  const TOKEN = '0123456789abcdef'.repeat(2)
 
   it('points Arcade and ChainTracks at the same deployment as the main process', () => {
     for (const chain of ['main', 'test', 'ttn'] as const) {
-      const services = createServices(chain, IDENTITY_KEY)
+      const services = createServices(chain, TOKEN)
       expect(services.options.arcadeUrl, chain).toBe(arcadeUrl(chain))
       expect((services.options.chaintracks as any).serviceUrl, chain).toBe(chaintracksUrl(chain))
-      expect((services.options.arcadeConfig as any).callbackToken, chain).toBe(IDENTITY_KEY.substring(0, 32))
+      expect((services.options.arcadeConfig as any).callbackToken, chain).toBe(TOKEN)
       expect(services.getMerklePathServices.services[0].name, chain).toBe('Arcade')
     }
   })
 
-  it('works without an identity (exchange-rate callers), just without a callback token', () => {
+  it('works without a wallet (exchange-rate callers), just without a callback token', () => {
     const services = createServices('main')
     expect(services.options.arcadeUrl).toBe(arcadeUrl('main'))
     expect((services.options.arcadeConfig as any).callbackToken).toBeUndefined()

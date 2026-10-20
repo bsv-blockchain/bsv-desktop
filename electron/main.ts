@@ -542,10 +542,10 @@ ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain:
 });
 
 // Initialize services on storage
-ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings?: import('./networkConfig.js').NetworkSettings) => {
+ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings: import('./networkConfig.js').NetworkSettings | undefined, callbackToken: string) => {
   try {
     const manager = await getStorageManager();
-    await manager.request(identityKey, chain, () => manager.initializeServices(identityKey, chain, settings));
+    await manager.request(identityKey, chain, () => manager.initializeServices(identityKey, chain, settings, callbackToken));
     return { success: true };
   } catch (error: any) {
     console.error('[IPC] storage:initialize-services error:', error);

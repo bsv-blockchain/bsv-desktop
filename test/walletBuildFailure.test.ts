@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../src/lib/WalletContext', () => ({ DEFAULT_PERMISSIONS_CONFIG: {} }))
-vi.mock('../src/lib/services/createServices', () => ({ createServices: vi.fn(() => ({})) }))
+vi.mock('../src/lib/services/createServices', async importOriginal => ({
+  deriveArcadeCallbackToken: (await importOriginal<typeof import('../src/lib/services/createServices')>()).deriveArcadeCallbackToken,
+  createServices: vi.fn(() => ({}))
+}))
 vi.mock('../src/lib/services/secrets', () => ({ getSnapshot: () => 'saved-wallet', getKeyHex: () => null, getMnemonic: () => null }))
 vi.mock('../src/onWalletReady', () => ({ clearWalletForHttpRoute: vi.fn() }))
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), warning: vi.fn() } }))
@@ -17,8 +20,10 @@ vi.mock('../src/lib/walletPortability/WalletDataStorageManager', () => ({
   })
 }))
 
-import { PrivateKey } from '@bsv/sdk'
+import { CachedKeyDeriver, PrivateKey } from '@bsv/sdk'
 import { WalletService } from '../src/lib/services/WalletService'
+import { createServices, deriveArcadeCallbackToken } from '../src/lib/services/createServices'
+import { StorageElectronIPC } from '../src/lib/StorageElectronIPC'
 import { getReadyAppWalletSnapshot } from '../src/lib/services/appWalletBridge'
 import { clearWalletForHttpRoute } from '../src/onWalletReady'
 
@@ -122,6 +127,25 @@ describe('successful wallet build', () => {
       messageBoxUrl: undefined,
       settings: { receiveEnabled: true }
     })
+  })
+
+  it('gives the wallet\'s services and backend storage the callback token derived from its key', async () => {
+    const service = new WalletService()
+    const state = service as any
+    state._useMessageBox = false
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {} })
+    vi.stubGlobal('window', { electronAPI: { walletData: { call: vi.fn(async () => ({ preferLocal: false })) }, storage: { releaseNetwork: vi.fn(async () => ({ success: true })) } } })
+    vi.spyOn(service.directPay, 'start').mockResolvedValue()
+    vi.mocked(createServices).mockClear()
+    vi.mocked(StorageElectronIPC).mockClear()
+    const primaryKey = new Array(32).fill(1)
+    const token = deriveArcadeCallbackToken(new CachedKeyDeriver(new PrivateKey(primaryKey)))
+
+    await state._buildWallet(primaryKey, {})
+
+    expect(service.lifecycle).toBe('ready')
+    expect(vi.mocked(createServices).mock.calls[0][1]).toBe(token)
+    expect(vi.mocked(StorageElectronIPC).mock.calls[0][3]).toBe(token)
   })
 
   it('does not start direct payments for a build that was superseded meanwhile', async () => {

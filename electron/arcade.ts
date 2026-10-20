@@ -35,24 +35,26 @@ import { normalizeNetworkSettings, type NetworkSettings } from './networkConfig.
 const requireFromToolbox = createRequire(createRequire(import.meta.url).resolve('@bsv/wallet-toolbox'))
 const { MerklePath, Transaction, Utils } = requireFromToolbox('@bsv/sdk') as typeof import('@bsv/sdk')
 
-const IDENTITY_KEY = /^0[23][0-9a-fA-F]{64}$/
-
 /** The toolbox's name for its Arcade broadcaster in `postBeefServices`. */
 export const ARCADE_BROADCASTER = 'ArcadeBeef'
+
+const CALLBACK_TOKEN = /^[0-9a-f]{32}$/
 
 /**
  * The token Arcade scopes a wallet's status events by.
  *
- * Derived exactly as bsv-wallet derives it — the first 32 hex characters of the
- * identity key — so a wallet open on both devices shares one event stream, and
- * so the main process (which broadcasts) and the monitor worker (which
- * subscribes) agree on it without having to pass it between them.
+ * The renderer derives it from the wallet's private key exactly as bsv-wallet
+ * does (deriveArcadeCallbackToken in src/lib/services/createServices.ts), so a
+ * wallet open on both devices shares one event stream. The main process, which
+ * broadcasts, and the monitor worker, which subscribes, hold no private key, so
+ * they are handed the token over IPC and must both use it. A malformed token is
+ * refused rather than replaced.
  */
-export function arcadeCallbackToken(identityKey: string): string {
-  if (!IDENTITY_KEY.test(identityKey)) {
-    throw new Error('An Arcade callback token is derived from a compressed identity key')
+export function assertArcadeCallbackToken(callbackToken: unknown): string {
+  if (typeof callbackToken !== 'string' || !CALLBACK_TOKEN.test(callbackToken)) {
+    throw new Error('An Arcade callback token is 32 lowercase hex characters')
   }
-  return identityKey.substring(0, 32)
+  return callbackToken
 }
 
 /**
@@ -66,7 +68,7 @@ export const ARCADE_REQUEST_HEADERS: Readonly<Record<string, string>> = Object.f
 /** Services options for one wallet on one chain. */
 export function createArcadeServiceOptions(
   chain: EndpointChain,
-  identityKey: string,
+  callbackToken: string,
   settings?: Partial<NetworkSettings>
 ): sdk.WalletServicesOptions {
   const resolved = normalizeNetworkSettings(chain, settings || {})
@@ -77,7 +79,7 @@ export function createArcadeServiceOptions(
   options.arcadeUrl = resolved.arcadeUrl
   options.arcadeConfig = {
     deploymentId: options.arcConfig?.deploymentId,
-    callbackToken: arcadeCallbackToken(identityKey),
+    callbackToken: assertArcadeCallbackToken(callbackToken),
     headers: { ...ARCADE_REQUEST_HEADERS }
   }
   // Stated rather than inherited, so the fallback set cannot drift with a
@@ -234,9 +236,9 @@ export function installMerklePathFallbacks(services: Services, chain: EndpointCh
 }
 
 /** A Services instance for one wallet on one chain, Arcade first throughout. */
-export function createArcadeServices(chain: EndpointChain, identityKey: string, settings?: Partial<NetworkSettings>): Services {
+export function createArcadeServices(chain: EndpointChain, callbackToken: string, settings?: Partial<NetworkSettings>): Services {
   const resolved = normalizeNetworkSettings(chain, settings || {})
-  const services = new Services(createArcadeServiceOptions(chain, identityKey, resolved))
+  const services = new Services(createArcadeServiceOptions(chain, callbackToken, resolved))
   if (resolved.whatsOnChainUrl) (services.whatsonchain as any).URL = resolved.whatsOnChainUrl
   installBroadcastFallbacks(services, chain, resolved.whatsOnChainUrl)
   installMerklePathFallbacks(services, chain, resolved.whatsOnChainUrl)

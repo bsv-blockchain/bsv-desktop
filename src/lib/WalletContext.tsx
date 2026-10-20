@@ -26,6 +26,7 @@ import { WalletPermissionsManager, PrivilegedKeyManager, WalletStorageManager, W
 import { WalletInterface, Utils } from '@bsv/sdk'
 import { PeerPayClient, AdvertisementToken } from '@bsv/message-box-client'
 import type { DirectPaySnapshot } from './services/DirectPayManager'
+import type { ReceivedRecord } from './services/MessageBoxAutoReceiver'
 import type { DirectPaySettings } from './utils/directPaySettings'
 import 'react-toastify/dist/ReactToastify.css'
 
@@ -200,6 +201,9 @@ export interface WalletContextValue {
   directPay: DirectPaySnapshot;
   /** Use saved direct-pay settings now (they also apply on the next unlock). */
   applyDirectPaySettings: (settings: DirectPaySettings) => Promise<void>;
+  /** Message box payments the open wallet took automatically (and failures to retry), newest first. */
+  messageBoxReceived: ReceivedRecord[];
+  retryMessageBoxPayment: (messageId: string) => Promise<void>;
 }
 
 export const WalletContext = createContext<WalletContextValue>({
@@ -268,8 +272,10 @@ export const WalletContext = createContext<WalletContextValue>({
   anointCurrentHost: async () => {},
   revokeHostAnointment: async () => {},
   checkAnointmentStatus: async () => {},
-  directPay: { client: null, status: 'off', via: null, error: '', notice: '', received: 0 },
+  directPay: { client: null, status: 'off', via: null, relayUnreachable: false, error: '', notice: '', received: 0 },
   applyDirectPaySettings: async () => {},
+  messageBoxReceived: [],
+  retryMessageBoxPayment: async () => {},
 })
 
 export const createDisabledPrivilegedManager = () =>

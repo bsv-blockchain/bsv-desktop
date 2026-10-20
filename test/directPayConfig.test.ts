@@ -29,6 +29,7 @@ beforeEach(() => {
 
 const stored = {
   receiveEnabled: false,
+  shareLocalAddress: false,
   signaling: 'relay' as const,
   relayUrl: 'wss://relay.example.com',
   stunUrls: ['stun:stun.example.com:3478'],
@@ -39,6 +40,7 @@ describe('direct-pay settings form', () => {
   it('shows the defaults with the STUN servers comma-separated and no TURN server', () => {
     expect(formFromSettings(DEFAULT_DIRECT_PAY_SETTINGS)).toEqual({
       receiveEnabled: true,
+      shareLocalAddress: true,
       signaling: 'relay',
       relayUrl: 'wss://webrtpay-relay-us-1.bsvblockchain.tech',
       stunUrls:
@@ -52,6 +54,7 @@ describe('direct-pay settings form', () => {
   it('shows a stored relay and TURN server', () => {
     expect(formFromSettings(stored)).toEqual({
       receiveEnabled: false,
+      shareLocalAddress: false,
       signaling: 'relay',
       relayUrl: 'wss://relay.example.com',
       stunUrls: 'stun:stun.example.com:3478',
@@ -67,8 +70,9 @@ describe('direct-pay settings form', () => {
       receiveEnabled: true,
       stunUrls: ' stun:a.example:3478 ,stun:b.example:3478,, '
     })
-    expect(Object.keys(settings).sort()).toEqual(['receiveEnabled', 'relayUrl', 'signaling', 'stunUrls', 'turn'])
+    expect(Object.keys(settings).sort()).toEqual(['receiveEnabled', 'relayUrl', 'shareLocalAddress', 'signaling', 'stunUrls', 'turn'])
     expect(settings.receiveEnabled).toBe(true)
+    expect(settings.shareLocalAddress).toBe(false)
     expect(settings.signaling).toBe('relay')
     expect(settings.relayUrl).toBe('wss://relay.example.com')
     expect(settings.stunUrls.map(url => url.trim()).filter(Boolean)).toEqual(['stun:a.example:3478', 'stun:b.example:3478'])

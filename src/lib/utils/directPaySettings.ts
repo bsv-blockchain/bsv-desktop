@@ -20,6 +20,12 @@
  * recipient's wallet. When two wallets cannot connect directly, a TURN server
  * may relay the encrypted connection; the carriers see who connects, their
  * addresses and when, never the payment.
+ * Sharing this device's local address is on by default (the user's decision,
+ * 2026-10-20: paying someone in the same office is common). Without it Chromium
+ * offers only mDNS names for this device, which wallets on the same network often
+ * cannot resolve, and many routers will not loop traffic back to their own public
+ * address. While it is on, the default-route LAN address and IPv6 address reach the
+ * other wallet inside the encrypted signal, and appear in face-to-face payment codes.
  */
 export interface DirectPaySettings {
   /** Answer direct payments from other wallets. On unless the user turns it off. */
@@ -30,6 +36,11 @@ export interface DirectPaySettings {
   relayUrl: string
   /** stun: / stuns: servers used to discover this device's public address. */
   stunUrls: string[]
+  /**
+   * Offer this device's local network address (and IPv6 address) to the other wallet, so
+   * wallets on the same network can connect. On unless the user turns it off.
+   */
+  shareLocalAddress: boolean
   /** Optional TURN server, for testing. */
   turn?: { urls: string; username: string; credential: string }
 }
@@ -49,6 +60,7 @@ const CHANGED_EVENT = 'direct-pay-settings-changed'
 
 export const DEFAULT_DIRECT_PAY_SETTINGS: DirectPaySettings = {
   receiveEnabled: true,
+  shareLocalAddress: true,
   signaling: 'relay',
   relayUrl: DEFAULT_RELAY_URL,
   stunUrls: [
@@ -70,6 +82,11 @@ export class DirectPaySettingsError extends Error {
 
 function checkReceiveEnabled(value: unknown): boolean {
   if (typeof value !== 'boolean') throw new Error('Receive direct payments must be on or off.')
+  return value
+}
+
+function checkShareLocalAddress(value: unknown): boolean {
+  if (typeof value !== 'boolean') throw new Error('Connect directly on the same network must be on or off.')
   return value
 }
 
@@ -173,6 +190,7 @@ export function loadDirectPaySettings(): DirectPaySettings {
   return withTurn(
     {
       receiveEnabled: field(checkReceiveEnabled, stored.receiveEnabled, defaults.receiveEnabled),
+      shareLocalAddress: field(checkShareLocalAddress, stored.shareLocalAddress, defaults.shareLocalAddress),
       signaling: field(checkSignaling, stored.signaling, defaults.signaling),
       relayUrl: field(checkRelayUrl, stored.relayUrl, defaults.relayUrl),
       stunUrls: field(checkStunUrls, stored.stunUrls, [...defaults.stunUrls])
@@ -192,6 +210,7 @@ export function saveDirectPaySettings(input: Partial<DirectPaySettings>): Direct
   const settings = withTurn(
     {
       receiveEnabled: checkReceiveEnabled(input.receiveEnabled ?? defaults.receiveEnabled),
+      shareLocalAddress: checkShareLocalAddress(input.shareLocalAddress ?? defaults.shareLocalAddress),
       signaling: checkSignaling(input.signaling ?? defaults.signaling),
       relayUrl: checkRelayUrl(input.relayUrl ?? defaults.relayUrl),
       stunUrls: checkStunUrls(input.stunUrls ?? defaults.stunUrls)

@@ -52,6 +52,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     restart: () => ipcRenderer.invoke('app:restart')
   },
 
+  // Direct payments: offer this device's local addresses to wallets on the same network
+  webrtc: {
+    shareLocalAddress: (share: boolean): Promise<void> => ipcRenderer.invoke('webrtc:share-local-address', share)
+  },
+
   // Troubleshoot: re-run the HTTPS bridge certificate trust flow
   cert: {
     checkAndRepair: () => ipcRenderer.invoke('cert:check-and-repair')
@@ -198,6 +203,10 @@ export interface ElectronAPI {
   app: {
     /** Relaunches the app; the process exits and the Promise does not resolve. */
     restart: () => Promise<void>;
+  };
+  /** Direct payments: whether WebRTC offers this device's LAN and IPv6 addresses (see electron/webrtcPrivacy.ts). */
+  webrtc: {
+    shareLocalAddress: (share: boolean) => Promise<void>;
   };
   cert: {
     checkAndRepair: () => Promise<{ trusted: boolean | null; repaired: boolean }>;

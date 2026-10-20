@@ -16,6 +16,7 @@ import { checkAndRepairCertTrust } from './sslCert.js';
 import { applyUserDataOverride } from './userDataOverride.js';
 import { hideLocalAddressesFromWebRtc } from './webrtcPrivacy.js';
 import { isDevMode } from './rendererSource.js';
+import { validateManifestUrl } from './manifestSecurity.js';
 
 // BSV_DESKTOP_USER_DATA moves userData so a second copy of the app (a second
 // test wallet) can run on one machine. This has to stay ahead of everything
@@ -431,40 +432,64 @@ ipcMain.handle('save-file', async (_event, defaultPath: string, content: number[
 });
 
 // Proxy fetch for manifest.json files
-ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
+ipcMain.handle('proxy-fetch-manifest', async (event, inputUrl: string) => {
+  // Only the main application window's main frame may use this privileged IPC.
+  if (!mainWindow ||
+      event.sender !== mainWindow.webContents ||
+      event.senderFrame !== event.sender.mainFrame) {
+    throw new Error('Untrusted manifest proxy caller');
+  }
+
+  const MAX_BODY_BYTES = 1024 * 1024;
+
   try {
-    const parsedUrl = new URL(url);
+    const url = await validateManifestUrl(inputUrl);
 
-    // Security checks
-    if (parsedUrl.protocol !== 'https:') {
-      throw new Error('Only HTTPS URLs are allowed');
-    }
-
-    const pathname = parsedUrl.pathname.toLowerCase();
-    if (!pathname.endsWith('/manifest.json') && pathname !== '/manifest.json') {
-      throw new Error('Only manifest.json files are allowed');
-    }
-
-    // Use the Chromium session so manifest fetches honor session proxy settings
-    // (node-fetch would bypass session.setProxy).
-    const response = await session.defaultSession.fetch(url, {
+    // Electron 41's session.fetch rejects manual redirects rather than
+    // exposing the redirect response and Location header. Reject redirects
+    // explicitly instead of risking an automatic request to an unchecked URL.
+    const response = await session.defaultSession.fetch(url.href, {
       headers: {
         'User-Agent': 'bsv-desktop-electron/1.0',
-        'Accept': 'application/json, */*;q=0.8'
+        'Accept': 'application/json, */*;q=0.8',
       },
-      redirect: 'follow'
+      redirect: 'error',
     });
 
-    // Re-validate the *resolved* URL after any redirects. A server could 302 to
-    // http://, a non-manifest path, or an internal address; enforce the same
-    // constraints we applied to the input.
-    const finalUrl = new URL(response.url || url);
-    if (finalUrl.protocol !== 'https:') {
-      throw new Error('Redirected to a non-HTTPS URL');
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (contentLength > MAX_BODY_BYTES) {
+      throw new Error('Manifest response exceeds the 1 MiB limit');
     }
-    const finalPath = finalUrl.pathname.toLowerCase();
-    if (!finalPath.endsWith('/manifest.json') && finalPath !== '/manifest.json') {
-      throw new Error('Redirected to a non-manifest URL');
+
+    // Read incrementally so a response without Content-Length cannot consume
+    // unbounded memory.
+    const reader = response.body?.getReader();
+    let body = '';
+
+    if (reader) {
+      const chunks: Uint8Array[] = [];
+      let totalBytes = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+
+        totalBytes += value.byteLength;
+        if (totalBytes > MAX_BODY_BYTES) {
+          await reader.cancel();
+          throw new Error('Manifest response exceeds the 1 MiB limit');
+        }
+        chunks.push(value);
+      }
+
+      const combined = new Uint8Array(totalBytes);
+      let offset = 0;
+      for (const chunk of chunks) {
+        combined.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      body = new TextDecoder().decode(combined);
     }
 
     const headers: [string, string][] = [];
@@ -472,12 +497,10 @@ ipcMain.handle('proxy-fetch-manifest', async (_event, url: string) => {
       headers.push([key, value]);
     });
 
-    const body = await response.text();
-
     return {
       status: response.status,
       headers,
-      body
+      body,
     };
   } catch (error) {
     throw new Error(String(error));

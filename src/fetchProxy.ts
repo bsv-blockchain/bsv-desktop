@@ -28,9 +28,9 @@ if (typeof window !== 'undefined') {
           const headers = new Headers(result.headers);
           return new Response(result.body, { status: result.status, headers });
         } catch (e) {
-          // Fall back to original fetch if the proxy fails
-          console.warn('proxy_fetch_manifest failed, falling back to original fetch:', e);
-          return originalFetch(input as any, init as any);
+          // Never bypass the main-process security checks for manifest requests.
+          console.warn('proxy_fetch_manifest failed:', e);
+          throw e;
         }
       }
 

@@ -44,6 +44,10 @@ export interface ElectronAPI {
     /** Relaunches the app; the process exits and the Promise does not resolve. */
     restart: () => Promise<void>;
   };
+  /** Direct payments: whether WebRTC offers this device's LAN and IPv6 addresses (see electron/webrtcPrivacy.ts). */
+  webrtc: {
+    shareLocalAddress: (share: boolean) => Promise<void>;
+  };
   cert: {
     checkAndRepair: () => Promise<{ trusted: boolean | null; repaired: boolean }>;
   };

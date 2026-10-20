@@ -63,7 +63,7 @@ describe('network service preferences', () => {
     const restored = frontend.restoreNetworkSettings(JSON.parse(JSON.stringify({ tstn: custom })))
     expect(restored.tstn).toEqual(custom)
     expect(restored.test).toEqual(frontend.defaultNetworkSettings('test'))
-    const options = createArcadeServiceOptions('tstn', identity, custom)
+    const options = createArcadeServiceOptions('tstn', '0123456789abcdef'.repeat(2), custom)
     expect(options.chain).toBe('tstn')
     expect(options.arcadeUrl).toBe('https://arcade.example.com')
     expect(options.chaintracks.chain).toBe('tstn')

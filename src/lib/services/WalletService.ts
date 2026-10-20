@@ -33,7 +33,7 @@ import {
   WalletSettingsManager,
   type WalletSettings,
 } from '@bsv/wallet-toolbox-client'
-import { createServices } from './createServices'
+import { createServices, deriveArcadeCallbackToken } from './createServices'
 import { setTxStatusScope } from '../txStatusScope'
 import {
   PrivateKey,
@@ -772,8 +772,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while closing storage')
       const chain = this._selectedNetwork
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey))
+      const callbackToken = deriveArcadeCallbackToken(keyDeriver)
       const serviceSettings = this._networkSettings[chain]
-      const services = createServices(chain, keyDeriver.identityKey, serviceSettings)
+      const services = createServices(chain, callbackToken, serviceSettings)
 
       let binding: { preferLocal: boolean } | undefined
       try {
@@ -794,7 +795,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       if (this._useRemoteStorage) {
         activeStorage = null // Created after wallet
       } else {
-        const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain, serviceSettings)
+        const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain, serviceSettings, callbackToken)
         electronStorage.setServices(services as any)
         openedLocal = { identityKey: keyDeriver.identityKey, chain }
         await electronStorage.initializeBackendServices()
@@ -1106,7 +1107,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       const identityKey = (storageManager as any)?._authId?.identityKey
       if (!identityKey) throw new Error('Could not get identity key from wallet')
       const electronStorage = new StorageElectronIPC(identityKey, this._selectedNetwork, this._networkSettings[this._selectedNetwork])
-      const services = createServices(this._selectedNetwork, identityKey, this._networkSettings[this._selectedNetwork])
+      // The wallet's own Services, which carry its callback token. A backup
+      // never starts backend services, so a fresh instance needs none.
+      const services = (wallet as any).services ?? createServices(this._selectedNetwork, undefined, this._networkSettings[this._selectedNetwork])
       electronStorage.setServices(services as any)
       await electronStorage.makeAvailable()
       backupProvider = electronStorage

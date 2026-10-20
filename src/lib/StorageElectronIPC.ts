@@ -33,7 +33,12 @@ export class StorageElectronIPC implements WalletStorageProvider {
   private services?: WalletServices;
   private settings?: any;
 
-  constructor(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', private networkSettings?: NetworkSettings) {
+  /**
+   * @param callbackToken The wallet's Arcade callback token (deriveArcadeCallbackToken),
+   * needed only by {@link initializeBackendServices}: the main process broadcasts
+   * with it and its monitor worker subscribes with it.
+   */
+  constructor(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', private networkSettings?: NetworkSettings, private callbackToken?: string) {
     this.identityKey = identityKey;
     this.chain = chain;
 
@@ -52,10 +57,12 @@ export class StorageElectronIPC implements WalletStorageProvider {
    * Services must be created on backend since they contain non-serializable objects
    */
   async initializeBackendServices(): Promise<void> {
+    if (!this.callbackToken) throw new Error('Backend services need the wallet\'s Arcade callback token');
     const result = await window.electronAPI.storage.initializeServices(
       this.identityKey,
       this.chain,
-      this.networkSettings
+      this.networkSettings,
+      this.callbackToken
     );
     if (!result.success) {
       throw new Error(`Failed to initialize services on backend: ${result.error}`);

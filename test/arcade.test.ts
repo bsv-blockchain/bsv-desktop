@@ -1,9 +1,9 @@
 import { createRequire } from 'module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MerklePath as EsmMerklePath } from '@bsv/sdk'
+import { CachedKeyDeriver, KeyDeriver, MerklePath as EsmMerklePath, PrivateKey as EsmPrivateKey } from '@bsv/sdk'
 import {
   ARCADE_BROADCASTER,
-  arcadeCallbackToken,
+  assertArcadeCallbackToken,
   createArcadeServiceOptions,
   createArcadeServices,
   makeWocMerklePathService,
@@ -17,7 +17,7 @@ import {
   TAAL_ARC_URLS,
   WHATSONCHAIN_URLS
 } from '../electron/endpoints'
-import { arcadeCallbackToken as rendererCallbackToken } from '../src/lib/services/createServices'
+import { deriveArcadeCallbackToken } from '../src/lib/services/createServices'
 
 // The toolbox is CommonJS and type-checks SDK objects against its own copy of
 // the SDK, so anything handed to it is built from that copy (see electron/arcade.ts).
@@ -26,8 +26,26 @@ const { Beef, MerklePath, P2PKH, PrivateKey, Transaction } = toolboxSdk
 type Beef = InstanceType<typeof Beef>
 
 const CHAINS = ['main', 'test', 'ttn'] as const
-const IDENTITY_KEY = '02' + 'ab'.repeat(32)
-const TOKEN = IDENTITY_KEY.substring(0, 32)
+
+/**
+ * Known-answer vectors shared with bsv-wallet
+ * (packages/expo-wallet-toolbox/__tests__/services/callbackToken.test.ts), so
+ * the two apps cannot drift apart. The second root key's derived key has a
+ * leading zero byte, which pins the unpadded hashing.
+ */
+const VECTORS = [
+  {
+    rootKey: '0f'.repeat(32),
+    identityKey: '021a7a569e91dbf60581509c7fc946d1003b60c7dee85299538db6353538d59574',
+    token: '474583e93a591794b36961bc963e204a'
+  },
+  {
+    rootKey: '2bb'.padStart(64, '0'),
+    identityKey: '0337cf0ed288ed8fef4ae17bcff6bfb8153e12bab2a46d7e5d2e6feb999793bef8',
+    token: 'dfa4a622f1a7b25d1acc9cacb4449443'
+  }
+]
+const TOKEN = VECTORS[0].token
 
 // A real BUMP, taken from a mined teratestnet transaction, so parsing is
 // exercised rather than asserted against a stub.
@@ -73,18 +91,36 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('arcadeCallbackToken', () => {
-  it('is the first 32 hex characters of the identity key, as bsv-wallet derives it', () => {
-    expect(arcadeCallbackToken(IDENTITY_KEY)).toBe(TOKEN)
+describe('deriveArcadeCallbackToken', () => {
+  it('matches bsv-wallet\'s known-answer vectors', () => {
+    for (const v of VECTORS) {
+      const keyDeriver = new KeyDeriver(EsmPrivateKey.fromHex(v.rootKey))
+      expect(keyDeriver.identityKey).toBe(v.identityKey)
+      expect(deriveArcadeCallbackToken(keyDeriver), v.rootKey).toBe(v.token)
+    }
   })
 
-  it('agrees with the renderer copy', () => {
-    expect(rendererCallbackToken(IDENTITY_KEY)).toBe(arcadeCallbackToken(IDENTITY_KEY))
+  it('gives the same token through the cached key deriver the wallet is built with', () => {
+    for (const v of VECTORS) {
+      expect(deriveArcadeCallbackToken(new CachedKeyDeriver(EsmPrivateKey.fromHex(v.rootKey)))).toBe(v.token)
+    }
   })
 
-  it('refuses anything that is not a compressed identity key', () => {
-    for (const bad of ['', 'ab'.repeat(33), '04' + 'ab'.repeat(32), '02' + 'zz'.repeat(32)]) {
-      expect(() => arcadeCallbackToken(bad), bad).toThrow()
+  it('is not taken from the identity key', () => {
+    for (const v of VECTORS) {
+      expect(v.identityKey).not.toContain(v.token)
+    }
+  })
+
+  it('is accepted by the main process', () => {
+    for (const v of VECTORS) expect(assertArcadeCallbackToken(v.token)).toBe(v.token)
+  })
+})
+
+describe('assertArcadeCallbackToken', () => {
+  it('refuses anything that is not 32 lowercase hex characters', () => {
+    for (const bad of [undefined, null, '', TOKEN.slice(1), TOKEN + '0', TOKEN.toUpperCase(), 'zz'.repeat(16), VECTORS[0].identityKey]) {
+      expect(() => assertArcadeCallbackToken(bad), String(bad)).toThrow()
     }
   })
 })
@@ -92,7 +128,7 @@ describe('arcadeCallbackToken', () => {
 describe('createArcadeServiceOptions', () => {
   it('points Arcade, ChainTracks and the fallbacks at the same hosts as bsv-wallet on every chain', () => {
     for (const chain of CHAINS) {
-      const o = createArcadeServiceOptions(chain, IDENTITY_KEY)
+      const o = createArcadeServiceOptions(chain, TOKEN)
       expect(o.arcadeUrl, chain).toBe(arcadeUrl(chain))
       expect((o.chaintracks as any).serviceUrl, chain).toBe(chaintracksUrl(chain))
       expect(o.arcUrl, chain).toBe(TAAL_ARC_URLS[chain] ?? '')
@@ -102,44 +138,49 @@ describe('createArcadeServiceOptions', () => {
 
   it('gives Arcade the callback token and asks for every status transition', () => {
     for (const chain of CHAINS) {
-      const cfg = createArcadeServiceOptions(chain, IDENTITY_KEY).arcadeConfig as any
+      const cfg = createArcadeServiceOptions(chain, TOKEN).arcadeConfig as any
       expect(cfg.callbackToken, chain).toBe(TOKEN)
       expect(cfg.headers, chain).toEqual({ 'X-FullStatusUpdates': 'true' })
     }
+  })
+
+  it('will not build Arcade services without a well-formed token', () => {
+    expect(() => createArcadeServiceOptions('main', undefined as any)).toThrow()
+    expect(() => createArcadeServices('main', VECTORS[0].identityKey)).toThrow()
   })
 })
 
 describe('createArcadeServices', () => {
   it('builds the toolbox Arcade provider, which is what TaskArcadeSSE keys off', () => {
     for (const chain of CHAINS) {
-      const services = createArcadeServices(chain, IDENTITY_KEY)
+      const services = createArcadeServices(chain, TOKEN)
       expect(services.arcade, chain).toBeDefined()
       expect(services.options.arcadeUrl, chain).toBe(arcadeUrl(chain))
     }
   })
 
   it('broadcasts in bsv-wallet order: Arcade, TAAL, GorillaPool, WhatsOnChain, Bitails', () => {
-    expect(names(createArcadeServices('main', IDENTITY_KEY).postBeefServices))
+    expect(names(createArcadeServices('main', TOKEN).postBeefServices))
       .toEqual([ARCADE_BROADCASTER, 'TaalArcBeef', 'GorillaPoolArcBeef', 'WhatsOnChain', 'Bitails'])
-    expect(names(createArcadeServices('test', IDENTITY_KEY).postBeefServices))
+    expect(names(createArcadeServices('test', TOKEN).postBeefServices))
       .toEqual([ARCADE_BROADCASTER, 'TaalArcBeef', 'WhatsOnChain', 'Bitails'])
-    expect(names(createArcadeServices('ttn', IDENTITY_KEY).postBeefServices))
+    expect(names(createArcadeServices('ttn', TOKEN).postBeefServices))
       .toEqual([ARCADE_BROADCASTER, 'WhatsOnChain'])
   })
 
   it('looks up proofs from Arcade first on every chain', () => {
-    expect(names(createArcadeServices('main', IDENTITY_KEY).getMerklePathServices))
+    expect(names(createArcadeServices('main', TOKEN).getMerklePathServices))
       .toEqual(['Arcade', 'WhatsOnChain', 'Bitails'])
-    expect(names(createArcadeServices('test', IDENTITY_KEY).getMerklePathServices))
+    expect(names(createArcadeServices('test', TOKEN).getMerklePathServices))
       .toEqual(['Arcade', 'WhatsOnChain', 'Bitails'])
-    expect(names(createArcadeServices('ttn', IDENTITY_KEY).getMerklePathServices))
+    expect(names(createArcadeServices('ttn', TOKEN).getMerklePathServices))
       .toEqual(['Arcade', 'WhatsOnChain'])
   })
 
   it('posts Extended Format to Arcade /tx with the callback token and full-status header', async () => {
     const { beef, txid, efHex } = await spendableBeef()
     const fetchMock = mockFetch(() => ({ status: 202, json: { txid, txStatus: 'RECEIVED' } }))
-    const services = createArcadeServices('main', IDENTITY_KEY)
+    const services = createArcadeServices('main', TOKEN)
 
     const results = await services.postBeef(beef, [txid])
 
@@ -159,7 +200,7 @@ describe('createArcadeServices', () => {
     mockFetch(url => url.startsWith(arcadeUrl('ttn'))
       ? { status: 503, json: { detail: 'no available server' } }
       : { text: txid })
-    const services = createArcadeServices('ttn', IDENTITY_KEY)
+    const services = createArcadeServices('ttn', TOKEN)
 
     const results = await services.postBeef(beef, [txid])
 
@@ -175,7 +216,7 @@ describe('createArcadeServices', () => {
     mockFetch(url => url.startsWith(arcadeUrl('main'))
       ? { status: 400, json: { txid, txStatus: 'REJECTED', extraInfo: 'script verification failed' } }
       : { status: 400, json: { txid, txStatus: 'REJECTED', detail: 'Missing inputs', error: 'Missing inputs' } })
-    const services = createArcadeServices('main', IDENTITY_KEY)
+    const services = createArcadeServices('main', TOKEN)
 
     const results = await services.postBeef(beef, [txid])
 
@@ -196,7 +237,7 @@ describe('proofs through the toolbox', () => {
 
   /** A ttn Services whose chain tracker accepts any root, so only the proof's shape is on trial. */
   function ttnServicesAcceptingAnyRoot() {
-    const services = createArcadeServices('ttn', IDENTITY_KEY)
+    const services = createArcadeServices('ttn', TOKEN)
     services.getChainTracker = async () => ({ isValidRootForHeight: async () => true, currentHeight: async () => 40_000 }) as any
     ;(services.options.chaintracks as any).findHeaderForHeight = async () => undefined
     return services

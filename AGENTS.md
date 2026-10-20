@@ -201,7 +201,7 @@ Worker Process
 
 **BRC-177 gate**: `StorageManager` offers BRC-177 noSend expiry (`brc177NoSendExpiry` in `getCapabilities`, and the `prepareNoSendExpiry`, `activateNoSendExpiry` and `armNoSendExpiry` writer calls) only while that wallet's worker has reported `monitor-started` and has not since been asked to stop, exited or emitted a process `error`: the worker's Monitor is what broadcasts the reclaim at the deadline.
 
-**Network services** (`electron/arcade.ts`, `electron/arcadeSse.ts`): main process and worker both build Services with `createArcadeServices(chain, identityKey)` — Arcade primary with callback token `identityKey.substring(0, 32)` (same as bsv-wallet), bsv-wallet's fallback hosts after it. The worker enables `TaskArcadeSSE` (`configureArcadeSSE`) and forwards status changes as `tx-status-changed` → main → renderer `wallet:tx-status-changed` → window `balance-changed` / `tx-status-changed`.
+**Network services** (`electron/arcade.ts`, `electron/arcadeSse.ts`): main process and worker both build Services with `createArcadeServices(chain, callbackToken)` — Arcade primary with the wallet's callback token, bsv-wallet's fallback hosts after it. The renderer derives the token from the wallet key exactly as bsv-wallet does (`deriveArcadeCallbackToken` in `src/lib/services/createServices.ts`) and passes it over `storage:initialize-services`; main hands it to the worker in its `start` config. Neither process can derive it, and neither logs it. The worker enables `TaskArcadeSSE` (`configureArcadeSSE`) and forwards status changes as `tx-status-changed` → main → renderer `wallet:tx-status-changed` → window `balance-changed` / `tx-status-changed`.
 
 **Why Separate Process**:
 - Prevents blocking main thread during `Monitor.startTasks()`

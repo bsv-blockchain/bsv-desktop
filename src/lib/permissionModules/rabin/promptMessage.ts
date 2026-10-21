@@ -56,3 +56,52 @@ export function parseRabinPromptMessage(message: string): RabinPromptMessage | n
   }
   return value as unknown as RabinPromptMessage
 }
+
+const DISPLAY_LIMIT = 96
+
+/**
+ * App-supplied text (key names, reasons) as it is shown in a wallet prompt: control and format
+ * characters (including bidi overrides and zero-width characters) become U+FFFD, it is cut to 96
+ * code points with an ellipsis, and it is quoted so it cannot pass for the wallet's own words.
+ * The prompt additionally renders it bidi-isolated and in monospace.
+ */
+export function displayText(value: string): string {
+  const characters = Array.from(value.replace(/[\p{Cc}\p{Cf}]/gu, '�'))
+  const shown = characters.length > DISPLAY_LIMIT ? `${characters.slice(0, DISPLAY_LIMIT).join('')}…` : characters.join('')
+  return `“${shown}”`
+}
+
+export type RabinPromptRow = { label: string; value: string; mono?: boolean }
+
+export type RabinPromptCopy = { title: string; description: string; rows: RabinPromptRow[]; scope: string }
+
+const formatBytes = (length: number) => length === 1 ? '1 byte' : `${length.toLocaleString('en-US')} bytes`
+
+/** Everything the Rabin prompt says for one parsed request. */
+export function rabinPromptCopy(app: string, prompt: RabinPromptMessage): RabinPromptCopy {
+  const isSign = prompt.type === 'rabin_sign'
+  const rows: RabinPromptRow[] = [
+    { label: 'Protocol', value: displayText(prompt.logicalProtocolID), mono: true },
+    { label: 'Key name', value: displayText(prompt.keyID), mono: true },
+    { label: 'Key size', value: `${prompt.bits}-bit Rabin` }
+  ]
+  if (prompt.counterparty !== 'self') {
+    rows.push({ label: 'Shared with', value: prompt.counterparty === 'anyone' ? 'Anyone' : prompt.counterparty, mono: prompt.counterparty !== 'anyone' })
+  }
+  if (prompt.privilegedReason !== undefined) {
+    rows.push({ label: 'Privileged reason', value: displayText(prompt.privilegedReason), mono: true })
+  }
+  if (isSign) {
+    rows.push({ label: 'Data to sign', value: formatBytes(prompt.messageLength!) })
+    rows.push({ label: 'Fingerprint of this data (SHA-256)', value: prompt.messageSha256!, mono: true })
+  }
+  const scope = `If you allow, for the next ${RABIN_GRANT_MINUTES} minutes ${app} can get any “${prompt.logicalProtocolID}” key and sign any data with it, without asking again. The private key never leaves your wallet.`
+  return {
+    title: isSign ? `Allow ${app} to sign with a key in your wallet?` : `Allow ${app} to use a signing key in your wallet?`,
+    description: isSign
+      ? 'The app wants your wallet to sign some data. Contracts that trust this key will accept the signature as coming from you.'
+      : 'The app wants the public half of a signing key held in your wallet, so that contracts can check signatures made with it.',
+    rows,
+    scope: isSign ? `${scope} Later signatures in those ${RABIN_GRANT_MINUTES} minutes are not shown.` : scope
+  }
+}

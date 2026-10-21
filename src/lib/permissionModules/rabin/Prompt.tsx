@@ -3,21 +3,17 @@ import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogT
 import { createTheme, ThemeProvider } from '@mui/material/styles'
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined'
 import type { PermissionPromptHandler, PermissionPromptProps } from '../types'
-import { parseRabinPromptMessage, RABIN_GRANT_MINUTES } from './promptMessage'
+import { displayText, parseRabinPromptMessage, rabinPromptCopy } from './promptMessage'
 
 type PendingPrompt = { app: string; message: string; resolve: (allowed: boolean) => void }
 
-const Row: React.FC<{ label: string; value: React.ReactNode; mono?: boolean }> = ({ label, value, mono }) => (
+const Row: React.FC<{ label: string; value: string; mono?: boolean }> = ({ label, value, mono }) => (
   <Stack direction="row" justifyContent="space-between" spacing={2}>
     <Typography color="text.secondary" sx={{ flexShrink: 0 }}>{label}</Typography>
-    <Typography sx={{ textAlign: 'right', overflowWrap: 'anywhere', ...(mono ? { fontFamily: 'monospace', fontSize: '0.8rem' } : {}) }}>{value}</Typography>
+    {/* bdi isolates app-supplied text from the surrounding wallet text's direction. */}
+    <Typography component="bdi" sx={{ textAlign: 'right', overflowWrap: 'anywhere', unicodeBidi: 'isolate', ...(mono ? { fontFamily: 'monospace', fontSize: '0.8rem' } : {}) }}>{value}</Typography>
   </Stack>
 )
-
-const describeCounterparty = (counterparty: string) =>
-  counterparty === 'self' ? 'Only you' : counterparty === 'anyone' ? 'Anyone' : counterparty
-
-const formatBytes = (length: number) => length === 1 ? '1 byte' : `${length.toLocaleString()} bytes`
 
 /** FIFO prompts keep concurrent app calls from replacing an unanswered request. */
 export const RabinPermissionPrompt: React.FC<PermissionPromptProps> = (props) => {
@@ -143,18 +139,11 @@ export const RabinPermissionPrompt: React.FC<PermissionPromptProps> = (props) =>
   const prompt = useMemo(() => active ? parseRabinPromptMessage(active.message) : null, [active])
   if (!active) return null
 
-  const app = active.app || 'Unknown app'
-  const isSign = prompt?.type === 'rabin_sign'
-  const sharedWith = prompt && prompt.counterparty !== 'self' ? describeCounterparty(prompt.counterparty) : null
-  const title = isSign ? `Allow ${app} to sign with a key in your wallet?` : `Allow ${app} to use a signing key in your wallet?`
-  const description = !prompt
-    ? 'This app asked to use a signing key in your wallet, but the request could not be read.'
-    : isSign
-      ? 'The app wants your wallet to sign some data. Contracts that trust this key will accept the signature as coming from you.'
-      : 'The app wants the public half of a signing key held in your wallet, so that contracts can check signatures made with it.'
-  const scope = prompt
-    ? `If you allow, ${app} can use any key under “${prompt.logicalProtocolID}”${prompt.securityLevel === 2 && sharedWith ? ' with this counterparty' : ''} for the next ${RABIN_GRANT_MINUTES} minutes without asking again. The private key never leaves your wallet.`
-    : ''
+  // The app name is the request's Origin; neutralise it like other app-supplied text.
+  const app = active.app ? displayText(active.app).slice(1, -1) : 'Unknown app'
+  const copy = prompt ? rabinPromptCopy(app, prompt) : null
+  const title = copy?.title ?? `Allow ${app} to use a signing key in your wallet?`
+  const description = copy?.description ?? 'This app asked to use a signing key in your wallet, but the request could not be read.'
 
   return (
     <ThemeProvider theme={theme}>
@@ -177,23 +166,17 @@ export const RabinPermissionPrompt: React.FC<PermissionPromptProps> = (props) =>
           <Chip label={app} variant="outlined" sx={{ alignSelf: 'flex-start', maxWidth: '100%', height: 'auto', '& .MuiChip-label': { py: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' } }} />
           <Typography id="rabin-permission-description" color="text.secondary">{description}</Typography>
           {!prompt && <Alert severity="error">Could not verify the complete request. Deny it and try again.</Alert>}
-          {prompt && <Box sx={{ p: 2, bgcolor: 'action.hover', border: 1, borderColor: 'divider', borderRadius: 2 }}>
+          {copy && <Box sx={{ p: 2, bgcolor: 'action.hover', border: 1, borderColor: 'divider', borderRadius: 2 }}>
             <Stack spacing={1}>
-              <Row label="Protocol" value={prompt.logicalProtocolID} />
-              <Row label="Key name" value={prompt.keyID} />
-              <Row label="Key size" value={`${prompt.bits}-bit Rabin`} />
-              {sharedWith && <Row label="Counterparty" value={sharedWith} mono={sharedWith.length === 66} />}
-              {prompt.privilegedReason && <Row label="Privileged reason" value={prompt.privilegedReason} />}
-              {isSign && <Row label="Data to sign" value={formatBytes(prompt.messageLength!)} />}
-              {isSign && <Row label="SHA-256 of data" value={prompt.messageSha256} mono />}
+              {copy.rows.map(row => <Row key={row.label} label={row.label} value={row.value} mono={row.mono} />)}
             </Stack>
           </Box>}
-          {prompt && <Typography variant="body2" color="text.secondary">{scope}</Typography>}
+          {copy && <Typography variant="body2" color="text.secondary">{copy.scope}</Typography>}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3, gap: 1 }}>
         <Button variant="outlined" onClick={() => decide(false)} autoFocus>Deny</Button>
-        <Button variant="contained" onClick={() => decide(true)} disabled={!prompt}>Allow</Button>
+        <Button variant="contained" onClick={() => decide(true)} disabled={!copy}>Allow</Button>
       </DialogActions>
     </Dialog>
     </ThemeProvider>

@@ -13,7 +13,8 @@ import { buildPermissionModuleRegistry } from '../src/lib/permissionModules/regi
 import { rabinPermissionModule } from '../src/lib/permissionModules/rabin'
 import { mandalaPermissionModule } from '../src/lib/permissionModules/mandala'
 import { btmsPermissionModule } from '../src/lib/permissionModules/btms'
-import { parseRabinPromptMessage, toRabinPromptMessage } from '../src/lib/permissionModules/rabin/promptMessage'
+import { displayText, parseRabinPromptMessage, rabinPromptCopy, toRabinPromptMessage } from '../src/lib/permissionModules/rabin/promptMessage'
+import type { PermissionModuleDefinition } from '../src/lib/permissionModules/types'
 import { parseWalletPayload, stringifyWalletPayload } from '../src/walletByteJson'
 
 const ADMIN = 'desktop-admin.example.com'
@@ -34,10 +35,10 @@ const request = (operation: 'key' | 'sign', overrides: Record<string, unknown> =
   ...overrides
 })
 
-/** A toolbox-Wallet-shaped object: every BRC-100 method fails if reached; keyDeriver is optional. */
+/** A toolbox-Wallet-shaped object whose every BRC-100 method fails if reached, and its key deriver. */
 function makeWallet(withKeyDeriver = true) {
-  const keyDeriver = new CachedKeyDeriver(new PrivateKey(WALLET_A, 'hex'))
-  const derivePrivateKey = vi.spyOn(keyDeriver, 'derivePrivateKey')
+  const deriver = new CachedKeyDeriver(new PrivateKey(WALLET_A, 'hex'))
+  const derivePrivateKey = vi.spyOn(deriver, 'derivePrivateKey')
   const reached = vi.fn()
   const fail = (method: string) => async () => {
     reached(method)
@@ -50,20 +51,25 @@ function makeWallet(withKeyDeriver = true) {
     createSignature: fail('createSignature'),
     verifySignature: fail('verifySignature'),
     createHmac: fail('createHmac'),
-    verifyHmac: fail('verifyHmac'),
-    ...(withKeyDeriver ? { keyDeriver } : {})
+    verifyHmac: fail('verifyHmac')
   } as unknown as WalletInterface
-  return { wallet, derivePrivateKey, reached }
+  return { wallet, keyDeriver: withKeyDeriver ? deriver : undefined, derivePrivateKey, reached }
 }
 
-function createManager(wallet: WalletInterface, approve: ((app: string, message: string) => Promise<boolean>) | null = vi.fn(async () => true)) {
+type TestWallet = ReturnType<typeof makeWallet>
+
+function createManager(
+  { wallet, keyDeriver }: Pick<TestWallet, 'wallet' | 'keyDeriver'>,
+  approve: ((app: string, message: string) => Promise<boolean>) | null = vi.fn(async () => true),
+  modules: PermissionModuleDefinition[] = [rabinPermissionModule]
+) {
   const queue = new PermissionQueueManager()
   queue.adminOriginator = ADMIN
   queue.permissionsConfig = { encryptWalletMetadata: false } as any
-  queue.enabledPermissionModules = ['rabin']
-  const registry = buildPermissionModuleRegistry([rabinPermissionModule])
+  queue.enabledPermissionModules = modules.map(module => module.id)
+  const registry = buildPermissionModuleRegistry(modules)
   queue.setPermissionsModuleHelpers(registry.getPermissionModuleById, new Map(approve ? [['rabin', approve]] : []))
-  return { manager: queue.createPermissionsManager(wallet), queue }
+  return { manager: queue.createPermissionsManager(wallet, keyDeriver), queue }
 }
 
 beforeEach(() => vi.stubGlobal('window', {}))
@@ -75,9 +81,10 @@ afterEach(() => {
 describe('desktop p rabin permissions factory', () => {
   it('routes p rabin encrypt to the module through the installed toolbox and returns the K1 and S1 vector bytes', async () => {
     const handleRequest = vi.spyOn(RabinPermissionModule.prototype, 'handleRequest')
-    const { wallet, derivePrivateKey, reached } = makeWallet()
+    const testWallet = makeWallet()
+    const { derivePrivateKey, reached } = testWallet
     const approve = vi.fn(async () => true)
-    const { manager } = createManager(wallet, approve)
+    const { manager } = createManager(testWallet, approve)
 
     const key = await manager.encrypt(request('key'), APP)
     const signed = await manager.encrypt(request('sign'), APP)
@@ -107,9 +114,8 @@ describe('desktop p rabin permissions factory', () => {
   })
 
   it('shows the message size and SHA-256 when the first request is a signature', async () => {
-    const { wallet } = makeWallet()
     const approve = vi.fn(async () => true)
-    const { manager } = createManager(wallet, approve)
+    const { manager } = createManager(makeWallet(), approve)
     await manager.encrypt(request('sign'), APP)
     const message = parseRabinPromptMessage(approve.mock.calls[0][1])
     expect(message).toMatchObject({ type: 'rabin_sign', messageLength: 3, messageSha256: ABC_SHA256 })
@@ -117,28 +123,30 @@ describe('desktop p rabin permissions factory', () => {
 
   it('runs level 0 without a prompt and fails closed when the wallet exposes no key deriver', async () => {
     const approve = vi.fn(async () => true)
-    const { manager } = createManager(makeWallet(true).wallet, approve)
+    const { manager } = createManager(makeWallet(true), approve)
     await expect(manager.encrypt(request('key', { protocolID: [0, 'p rabin key 2048 example oracle'] }), APP)).resolves.toHaveProperty('ciphertext')
     expect(approve).not.toHaveBeenCalled()
 
-    const { manager: withoutDeriver } = createManager(makeWallet(false).wallet, approve)
+    const { manager: withoutDeriver } = createManager(makeWallet(false), approve)
     await expect(withoutDeriver.encrypt(request('key', { protocolID: [0, 'p rabin key 2048 example oracle'] }), APP)).rejects.toThrow('RABIN: key deriver unavailable')
   })
 
   it('denies without deriving when the user denies or no prompt is registered', async () => {
-    const { wallet, derivePrivateKey } = makeWallet()
+    const testWallet = makeWallet()
+    const { derivePrivateKey } = testWallet
     const deny = vi.fn(async () => false)
-    await expect(createManager(wallet, deny).manager.encrypt(request('sign'), APP)).rejects.toThrow('RABIN: user denied permission')
-    await expect(createManager(wallet, null).manager.encrypt(request('sign'), APP)).rejects.toThrow('RABIN: user denied permission')
-    await expect(createManager(wallet).manager.encrypt(request('sign', { seekPermission: false }), APP)).rejects.toThrow('seekPermission is false')
+    await expect(createManager(testWallet, deny).manager.encrypt(request('sign'), APP)).rejects.toThrow('RABIN: user denied permission')
+    await expect(createManager(testWallet, null).manager.encrypt(request('sign'), APP)).rejects.toThrow('RABIN: user denied permission')
+    await expect(createManager(testWallet).manager.encrypt(request('sign', { seekPermission: false }), APP)).rejects.toThrow('seekPermission is false')
     expect(deny).toHaveBeenCalledTimes(1)
     expect(derivePrivateKey).not.toHaveBeenCalled()
   })
 
   it('refuses privileged Rabin keys before prompting', async () => {
-    const { wallet, derivePrivateKey } = makeWallet()
+    const testWallet = makeWallet()
+    const { derivePrivateKey } = testWallet
     const approve = vi.fn(async () => true)
-    const { manager } = createManager(wallet, approve)
+    const { manager } = createManager(testWallet, approve)
     await expect(manager.encrypt(request('key', { privileged: true, privilegedReason: 'Oracle signing' }), APP)).rejects.toThrow('RABIN: privileged key derivation is unavailable')
     expect(approve).not.toHaveBeenCalled()
     expect(derivePrivateKey).not.toHaveBeenCalled()
@@ -152,8 +160,9 @@ describe('desktop p rabin permissions factory', () => {
     ['createHmac', { data: [1, 2, 3] }],
     ['verifyHmac', { data: [1, 2, 3], hmac: Array.from({ length: 32 }, () => 0) }]
   ])('rejects %s under p rabin without reaching the wallet', async (method, extra) => {
-    const { wallet, derivePrivateKey, reached } = makeWallet()
-    const { manager } = createManager(wallet)
+    const testWallet = makeWallet()
+    const { derivePrivateKey, reached } = testWallet
+    const { manager } = createManager(testWallet)
     const args = { protocolID: [2, 'p rabin sign 2048 example oracle'], keyID: 'feed 1', counterparty: 'self', ...extra }
     await expect((manager as any)[method](args, APP)).rejects.toThrow(`RABIN: ${method} is not permitted in the p rabin namespace`)
     expect(derivePrivateKey).not.toHaveBeenCalled()
@@ -161,8 +170,7 @@ describe('desktop p rabin permissions factory', () => {
   })
 
   it('carries the result through the HTTP bridge byte JSON and the SDK result validator', async () => {
-    const { wallet } = makeWallet()
-    const { manager } = createManager(wallet)
+    const { manager } = createManager(makeWallet())
     // A browser client may send plaintext as an array or as a numeric-key object.
     const body = JSON.stringify({ ...request('sign'), plaintext: { 0: 0x61, 1: 0x62, 2: 0x63 } })
     const args = parseWalletPayload<any>(body)
@@ -174,20 +182,92 @@ describe('desktop p rabin permissions factory', () => {
 
   it('disposes the modules of a replaced or cleared permissions manager', async () => {
     const dispose = vi.spyOn(RabinPermissionModule.prototype, 'dispose')
-    const { wallet, derivePrivateKey } = makeWallet()
-    const { manager, queue } = createManager(wallet)
+    const testWallet = makeWallet()
+    const { wallet, keyDeriver, derivePrivateKey } = testWallet
+    const { manager, queue } = createManager(testWallet)
     await manager.encrypt(request('key', { protocolID: [0, 'p rabin key 2048 example oracle'] }), APP)
     queue.setPermissionsManager(manager)
     expect(dispose).not.toHaveBeenCalled()
 
     queue.setPermissionsManager(null)
     expect(dispose).toHaveBeenCalledTimes(1)
-    queue.createPermissionsManager(wallet)
-    const rebuilt = queue.createPermissionsManager(wallet)
+    queue.createPermissionsManager(wallet, keyDeriver)
+    const rebuilt = queue.createPermissionsManager(wallet, keyDeriver)
     expect(dispose).toHaveBeenCalledTimes(2)
     // A new module starts with an empty key cache.
     await rebuilt.encrypt(request('key', { protocolID: [0, 'p rabin key 2048 example oracle'] }), APP)
     expect(derivePrivateKey).toHaveBeenCalledTimes(2)
+  })
+})
+
+
+describe('desktop key deriver scoping', () => {
+  it('passes a key deriver only to modules that declare a need, limited to their own scheme', async () => {
+    const ordinary = vi.fn(() => ({}))
+    let scoped: any
+    const probe: PermissionModuleDefinition = {
+      id: 'probe',
+      label: 'Probe',
+      needsKeyDeriver: true,
+      createModule: args => {
+        scoped = args.keyDeriver
+        return {}
+      }
+    }
+    const other: PermissionModuleDefinition = { id: 'other', label: 'Other', createModule: ordinary }
+    const testWallet = makeWallet()
+    createManager(testWallet, null, [other, probe])
+
+    expect(ordinary).toHaveBeenCalledTimes(1)
+    expect(ordinary.mock.calls[0][0]).not.toHaveProperty('keyDeriver')
+    expect(scoped).toBeDefined()
+    expect(scoped).not.toBe(testWallet.keyDeriver)
+    expect(() => scoped.derivePrivateKey([2, 'p probe example'], 'k', 'self')).not.toThrow()
+    for (const protocol of ['p rabin example', 'p probex example', 'probe example', '3241645161d8 identity']) {
+      expect(() => scoped.derivePrivateKey([2, protocol], 'k', 'self')).toThrow('Key derivation outside p probe is not permitted for the probe module')
+    }
+    expect(testWallet.derivePrivateKey).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses before prompting when the wallet has no key deriver', async () => {
+    const approve = vi.fn(async () => true)
+    const { manager } = createManager(makeWallet(false), approve)
+    await expect(manager.encrypt(request('key'), APP)).rejects.toThrow('RABIN: key deriver unavailable')
+    expect(approve).not.toHaveBeenCalled()
+  })
+})
+
+describe('desktop Rabin prompt text', () => {
+  it('neutralises control and format characters, quotes, and truncates app-supplied text', () => {
+    expect(displayText('feed 1')).toBe('“feed 1”')
+    expect(displayText('a\u0000b\u202Ec\u200Bd\nE')).toBe('“a\uFFFDb\uFFFDc\uFFFDd\uFFFDE”')
+    const long = 'x'.repeat(200)
+    expect(displayText(long)).toBe(`“${'x'.repeat(96)}…”`)
+    // Truncation counts code points, so a surrogate pair is never split.
+    expect(displayText('😀'.repeat(100))).toBe(`“${'😀'.repeat(96)}…”`)
+  })
+
+  it('describes the 5-minute grant the same way for key and sign, and states what it covers', () => {
+    const key = rabinPromptCopy('oracle.example.com', parseRabinPromptMessage(JSON.stringify(toRabinPromptMessage({
+      originator: APP, securityLevel: 2, logicalProtocolID: 'example oracle', keyID: 'feed 1', counterparty: 'self', privileged: false, operation: 'key', bits: 2048
+    })))!)
+    const sign = rabinPromptCopy('oracle.example.com', parseRabinPromptMessage(JSON.stringify(toRabinPromptMessage({
+      originator: APP, securityLevel: 2, logicalProtocolID: 'example oracle', keyID: 'feed 1', counterparty: 'self', privileged: false, operation: 'sign', bits: 2048, messageLength: 3, messageSha256: ABC_SHA256
+    })))!)
+    const scope = 'If you allow, for the next 5 minutes oracle.example.com can get any “example oracle” key and sign any data with it, without asking again. The private key never leaves your wallet.'
+    expect(key.scope).toBe(scope)
+    expect(sign.scope).toBe(`${scope} Later signatures in those 5 minutes are not shown.`)
+    expect(sign.rows).toContainEqual({ label: 'Fingerprint of this data (SHA-256)', value: ABC_SHA256, mono: true })
+    expect(sign.rows).toContainEqual({ label: 'Key name', value: '“feed 1”', mono: true })
+    expect(key.rows.map(row => row.label)).not.toContain('Fingerprint of this data (SHA-256)')
+  })
+
+  it('shows the counterparty as "Shared with"', () => {
+    const counterparty = new PrivateKey(3).toPublicKey().toString()
+    const copy = rabinPromptCopy(APP, parseRabinPromptMessage(JSON.stringify(toRabinPromptMessage({
+      originator: APP, securityLevel: 2, logicalProtocolID: 'example oracle', keyID: 'feed 1', counterparty, privileged: false, operation: 'key', bits: 2048
+    })))!)
+    expect(copy.rows).toContainEqual({ label: 'Shared with', value: counterparty, mono: true })
   })
 })
 

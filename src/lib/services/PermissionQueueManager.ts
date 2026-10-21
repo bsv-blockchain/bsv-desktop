@@ -23,7 +23,7 @@ import {
   CounterpartyPermissionRequest,
   GroupedPermissions,
 } from '../types/GroupedPermissions'
-import type { PermissionModuleFactoryArgs, PermissionPromptHandler } from '../permissionModules/types'
+import type { PermissionModuleKeyDeriver, PermissionPromptHandler } from '../permissionModules/types'
 import { listMandalaTokenOutpoints } from '../permissionModules/mandala'
 import { wrapCreateActionForTokenInputs } from '../permissionModules/mandala/permissionModule'
 import {
@@ -125,6 +125,22 @@ type PermissionQueueEvents = {
 const GROUP_GRACE_MS = 20_000
 const GROUP_COOLDOWN_MS = 5 * 60 * 1000
 const PACT_COOLDOWN_MS = 5 * 60 * 1000
+
+/**
+ * Limits a module's key deriver to its own BRC-98 namespace (`p <moduleId> …`), so a semantic
+ * module cannot derive keys of other protocols even through a bug.
+ */
+function scopedKeyDeriver(keyDeriver: PermissionModuleKeyDeriver, moduleId: string): PermissionModuleKeyDeriver {
+  const prefix = `p ${moduleId} `
+  return {
+    derivePrivateKey: (protocolID, keyID, counterparty) => {
+      if (typeof protocolID?.[1] !== 'string' || !protocolID[1].startsWith(prefix)) {
+        throw new Error(`Key derivation outside p ${moduleId} is not permitted for the ${moduleId} module`)
+      }
+      return keyDeriver.derivePrivateKey(protocolID, keyID, counterparty)
+    }
+  }
+}
 
 export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents> {
   // ---- Queue state (previously useState) ----
@@ -943,10 +959,8 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
    * Creates a WalletPermissionsManager with all callbacks bound to this queue.
    * Also monkey-patches grant/deny/dismiss to auto-release the group gate.
    */
-  createPermissionsManager(wallet: WalletInterface): WalletPermissionsManager {
+  createPermissionsManager(wallet: WalletInterface, keyDeriver?: PermissionModuleKeyDeriver): WalletPermissionsManager {
     this._disposePermissionModules()
-    // The toolbox Wallet exposes its ordinary key deriver as a public field.
-    const keyDeriver = (wallet as unknown as { keyDeriver?: PermissionModuleFactoryArgs['keyDeriver'] }).keyDeriver
     const permissionModulesMap: Record<string, any> = {}
     for (const moduleId of this.enabledPermissionModules) {
       const descriptor = this._getPermissionModuleById?.(moduleId)
@@ -954,7 +968,7 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       permissionModulesMap[moduleId] = descriptor.createModule({
         wallet,
         adminOriginator: this.adminOriginator,
-        keyDeriver,
+        ...(descriptor.needsKeyDeriver && keyDeriver ? { keyDeriver: scopedKeyDeriver(keyDeriver, moduleId) } : {}),
         // Prompts may register after wallet construction or remount on a
         // theme change. Resolve the current handler at the time of the call.
         promptHandler: (app: string, message: string) => this._promptHandlers.get(moduleId)?.(app, message) ?? Promise.resolve(false),

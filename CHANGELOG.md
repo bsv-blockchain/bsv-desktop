@@ -4,7 +4,7 @@
 
 ### Features
 
-- Rabin signing module (`p rabin`, BRC-206, from `@bsv/rabin-permission-module`): apps can obtain a wallet-held Rabin public key and Rabin signatures over arbitrary data through `encrypt`, for contracts that check signatures in Bitcoin Script. The keys are derived from the wallet's own keys and never leave the wallet. Security level 0 requests run without a prompt; levels 1 and 2 show a prompt naming the app, protocol, key and, for signing, the data's size and SHA-256, and an approval lasts 5 minutes for that app and protocol. Privileged Rabin keys are not supported yet and are refused. Permission modules are now disposed when the wallet closes or logs out, so cached keys are dropped.
+- Rabin signing module (`p rabin`, BRC-206, from `@bsv/rabin-permission-module`): apps can obtain a wallet-held Rabin public key and Rabin signatures over arbitrary data through `encrypt`, for contracts that check signatures in Bitcoin Script. The keys are derived from the wallet's own keys and never leave the wallet. Security level 0 requests run without a prompt. Levels 1 and 2 show a prompt naming the app, protocol and key (app-supplied text is quoted and has control and direction characters neutralised) and, for signing, the data's size and SHA-256. An approval lets that app get any key under that protocol and sign any data with it for 5 minutes. Privileged Rabin keys are not supported yet and are refused without a prompt. Only modules that declare a need receive the wallet's key deriver, limited to their own `p <scheme>` protocols. Permission modules are disposed when the wallet closes or logs out, so cached keys are dropped.
 
 ### Bug Fixes
 

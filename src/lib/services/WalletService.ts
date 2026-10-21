@@ -844,7 +844,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
 
       if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while opening storage')
       this.walletData = candidate
-      const permissionsManager = this.permissionQueue.createPermissionsManager(wallet)
+      const permissionsManager = this.permissionQueue.createPermissionsManager(wallet, keyDeriver)
       this.permissionQueue.setPermissionsManager(permissionsManager)
 
       this._managers = {

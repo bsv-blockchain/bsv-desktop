@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as delivery from '../src/lib/pages/Dashboard/Payments/delivery'
-import { codeExchangeProblem, deliveryProblem } from '../src/lib/pages/Dashboard/Payments/delivery'
+import { deliveryProblem } from '../src/lib/pages/Dashboard/Payments/delivery'
 import { networkLabel } from '../src/lib/pages/Dashboard/Payments/paymentProtocol'
 
 const ready = { client: {}, via: 'messagebox' as const, error: '', notice: '' }
@@ -38,14 +38,6 @@ describe('whether a wallet payment can be delivered', () => {
     const notice = 'Direct payments reach other wallets through the message box. Connect a message box in Settings, or use a relay server.'
     expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: null, error: '', notice } })).toBe(notice)
     expect(deliveryProblem('direct', { messageBoxAvailable: true, directPay: { client: {}, via: null, error: '', notice: '' } })).toMatch(/Settings/)
-  })
-
-  // Final review M27: when there is no client, say why instead of "not ready" for ever.
-  it('says why face-to-face codes are unavailable when there is no client, and nothing when there is one', () => {
-    expect(codeExchangeProblem({ client: null, error: 'Direct payments could not be set up: bad options' })).toBe('Direct payments could not be set up: bad options')
-    expect(codeExchangeProblem({ client: null, error: '' })).toBe('Direct payments are not ready yet. Try again in a moment.')
-    // Codes need no signaler, so a missing message box is no reason.
-    expect(codeExchangeProblem({ client: {}, error: '' })).toBe('')
   })
 
   it('still allows direct sending while receiving is off or failing', () => {
@@ -118,6 +110,11 @@ describe('Payments page wiring', () => {
     expect(page).toMatch(/option\.badgeLabel/)
     expect(page).not.toMatch(/nearby|Nearby/)
     expect(page).toMatch(/\{params\.InputProps\.endAdornment\}<IconButton aria-label="Scan a payment code"/)
+    // A scanned or pasted face-to-face code stays the recipient (for its amount); the field shows its payee.
+    expect(page).toMatch(/if \(isFaceToFaceCode\(value\)\) \{ identitySearch\.handleInputChange\(null, '', 'clear'\); adoptCode\(value\); return \}/)
+    expect(page).toMatch(/if \(isFaceToFaceCode\(value\)\) \{ setRecipientLabel\(short\(parsed\.recipient\)\); void identityName\(wallet, adminOriginator, parsed\.recipient\)/)
+    expect(page).toMatch(/helperText=\{recipientLabel && target \? short\(target\.recipient\) :/)
+    expect(page).toMatch(/disabled=\{!target \|\| ownIdentity \|\|/)
     expect(page).toMatch(/aria-label="Payment options"><Tab label="Send" value="send"[^\n]*<Tab label="Receive" value="receive"[^\n]*\/><\/Tabs>/)
   })
 

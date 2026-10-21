@@ -24,6 +24,9 @@ export const isKnownNetwork = (chain: string) => NETWORK_LABELS.has(chain)
 /** The network's name on the Payments page: its chip and every confirmation use this. Any other network keeps its own id. */
 export const networkLabel = (chain: string) => NETWORK_LABELS.get(chain) ?? chain
 
+/** A face-to-face code another wallet shows (a WebRTPay offer or BSV Wallet's bsvpay1: request); parsePaymentTarget reads it as its payee. */
+export const isFaceToFaceCode = (text: string) => { const code = text.trim(); return code.startsWith(CODE_PREFIX) || code.startsWith('bsvpay1:') }
+
 export type PaymentTarget = { kind: 'identity'; recipient: string; amount?: number; host?: string } | { kind: 'address'; recipient: string; amount?: number }
 
 function satsFromBsv(text: string): number {

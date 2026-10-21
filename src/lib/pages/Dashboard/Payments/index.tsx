@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Autocomplete, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, InputAdornment, Paper, Stack, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
+import { Alert, Autocomplete, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, Paper, Stack, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import ArrowOutwardOutlined from '@mui/icons-material/ArrowOutwardOutlined'
 import ArrowDownwardOutlined from '@mui/icons-material/ArrowDownwardOutlined'
 import QrCodeScannerOutlined from '@mui/icons-material/QrCodeScannerOutlined'
@@ -20,7 +20,7 @@ import { formatSatoshis } from '../../../components/AmountDisplay/amountFormatHe
 import AddressReceive from './AddressReceive'
 import KeptDirectPayments from './KeptDirectPayments'
 import QrScanner from './QrScanner'
-import { identityKey, networkLabel, parsePaymentTarget, PaymentTarget, peerPayLink, validAmount } from './paymentProtocol'
+import { identityKey, isFaceToFaceCode, networkLabel, parsePaymentTarget, PaymentTarget, peerPayLink, validAmount } from './paymentProtocol'
 import { broadcastPayment } from './broadcast'
 import { deliverMessageBoxPayment, OutgoingPayment, prepareMessageBoxPayment } from './messageBoxPayments'
 import { deliverDirect } from './directPayments'
@@ -115,6 +115,7 @@ export default function Payments() {
   const changeRecipient = (_event: React.SyntheticEvent, value: string, reason: string) => {
     if (reason === 'clear') { setRecipient(''); setRecipientLabel(''); identitySearch.handleInputChange(null, '', 'clear'); return }
     if (reason !== 'input') return
+    if (isFaceToFaceCode(value)) { identitySearch.handleInputChange(null, '', 'clear'); adoptCode(value); return }
     setRecipient(value); setRecipientLabel(''); setError('')
     let direct = false
     try { parsePaymentTarget(value, chain); direct = true } catch { direct = /^[a-z][a-z0-9+.-]*:/i.test(value) || /^(0[23][a-f0-9]{10,}|[1mn][1-9A-HJ-NP-Za-km-z]{24,})$/i.test(value) }
@@ -130,10 +131,13 @@ export default function Payments() {
     return [...found, { name: '', avatarURL: '', abbreviatedKey: '', identityKey: key, badgeIconURL: '', badgeLabel: '', badgeClickURL: '' }]
   }, [identitySearch.identities, recipient, recipientLabel])
   const fixedAmount = target?.amount
+  /** Paying this wallet's own identity, such as after scanning its own Receive code. */
+  const ownIdentity = target?.kind === 'identity' && !!identity && target.recipient === identity
   const sendAmount = fixedAmount ?? amount
   // Always a link, as BSV Wallet shows it: it names the message box only when there is one, so senders can always pay live.
   const receiveLink = useMemo(() => { try { return identity ? peerPayLink(identity, useMessageBox && messageBoxUrl ? messageBoxUrl : undefined, requestAmount ?? undefined) : '' } catch { return '' } }, [useMessageBox, identity, messageBoxUrl, requestAmount])
-  const adoptCode = useCallback((value: string) => { setError(''); setNotice(''); setRecipient(value); setRecipientLabel(''); try { const parsed = parsePaymentTarget(value, chain); if (parsed.amount !== undefined) setAmount(parsed.amount) } catch (error) { setError((error as Error).message) } }, [chain])
+  /** A scanned or pasted code. A face-to-face code (kilobytes long) stays the recipient, for its amount, but the field shows its payee. */
+  const adoptCode = useCallback((value: string) => { setError(''); setNotice(''); setRecipient(value); setRecipientLabel(''); try { const parsed = parsePaymentTarget(value, chain); if (parsed.amount !== undefined) setAmount(parsed.amount); if (isFaceToFaceCode(value)) { setRecipientLabel(short(parsed.recipient)); void identityName(wallet, adminOriginator, parsed.recipient).then(name => { if (name) setRecipientLabel(label => label === short(parsed.recipient) ? name : label) }) } } catch (error) { if (isFaceToFaceCode(value)) setRecipient(''); setError((error as Error).message) } }, [chain, wallet, adminOriginator])
 
   const refresh = useCallback(async () => {
     if (!peerPayClient || !messageBoxAvailable || switchingNetwork || refreshLock.current) return
@@ -258,10 +262,11 @@ export default function Payments() {
       <Paper elevation={0} sx={card}>
         <Tabs value={tab} onChange={(_, value) => { setTab(value); setError('') }} variant="fullWidth" sx={{ mb: 3, borderBottom: '1px solid', borderColor: 'divider' }} aria-label="Payment options"><Tab label="Send" value="send" icon={<ArrowOutwardOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /><Tab label="Receive" value="receive" icon={<ArrowDownwardOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /></Tabs>
         {tab === 'send' && <Stack spacing={3}>
-          <Autocomplete freeSolo options={recipientOptions} loading={identitySearch.isLoading} inputValue={recipientLabel || recipient} value={null} filterOptions={options => options} getOptionLabel={(option: any) => typeof option === 'string' ? option : option.name || short(option.identityKey)} onInputChange={changeRecipient} onChange={(_, value) => { if (value && typeof value !== 'string') { setRecipient(value.identityKey); setRecipientLabel(value.name || short(value.identityKey)) } }} noOptionsText="Enter an identity key or address" renderOption={(props, option) => <li {...props} key={option.identityKey}><Avatar src={option.avatarURL} sx={{ width: 34, height: 34, mr: 1.5, bgcolor: 'primary.light' }}>{(option.name || option.identityKey).slice(0, 2).toUpperCase()}</Avatar><Box><Typography variant="body2" sx={{ fontWeight: 650 }}>{option.name || short(option.identityKey)}</Typography><Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{[option.badgeLabel, option.name ? short(option.identityKey) : ''].filter(Boolean).join(' · ') || 'Identity key'}</Typography></Box></li>} renderInput={params => <TextField {...params} label="Recipient" placeholder="Name, @handle, email, or identity key" error={!!recipient && !target && looksLikeCode} helperText={recipientLabel ? short(recipient) : recipient && !target ? looksLikeCode ? targetError : 'Choose a person from the list, or paste their identity key.' : 'A name, identity key, payment link, or BSV address.'} InputProps={{ ...params.InputProps, endAdornment: <>{identitySearch.isLoading && <CircularProgress size={18} />}{params.InputProps.endAdornment}<IconButton aria-label="Scan a payment code" title="Scan a payment code" edge="end" onClick={() => setScan(true)}><QrCodeScannerOutlined /></IconButton></> }} />} />
+          <Autocomplete freeSolo options={recipientOptions} loading={identitySearch.isLoading} inputValue={recipientLabel || recipient} value={null} filterOptions={options => options} getOptionLabel={(option: any) => typeof option === 'string' ? option : option.name || short(option.identityKey)} onInputChange={changeRecipient} onChange={(_, value) => { if (value && typeof value !== 'string') { setRecipient(value.identityKey); setRecipientLabel(value.name || short(value.identityKey)) } }} noOptionsText="Enter an identity key or address" renderOption={(props, option) => <li {...props} key={option.identityKey}><Avatar src={option.avatarURL} sx={{ width: 34, height: 34, mr: 1.5, bgcolor: 'primary.light' }}>{(option.name || option.identityKey).slice(0, 2).toUpperCase()}</Avatar><Box><Typography variant="body2" sx={{ fontWeight: 650 }}>{option.name || short(option.identityKey)}</Typography><Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{[option.badgeLabel, option.name ? short(option.identityKey) : ''].filter(Boolean).join(' · ') || 'Identity key'}</Typography></Box></li>} renderInput={params => <TextField {...params} label="Recipient" placeholder="Name, @handle, email, or identity key" error={!!recipient && !target && looksLikeCode} helperText={recipientLabel && target ? short(target.recipient) : recipient && !target ? looksLikeCode ? targetError : 'Choose a person from the list, or paste their identity key.' : 'A name, identity key, payment link, or BSV address.'} InputProps={{ ...params.InputProps, endAdornment: <>{identitySearch.isLoading && <CircularProgress size={18} />}{params.InputProps.endAdornment}<IconButton aria-label="Scan a payment code" title="Scan a payment code" edge="end" onClick={() => setScan(true)}><QrCodeScannerOutlined /></IconButton></> }} />} />
           <AmountInput valueSats={sendAmount} onChangeSats={setAmount} label="Amount" fullWidth disabled={fixedAmount !== undefined} helperText={fixedAmount !== undefined ? 'Set by the recipient’s payment link.' : undefined} />
+          {ownIdentity && <Alert severity="warning">This is your own wallet. Choose someone else to pay.</Alert>}
           {target?.kind === 'identity' && identityIssue && <Alert severity="warning">{identityIssue}</Alert>}
-          <Button variant="contained" size="large" endIcon={<ArrowOutwardOutlined />} disabled={!target || !validAmount(sendAmount) || busy || switchingNetwork || !identity || target.kind === 'identity' && !!identityIssue} onClick={() => { setNotice(''); setError(''); setReview({ target, amount: sendAmount!, name: recipientLabel || short(target.recipient) }) }}>Review payment</Button>
+          <Button variant="contained" size="large" endIcon={<ArrowOutwardOutlined />} disabled={!target || ownIdentity || !validAmount(sendAmount) || busy || switchingNetwork || !identity || target.kind === 'identity' && !!identityIssue} onClick={() => { setNotice(''); setError(''); setReview({ target, amount: sendAmount!, name: recipientLabel || short(target.recipient) }) }}>Review payment</Button>
         </Stack>}
         {tab === 'receive' && <Stack spacing={3}>
           <ToggleButtonGroup fullWidth exclusive value={receiveKind} onChange={(_, value) => { if (value) setReceiveKind(value) }} aria-label="Receive payment type"><ToggleButton value="wallet">Wallet payment</ToggleButton><ToggleButton value="address">BSV address</ToggleButton></ToggleButtonGroup>

@@ -122,33 +122,25 @@ Expected: the send fails with **The recipient's wallet could not be reached dire
 
 See [Relay tests](#relay-tests). This swaps the carrier of the offer and answer; the payment path is the same.
 
-### 4. Face to face, code exchange (no message box or relay)
+### 4. Scanning another wallet's code
 
-The payee makes the code; the payer answers it. Neither wallet needs receiving turned on, and neither needs a message box or relay: the codes are the invitation. The wallets still ask the STUN servers (Google and Cloudflare by default) for their public addresses, so those servers see each wallet's IP address, and with relay signaling set the relay is asked for TURN servers (below).
+BSV Desktop has no Nearby tab: it pays every wallet identity live, by identity key. Its scanner still reads the codes phones show for face-to-face payments, and treats each as the payee's identity and amount.
 
-1. **Payee**: Payments → **Nearby** → **Direct (WebRTC)** → **Receive directly**. Optionally fill in **Amount to request (optional)**, then **Create direct request**. A QR code (a `webrtpay1:` code) appears with **Copy code** and **Show the code as text**. It can wait on screen for minutes.
-2. **Payer**: Payments → **Nearby** → **Direct (WebRTC)** → **Pay directly**. **Scan their request**, or paste the code into **Recipient’s direct request**. Check the amount (it is fixed when the code carries one), then **Review direct payment** → **Confirm & show answer**. The answer appears as a QR code: **Ask them to scan this answer now**.
-3. **Payee**: **2. Scan their answer**, and scan it (or paste it into the scanner's **Or paste a code** field) **within about 15 seconds of it appearing**. After that the connecting side gives up. Scanning from across a table works; pasting between chat windows usually misses the window, and the page says so.
-4. The payee shows **Connected to a verified wallet** with the payer's identity key, then **Waiting for their payment…**; the payer sends the payment, then the payee shows **Payment added to your wallet** with the amount, and the payer **Payment delivered** with **It is in their wallet.** The payee's Payments page also shows **Direct payment added to your wallet: … satoshis.**, even if it has left the Nearby tab.
-
-On one machine you can copy the code from one window and paste it into the other; hold the answer back no longer than the 15 seconds.
-
-With **Signaling: Relay server** set in Settings, a code exchange also asks that relay for TURN servers before each code is made; the codes themselves never go through the relay. If the relay cannot be reached, a code can take up to 5 seconds longer to appear.
+1. On BSV Wallet, open Receive and show a **Nearby** code (`bsvpay1:`), or show a WebRTPay offer code (`webrtpay1:`).
+2. On BSV Desktop: Payments → Send → the scanner icon in **Recipient**. Recipient fills with their identity key and **Amount** with the requested amount (fixed when the code names one).
+3. **Review payment** → **Pay**. It goes live; if their wallet cannot be reached, the review asks before using their message box.
 
 Things to check:
 
-- A code made on Testnet pasted into a Mainnet wallet (or the reverse) is **refused** before any payment is made, with a message naming both networks.
-- A code with an amount makes the payer pay **exactly** that amount.
-- A request code serves one payment. After a success, make a new request.
-- If another wallet pays a different amount than requested, the payee still takes the payment (it is already on the network and pays this wallet) and shows **Received X satoshis — you requested Y.**, and the page notice ends **You requested Y satoshis.** BSV Desktop as payer always pays the requested amount, so you will only see this from other wallets.
-- If the payer's wallet cannot make the payment once the payee has connected (for example, too few funds), the payer shows **Your wallet could not make the payment, so nothing was spent. Ask them for a new code and try again.**, with the wallet's own reason underneath. The payee says that the connection closed before a payment arrived (whichever of the two closes it sees first).
+- A code for another network is **refused**, naming both networks. A `webrtpay1:` code that names no network is refused too.
+- An answer code (`webrtpay1:` from a payer) is refused: it names no payee.
+- A note the phone sends with a live payment shows as the payment's description in Activity.
 
 ### 5. A payment interrupted after broadcast (optional, hard to time)
 
 If the connection drops after the payer has broadcast but before the acknowledgement arrives, the payer's payment stays under **Saved payments** with an error, rather than hanging. To try it, start a direct send and quit the payee wallet in the second between connecting and the result. Then, on the payer:
 
 - **Saved payments** lists it (**sent directly**) with **Retry via message box** and **Retry directly**; either one delivers the same transaction. Retry by message box while the payee is offline, bring the payee back, and it receives the payment from its message box.
-- Face to face: when the payer next answers a request code from the same payee (of the same amount, or with no amount), Nearby offers **Deliver saved payment of N satoshis** instead of a new payment. It delivers the same transaction.
 - Saved payments survive logout: log out and back in on the payer and they are still there.
 
 A payee that receives the same payment twice (the payer retried after losing the acknowledgement) takes it once and shows it once.
@@ -168,10 +160,10 @@ When the payee's wallet cannot add a payment at once because its network or stor
 
 The relay is an optional rendezvous for the encrypted offer and answer, run from the `@bsv/webrtpay` package as `webrtpay-relay`. It stores nothing. It can also hand out short-lived TURN credentials.
 
-**Run it from the tarball** (the bsv-desktop repo carries it as `vendor/bsv-webrtpay-0.1.0.tgz`; `npm pack` in the WebRTPay repo makes the same file):
+**Run it from npm** (bsv-desktop depends on `@bsv/webrtpay` from npm; the public relay is `wss://webrtpay-relay-us-1.bsvblockchain.tech`, the default in Settings):
 
 ```bash
-HOST=127.0.0.1 PORT=8787 npx --yes --package ./vendor/bsv-webrtpay-0.1.0.tgz webrtpay-relay
+HOST=127.0.0.1 PORT=8787 npx --yes --package @bsv/webrtpay@0.2.1 webrtpay-relay
 ```
 
 The relay refuses to start without `PUBLIC_URLS` unless `HOST` is a loopback address: wallets sign the relay URL they dial, and without `PUBLIC_URLS` the relay would check that signature against a URL built from the request's `Host` header, which the client chooses. On loopback that is fine for a test; it logs a warning about it.

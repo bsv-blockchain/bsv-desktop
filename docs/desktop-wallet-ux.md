@@ -4,11 +4,11 @@ The desktop UI follows BSV Wallet's payment and recovery model. Its main destina
 
 ## Payments
 
-Payments has Send, Receive, and Nearby tabs. Send accepts a BSV address, wallet identity, or payment link. Identity payments and payment requests use Message Box, enabled by default at `https://messagebox.bsvblockchain.tech`. Missing or blank URLs use that default, including saved configurations; disabling Message Box is an explicit per-network setting. Receive offers wallet payment links and deterministic address receiving. Address receiving needs a WhatsOnChain-compatible API to find and verify deposits.
+Payments has Send and Receive tabs. Send asks only for a recipient and an amount; the recipient is a person found by name, an identity key, a payment link, a BSV address, or a scanned code. Wallet identities are paid live over WebRTPay first, with Message Box as the fallback. Identity payments and payment requests use Message Box, enabled by default at `https://messagebox.bsvblockchain.tech`. Missing or blank URLs use that default, including saved configurations; disabling Message Box is an explicit per-network setting. Receive offers a wallet payment QR (always shown: a `peerpay:` link naming the identity key, the optional amount, and the message box when there is one) and deterministic address receiving. Live receiving is on by default. Address receiving needs a WhatsOnChain-compatible API to find and verify deposits.
 
-Nearby implements BSV Wallet's `bsvpay1` pairing request and encrypted version-5 payment frames with `@bsv/air-gap` QR fountains. Scan with a camera, import a QR image, or paste a code. Nearby transport is QR; BLE and Wi-Fi transport are not implemented. Transaction proof verification still needs network access. Mobile pairing requests do not identify their network, so the review asks both parties to check it; desktop requests include an optional chain field.
+There is no Nearby tab. The scanner reads the face-to-face codes other wallets show, BSV Wallet's `bsvpay1:` request and a WebRTPay `webrtpay1:` offer, as the payee's identity key, network and amount, and pays that identity live.
 
-Signed identity tokens and nearby frames are saved before broadcast/delivery. Retries reuse the original payment, and nearby receiving preserves earlier pairing keys when a QR request is replaced. Saved payment delivery state is local to this installation and scoped to the wallet identity and network; moving a device's wallet database alone does not move its pending delivery codes.
+Signed identity tokens are saved before broadcast/delivery, and retries reuse the original payment. Saved payment delivery state is local to this installation and scoped to the wallet identity and network; moving a device's wallet database alone does not move its pending delivery codes.
 
 ## Recovery
 
@@ -40,7 +40,7 @@ On October 7, 2026 the deployed console still served `assets/index-BKJVHD0G.js`,
 
 ## Validation
 
-Regression coverage includes mobile mnemonic/share fixtures, address/link parsing, QR pairing/frame compatibility, saved-delivery retries, historical nearby pairing recovery, replay rejection, bounded balance/activity pagination, connected-app tracking, and network rollback/storage release. UI layouts were inspected with fixture data at desktop and compact widths in light and dark modes.
+Regression coverage includes mobile mnemonic/share fixtures, address/link parsing, face-to-face code parsing, saved-delivery retries, replay rejection, bounded balance/activity pagination, connected-app tracking, and network rollback/storage release. UI layouts were inspected with fixture data at desktop and compact widths in light and dark modes.
 
 The production build passes. All 486 regression tests across 55 files pass under Electron's Node runtime, including 102 Mandala permission tests, native SQLite tests, and network switches using real wallet managers; the separate storage performance benchmark was excluded. The build still reports large dependency chunks and a vendor `eval` warning. Optional dashboard destinations load as separate chunks, while the existing wallet/extension dependencies remain in the core bundle.
 

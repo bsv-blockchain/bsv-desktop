@@ -3,6 +3,7 @@ import { DirectPaySettingsError, loadDirectPaySettings, saveDirectPaySettings, s
 /** The Direct payments card's fields, as the user edits them. */
 export interface DirectPayForm {
   receiveEnabled: boolean
+  shareLocalAddress: boolean
   signaling: DirectPaySettings['signaling']
   relayUrl: string
   /** STUN servers, comma-separated. */
@@ -15,6 +16,7 @@ export interface DirectPayForm {
 export function formFromSettings(s: DirectPaySettings): DirectPayForm {
   return {
     receiveEnabled: s.receiveEnabled,
+    shareLocalAddress: s.shareLocalAddress,
     signaling: s.signaling,
     relayUrl: s.relayUrl,
     stunUrls: s.stunUrls.join(', '),
@@ -35,6 +37,7 @@ export const showsTurn = (f: DirectPayForm) => !!(f.turnUrls || f.turnUsername |
 export function settingsFromForm(f: DirectPayForm): DirectPaySettings {
   return {
     receiveEnabled: f.receiveEnabled,
+    shareLocalAddress: f.shareLocalAddress,
     signaling: f.signaling,
     relayUrl: f.relayUrl,
     stunUrls: f.stunUrls.split(','),

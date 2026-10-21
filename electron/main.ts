@@ -14,7 +14,7 @@ import { arcadeUrl } from './endpoints.js';
 import { getBootConfig } from './bootConfig.js';
 import { checkAndRepairCertTrust } from './sslCert.js';
 import { applyUserDataOverride } from './userDataOverride.js';
-import { hideLocalAddressesFromWebRtc } from './webrtcPrivacy.js';
+import { hideLocalAddressesFromWebRtc, shareLocalAddressWithWebRtc } from './webrtcPrivacy.js';
 import { isDevMode } from './rendererSource.js';
 
 // BSV_DESKTOP_USER_DATA moves userData so a second copy of the app (a second
@@ -183,6 +183,9 @@ function createWindow() {
     title: 'BSV Desktop',
     show: false
   });
+  // The default of the "Connect directly on the same network" setting; the page sends the
+  // user's choice as soon as it starts, before any wallet can connect (webrtcPrivacy.ts).
+  shareLocalAddressWithWebRtc(mainWindow.webContents, true);
 
   // Load the app
   if (isDev) {
@@ -265,6 +268,10 @@ const feeSettingsService = new FeeSettingsService({
 registerFeeSettingsIpc(ipcMain, feeSettingsService);
 
 // Check if window is focused
+ipcMain.handle('webrtc:share-local-address', (event, share: unknown) => {
+  shareLocalAddressWithWebRtc(event.sender, share);
+});
+
 ipcMain.handle('is-focused', () => {
   return mainWindow?.isFocused() ?? false;
 });
@@ -542,10 +549,10 @@ ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain:
 });
 
 // Initialize services on storage
-ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings?: import('./networkConfig.js').NetworkSettings) => {
+ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings: import('./networkConfig.js').NetworkSettings | undefined, callbackToken: string) => {
   try {
     const manager = await getStorageManager();
-    await manager.request(identityKey, chain, () => manager.initializeServices(identityKey, chain, settings));
+    await manager.request(identityKey, chain, () => manager.initializeServices(identityKey, chain, settings, callbackToken));
     return { success: true };
   } catch (error: any) {
     console.error('[IPC] storage:initialize-services error:', error);

@@ -48,6 +48,7 @@ export default function DirectPayConfig({ showTitle = true, embedded = false }: 
     starting: t('directpay_status_starting'),
     online_messagebox: t('directpay_status_online_messagebox'),
     online_relay: t('directpay_status_online_relay'),
+    online_fallback: t('directpay_status_online_fallback'),
     not_set_up: t('directpay_status_not_set_up'),
     failed: t('directpay_status_failed')
   }[state]
@@ -136,6 +137,22 @@ export default function DirectPayConfig({ showTitle = true, embedded = false }: 
           <Alert severity="warning" sx={{ mt: 1 }}>
             {t('directpay_receive_warning')}
           </Alert>
+        </Box>
+
+        <Box>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.shareLocalAddress}
+                onChange={(e) => change('shareLocalAddress', e.target.checked)}
+                disabled={busy}
+              />
+            }
+            label={t('directpay_local_label')}
+          />
+          <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
+            {t('directpay_local_helper')}
+          </Typography>
         </Box>
 
         <TextField

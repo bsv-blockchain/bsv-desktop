@@ -18,7 +18,7 @@ import { createRequire } from 'module';
 import { fork, ChildProcess } from 'child_process';
 import { fileURLToPath } from 'url';
 import { StorageKnex, KnexMigrations, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox';
-import { createArcadeServices } from './arcade.js';
+import { assertArcadeCallbackToken, createArcadeServices } from './arcade.js';
 import { normalizeNetworkSettings, type NetworkSettings } from './networkConfig.js';
 import { arcadeSseCursorPath } from './arcadeSse.js';
 import { patchListCertificates } from './optimized-queries.js';
@@ -161,6 +161,9 @@ class StorageManager {
   private databases: Map<string, any> = new Map();
   private storageInitializations: Map<string, Promise<StorageKnex>> = new Map();
   private serviceSettings = new Map<string, NetworkSettings>();
+  // Each wallet's Arcade callback token, handed over by the renderer, which
+  // alone can derive it. Kept for monitor restarts; never logged.
+  private callbackTokens = new Map<string, string>();
   // Separate storage managers for backend monitoring (independent from renderer)
   private monitorStorageManagers: Map<string, WalletStorageManager> = new Map();
   private monitors: Map<string, Monitor> = new Map();
@@ -343,26 +346,33 @@ class StorageManager {
   async initializeServices(
     identityKey: string,
     chain: 'main' | 'test' | 'ttn' | 'tstn',
-    settings?: Partial<NetworkSettings>
+    settings: Partial<NetworkSettings> | undefined,
+    callbackToken: string
   ): Promise<void> {
     const resolved = normalizeNetworkSettings(chain, settings || {});
     const key = walletStorageKey(identityKey, chain);
+    assertArcadeCallbackToken(callbackToken);
 
     // Check if already initialized to prevent duplicates
-    if (this.monitorWorkers.has(key) && JSON.stringify(this.serviceSettings.get(key)) === JSON.stringify(resolved)) {
+    if (
+      this.monitorWorkers.has(key) &&
+      JSON.stringify(this.serviceSettings.get(key)) === JSON.stringify(resolved) &&
+      this.callbackTokens.get(key) === callbackToken
+    ) {
       console.log(`[Storage] Services already initialized for ${key}, skipping`);
       return;
     }
     await this.stopMonitorWorker(identityKey, chain);
     const storage = await this.getOrCreateStorage(identityKey, chain);
     this.serviceSettings.set(key, resolved);
+    this.callbackTokens.set(key, callbackToken);
 
     console.log(`[Storage] Initializing services for ${key}`);
 
     // Arcade first for broadcasting and proofs, ChainTracks on the Arcade
     // deployment, and the wallet's callback token on every broadcast so Arcade
     // reports its status to the monitor worker's SSE subscription.
-    const services = createArcadeServices(chain, identityKey, resolved);
+    const services = createArcadeServices(chain, callbackToken, resolved);
     console.log(`[Storage] Broadcasting and proofs via Arcade at ${resolved.arcadeUrl}`);
 
     // Type assertion to access setServices method
@@ -499,7 +509,10 @@ class StorageManager {
           // session cannot alter a worker started before the next restart.
           feeRate: getConfiguredFeeRate(chain, DEFAULT_MONITOR_FEE_RATE),
           sseCursorPath: arcadeSseCursorPath(identityKey, chain),
-          serviceSettings: this.serviceSettings.get(key)
+          serviceSettings: this.serviceSettings.get(key),
+          // The worker subscribes with the token the main process broadcasts
+          // with, and refuses to start without one.
+          callbackToken: this.callbackTokens.get(key)
         }
       });
 

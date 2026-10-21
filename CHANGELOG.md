@@ -1,13 +1,24 @@
 # Changelog
 
-## Unreleased
+## [3.2.0] - 2026-10-20
 
 ### Features
 
+- **Push payments.** Pay a person, not a route.
+  - Choose who to pay by name, handle, email or identity key, enter an amount, and press Pay.
+  - The wallet first delivers the payment live, over an encrypted peer-to-peer (WebRTC) connection, finding the other wallet through the public relay `wss://webrtpay-relay-us-1.bsvblockchain.tech`.
+  - If the recipient is not online, the wallet knows within about 2 seconds and asks: "X isn't online right now. Send it to their message box?"
+  - Receiving live payments is on by default and needs no clicks, even for a new wallet with no message box. Message box payments are accepted automatically.
+  - Every arrival shows a toast.
+  - The Receive tab shows "Open to live payments", how payments arrive, and the wallet's identity key.
+  - When the relay cannot be reached, signalling falls back to the message box while the relay is retried, backing off from 5 s up to 5 min.
+  - Settings → Advanced settings → Direct Payments controls receiving, signalling, and the STUN and TURN servers.
+- **Paying someone on the same network.** The "Connect directly on the same network" setting, on by default, lets wallets in the same office or home connect directly. Offers carry this computer's local network address and IPv6 address instead of `.local` names, which the other computer often could not resolve. VPN and virtual adapters are still never shared. Turning it off restores the previous behaviour. On macOS the app now asks for Local Network access.
 - The wallet homepage has a "Need help?" card. Troubleshoot checks the wallet and fixes what it can by itself: network, app connections (re-connects the bridge, re-runs certificate trust when needed), failed transactions, coins already spent on-chain, message box anointing, and waiting incoming payments. It only asks the user for things it cannot do: back up, add funds, check the internet. Tour is a spotlight walkthrough of the wallet that explains apps are used in the normal web browser and approved here; it starts by itself once per profile the first time the wallet loads with a 0 sat balance.
 
 ### Bug Fixes
 
+- The Arcade callback token is now derived from the wallet key the same way BSV Wallet derives it, so a wallet open in both apps hears one status stream. Each wallet profile has its own token, and restoring a wallet from its recovery phrase restores it. Transactions sent before updating still complete; their remaining status changes arrive through the monitor's regular checks rather than the live stream.
 - The counterparty permission sheet ("Select Counterparty Permissions") shows each protocol's app-manifest description under the chip, with the same "Reason:" label as the app permissions sheet. Protocols the registry does not know still show "Protocol description not found." on the chip itself.
 - BRC-177 "noSend with expiry" `createAction` requests (a `p nosend expiry …` label) no longer always fail with "Active storage does not support BRC-177 noSend expiry". Wallet Toolbox runs the expiry lifecycle through `prepareNoSendExpiry`, `activateNoSendExpiry` and `armNoSendExpiry` on the active storage; the renderer's IPC storage proxy did not implement them and the main process allow-list did not permit them, so local storage, which supports BRC-177, was reported as not supporting it. Expired BRC-177 actions are reclaimed by the background monitor, so, as BRC-177 requires, local storage offers BRC-177 only while that wallet's monitor is running: a request made just after the wallet opens, or after the monitor process has exited, is still refused with that message. Reclaims run only while BSV Desktop is open with that wallet and network selected.
 - Action batches large enough to upload staged data, and batch resume after an expired lease, no longer fail with "packed action batch uploads are not available" or "action batch resume is not available". Local storage advertises these features, but the IPC storage proxy and the main process allow-list lacked `resumeActionBatch`, `putActionBatchPack` and `commitActionBatchByDigest`.

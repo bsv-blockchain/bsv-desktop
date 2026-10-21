@@ -3,7 +3,7 @@ import { LockingScript, MerklePath, OP, P2PKH, PrivateKey, ProtoWallet, PublicKe
 import type { WalletInterface } from '@bsv/sdk'
 import { createMemoryHub, DirectPayClient, MAX_DIRECT_TRANSACTION_BYTES, paymentKey, WebRTPayError } from '@bsv/webrtpay'
 import type { AuthenticatedPeer, IncomingPayment, InboundLimits, MemoryHub } from '@bsv/webrtpay'
-import { createSeenStore, deliverDirect, dismissKeptDirectPayment, keepDirectPayment, keptDirectPaymentsOnDevice, keptTowardLimit, listKeptDirectPayments, NotSentError, receiveDirectPayment, retryReceivedDirectPayments, RetryStopped, subscribeKeptDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
+import { createSeenStore, deliverDirect, dialFailure, DIRECT_DESCRIPTION, dismissKeptDirectPayment, keepDirectPayment, keptDirectPaymentsOnDevice, keptTowardLimit, listKeptDirectPayments, NotSentError, receiveDirectPayment, retryReceivedDirectPayments, RetryStopped, subscribeKeptDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import type { KeptDirectPaymentInfo } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import { prepareMessageBoxPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
 import type { OutgoingPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
@@ -166,6 +166,67 @@ function outbox() {
   }
 }
 
+describe('dialFailure', () => {
+  it('dialFailure maps each webrtpay code', () => {
+    expect(dialFailure(new WebRTPayError('peer_unreachable'))).toBe('offline')
+    expect(dialFailure(new WebRTPayError('rejected', 'no', { reason: 'not_receiving' }))).toBe('not_receiving')
+    expect(dialFailure(new WebRTPayError('rejected', 'no', { reason: 'busy' }))).toBe('not_receiving')
+    expect(dialFailure(new WebRTPayError('rejected', 'no', { reason: 'wrong_network' }))).toBe('wrong_network')
+    expect(dialFailure(new WebRTPayError('rejected', 'no', { reason: 'something else' }))).toBe('link_failed')
+    expect(dialFailure(new WebRTPayError('unavailable'))).toBe('network')
+    for (const code of ['timeout', 'closed', 'auth_failed', 'protocol', 'unsupported', 'rate_limited'] as const) expect(dialFailure(new WebRTPayError(code))).toBe('link_failed')
+    expect(dialFailure(new Error('boom'))).toBe('link_failed')
+  })
+})
+
+describe('deliverDirect dial failures', () => {
+  const failingClient = (error: unknown) => ({ connect: vi.fn(async () => { throw error }) }) as unknown as DirectPayClient & { connect: ReturnType<typeof vi.fn> }
+
+  it('deliverDirect throws NotSentError with failure offline when connect rejects peer_unreachable', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const box = outbox()
+    const c = failingClient(new WebRTPayError('peer_unreachable'))
+    const controller = new AbortController()
+    const error = await deliverDirect({ client: c, wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 1500, persist: box.persist, markDelivered: box.markDelivered, signal: controller.signal }).catch(e => e)
+    expect(error).toBeInstanceOf(NotSentError)
+    expect(error.failure).toBe('offline')
+    expect(c.connect).toHaveBeenCalledWith(payee.identityKey, { signal: controller.signal })
+    expect(payer.createAction).not.toHaveBeenCalled()
+    expect(box.persist).not.toHaveBeenCalled()
+  })
+
+  it('classifies a refusal, a network failure and a broken link, spending nothing', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const cases: Array<[unknown, string, RegExp]> = [
+      [new WebRTPayError('rejected', 'no', { reason: 'not_receiving' }), 'not_receiving', /not taking direct payments right now\. Nothing was spent/],
+      [new WebRTPayError('unavailable'), 'network', /^Couldn't reach the payment network — check your connection\. Nothing was spent\.$/],
+      [new WebRTPayError('timeout'), 'link_failed', /could not be reached directly\. Nothing was spent/]
+    ]
+    for (const [cause, failure, message] of cases) {
+      const box = outbox()
+      const error = await deliverDirect({ client: failingClient(cause), wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 1500, persist: box.persist, markDelivered: box.markDelivered }).catch(e => e)
+      expect(error).toBeInstanceOf(NotSentError)
+      expect(error.failure).toBe(failure)
+      expect(error.message).toMatch(message)
+      expect(box.persist).not.toHaveBeenCalled()
+    }
+    expect(payer.createAction).not.toHaveBeenCalled()
+  })
+
+  it('makes nothing when the dial was cancelled after it connected', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    const controller = new AbortController()
+    const close = vi.fn()
+    const c = { connect: vi.fn(async () => { controller.abort(); return { peerIdentityKey: payee.identityKey, isOpen: true, close } }) } as unknown as DirectPayClient
+    const box = outbox()
+    const error = await deliverDirect({ client: c, wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 1500, persist: box.persist, markDelivered: box.markDelivered, signal: controller.signal }).catch(e => e)
+    expect(error).toBeInstanceOf(NotSentError)
+    expect(error.message).toBe('Cancelled. Nothing was spent.')
+    expect(close).toHaveBeenCalled()
+    expect(payer.createAction).not.toHaveBeenCalled()
+  })
+})
+
 describe('deliverDirect', () => {
   it('deliverDirect does not call createAction when connect fails', async () => {
     const hub = createMemoryHub()
@@ -273,8 +334,7 @@ describe('deliverDirect', () => {
     expect(payment.host).toBe('https://box.example.com')
   })
 
-  // Final review M19: "Keep this payment code" belongs to Animated QR; here the row is saved.
-  it('says a saved direct payment can be retried when it cannot be broadcast, without Animated QR wording', async () => {
+  it('says a saved direct payment can be retried when it cannot be broadcast', async () => {
     const hub = createMemoryHub()
     const payer = await makePayer(), payee = await makePayee()
     await receiving(hub, payee)
@@ -283,7 +343,6 @@ describe('deliverDirect', () => {
     const box = outbox()
     const error = await deliverDirect({ client: client(hub, payer), wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 2500, existing, persist: box.persist, markDelivered: box.markDelivered }).catch(e => e)
     expect(error.message).toBe('The payment could not be broadcast yet; retry when you are online. Retrying reuses the same transaction.')
-    expect(error.message).not.toMatch(/payment code/)
     expect(error).not.toBeInstanceOf(NotSentError)
     expect(box.markDelivered).not.toHaveBeenCalled()
     expect(payee.internalizeAction).not.toHaveBeenCalled()
@@ -512,6 +571,23 @@ describe('receiveDirectPayment', () => {
     await expect(receive(payee, { ...payment, messageId: 'again' })).resolves.toEqual({ status: 'accepted', repeat: true, added: false })
     expect(payee.internalizeAction).toHaveBeenCalledTimes(1)
     expect(seenKeys(payee.identityKey)).toEqual([keyOf(payment)])
+  })
+
+  it('describes the payment with the payer’s note, so Activity shows it', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    await receiveDirectPayment({ wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN, payment: await incoming(payer, payee), note: '  Lunch 🍜  ' })
+    await receive(payee, await incoming(payer, payee))
+    await receiveDirectPayment({ wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN, payment: await incoming(payer, payee), note: 'hi' })
+    expect(payee.internalizeAction.mock.calls.map(([args]) => args.description)).toEqual(['Lunch 🍜', DIRECT_DESCRIPTION, 'hi   '])
+  })
+
+  it('keeps the payer’s note with a payment kept for a retry, and describes it with the note when retried', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    payee.internalizeAction.mockRejectedValueOnce(new Error('User is not authenticated.'))
+    await receiveDirectPayment({ wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN, payment: await incoming(payer, payee), note: 'Rent for May' })
+    expect(retries(payee.identityKey)[0]).toMatchObject({ payment: { note: 'Rent for May' } })
+    await expect(retry(payee)).resolves.toBe(1)
+    expect(payee.internalizeAction.mock.calls[1][0].description).toBe('Rent for May')
   })
 
   it('rethrows invalid_payment and stores nothing for a payment that does not pay this wallet', async () => {

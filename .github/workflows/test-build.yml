@@ -1,0 +1,147 @@
+name: 'test build'
+
+# Signed installers for testing a branch before release. Push to a branch named
+# test-build/<anything>; the installers are attached to the run as artifacts.
+# Nothing is published: no GitHub release, no tag, no auto-update feed.
+on:
+  push:
+    branches:
+      - 'test-build/**'
+
+concurrency:
+  group: test-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest' # Universal binary for both Intel and Apple Silicon
+          - platform: 'ubuntu-22.04'
+          - platform: 'windows-2022'
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-dev rpm
+
+      - name: setup node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: install frontend dependencies
+        run: npm install
+
+      # === macOS: signed and notarized, so Gatekeeper opens it ===
+      - name: import Apple Developer Certificate
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERT }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASS }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+      - name: verify certificate
+        if: matrix.platform == 'macos-latest'
+        id: verify_certificate
+        run: |
+          CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "BSV")
+          CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
+          echo "cert_id=$CERT_ID" >> $GITHUB_OUTPUT
+
+      - name: build Electron app (macOS)
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ steps.verify_certificate.outputs.cert_id }}
+        run: |
+          npm run build
+          npx electron-builder --mac --publish never
+
+      - name: Upload macOS artifacts
+        if: matrix.platform == 'macos-latest'
+        uses: actions/upload-artifact@v6
+        with:
+          name: macos-test-build
+          path: release/*.dmg
+          retention-days: 14
+
+      # === Linux ===
+      - name: build Electron app (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          npm run build
+          npx electron-builder --linux --publish never
+
+      - name: Upload Linux artifacts
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v6
+        with:
+          name: linux-test-build
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+          retention-days: 14
+
+      # === Windows: signed inside electron-builder (build/win-sign.js) ===
+      - name: Decode DigiCert client certificate
+        if: matrix.platform == 'windows-2022'
+        shell: bash
+        run: |
+          echo "${{ secrets.DIGICERT_CLIENT_AUTH_CERT }}" | base64 --decode > /d/sm_client_cert.p12
+          echo "SM_HOST=${{ secrets.DIGICERT_HOST }}" >> "$GITHUB_ENV"
+          echo "SM_API_KEY=${{ secrets.DIGICERT_KEY_LOCKER_API_KEY }}" >> "$GITHUB_ENV"
+          echo "SM_CLIENT_CERT_FILE=D:\\sm_client_cert.p12" >> "$GITHUB_ENV"
+          echo "SM_CLIENT_CERT_PASSWORD=${{ secrets.DIGICERT_CLIENT_AUTH_PASS }}" >> "$GITHUB_ENV"
+
+      - name: Setup DigiCert Software Trust Manager
+        if: matrix.platform == 'windows-2022'
+        uses: digicert/code-signing-software-trust-action@v1
+        env:
+          SM_HOST: ${{ env.SM_HOST }}
+          SM_API_KEY: ${{ env.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ env.SM_CLIENT_CERT_FILE }}
+          SM_CLIENT_CERT_PASSWORD: ${{ env.SM_CLIENT_CERT_PASSWORD }}
+
+      - name: Sync certificate to Windows store
+        if: matrix.platform == 'windows-2022'
+        shell: cmd
+        run: smctl windows certsync
+
+      - name: build and sign Electron app (Windows)
+        if: matrix.platform == 'windows-2022'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          WIN_SIGN_SHA1: ${{ secrets.DIGICERT_CODE_SIGNING_SHA1_HASH }}
+        run: |
+          npm run build
+          npx electron-builder --win --publish never
+
+      - name: Upload Windows artifacts
+        if: matrix.platform == 'windows-2022'
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-test-build
+          path: release/*.exe
+          if-no-files-found: warn
+          retention-days: 14

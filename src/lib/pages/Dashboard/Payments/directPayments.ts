@@ -25,7 +25,7 @@ import { acceptDirectPayment, MAX_DIRECT_TRANSACTION_BYTES, paymentKey, validate
 import type { AuthenticatedPeer, DirectPayClient, IncomingPayment, PaymentAck, SeenStore } from '@bsv/webrtpay'
 import { prepareMessageBoxPayment } from './messageBoxPayments'
 import type { OutgoingPayment } from './messageBoxPayments'
-import { broadcastNearbyPayment } from './nearbyProtocol'
+import { broadcastPayment } from './broadcast'
 import { identityKey, validAmount } from './paymentProtocol'
 
 /** Payment keys remembered per wallet and network, newest kept. */
@@ -151,9 +151,8 @@ export async function deliverDirect(o: {
       payment = { ...prepared, via: 'direct' }
     }
     try {
-      await broadcastNearbyPayment(o.wallet, payment.txid, o.originator)
+      await broadcastPayment(o.wallet, payment.txid, o.originator)
     } catch (error) {
-      // The row is saved either way; Animated QR's "keep this payment code" does not apply here.
       const why = messageOf(error)
       throw new Error(`The payment could not be broadcast yet${why.startsWith('Broadcast is pending.') ? '' : ` (${why.replace(/\.$/, '')})`}; retry when you are online. Retrying reuses the same transaction.`)
     }

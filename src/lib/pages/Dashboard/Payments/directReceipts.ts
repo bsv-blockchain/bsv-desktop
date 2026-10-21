@@ -10,9 +10,8 @@ import { validAmount } from './paymentProtocol'
 const RETRYING = 'it will be added when your wallet can verify it — retrying automatically'
 
 /**
- * The Payments page notice for a direct payment that arrived (by identity key, or over a code
- * exchange). Only `accepted` means the wallet took it; anything else was received and kept on
- * this device, not verified yet, so it is never worded or coloured as a plain success (final
+ * The Payments page notice for a direct payment that arrived. Only `accepted` means the
+ * wallet took it; anything else was received and kept on this device, not verified yet, so it is never worded or coloured as a plain success (final
  * review D6). The amount is always given when known, and a requested amount the payment differs
  * from (Ruling 29).
  */
@@ -21,12 +20,6 @@ export function receivedNotice(r: { amount?: unknown; status?: unknown; requeste
   const requested = validAmount(r.requested) ? ` You requested ${r.requested.toLocaleString()} satoshis.` : ''
   if (r.status === 'accepted') return { severity: 'success', text: `Direct payment added to your wallet${amount}${requested}` }
   return { severity: 'warning', text: `Direct payment received, not yet added${amount}${requested} It is not in your balance yet; ${RETRYING}.` }
-}
-
-/** The payee's code-exchange screen once the payment arrived (see DirectReceiptView). */
-export function payeeReceipt(status: 'accepted' | 'received'): { added: boolean; heading: string; detail: string } {
-  if (status === 'accepted') return { added: true, heading: 'Payment added to your wallet', detail: '' }
-  return { added: false, heading: 'Received, not yet added', detail: `It is not in your balance yet and has not been verified. It will be added when your wallet can verify it — retrying automatically. Do not treat it as paid until then.` }
 }
 
 /** What the payer is told after delivering a direct payment, from the payee's acknowledgement. */

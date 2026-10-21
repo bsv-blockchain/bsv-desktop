@@ -112,12 +112,13 @@ describe('Payments page wiring', () => {
     expect(dialog).toMatch(/if \(reaching\) cancelReaching\(\); else setReview\(null\)/)
   })
 
-  it('finds people by name, handle, email or a pasted identity key, and offers nearby payments', () => {
+  it('finds people by name, handle, email or a pasted identity key, with a scanner in the field and no nearby payments', () => {
     expect(page).toMatch(/placeholder="Name, @handle, email, or identity key"/)
     expect(page).toMatch(/options=\{recipientOptions\}/)
     expect(page).toMatch(/option\.badgeLabel/)
-    expect(page).toMatch(/>Pay someone nearby<\/Button>/)
-    expect(page).toMatch(/<IconButton aria-label="Scan a payment code"/)
+    expect(page).not.toMatch(/nearby|Nearby/)
+    expect(page).toMatch(/\{params\.InputProps\.endAdornment\}<IconButton aria-label="Scan a payment code"/)
+    expect(page).toMatch(/aria-label="Payment options"><Tab label="Send" value="send"[^\n]*<Tab label="Receive" value="receive"[^\n]*\/><\/Tabs>/)
   })
 
   it('says why a wallet identity cannot be paid only when neither live nor the message box can', () => {
@@ -150,7 +151,7 @@ describe('Payments page wiring', () => {
 
   it('shows the live payments card on the Receive tab, even without a message box, with Settings when off', () => {
     expect(page).toMatch(/const live = liveStatus\(directPay\)/)
-    const receive = page.slice(page.indexOf("{tab === 'receive' &&"), page.indexOf("{tab === 'nearby' &&"))
+    const receive = page.slice(page.indexOf("{tab === 'receive' &&"), page.indexOf('</Paper>', page.indexOf("{tab === 'receive' &&")))
     expect(receive).toMatch(/\{live\.title\}/)
     expect(receive).toMatch(/\(live\.tone === 'off' \|\| live\.tone === 'error'\) && <Button size="small" onClick=\{\(\) => history\.push\('\/dashboard\/settings\/advanced'\)/)
     expect(receive.indexOf('{live.title}')).toBeLessThan(receive.indexOf('!messageBoxAvailable ?'))
@@ -174,8 +175,12 @@ describe('Payments page wiring', () => {
     expect(page).not.toMatch(/setError\('Saved payments could not be read/)
   })
 
-  it('asks for a positive amount only when the requested amount is the problem', () => {
-    expect(page).toMatch(/requestAmount !== null && !validAmount\(requestAmount\) \? 'Enter a positive amount or leave it blank\.' : 'Your payment link is not ready yet\.'/)
+  it('always shows the identity as a payment QR on Receive, with or without a message box', () => {
+    expect(page).toMatch(/peerPayLink\(identity, useMessageBox && messageBoxUrl \? messageBoxUrl : undefined, requestAmount \?\? undefined\)/)
+    const receive = page.slice(page.indexOf("{tab === 'receive' &&"), page.indexOf('</Paper>', page.indexOf("{tab === 'receive' &&")))
+    expect(receive.indexOf('<QRCodeSVG value={receiveLink}')).toBeGreaterThan(-1)
+    expect(receive.indexOf('<QRCodeSVG value={receiveLink}')).toBeLessThan(receive.indexOf('!messageBoxAvailable ?'))
+    expect(receive).toMatch(/Enter a positive amount or leave it blank\./)
   })
 })
 
@@ -194,16 +199,12 @@ describe('network names on the Payments page', () => {
 
   it('uses those names in the chip and in every confirmation, never the raw chain id', () => {
     const read = (file: string) => fs.readFileSync(path.resolve(__dirname, '../src/lib/pages/Dashboard/Payments', file), 'utf8')
-    const page = read('index.tsx'), exchange = read('DirectCodeExchange.tsx'), nearby = read('NearbyPayments.tsx'), codes = read('directCodes.ts')
+    const page = read('index.tsx'), protocol = read('paymentProtocol.ts')
     expect(page).toMatch(/<Chip size="small" label=\{networkLabel\(chain\)\} variant="outlined" \/>/)
     expect(page).toMatch(/Network: \{networkLabel\(chain\)\}\. Confirm the recipient and network before sending\./)
-    expect(exchange).toMatch(/Network: \{networkLabel\(chain\)\}\. /)
-    expect(nearby).toMatch(/Network: \{networkLabel\(chain\)\}\. /)
-    expect(codes).toMatch(/This request is for \$\{networkLabel\(code\.chain\)\}, but your wallet is on \$\{networkLabel\(chain\)\}\./)
-    for (const source of [page, exchange, nearby, codes]) {
-      expect(source).not.toMatch(/chain\.toUpperCase\(\)/)
-      expect(source).not.toMatch(/chain === 'main' \?/)
-    }
+    expect(protocol).toMatch(/This request is for \$\{networkLabel\(theirs\)\}, but your wallet is on \$\{networkLabel\(chain\)\}\./)
+    expect(page).not.toMatch(/chain\.toUpperCase\(\)/)
+    expect(page).not.toMatch(/chain === 'main' \?/)
   })
 })
 
@@ -216,16 +217,6 @@ describe('a payment error is shown once', () => {
     const dialog = page.slice(page.indexOf('<DialogTitle>Review your payment</DialogTitle>'))
     expect(dialog).toMatch(/^[^\n]*\{error && <Alert severity="error">\{error\}<\/Alert>\}[^\n]*<\/Dialog>/)
     expect(page.match(/\{error && /g)).toHaveLength(2)
-  })
-
-  it('Nearby → Direct: in the confirm dialog while it is open, on the screen otherwise', () => {
-    const exchange = read('DirectCodeExchange.tsx')
-    expect(exchange).toMatch(/\{error && !review && <Alert severity="error" onClose=\{\(\) => setError\(''\)\}>/)
-    const dialog = exchange.slice(exchange.indexOf('<Dialog open={!!review}'))
-    expect(dialog).toMatch(/^[^\n]*<DialogContent><Stack spacing=\{2\}>\n\s*\{error && <Alert severity="error">\{error\}<\/Alert>\}/)
-    expect(exchange.match(/\{error && /g)).toHaveLength(2)
-    // A new review starts without the last attempt's error, which would read as this one's.
-    expect(exchange).toMatch(/if \(validAmount\(amount\)\) \{ setError\(''\); setReview\(\{ code: input\.trim\(\), offer: offerCode, amount, saved \}\) \}/)
   })
 
   // Final review D7/M17: an earlier attempt's error ("Nothing was spent", "do not send a new

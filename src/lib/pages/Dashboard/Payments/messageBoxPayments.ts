@@ -1,6 +1,6 @@
 import { PeerPayClient } from '@bsv/message-box-client'
 import { P2PKH, PublicKey, Random, Transaction, Utils, WalletInterface } from '@bsv/sdk'
-import { PAYMENT_PROTOCOL } from './nearbyProtocol'
+import { PAYMENT_PROTOCOL } from './broadcast'
 import { identityKey, validAmount } from './paymentProtocol'
 export interface OutgoingPayment {
   txid: string

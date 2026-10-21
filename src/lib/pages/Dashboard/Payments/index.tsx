@@ -3,7 +3,6 @@ import { Alert, Autocomplete, Avatar, Box, Button, Chip, CircularProgress, Dialo
 import ArrowOutwardOutlined from '@mui/icons-material/ArrowOutwardOutlined'
 import ArrowDownwardOutlined from '@mui/icons-material/ArrowDownwardOutlined'
 import QrCodeScannerOutlined from '@mui/icons-material/QrCodeScannerOutlined'
-import NearMeOutlined from '@mui/icons-material/NearMeOutlined'
 import ContentCopyOutlined from '@mui/icons-material/ContentCopyOutlined'
 import RefreshOutlined from '@mui/icons-material/RefreshOutlined'
 import CheckCircleOutline from '@mui/icons-material/CheckCircleOutline'
@@ -19,18 +18,16 @@ import AmountInput from '../../../components/AmountInput'
 import AmountDisplay from '../../../components/AmountDisplay'
 import { formatSatoshis } from '../../../components/AmountDisplay/amountFormatHelpers'
 import AddressReceive from './AddressReceive'
-import NearbyPayments from './NearbyPayments'
 import KeptDirectPayments from './KeptDirectPayments'
 import QrScanner from './QrScanner'
-import { identityKey, isDirectCode, networkLabel, parsePaymentTarget, PaymentTarget, peerPayLink, validAmount } from './paymentProtocol'
-import { broadcastNearbyPayment } from './nearbyProtocol'
+import { identityKey, networkLabel, parsePaymentTarget, PaymentTarget, peerPayLink, validAmount } from './paymentProtocol'
+import { broadcastPayment } from './broadcast'
 import { deliverMessageBoxPayment, OutgoingPayment, prepareMessageBoxPayment } from './messageBoxPayments'
 import { deliverDirect } from './directPayments'
 import { payerReceipt } from './directReceipts'
 import { deliveryProblem, liveStatus } from './delivery'
 import { fallbackPrompt, payIdentity } from './payFlow'
 import { identityName } from '../../../utils/identityNames'
-import type { DirectOutbox } from './directCodes'
 import { addToOutbox, markOutboxDelivered, outboxStorageKey, readOutbox, subscribeOutbox } from './outbox'
 
 const card = { border: '1px solid', borderColor: 'divider', borderRadius: 4, p: { xs: 2.5, md: 4 }, boxShadow: '0 8px 30px rgba(15, 23, 42, 0.035)' }
@@ -49,7 +46,7 @@ export default function Payments() {
   scopeRef.current = scope
   const location = useLocation(), history = useHistory()
   const requestedTab = new URLSearchParams(location.search).get('tab')
-  const tab = requestedTab === 'receive' || requestedTab === 'nearby' ? requestedTab : 'send'
+  const tab = requestedTab === 'receive' ? requestedTab : 'send'
   const setTab = (value: string) => history.replace({ pathname: location.pathname, search: value === 'send' ? '' : `?tab=${value}` })
   const [identity, setIdentity] = useState(activeProfile?.identityKey || '')
   const [recipient, setRecipient] = useState('')
@@ -67,7 +64,6 @@ export default function Payments() {
   const [cancelling, setCancelling] = useState(false)
   const dialAbort = useRef<AbortController | null>(null)
   const [scan, setScan] = useState(false)
-  const [nearbyRequest, setNearbyRequest] = useState('')
   const [receiveKind, setReceiveKind] = useState('wallet')
   const [requestAmount, setRequestAmount] = useState<number | null>(null)
   const [requestRecipient, setRequestRecipient] = useState('')
@@ -100,7 +96,7 @@ export default function Payments() {
   const identitySearch = useIdentitySearch({ wallet, originator: adminOriginator, onIdentitySelected: selected => { if (selected) { setRecipient(selected.identityKey); setRecipientLabel(selected.name || short(selected.identityKey)) } } })
 
   // A dial still reaching someone is for the wallet and network that were open: abort it (nothing is made before it connects).
-  useEffect(() => { dialAbort.current?.abort(); setReview(null); setRecipient(''); setRecipientLabel(''); setAmount(null); setNearbyRequest(''); setError(''); setNotice(''); }, [wallet, chain])
+  useEffect(() => { dialAbort.current?.abort(); setReview(null); setRecipient(''); setRecipientLabel(''); setAmount(null); setError(''); setNotice(''); }, [wallet, chain])
   useEffect(() => () => dialAbort.current?.abort(), [])
   // Arrivals are announced app-wide by PaymentToasts; message box payments are taken by MessageBoxAutoReceiver.
   useEffect(() => { setFallback(null); setCancelling(false) }, [review])
@@ -113,14 +109,12 @@ export default function Payments() {
   const writeOutbox = useCallback((write: (key: string) => OutgoingPayment[]) => { if (!outboxKey) throw new Error('Your wallet identity is still loading.'); setOutgoing(write(outboxKey)) }, [outboxKey])
   const addOutgoing = useCallback((row: OutgoingPayment) => writeOutbox(key => addToOutbox(key, row)), [writeOutbox])
   const markOutgoingDelivered = useCallback((txid: string) => writeOutbox(key => markOutboxDelivered(key, txid)), [writeOutbox])
-  const nearbyOutbox = useMemo<DirectOutbox>(() => ({ rows: outgoing, add: addOutgoing, markDelivered: markOutgoingDelivered }), [outgoing, addOutgoing, markOutgoingDelivered])
   const target = useMemo(() => { try { return parsePaymentTarget(recipient, chain) } catch { return null } }, [recipient, chain])
   const targetError = useMemo(() => { if (!recipient.trim()) return ''; try { parsePaymentTarget(recipient, chain); return '' } catch (error) { return (error as Error).message } }, [recipient, chain])
   const looksLikeCode = /^[a-z][a-z0-9+.-]*:/i.test(recipient) || /^(0[23][a-f0-9]{10,}|[1mn][1-9A-HJ-NP-Za-km-z]{24,})$/i.test(recipient)
   const changeRecipient = (_event: React.SyntheticEvent, value: string, reason: string) => {
     if (reason === 'clear') { setRecipient(''); setRecipientLabel(''); identitySearch.handleInputChange(null, '', 'clear'); return }
     if (reason !== 'input') return
-    if (value.startsWith('bsvpay1:') || isDirectCode(value)) { identitySearch.handleInputChange(null, '', 'clear'); adoptCode(value); return }
     setRecipient(value); setRecipientLabel(''); setError('')
     let direct = false
     try { parsePaymentTarget(value, chain); direct = true } catch { direct = /^[a-z][a-z0-9+.-]*:/i.test(value) || /^(0[23][a-f0-9]{10,}|[1mn][1-9A-HJ-NP-Za-km-z]{24,})$/i.test(value) }
@@ -137,8 +131,9 @@ export default function Payments() {
   }, [identitySearch.identities, recipient, recipientLabel])
   const fixedAmount = target?.amount
   const sendAmount = fixedAmount ?? amount
-  const receiveLink = useMemo(() => { try { return useMessageBox && identity && messageBoxUrl ? peerPayLink(identity, messageBoxUrl, requestAmount ?? undefined) : '' } catch { return '' } }, [useMessageBox, identity, messageBoxUrl, requestAmount])
-  const adoptCode = useCallback((value: string) => { setError(''); setNotice(''); if (value.startsWith('bsvpay1:') || isDirectCode(value)) { setNearbyRequest(value); history.replace({ pathname: location.pathname, search: '?tab=nearby' }); return } setRecipient(value); setRecipientLabel(''); try { const parsed = parsePaymentTarget(value, chain); if (parsed.amount !== undefined) setAmount(parsed.amount) } catch (error) { setError((error as Error).message) } }, [history, location.pathname, chain])
+  // Always a link, as BSV Wallet shows it: it names the message box only when there is one, so senders can always pay live.
+  const receiveLink = useMemo(() => { try { return identity ? peerPayLink(identity, useMessageBox && messageBoxUrl ? messageBoxUrl : undefined, requestAmount ?? undefined) : '' } catch { return '' } }, [useMessageBox, identity, messageBoxUrl, requestAmount])
+  const adoptCode = useCallback((value: string) => { setError(''); setNotice(''); setRecipient(value); setRecipientLabel(''); try { const parsed = parsePaymentTarget(value, chain); if (parsed.amount !== undefined) setAmount(parsed.amount) } catch (error) { setError((error as Error).message) } }, [chain])
 
   const refresh = useCallback(async () => {
     if (!peerPayClient || !messageBoxAvailable || switchingNetwork || refreshLock.current) return
@@ -157,7 +152,7 @@ export default function Payments() {
     if (!wallet || !peerPayClient) throw new Error('Connect a message box in Settings before sending.')
     const release = beginUserWalletOperation()
     try {
-      await broadcastNearbyPayment(wallet, payment.txid, adminOriginator)
+      await broadcastPayment(wallet, payment.txid, adminOriginator)
       await deliverMessageBoxPayment(peerPayClient, payment)
       if (payment.request) {
         await peerPayClient.sendMessage({ recipient: payment.recipient, messageBox: 'payment_request_responses', body: JSON.stringify({ requestId: payment.request.requestId, status: 'paid', amountPaid: payment.amount }) }, payment.host)
@@ -254,38 +249,37 @@ export default function Payments() {
   const savedForReview = review?.target.kind === 'identity' ? pending.find(row => row.recipient === review.target.recipient) : undefined
   if (!wallet) return <Alert severity="info">Unlock your wallet to make payments.</Alert>
   return <Box sx={{ maxWidth: 1100, mx: 'auto', pb: 5 }}>
-    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 3 }}><Box><Typography variant="h1" sx={{ fontWeight: 750, letterSpacing: '-.04em' }}>Payments</Typography><Typography color="text.secondary" sx={{ mt: .75 }}>Pay an address, a wallet, or someone nearby.</Typography></Box><Chip size="small" label={networkLabel(chain)} variant="outlined" /></Stack>
+    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 3 }}><Box><Typography variant="h1" sx={{ fontWeight: 750, letterSpacing: '-.04em' }}>Payments</Typography><Typography color="text.secondary" sx={{ mt: .75 }}>Send and receive BSV.</Typography></Box><Chip size="small" label={networkLabel(chain)} variant="outlined" /></Stack>
     {notice && <Alert severity={noticeSeverity} onClose={() => setNotice('')} sx={{ mb: 2 }}>{notice}</Alert>}
     {/* While the review dialog is open it shows the error itself. */}
     {error && !review && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
     {outboxUnreadable && <Alert severity="warning" sx={{ mb: 2 }}>Saved payments on this device could not be read. They are left as they are, and payments to wallet identities cannot be saved until they can be read. Check Activity before sending again.</Alert>}
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.3fr) minmax(0, .9fr)' }, gap: 3, alignItems: 'start' }}>
       <Paper elevation={0} sx={card}>
-        <Tabs value={tab} onChange={(_, value) => { setTab(value); setError('') }} variant="fullWidth" sx={{ mb: 3, borderBottom: '1px solid', borderColor: 'divider' }} aria-label="Payment options"><Tab label="Send" value="send" icon={<ArrowOutwardOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /><Tab label="Receive" value="receive" icon={<ArrowDownwardOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /><Tab label="Nearby" value="nearby" icon={<QrCodeScannerOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /></Tabs>
+        <Tabs value={tab} onChange={(_, value) => { setTab(value); setError('') }} variant="fullWidth" sx={{ mb: 3, borderBottom: '1px solid', borderColor: 'divider' }} aria-label="Payment options"><Tab label="Send" value="send" icon={<ArrowOutwardOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /><Tab label="Receive" value="receive" icon={<ArrowDownwardOutlined sx={{ fontSize: 19 }} />} iconPosition="start" /></Tabs>
         {tab === 'send' && <Stack spacing={3}>
-          <Box><Typography variant="h6" sx={{ fontWeight: 700 }}>Who are we paying?</Typography><Typography color="text.secondary" variant="body2" sx={{ mt: .5 }}>Search for a person, or paste an identity key, payment link, or BSV address.</Typography></Box>
-          <Autocomplete freeSolo options={recipientOptions} loading={identitySearch.isLoading} inputValue={recipientLabel || recipient} value={null} filterOptions={options => options} getOptionLabel={(option: any) => typeof option === 'string' ? option : option.name || short(option.identityKey)} onInputChange={changeRecipient} onChange={(_, value) => { if (value && typeof value !== 'string') { setRecipient(value.identityKey); setRecipientLabel(value.name || short(value.identityKey)) } }} noOptionsText="Enter an identity key or address" renderOption={(props, option) => <li {...props} key={option.identityKey}><Avatar src={option.avatarURL} sx={{ width: 34, height: 34, mr: 1.5, bgcolor: 'primary.light' }}>{(option.name || option.identityKey).slice(0, 2).toUpperCase()}</Avatar><Box><Typography variant="body2" sx={{ fontWeight: 650 }}>{option.name || short(option.identityKey)}</Typography><Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{[option.badgeLabel, option.name ? short(option.identityKey) : ''].filter(Boolean).join(' · ') || 'Identity key'}</Typography></Box></li>} renderInput={params => <TextField {...params} label="Recipient" placeholder="Name, @handle, email, or identity key" error={!!recipient && !target && looksLikeCode} helperText={recipientLabel ? `Wallet identity · ${short(recipient)}` : target ? target.kind === 'identity' ? 'Wallet payment' : 'Address payment · sent on the BSV network' : recipient ? looksLikeCode ? targetError : 'Select a person from the search results, or paste their identity key.' : undefined} InputProps={{ ...params.InputProps, endAdornment: <>{identitySearch.isLoading && <CircularProgress size={18} />}{params.InputProps.endAdornment}</> }} />} />
-          <Stack direction="row" spacing={1}><Button variant="outlined" sx={{ flex: 1 }} startIcon={<NearMeOutlined />} onClick={() => { setTab('nearby'); setError('') }}>Pay someone nearby</Button><IconButton aria-label="Scan a payment code" title="Scan a payment code" onClick={() => setScan(true)} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}><QrCodeScannerOutlined /></IconButton></Stack>
-          <AmountInput valueSats={sendAmount} onChangeSats={setAmount} label="Amount" fullWidth disabled={fixedAmount !== undefined} helperText={fixedAmount !== undefined ? 'This amount comes from the recipient’s payment request.' : 'Network fees are added when the payment is created.'} />
+          <Autocomplete freeSolo options={recipientOptions} loading={identitySearch.isLoading} inputValue={recipientLabel || recipient} value={null} filterOptions={options => options} getOptionLabel={(option: any) => typeof option === 'string' ? option : option.name || short(option.identityKey)} onInputChange={changeRecipient} onChange={(_, value) => { if (value && typeof value !== 'string') { setRecipient(value.identityKey); setRecipientLabel(value.name || short(value.identityKey)) } }} noOptionsText="Enter an identity key or address" renderOption={(props, option) => <li {...props} key={option.identityKey}><Avatar src={option.avatarURL} sx={{ width: 34, height: 34, mr: 1.5, bgcolor: 'primary.light' }}>{(option.name || option.identityKey).slice(0, 2).toUpperCase()}</Avatar><Box><Typography variant="body2" sx={{ fontWeight: 650 }}>{option.name || short(option.identityKey)}</Typography><Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{[option.badgeLabel, option.name ? short(option.identityKey) : ''].filter(Boolean).join(' · ') || 'Identity key'}</Typography></Box></li>} renderInput={params => <TextField {...params} label="Recipient" placeholder="Name, @handle, email, or identity key" error={!!recipient && !target && looksLikeCode} helperText={recipientLabel ? short(recipient) : recipient && !target ? looksLikeCode ? targetError : 'Choose a person from the list, or paste their identity key.' : 'A name, identity key, payment link, or BSV address.'} InputProps={{ ...params.InputProps, endAdornment: <>{identitySearch.isLoading && <CircularProgress size={18} />}{params.InputProps.endAdornment}<IconButton aria-label="Scan a payment code" title="Scan a payment code" edge="end" onClick={() => setScan(true)}><QrCodeScannerOutlined /></IconButton></> }} />} />
+          <AmountInput valueSats={sendAmount} onChangeSats={setAmount} label="Amount" fullWidth disabled={fixedAmount !== undefined} helperText={fixedAmount !== undefined ? 'Set by the recipient’s payment link.' : undefined} />
           {target?.kind === 'identity' && identityIssue && <Alert severity="warning">{identityIssue}</Alert>}
           <Button variant="contained" size="large" endIcon={<ArrowOutwardOutlined />} disabled={!target || !validAmount(sendAmount) || busy || switchingNetwork || !identity || target.kind === 'identity' && !!identityIssue} onClick={() => { setNotice(''); setError(''); setReview({ target, amount: sendAmount!, name: recipientLabel || short(target.recipient) }) }}>Review payment</Button>
         </Stack>}
         {tab === 'receive' && <Stack spacing={3}>
           <ToggleButtonGroup fullWidth exclusive value={receiveKind} onChange={(_, value) => { if (value) setReceiveKind(value) }} aria-label="Receive payment type"><ToggleButton value="wallet">Wallet payment</ToggleButton><ToggleButton value="address">BSV address</ToggleButton></ToggleButtonGroup>
           {receiveKind === 'address' ? identity && <AddressReceive key={`${identity}:${chain}`} identity={identity} onSuccess={notify} /> : <>
-            <Box><Typography variant="h6" sx={{ fontWeight: 700 }}>Your wallet, one scan away</Typography><Typography color="text.secondary" variant="body2" sx={{ mt: .5 }}>Share your payment link with another BSV Wallet. The sender can pay your identity directly.</Typography></Box>
+            {identity && <Box sx={{ textAlign: 'center' }}>
+              <Box sx={{ display: 'inline-flex', p: 1.5, bgcolor: '#fff', borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>{receiveLink ? <QRCodeSVG value={receiveLink} size={240} level="M" marginSize={2} aria-label="Your payment QR code" /> : <Box sx={{ width: 240, height: 240, display: 'grid', placeItems: 'center', px: 3 }}><Typography color="text.secondary" variant="body2">Enter a positive amount or leave it blank.</Typography></Box>}</Box>
+              {identityLabel && <Typography sx={{ fontWeight: 700, mt: 2 }}>{identityLabel}</Typography>}
+              <Typography variant="body2" sx={{ wordBreak: 'break-all', fontFamily: 'monospace', fontSize: 12, mt: identityLabel ? .5 : 2, color: 'text.secondary' }}>{identity}</Typography>
+              <Stack direction="row" spacing={1} justifyContent="center" sx={{ mt: 1.5 }}><Button startIcon={<ContentCopyOutlined />} onClick={async () => { try { await navigator.clipboard.writeText(identity); setKeyCopied(true); setTimeout(() => setKeyCopied(false), 2000) } catch { setError('Copy failed. Select your identity key above and copy it.') } }}>{keyCopied ? 'Identity key copied' : 'Copy identity key'}</Button><Button startIcon={<ContentCopyOutlined />} disabled={!receiveLink} onClick={async () => { try { await navigator.clipboard.writeText(receiveLink); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { setError('Copy failed. Select your identity key above and copy it.') } }}>{copied ? 'Payment link copied' : 'Copy payment link'}</Button></Stack>
+            </Box>}
+            <AmountInput fullWidth label="Amount to request (optional)" valueSats={requestAmount} onChangeSats={setRequestAmount} helperText="Leave blank to let the sender choose." />
             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, p: 2, border: '1px solid', borderColor: live.tone === 'on' ? 'success.main' : 'divider', borderRadius: 2.5 }} aria-live="polite"><Box sx={{ width: 10, height: 10, mt: .75, borderRadius: '50%', flexShrink: 0, bgcolor: LIVE_DOT[live.tone] }} /><Box sx={{ flex: 1, minWidth: 0 }}><Typography sx={{ fontWeight: 700 }}>{live.title}</Typography>{live.body && <Typography variant="body2" color="text.secondary" sx={{ mt: .25 }}>{live.body}</Typography>}</Box>{(live.tone === 'off' || live.tone === 'error') && <Button size="small" onClick={() => history.push('/dashboard/settings/advanced')}>Settings</Button>}</Box>
-            {identity && <Box sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 2 }}><Typography variant="caption" color="text.secondary">Your payment identity</Typography>{identityLabel && <Typography sx={{ fontWeight: 700 }}>{identityLabel}</Typography>}<Typography variant="body2" sx={{ wordBreak: 'break-all', fontFamily: 'monospace', fontSize: 12, mt: .5 }}>{identity}</Typography><Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: .5 }}>Anyone with this key can pay you live while this app is open.</Typography><Button fullWidth startIcon={<ContentCopyOutlined />} onClick={async () => { try { await navigator.clipboard.writeText(identity); setKeyCopied(true); setTimeout(() => setKeyCopied(false), 2000) } catch { setError('Copy failed. Select your identity key above and copy it.') } }}>{keyCopied ? 'Identity key copied' : 'Copy identity key'}</Button></Box>}
-            {!messageBoxAvailable ? <Alert severity="info">Connect a message box in Settings to share a payment link and receive while this app is closed.</Alert> : <>
-              <AmountInput fullWidth label="Amount to request (optional)" valueSats={requestAmount} onChangeSats={setRequestAmount} helperText="Leave blank to let the sender choose." />
-              <Box sx={{ textAlign: 'center', py: 1 }}>{receiveLink ? <QRCodeSVG value={receiveLink} size={240} level="M" marginSize={2} /> : <Typography color="text.secondary">{requestAmount !== null && !validAmount(requestAmount) ? 'Enter a positive amount or leave it blank.' : 'Your payment link is not ready yet.'}</Typography>}</Box>
-              <Button fullWidth variant="outlined" startIcon={<ContentCopyOutlined />} disabled={!receiveLink} onClick={async () => { try { await navigator.clipboard.writeText(receiveLink); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { setError('Copy failed. Select your identity key above and copy it.') } }}>{copied ? 'Payment link copied' : 'Copy payment link'}</Button>
+            {!messageBoxAvailable ? <Alert severity="info">Connect a message box in Settings to receive payments while this app is closed.</Alert> : <>
               {!isHostAnointed && <Alert severity="info" action={<Button size="small" disabled={anointmentLoading || switchingNetwork} onClick={async () => { let release: (() => void) | undefined; try { release = beginUserWalletOperation(); await anointCurrentHost(); notify('Your wallet can now be discovered for payments.') } catch (error) { setError((error as Error).message) } finally { release?.() } }}>Enable</Button>}>Enable wallet discovery to receive payments from people who only have your identity key. A network fee applies.</Alert>}
               <Divider /><Box component="details"><Typography component="summary" sx={{ cursor: 'pointer', fontWeight: 650 }}>Send someone a payment request</Typography><Stack spacing={2} sx={{ pt: 2 }}><TextField label="Their identity key" fullWidth value={requestRecipient} onChange={event => setRequestRecipient(event.target.value)} /><TextField label="What is it for?" fullWidth value={requestDescription} inputProps={{ maxLength: 200 }} onChange={event => setRequestDescription(event.target.value)} /><Button variant="outlined" disabled={!validAmount(requestAmount) || !requestRecipient || busy || switchingNetwork} onClick={sendRequest}>{busy ? 'Sending…' : 'Send request · expires in 24 hours'}</Button><Typography variant="caption" color="text.secondary">The recipient must allow payment requests from your identity. Completed payments appear in your inbox.</Typography></Stack></Box>
             </>}
           </>}
         </Stack>}
-        {tab === 'nearby' && identity && <NearbyPayments key={`${identity}:${chain}:${nearbyRequest}`} identity={identity} onSuccess={notify} initialRequest={nearbyRequest && !isDirectCode(nearbyRequest) ? nearbyRequest : undefined} initialDirectCode={isDirectCode(nearbyRequest) ? nearbyRequest : undefined} outbox={nearbyOutbox} />}
       </Paper>
       <Stack spacing={3}>
         {pending.length > 0 && <Paper elevation={0} sx={card}><Typography variant="h6" sx={{ fontWeight: 700 }}>Saved payments</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: .5, mb: 2 }}>Retry delivery of the original payment, through the message box or directly. Each retry uses the same transaction.</Typography>{pending.map(payment => <Box key={payment.txid} sx={{ py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}><Typography sx={{ fontWeight: 700 }}><AmountDisplay>{payment.amount}</AmountDisplay></Typography><Typography color="text.secondary" variant="caption">To {short(payment.recipient)} · {payment.via === 'direct' ? 'sent directly' : 'sent via message box'}</Typography><Stack direction="row" spacing={1} useFlexGap sx={{ mt: 1, flexWrap: 'wrap' }}><Button size="small" variant="outlined" disabled={busy || !messageBoxAvailable || switchingNetwork} onClick={async () => { if (mutationLock.current) return; mutationLock.current = true; setBusy(true); try { await deliver(payment); notify('Saved payment delivered.'); void refresh() } catch (error) { setError((error as Error).message || 'Delivery is still pending.') } finally { mutationLock.current = false; setBusy(false) } }}>Retry via message box</Button>{!payment.request && <Button size="small" variant="outlined" disabled={busy || !!deliveryProblem('direct', { messageBoxAvailable, directPay }) || switchingNetwork} onClick={() => void retryDirect(payment)}>Retry directly</Button>}</Stack></Box>)}</Paper>}

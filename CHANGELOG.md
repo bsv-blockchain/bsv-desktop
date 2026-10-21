@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Features
+
+- Rabin signing module (`p rabin`, BRC-206, from `@bsv/rabin-permission-module`): apps can obtain a wallet-held Rabin public key and Rabin signatures over arbitrary data through `encrypt`, for contracts that check signatures in Bitcoin Script. The keys are derived from the wallet's own keys and never leave the wallet. Security level 0 requests run without a prompt; levels 1 and 2 show a prompt naming the app, protocol, key and, for signing, the data's size and SHA-256, and an approval lasts 5 minutes for that app and protocol. Privileged Rabin keys are not supported yet and are refused. Permission modules are now disposed when the wallet closes or logs out, so cached keys are dropped.
+
 ### Bug Fixes
 
 - The receiving wallet now broadcasts an incoming payment while it takes it in. Wallet Toolbox's `internalizeAction` is meant to post an unproven transaction that is new to the wallet before crediting it, but up to 2.14.6 that step was gated on an `isNew` flag that storage never set, so it never ran: the payee only queued the transaction, and the payee's and payer's background monitors each sent it seconds later. `@bsv/wallet-toolbox` and `@bsv/wallet-toolbox-client` are now 2.14.9, where the payee posts the transaction before a live payment is acknowledged. If the network refuses it (a double spend or an invalid transaction), the payment is not credited and the payer is told it was rejected. If no broadcaster can be reached, the toolbox credits nothing either, so the live payment is kept on this device and acknowledged as received, like a payment that arrives while the network is down, and the wallet takes it on a later retry. The payer's own later post of the same transaction is accepted as a re-submission. Local wallet databases gain an `internalize_receipts` table the first time they open.

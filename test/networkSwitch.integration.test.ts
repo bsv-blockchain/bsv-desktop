@@ -67,7 +67,7 @@ beforeEach(() => {
         throw new Error(`Unexpected wallet data action: ${action}`)
       }) },
       storage: {
-        initializeServices: vi.fn(async (identity: string, chain: WalletNetwork, settings: NetworkSettings) => {
+        initializeServices: vi.fn(async (_identity: string, chain: WalletNetwork, settings: NetworkSettings, callbackToken: string) => {
           transitions.push(`open:${chain}`)
           started.push({ chain, settings })
           if (chain === 'test' && targetGate) await targetGate
@@ -80,7 +80,7 @@ beforeEach(() => {
             await storage.makeAvailable()
             stores.set(chain, storage)
           }
-          stores.get(chain)!.setServices(createServices(chain, identity, settings))
+          stores.get(chain)!.setServices(createServices(chain, callbackToken, settings))
           return { success: true }
         }),
         makeAvailable: vi.fn(async (_identity: string, chain: WalletNetwork) => ({ success: true, settings: await stores.get(chain)!.makeAvailable() })),

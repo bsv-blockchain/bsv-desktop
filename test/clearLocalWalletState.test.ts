@@ -38,7 +38,10 @@ const paymentState: Record<string, string> = {
   'direct-pay-seen-v1:abc': '["k1"]',
   ...keptPayments,
   'direct-pay-retry-v2:x': '[]', // kept on logout like all direct-pay state, but not a kept-payment list
-  'bsv-desktop-direct-pay-v1': '{"receiveEnabled":true}'
+  'bsv-desktop-direct-pay-v1': '{"receiveEnabled":true}',
+  'bsv-desktop-direct-pay-v2': '{"receiveEnabled":false}',
+  'bsv-desktop-direct-pay-v3': '{"receiveEnabled":false,"signaling":"messagebox"}',
+  [`messagebox-received-v1:${identity}:main`]: '[]'
 }
 const walletState: Record<string, string> = {
   snap: 'AAAA',
@@ -48,7 +51,8 @@ const walletState: Record<string, string> = {
   'peerpay-outbox-v2:x': '[]',
   'nearby-payment-v2:x': '{}',
   'direct-payments-cache': '{}',
-  'bsv-desktop-direct-pay-v10': '{}'
+  'bsv-desktop-direct-pay-v10': '{}',
+  'messagebox-received-v2:x': '[]'
 }
 
 let local: Map<string, string>
@@ -165,7 +169,7 @@ describe('direct payments follow the wallet', () => {
     vi.spyOn(service.peerPay, 'replaceClient').mockImplementation(async () => {
       ;(service.peerPay as any)._client = replacement
     })
-    local.set('bsv-desktop-direct-pay-v1', JSON.stringify({ receiveEnabled: true }))
+    local.set('bsv-desktop-direct-pay-v3', JSON.stringify({ receiveEnabled: true, signaling: 'messagebox' }))
 
     await service.updateMessageBoxUrl('https://box.example.com/')
 
@@ -190,5 +194,45 @@ describe('direct payments follow the wallet', () => {
 
     expect(start).toHaveBeenCalledOnce()
     expect(start.mock.calls[0][0]).toMatchObject({ peerPayClient: null, messageBoxUrl: undefined })
+  })
+})
+
+describe('message box payments are received for the open wallet', () => {
+  it('stop on logout, before the message box client is reset', () => {
+    const service = readyService()
+    const order: string[] = []
+    vi.spyOn(service.messageBoxReceiver, 'stop').mockImplementation(async () => { order.push('receiver') })
+    vi.spyOn(service.peerPay, 'reset').mockImplementation(() => { order.push('peerPay') })
+    service.logout()
+
+    expect(order).toEqual(['receiver', 'peerPay'])
+  })
+
+  it('start with the new message box client and host when the message box changes', async () => {
+    const service = readyService()
+    vi.spyOn(service.directPay, 'start').mockResolvedValue()
+    const start = vi.spyOn(service.messageBoxReceiver, 'start').mockResolvedValue()
+    const replacement = { name: 'new peer pay client' }
+    vi.spyOn(service.peerPay, 'replaceClient').mockImplementation(async () => {
+      ;(service.peerPay as any)._client = replacement
+    })
+
+    await service.updateMessageBoxUrl('https://box.example.com/')
+
+    expect(start).toHaveBeenCalledOnce()
+    expect(start.mock.calls[0][0]).toEqual({ client: replacement, host: service.messageBoxUrl, identity, chain: 'main' })
+  })
+
+  it('stop when the message box is removed', async () => {
+    const service = readyService()
+    vi.spyOn(service.directPay, 'start').mockResolvedValue()
+    const start = vi.spyOn(service.messageBoxReceiver, 'start').mockResolvedValue()
+    const stop = vi.spyOn(service.messageBoxReceiver, 'stop')
+    vi.spyOn(service.peerPay, 'destroyClient').mockResolvedValue()
+
+    await service.removeMessageBoxUrl()
+
+    expect(start).not.toHaveBeenCalled()
+    expect(stop).toHaveBeenCalled()
   })
 })

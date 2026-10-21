@@ -15,6 +15,9 @@ import path from 'path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 const loop = { started: false, ended: false, fail: (_error: Error) => {} }
+/** The callback tokens the worker built its Services and its SSE wiring with. */
+const tokens = { services: [] as unknown[], sse: [] as unknown[] }
+const CALLBACK_TOKEN = '0123456789abcdef'.repeat(2)
 
 vi.mock('@bsv/wallet-toolbox', () => ({
   StorageKnex: class { setServices() {} },
@@ -34,12 +37,17 @@ vi.mock('@bsv/wallet-toolbox', () => ({
   }
 }))
 vi.mock('../electron/arcade', () => ({
-  arcadeCallbackToken: () => 'token',
-  createArcadeServices: () => ({ options: { arcadeUrl: 'http://127.0.0.1:9' } })
+  createArcadeServices: (_chain: string, callbackToken: unknown) => {
+    tokens.services.push(callbackToken)
+    return { options: { arcadeUrl: 'http://127.0.0.1:9' } }
+  }
 }))
 vi.mock('../electron/arcadeSse', () => ({
   arcadeSseCursorPath: () => path.join(os.tmpdir(), 'unused-cursor.json'),
-  createArcadeMonitorOptions: () => ({}),
+  createArcadeMonitorOptions: (_chain: string, _storage: unknown, _services: unknown, wiring: { callbackToken: unknown }) => {
+    tokens.sse.push(wiring.callbackToken)
+    return {}
+  },
   startArcadeSsePump: () => () => {},
   tolerateTransientArcadeRejections: () => true
 }))
@@ -52,7 +60,8 @@ const startMessage = {
     chain: 'test',
     databasePath: path.join(os.tmpdir(), 'unused-monitor-worker.db'),
     feeRate: 100,
-    sseCursorPath: path.join(os.tmpdir(), 'unused-cursor.json')
+    sseCursorPath: path.join(os.tmpdir(), 'unused-cursor.json'),
+    callbackToken: CALLBACK_TOKEN
   }
 }
 
@@ -60,6 +69,7 @@ let restoreProcess = () => {}
 
 beforeEach(() => {
   Object.assign(loop, { started: false, ended: false })
+  Object.assign(tokens, { services: [], sse: [] })
   vi.resetModules()
 })
 
@@ -135,4 +145,16 @@ test('monitor-worker reports monitor-error and exits 1 when its running task loo
   expect(sent.map(m => m.type)).toEqual(['ready', 'monitor-started', 'monitor-error'])
   expect(sent[2]).toMatchObject({ error: 'task loop failed' })
   expect(exit).toHaveBeenCalledWith(1)
+})
+
+test('monitor-worker broadcasts and subscribes with the callback token it is started with', async () => {
+  const { handle, sent } = await loadWorker()
+
+  const running = handle(startMessage)
+  await vi.waitFor(() => expect(sent.map(m => m.type)).toContain('monitor-started'), { timeout: 5000 })
+
+  expect(tokens).toEqual({ services: [CALLBACK_TOKEN], sse: [CALLBACK_TOKEN] })
+
+  await handle({ type: 'stop' })
+  await running
 })

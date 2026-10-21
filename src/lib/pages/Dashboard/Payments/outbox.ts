@@ -4,7 +4,7 @@
  * directly. They survive logout (see WalletService).
  *
  * A delivery can finish 30–75 s after it began, in the background, after other flows (Send,
- * a retry, Nearby, a remounted Payments page) saved rows of their own. So every write starts
+ * a retry, a remounted Payments page) saved rows of their own. So every write starts
  * from the rows stored at that moment, never from a copy read earlier: a stale copy would
  * drop rows saved since (and with them the only copy of a broadcast payment's token) or undo
  * another delivery's `delivered` flag. Each write is announced in this window, so every open

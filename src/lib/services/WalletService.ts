@@ -33,7 +33,7 @@ import {
   WalletSettingsManager,
   type WalletSettings,
 } from '@bsv/wallet-toolbox-client'
-import { createServices } from './createServices'
+import { createServices, deriveArcadeCallbackToken } from './createServices'
 import { setTxStatusScope } from '../txStatusScope'
 import {
   PrivateKey,
@@ -47,6 +47,7 @@ import { toast } from 'react-toastify'
 import { EventEmittable } from './EventEmittable'
 import { PermissionQueueManager } from './PermissionQueueManager'
 import { PeerPayManager } from './PeerPayManager'
+import { MessageBoxAutoReceiver, RECEIVED_RECORDS_PREFIX } from './MessageBoxAutoReceiver'
 import { DirectPayManager } from './DirectPayManager'
 import { StorageElectronIPC } from '../StorageElectronIPC'
 import { WalletDataStorageManager } from '../walletPortability/WalletDataStorageManager'
@@ -62,7 +63,7 @@ import {
   seedDisplayPreferences,
   withDisplayPreferences,
 } from '../utils/displayPreferences'
-import { DIRECT_PAY_SETTINGS_KEY, loadDirectPaySettings } from '../utils/directPaySettings'
+import { ALL_DIRECT_PAY_SETTINGS_KEYS, loadDirectPaySettings } from '../utils/directPaySettings'
 import { KEPT_DIRECT_PAYMENTS_PREFIX } from '../pages/Dashboard/Payments/directPayments'
 import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
@@ -72,12 +73,13 @@ import { isHttpBridgePaused, setHttpBridgePaused, walletChangeBlocker } from './
 import { clearWalletForHttpRoute } from '../../onWalletReady'
 
 // Device-local payment state a logout must not drop: the MessageBox and nearby outboxes,
-// and the direct-pay settings plus its retry and idempotency lists. Removing the wallet
+// the direct-pay settings plus its retry and idempotency lists, and the record of message
+// box payments received automatically. Removing the wallet
 // from the device wipes them with everything else, except the keys below.
-const PAYMENT_STATE_KEY_PREFIXES = ['peerpay-outbox-v1:', 'nearby-payment-v1:', 'direct-pay-']
+const PAYMENT_STATE_KEY_PREFIXES = ['peerpay-outbox-v1:', 'nearby-payment-v1:', 'direct-pay-', RECEIVED_RECORDS_PREFIX]
 
 function isPaymentStateKey(key: string): boolean {
-  return key === DIRECT_PAY_SETTINGS_KEY || PAYMENT_STATE_KEY_PREFIXES.some(prefix => key.startsWith(prefix))
+  return (ALL_DIRECT_PAY_SETTINGS_KEYS as readonly string[]).includes(key) || PAYMENT_STATE_KEY_PREFIXES.some(prefix => key.startsWith(prefix))
 }
 
 // Kept even when the wallet is removed: payment requests, and direct payments this device
@@ -145,6 +147,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   readonly permissionQueue: PermissionQueueManager
   readonly peerPay: PeerPayManager
   readonly directPay: DirectPayManager
+  /** Takes message box payments into the open wallet without a click. */
+  readonly messageBoxReceiver: MessageBoxAutoReceiver
 
   // ---- Lifecycle ----
   private _lifecycle: WalletLifecycle = 'unconfigured'
@@ -198,6 +202,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     this.permissionQueue = new PermissionQueueManager()
     this.peerPay = new PeerPayManager()
     this.directPay = new DirectPayManager()
+    this.messageBoxReceiver = new MessageBoxAutoReceiver()
 
     // Propagate sub-service changes as stateChanged
     this.permissionQueue.on('snapshot', () => this._emitState())
@@ -533,6 +538,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     // Detach old balances/managers before sub-services emit the new chain.
     this._emitState()
     const cleanup = await Promise.allSettled([
+      // First: it stops at once, before suspendClient() closes the websocket it listens on.
+      this.messageBoxReceiver.stop(),
       this.peerPay.suspendClient(),
       this.directPay.stop(),
       Promise.resolve().then(() => previousManager?.destroy?.()),
@@ -746,6 +753,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
 
     try {
       const cleanup = await Promise.allSettled([
+        // First: it stops at once, before suspendClient() closes the websocket it listens on.
+        this.messageBoxReceiver.stop(),
         this.peerPay.suspendClient(),
         this.directPay.stop(),
         (async () => {
@@ -763,8 +772,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while closing storage')
       const chain = this._selectedNetwork
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey))
+      const callbackToken = deriveArcadeCallbackToken(keyDeriver)
       const serviceSettings = this._networkSettings[chain]
-      const services = createServices(chain, keyDeriver.identityKey, serviceSettings)
+      const services = createServices(chain, callbackToken, serviceSettings)
 
       let binding: { preferLocal: boolean } | undefined
       try {
@@ -785,7 +795,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       if (this._useRemoteStorage) {
         activeStorage = null // Created after wallet
       } else {
-        const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain, serviceSettings)
+        const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain, serviceSettings, callbackToken)
         electronStorage.setServices(services as any)
         openedLocal = { identityKey: keyDeriver.identityKey, chain }
         await electronStorage.initializeBackendServices()
@@ -873,6 +883,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       // awaited: receiving through a relay can take seconds to connect and the wallet is
       // usable without it. Failures show in the direct-pay status.
       this._startDirectPay()
+      this._startMessageBoxReceiver()
       // Clear the initializing flag BEFORE the ready emit so React (e.g. Greeter)
       // does not stay stuck on the non-interactive initializingBackendServices screen.
       // Previously this was only cleared in `finally` without an emit, so the UI
@@ -894,6 +905,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       console.error('[WalletService] _buildWallet failed:', error)
       clearWalletForHttpRoute()
       this.permissionQueue.setPermissionsManager(null)
+      await this.messageBoxReceiver.stop()
       await this.peerPay.suspendClient().catch(() => {})
       await this.directPay.stop()
       this._managers = walletManager ? { walletManager } : {}
@@ -1095,7 +1107,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       const identityKey = (storageManager as any)?._authId?.identityKey
       if (!identityKey) throw new Error('Could not get identity key from wallet')
       const electronStorage = new StorageElectronIPC(identityKey, this._selectedNetwork, this._networkSettings[this._selectedNetwork])
-      const services = createServices(this._selectedNetwork, identityKey, this._networkSettings[this._selectedNetwork])
+      // The wallet's own Services, which carry its callback token. A backup
+      // never starts backend services, so a fresh instance needs none.
+      const services = (wallet as any).services ?? createServices(this._selectedNetwork, undefined, this._networkSettings[this._selectedNetwork])
       electronStorage.setServices(services as any)
       await electronStorage.makeAvailable()
       backupProvider = electronStorage
@@ -1271,6 +1285,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     }
     // Direct payments signal through the message box client, so they follow it.
     this._startDirectPay()
+    this._startMessageBoxReceiver()
 
     const snapshot = this.saveEnhancedSnapshot({ messageBoxUrl: trimmedUrl, useMessageBox: true })
     secrets.setSnapshot(snapshot)
@@ -1279,10 +1294,12 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   }
 
   async removeMessageBoxUrl(): Promise<void> {
+    await this.messageBoxReceiver.stop()
     await this.peerPay.destroyClient(this._messageBoxUrl)
     this._messageBoxUrl = MESSAGEBOX_HOST
     this._useMessageBox = false
     this._startDirectPay()
+    this._startMessageBoxReceiver()
 
     const snapshot = this.saveEnhancedSnapshot()
     secrets.setSnapshot(snapshot)
@@ -1405,6 +1422,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     this._snapshotLoaded = false
     this._activeProfile = null
     this._mnemonicProfiles = defaultMnemonicProfiles()
+    void this.messageBoxReceiver.stop()
     this.peerPay.reset()
     void this.directPay.stop()
   }
@@ -1430,6 +1448,20 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       messageBoxUrl: this._useMessageBox ? this._messageBoxUrl : undefined,
       settings: loadDirectPaySettings(),
     })
+  }
+
+  /**
+   * Starts taking message box payments for the open wallet with the current message box
+   * client, or restarts with a new one; stops when there is no wallet or message box. Never throws.
+   */
+  private _startMessageBoxReceiver() {
+    const session = this.walletData
+    const client = this.peerPay.getSnapshot().peerPayClient
+    if (!this._managers.permissionsManager || !session || !client || !this._useMessageBox || !this._messageBoxUrl) {
+      void this.messageBoxReceiver.stop()
+      return
+    }
+    void this.messageBoxReceiver.start({ client, host: this._messageBoxUrl, identity: session.identityKey, chain: session.chain })
   }
 
   private _tryAutoInitialize() {

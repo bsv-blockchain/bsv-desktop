@@ -29,6 +29,7 @@ beforeEach(() => {
 
 const stored = {
   receiveEnabled: false,
+  shareLocalAddress: false,
   signaling: 'relay' as const,
   relayUrl: 'wss://relay.example.com',
   stunUrls: ['stun:stun.example.com:3478'],
@@ -38,10 +39,12 @@ const stored = {
 describe('direct-pay settings form', () => {
   it('shows the defaults with the STUN servers comma-separated and no TURN server', () => {
     expect(formFromSettings(DEFAULT_DIRECT_PAY_SETTINGS)).toEqual({
-      receiveEnabled: false,
-      signaling: 'messagebox',
-      relayUrl: '',
-      stunUrls: 'stun:stun.l.google.com:19302, stun:stun.cloudflare.com:3478',
+      receiveEnabled: true,
+      shareLocalAddress: true,
+      signaling: 'relay',
+      relayUrl: 'wss://webrtpay-relay-us-1.bsvblockchain.tech',
+      stunUrls:
+        'stun:stun-us-1.bsvb.tech:3478, stun:stun.l.google.com:19302, stun:stun.cloudflare.com:3478',
       turnUrls: '',
       turnUsername: '',
       turnCredential: ''
@@ -51,6 +54,7 @@ describe('direct-pay settings form', () => {
   it('shows a stored relay and TURN server', () => {
     expect(formFromSettings(stored)).toEqual({
       receiveEnabled: false,
+      shareLocalAddress: false,
       signaling: 'relay',
       relayUrl: 'wss://relay.example.com',
       stunUrls: 'stun:stun.example.com:3478',
@@ -66,8 +70,9 @@ describe('direct-pay settings form', () => {
       receiveEnabled: true,
       stunUrls: ' stun:a.example:3478 ,stun:b.example:3478,, '
     })
-    expect(Object.keys(settings).sort()).toEqual(['receiveEnabled', 'relayUrl', 'signaling', 'stunUrls', 'turn'])
+    expect(Object.keys(settings).sort()).toEqual(['receiveEnabled', 'relayUrl', 'shareLocalAddress', 'signaling', 'stunUrls', 'turn'])
     expect(settings.receiveEnabled).toBe(true)
+    expect(settings.shareLocalAddress).toBe(false)
     expect(settings.signaling).toBe('relay')
     expect(settings.relayUrl).toBe('wss://relay.example.com')
     expect(settings.stunUrls.map(url => url.trim()).filter(Boolean)).toEqual(['stun:a.example:3478', 'stun:b.example:3478'])
@@ -172,6 +177,9 @@ describe('direct-pay status chip', () => {
     [{ status: 'starting', via: 'relay', notice: '' }, 'starting', 'info'],
     [{ status: 'online', via: 'messagebox', notice: '' }, 'online_messagebox', 'success'],
     [{ status: 'online', via: 'relay', notice: '' }, 'online_relay', 'success'],
+    [{ status: 'online', via: 'messagebox', relayUnreachable: false, notice: '' }, 'online_messagebox', 'success'],
+    // Receiving through the message box while the relay the settings choose cannot be reached.
+    [{ status: 'online', via: 'messagebox', relayUnreachable: true, notice: '' }, 'online_fallback', 'warning'],
     // Real errors: relay signaling without an address (Ruling 14), or receiving failed (the relay is down).
     [{ status: 'error', via: null, notice: '' }, 'failed', 'error'],
     [{ status: 'error', via: 'relay', notice: '' }, 'failed', 'error'],

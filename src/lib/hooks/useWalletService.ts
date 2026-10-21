@@ -15,6 +15,7 @@ import { WalletService, WalletServiceSnapshot } from '../services/WalletService'
 import type { QueueSnapshot } from '../services/PermissionQueueManager'
 import type { PeerPaySnapshot } from '../services/PeerPayManager'
 import type { DirectPaySnapshot } from '../services/DirectPayManager'
+import type { ReceivedRecord } from '../services/MessageBoxAutoReceiver'
 import type { DirectPaySettings } from '../utils/directPaySettings'
 import { DEFAULT_PERMISSIONS_CONFIG } from '../WalletContext'
 import { isAppWalletReady } from '../services/appWalletBridge'
@@ -30,6 +31,7 @@ let _walletSnapshot: WalletServiceSnapshot | null = null
 let _queueSnapshot: QueueSnapshot | null = null
 let _peerPaySnapshot: PeerPaySnapshot | null = null
 let _directPaySnapshot: DirectPaySnapshot | null = null
+let _receivedSnapshot: ReceivedRecord[] | null = null
 
 export function getWalletService(): WalletService {
   if (!_walletServiceInstance) {
@@ -54,6 +56,7 @@ export function getWalletService(): WalletService {
     _queueSnapshot = _walletServiceInstance.permissionQueue.getSnapshot()
     _peerPaySnapshot = _walletServiceInstance.peerPay.getSnapshot()
     _directPaySnapshot = _walletServiceInstance.directPay.getSnapshot()
+    _receivedSnapshot = _walletServiceInstance.messageBoxReceiver.records()
   }
   return _walletServiceInstance
 }
@@ -65,6 +68,7 @@ export function resetWalletServiceInstance() {
   _queueSnapshot = null
   _peerPaySnapshot = null
   _directPaySnapshot = null
+  _receivedSnapshot = null
 }
 
 // ------------------------------------------------------------------
@@ -126,6 +130,18 @@ function getDirectPaySnapshot(): DirectPaySnapshot {
   return _directPaySnapshot!
 }
 
+function subscribeToReceived(callback: () => void): () => void {
+  const svc = getWalletService()
+  const handler = (records: ReceivedRecord[]) => { _receivedSnapshot = records; callback() }
+  svc.messageBoxReceiver.on('changed', handler)
+  return () => svc.messageBoxReceiver.off('changed', handler)
+}
+
+function getReceivedSnapshot(): ReceivedRecord[] {
+  getWalletService()
+  return _receivedSnapshot!
+}
+
 // ------------------------------------------------------------------
 // Hook
 // ------------------------------------------------------------------
@@ -150,6 +166,7 @@ export function useWalletService() {
   const queueState = useSyncExternalStore(subscribeToQueue, getQueueSnapshot)
   const peerPayState = useSyncExternalStore(subscribeToPeerPay, getPeerPaySnapshot)
   const directPayState = useSyncExternalStore(subscribeToDirectPay, getDirectPaySnapshot)
+  const messageBoxReceived = useSyncExternalStore(subscribeToReceived, getReceivedSnapshot)
   const [recentAppHistory, setRecentAppHistory] = useState<{ profileKey: string; apps: RecentApp[] }>({ profileKey: '', apps: [] })
   const profileStorageKey = walletState.activeProfile?.id ? Utils.toBase64(walletState.activeProfile.id) : ''
   const recentApps = recentAppHistory.profileKey === profileStorageKey ? recentAppHistory.apps : []
@@ -333,6 +350,7 @@ export function useWalletService() {
     (settings: DirectPaySettings) => svc.directPay.applySettings(settings),
     [svc]
   )
+  const retryMessageBoxPayment = useCallback((messageId: string) => svc.messageBoxReceiver.retry(messageId), [svc])
 
   const setConfigStatus = useCallback((status: any) => {
     // Bridging shim: some UI still calls setConfigStatus directly.
@@ -465,6 +483,9 @@ export function useWalletService() {
     // Direct (peer-to-peer) payments
     directPay: directPayState,
     applyDirectPaySettings,
+    // Message box payments received automatically
+    messageBoxReceived,
+    retryMessageBoxPayment,
     // Service instance for advanced use
     walletService: svc,
   }

@@ -3,17 +3,32 @@
  * localStorage like the display preferences. They are not part of the wallet,
  * so they work before sign-in and survive logout (see WalletService).
  *
- * Receiving is off by default: while it is on, any wallet that knows the
- * identity key can learn this device's public IP address and when the wallet is
- * unlocked by starting a connection, without paying (audit F14). The settings
- * are one per device, so receiving answers for every wallet profile on it.
+ * Receiving is on by default (the user's decision, 2026-10-18), and the switch
+ * is in Settings. While it is on, any wallet that knows the identity key can
+ * learn this device's public IP address and when the wallet is unlocked by
+ * starting a connection, without paying (audit F14); that now applies by
+ * default. The settings are one per device, so receiving answers for every
+ * wallet profile on it.
+ * Wallets find each other through the public WebRTPay relay by default (the
+ * user's decision, 2026-10-19), with the message box as the fallback while the
+ * relay cannot be reached (see DirectPayManager). Settings saved before then are
+ * read once, while the v3 key is absent, with relay signaling and, when they had
+ * no relay address, the default one: v2 settings keep their receiving choice, v1
+ * settings (when receiving was off by default) are read with receiving on. From
+ * then on the v3 key holds the user's choice, message box signaling included.
  * Sending directly needs no setting, and reveals the payer's IP address to the
  * recipient's wallet. When two wallets cannot connect directly, a TURN server
  * may relay the encrypted connection; the carriers see who connects, their
  * addresses and when, never the payment.
+ * Sharing this device's local address is on by default (the user's decision,
+ * 2026-10-20: paying someone in the same office is common). Without it Chromium
+ * offers only mDNS names for this device, which wallets on the same network often
+ * cannot resolve, and many routers will not loop traffic back to their own public
+ * address. While it is on, the default-route LAN address and IPv6 address reach the
+ * other wallet inside the encrypted signal, and appear in face-to-face payment codes.
  */
 export interface DirectPaySettings {
-  /** Answer direct payments from other wallets. Off unless the user turns it on. */
+  /** Answer direct payments from other wallets. On unless the user turns it off. */
   receiveEnabled: boolean
   /** How the two wallets find each other before connecting. */
   signaling: 'messagebox' | 'relay'
@@ -21,19 +36,38 @@ export interface DirectPaySettings {
   relayUrl: string
   /** stun: / stuns: servers used to discover this device's public address. */
   stunUrls: string[]
+  /**
+   * Offer this device's local network address (and IPv6 address) to the other wallet, so
+   * wallets on the same network can connect. On unless the user turns it off.
+   */
+  shareLocalAddress: boolean
   /** Optional TURN server, for testing. */
   turn?: { urls: string; username: string; credential: string }
 }
 
-export const DIRECT_PAY_SETTINGS_KEY = 'bsv-desktop-direct-pay-v1'
+export const DIRECT_PAY_SETTINGS_KEY = 'bsv-desktop-direct-pay-v3'
+/** Read only while the v3 key is absent, with relay signaling forced (see the header). Never written. */
+export const V2_DIRECT_PAY_SETTINGS_KEY = 'bsv-desktop-direct-pay-v2'
+/** Read only while the v3 and v2 keys are absent, with relay signaling and receiving forced on. Never written. */
+export const V1_DIRECT_PAY_SETTINGS_KEY = 'bsv-desktop-direct-pay-v1'
+/** Every key direct-pay settings were ever stored under, newest first. */
+export const ALL_DIRECT_PAY_SETTINGS_KEYS = [DIRECT_PAY_SETTINGS_KEY, V2_DIRECT_PAY_SETTINGS_KEY, V1_DIRECT_PAY_SETTINGS_KEY] as const
+
+/** The public WebRTPay relay, the default way wallets find each other. */
+export const DEFAULT_RELAY_URL = 'wss://webrtpay-relay-us-1.bsvblockchain.tech'
 
 const CHANGED_EVENT = 'direct-pay-settings-changed'
 
 export const DEFAULT_DIRECT_PAY_SETTINGS: DirectPaySettings = {
-  receiveEnabled: false,
-  signaling: 'messagebox',
-  relayUrl: '',
-  stunUrls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478']
+  receiveEnabled: true,
+  shareLocalAddress: true,
+  signaling: 'relay',
+  relayUrl: DEFAULT_RELAY_URL,
+  stunUrls: [
+    'stun:stun-us-1.bsvb.tech:3478',
+    'stun:stun.l.google.com:19302',
+    'stun:stun.cloudflare.com:3478'
+  ]
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
@@ -48,6 +82,11 @@ export class DirectPaySettingsError extends Error {
 
 function checkReceiveEnabled(value: unknown): boolean {
   if (typeof value !== 'boolean') throw new Error('Receive direct payments must be on or off.')
+  return value
+}
+
+function checkShareLocalAddress(value: unknown): boolean {
+  if (typeof value !== 'boolean') throw new Error('Connect directly on the same network must be on or off.')
   return value
 }
 
@@ -75,6 +114,11 @@ function checkRelayUrl(value: unknown): string {
     throw new DirectPaySettingsError('The relay URL must start with wss:// (ws:// is only allowed for localhost).', 'relayUrl')
   }
   return text
+}
+
+/** `value` as a relay URL, or '' when it is none or not valid. */
+function validRelayUrl(value: unknown): string {
+  try { return checkRelayUrl(value) } catch { return '' }
 }
 
 /** Blank entries are dropped, so a form can pass one line per server. */
@@ -113,13 +157,30 @@ function withTurn(settings: Omit<DirectPaySettings, 'turn'>, turn: DirectPaySett
   return turn ? { ...settings, turn } : settings
 }
 
-/** Falls back to the default for each stored field that is missing or no longer valid. */
+/**
+ * Falls back to the default for each stored field that is missing or no longer valid.
+ * Without v3 settings, v2 or else v1 settings are used with relay signaling (and v1 with
+ * receiving on); see the header.
+ */
 export function loadDirectPaySettings(): DirectPaySettings {
   const defaults = DEFAULT_DIRECT_PAY_SETTINGS
   let stored: Record<string, unknown> = {}
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(DIRECT_PAY_SETTINGS_KEY) ?? 'null')
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) stored = parsed as Record<string, unknown>
+    let version = 3
+    let text = localStorage.getItem(DIRECT_PAY_SETTINGS_KEY)
+    if (text === null) { version = 2; text = localStorage.getItem(V2_DIRECT_PAY_SETTINGS_KEY) }
+    if (text === null) { version = 1; text = localStorage.getItem(V1_DIRECT_PAY_SETTINGS_KEY) }
+    if (text !== null && version < 3) {
+      // Older settings are migrated even when they cannot be read.
+      stored = { signaling: 'relay', ...(version === 1 && { receiveEnabled: true }) }
+    }
+    const parsed: unknown = JSON.parse(text ?? 'null')
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const fields = parsed as Record<string, unknown>
+      stored = version === 3 ? fields : { ...fields, ...stored }
+      // A relay address the user entered stays; none (or one no longer valid) becomes the default.
+      if (version < 3) stored.relayUrl = validRelayUrl(fields.relayUrl) || defaults.relayUrl
+    }
   } catch { /* corrupt or unreadable storage: the defaults apply */ }
 
   const field = <T>(check: (value: unknown) => T, value: unknown, fallback: T): T => {
@@ -129,6 +190,7 @@ export function loadDirectPaySettings(): DirectPaySettings {
   return withTurn(
     {
       receiveEnabled: field(checkReceiveEnabled, stored.receiveEnabled, defaults.receiveEnabled),
+      shareLocalAddress: field(checkShareLocalAddress, stored.shareLocalAddress, defaults.shareLocalAddress),
       signaling: field(checkSignaling, stored.signaling, defaults.signaling),
       relayUrl: field(checkRelayUrl, stored.relayUrl, defaults.relayUrl),
       stunUrls: field(checkStunUrls, stored.stunUrls, [...defaults.stunUrls])
@@ -148,6 +210,7 @@ export function saveDirectPaySettings(input: Partial<DirectPaySettings>): Direct
   const settings = withTurn(
     {
       receiveEnabled: checkReceiveEnabled(input.receiveEnabled ?? defaults.receiveEnabled),
+      shareLocalAddress: checkShareLocalAddress(input.shareLocalAddress ?? defaults.shareLocalAddress),
       signaling: checkSignaling(input.signaling ?? defaults.signaling),
       relayUrl: checkRelayUrl(input.relayUrl ?? defaults.relayUrl),
       stunUrls: checkStunUrls(input.stunUrls ?? defaults.stunUrls)

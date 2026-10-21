@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ArcSSEClient, Monitor, WalletStorageManager } from '@bsv/wallet-toolbox'
-import { arcadeCallbackToken, createArcadeServices } from '../electron/arcade'
+import { createArcadeServices } from '../electron/arcade'
 import {
   ArcadeEventSource,
   arcadeSseCursorPath,
@@ -17,7 +17,7 @@ import {
 import { arcadeUrl } from '../electron/endpoints'
 
 const IDENTITY_KEY = '03' + 'cd'.repeat(32)
-const TOKEN = IDENTITY_KEY.substring(0, 32)
+const TOKEN = '0123456789abcdef'.repeat(2)
 const TXID = 'ab'.repeat(32)
 
 let tmp: string
@@ -44,9 +44,9 @@ function statusFrame(id: string, payload: Record<string, unknown>) {
 
 /** A Monitor wired the way monitor-worker.ts wires it, without storage or a running loop. */
 function wiredMonitor(chain: 'main' | 'test' | 'ttn', onStatusChanged = vi.fn()) {
-  const services = createArcadeServices(chain, IDENTITY_KEY)
+  const services = createArcadeServices(chain, TOKEN)
   const options = createArcadeMonitorOptions(chain, new WalletStorageManager(IDENTITY_KEY), services, {
-    callbackToken: arcadeCallbackToken(IDENTITY_KEY),
+    callbackToken: TOKEN,
     cursorPath: path.join(tmp, 'cursor.json'),
     onStatusChanged
   })

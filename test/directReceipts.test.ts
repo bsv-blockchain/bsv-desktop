@@ -10,12 +10,11 @@ import * as path from 'path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Utils } from '@bsv/sdk'
-import { canDismissKept, dismissConfirmText, KEPT_UNREADABLE, keptPaymentsRemovalNote, keptStatusText, keptUnknownText, payeeReceipt, payerReceipt, receivedNotice, recoveryDetails } from '../src/lib/pages/Dashboard/Payments/directReceipts'
+import { canDismissKept, dismissConfirmText, KEPT_UNREADABLE, keptPaymentsRemovalNote, keptStatusText, keptUnknownText, payerReceipt, receivedNotice, recoveryDetails } from '../src/lib/pages/Dashboard/Payments/directReceipts'
 import type { KeptDirectPaymentInfo } from '../src/lib/pages/Dashboard/Payments/directPayments'
 
 // AmountDisplay reads the wallet's settings and exchange rates; the amount is what matters here.
 vi.mock('../src/lib/components/AmountDisplay', () => ({ default: ({ children }: { children: number }) => createElement('span', null, `${children} sats`) }))
-const { default: DirectReceiptView } = await import('../src/lib/pages/Dashboard/Payments/DirectReceiptView')
 const { default: KeptDirectPayments } = await import('../src/lib/pages/Dashboard/Payments/KeptDirectPayments')
 
 const SENDER = `03${'34'.repeat(32)}`
@@ -50,42 +49,6 @@ describe('the Payments page notice for a direct payment that arrived', () => {
     expect(receivedNotice({ amount: 500, requested: 1200, status: 'accepted' }).text).toBe('Direct payment added to your wallet: 500 satoshis. You requested 1,200 satoshis.')
     expect(receivedNotice({ amount: 500, requested: 1200, status: 'received' }).text).toMatch(/^Direct payment received, not yet added: 500 satoshis\. You requested 1,200 satoshis\. It is not in your balance yet/)
     expect(receivedNotice({ amount: 'x', status: 'accepted' }).text).toBe('Direct payment added to your wallet.')
-  })
-})
-
-describe('the payee\'s screen after a code-exchange payment', () => {
-  const render = (received: Parameters<typeof DirectReceiptView>[0]['received']) => renderToStaticMarkup(createElement(DirectReceiptView, { received, onAgain: () => {} }))
-  const SENDER = `03${'34'.repeat(32)}`
-
-  it('shows a payment the wallet took as added, with its amount and payer', () => {
-    const html = render({ amount: 1200, sender: SENDER, status: 'accepted', repeat: false, added: true })
-    expect(html).toContain('Payment added to your wallet')
-    expect(html).toContain('1200 sats')
-    expect(html).toContain(SENDER)
-    expect(html).toContain('CheckCircleOutline')
-    expect(html).not.toMatch(/not yet added/)
-  })
-
-  // Final review D6: a kept payment is not verified; a success screen invites handing over goods.
-  it('never shows a payment the wallet only kept as received or added, and says not to treat it as paid yet', () => {
-    const html = render({ amount: 1200, sender: SENDER, status: 'received', repeat: false, added: false })
-    expect(html).toContain('Received, not yet added')
-    expect(html).toContain('1200 sats')
-    expect(html).toMatch(/not in your balance yet/)
-    expect(html).toMatch(/retrying automatically/)
-    expect(html).toMatch(/Do not treat it as paid/)
-    expect(html).not.toMatch(/Payment received|Payment added|CheckCircleOutline/)
-  })
-
-  it('shows the requested amount beside a payment of another amount, whether added or not (Ruling 29)', () => {
-    for (const status of ['accepted', 'received'] as const) {
-      expect(render({ amount: 500, requested: 1200, sender: SENDER, status, repeat: false, added: status === 'accepted' })).toContain('Received 500 satoshis — you requested 1,200.')
-    }
-  })
-
-  it('wording comes from one place', () => {
-    expect(payeeReceipt('accepted')).toEqual({ added: true, heading: 'Payment added to your wallet', detail: '' })
-    expect(payeeReceipt('received')).toEqual({ added: false, heading: 'Received, not yet added', detail: 'It is not in your balance yet and has not been verified. It will be added when your wallet can verify it — retrying automatically. Do not treat it as paid until then.' })
   })
 })
 

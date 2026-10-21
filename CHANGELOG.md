@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Bug Fixes
+
+- The receiving wallet now broadcasts an incoming payment while it takes it in. Wallet Toolbox's `internalizeAction` is meant to post an unproven transaction that is new to the wallet before crediting it, but up to 2.14.6 that step was gated on an `isNew` flag that storage never set, so it never ran: the payee only queued the transaction, and the payee's and payer's background monitors each sent it seconds later. `@bsv/wallet-toolbox` and `@bsv/wallet-toolbox-client` are now 2.14.9, where the payee posts the transaction before a live payment is acknowledged. If the network refuses it (a double spend or an invalid transaction), the payment is not credited and the payer is told. The payer's own later post of the same transaction is accepted as a re-submission. Local wallet databases gain an `internalize_receipts` table the first time they open.
+
 ## [3.2.0] - 2026-10-20
 
 ### Features

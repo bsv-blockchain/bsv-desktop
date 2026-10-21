@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { LockingScript, MerklePath, OP, P2PKH, PrivateKey, ProtoWallet, PublicKey, Random, Transaction, UnlockingScript, Utils } from '@bsv/sdk'
 import type { WalletInterface } from '@bsv/sdk'
 import { createMemoryHub, DirectPayClient, MAX_DIRECT_TRANSACTION_BYTES, paymentKey, WebRTPayError } from '@bsv/webrtpay'
+import { sdk as WalletToolboxSdk } from '@bsv/wallet-toolbox-client'
 import type { AuthenticatedPeer, IncomingPayment, InboundLimits, MemoryHub } from '@bsv/webrtpay'
 import { createSeenStore, deliverDirect, dialFailure, DIRECT_DESCRIPTION, dismissKeptDirectPayment, keepDirectPayment, keptDirectPaymentsOnDevice, keptTowardLimit, listKeptDirectPayments, NotSentError, receiveDirectPayment, retryReceivedDirectPayments, RetryStopped, subscribeKeptDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import type { KeptDirectPaymentInfo } from '../src/lib/pages/Dashboard/Payments/directPayments'
@@ -111,10 +112,8 @@ const retry = (payee: Payee, onNeedsAttention: (kept: KeptDirectPaymentInfo) => 
 /** An error shaped like the wallet-toolbox / SDK WERR_* classes (they set `name`). */
 const werr = (name: string, message: string) => Object.assign(new Error(message), { name })
 /** What Wallet Toolbox's internalizeAction throws when its post of the payment fails. */
-const reviewActions = (...statuses: string[]) => Object.assign(
-  werr('WERR_REVIEW_ACTIONS', 'Undelayed createAction or signAction results require review.'),
-  { notDelayedResults: statuses.map(status => ({ txid: '00'.repeat(32), status })), sendWithResults: [] }
-)
+const reviewActions = (...statuses: Array<'serviceError' | 'doubleSpend' | 'invalidTx'>) =>
+  new WalletToolboxSdk.WERR_REVIEW_ACTIONS(statuses.map(status => ({ txid: '00'.repeat(32), status })), [{ txid: '00'.repeat(32), status: 'failed' }], '00'.repeat(32))
 
 // ---- real WebRTC peers (node-datachannel, loopback only: the sandbox drops other UDP) -----
 

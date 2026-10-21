@@ -552,9 +552,9 @@ const FIXED_ARGUMENT = /^(?:args|outputs|output|output remittance|protocol|outpu
  * double spend or an invalid transaction does.
  */
 function isUnpostedPayment(error: unknown): boolean {
-  const e = error as { name?: unknown; notDelayedResults?: unknown } | null
-  if (e?.name !== 'WERR_REVIEW_ACTIONS' || !Array.isArray(e.notDelayedResults) || e.notDelayedResults.length === 0) return false
-  return e.notDelayedResults.every(result => (result as { status?: unknown } | null)?.status === 'serviceError')
+  const e = error as { name?: unknown; reviewActionResults?: unknown } | null
+  if (e?.name !== 'WERR_REVIEW_ACTIONS' || !Array.isArray(e.reviewActionResults) || e.reviewActionResults.length === 0) return false
+  return e.reviewActionResults.every(result => (result as { status?: unknown } | null)?.status === 'serviceError')
 }
 
 /**

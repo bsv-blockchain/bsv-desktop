@@ -546,6 +546,18 @@ const ARGUMENT = /\bThe (?:required )?([\w. ]{1,60}?) parameter (?:must be|is mi
 const FIXED_ARGUMENT = /^(?:args|outputs|output|output remittance|protocol|outputIndex|paymentRemittance|derivationPrefix|derivationSuffix|senderIdentityKey|description|labels?|seekPermission|wallet payment|basket insertion|insertionRemittance(?:\.basket)?)$/
 
 /**
+ * Wallet Toolbox (2.14.7 and later) posts an unproven payment from internalizeAction and
+ * throws WERR_REVIEW_ACTIONS, crediting nothing, when the post fails. When every result is a
+ * service error, no broadcaster could be reached, which says nothing about the payment. A
+ * double spend or an invalid transaction does.
+ */
+function isUnpostedPayment(error: unknown): boolean {
+  const e = error as { name?: unknown; reviewActionResults?: unknown } | null
+  if (e?.name !== 'WERR_REVIEW_ACTIONS' || !Array.isArray(e.reviewActionResults) || e.reviewActionResults.length === 0) return false
+  return e.reviewActionResults.every(result => (result as { status?: unknown } | null)?.status === 'serviceError')
+}
+
+/**
  * Receive time: only failures known to be temporary are worth keeping a payment for (audit
  * finding F6). Rejecting anything else is safe there, because the payer still has it.
  */
@@ -554,7 +566,7 @@ function isTemporary(error: unknown): boolean {
   const message = messageOf(error)
   if (typeof name === 'string' && /^WERR_(INVALID|MISSING|BAD)_/.test(name)) return false
   if (VALIDATION.test(message)) return false
-  return name === 'WERR_NOT_ACTIVE' || TEMPORARY.test(message)
+  return name === 'WERR_NOT_ACTIVE' || isUnpostedPayment(error) || TEMPORARY.test(message)
 }
 
 /**

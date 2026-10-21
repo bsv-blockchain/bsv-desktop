@@ -33,6 +33,9 @@ export function toRabinPromptMessage(request: RabinAuthorizationRequest): RabinP
   }
 }
 
+/** The module's own logical protocol ID rule (5–272 lowercase alphanumerics and single spaces). */
+const LOGICAL_PROTOCOL_ID = /^(?=.{5,272}$)[a-z0-9]+(?: [a-z0-9]+)*$/
+
 const isText = (value: unknown, max = 1024): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= max
 
@@ -48,6 +51,7 @@ export function parseRabinPromptMessage(message: string): RabinPromptMessage | n
   if (value.type !== 'rabin_key' && value.type !== 'rabin_sign') return null
   if (value.securityLevel !== 0 && value.securityLevel !== 1 && value.securityLevel !== 2) return null
   if (value.bits !== 2048 && value.bits !== 3072 && value.bits !== 4096) return null
+  if (typeof value.logicalProtocolID !== 'string' || !LOGICAL_PROTOCOL_ID.test(value.logicalProtocolID)) return null
   if (!isText(value.originator) || !isText(value.logicalProtocolID, 272) || !isText(value.keyID, 800) || !isText(value.counterparty, 66)) return null
   if (value.privilegedReason !== undefined && !isText(value.privilegedReason, 50)) return null
   if (value.type === 'rabin_sign') {
@@ -60,13 +64,18 @@ export function parseRabinPromptMessage(message: string): RabinPromptMessage | n
 const DISPLAY_LIMIT = 96
 
 /**
- * App-supplied text (key names, reasons) as it is shown in a wallet prompt: control and format
- * characters (including bidi overrides and zero-width characters) become U+FFFD, it is cut to 96
- * code points with an ellipsis, and it is quoted so it cannot pass for the wallet's own words.
- * The prompt additionally renders it bidi-isolated and in monospace.
+ * App-supplied text (key names, reasons, protocols) as it is shown in a wallet prompt: control and
+ * format characters (including bidi overrides and zero-width characters), line and paragraph
+ * separators and lone surrogates become U+FFFD; curly double quotes become straight ones, so the
+ * value cannot close its own quotes; it is cut to 96 code points with an ellipsis; and it is
+ * quoted so it cannot pass for the wallet's own words. The prompt additionally renders it
+ * bidi-isolated and in monospace.
  */
 export function displayText(value: string): string {
-  const characters = Array.from(value.replace(/[\p{Cc}\p{Cf}]/gu, '�'))
+  const neutral = value
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]/gu, '�')
+    .replace(/[“”]/g, '"')
+  const characters = Array.from(neutral)
   const shown = characters.length > DISPLAY_LIMIT ? `${characters.slice(0, DISPLAY_LIMIT).join('')}…` : characters.join('')
   return `“${shown}”`
 }
@@ -95,7 +104,7 @@ export function rabinPromptCopy(app: string, prompt: RabinPromptMessage): RabinP
     rows.push({ label: 'Data to sign', value: formatBytes(prompt.messageLength!) })
     rows.push({ label: 'Fingerprint of this data (SHA-256)', value: prompt.messageSha256!, mono: true })
   }
-  const scope = `If you allow, for the next ${RABIN_GRANT_MINUTES} minutes ${app} can get any “${prompt.logicalProtocolID}” key and sign any data with it, without asking again. The private key never leaves your wallet.`
+  const scope = `If you allow, for the next ${RABIN_GRANT_MINUTES} minutes ${app} can get any ${displayText(prompt.logicalProtocolID)} key and sign any data with it, without asking again. The private key never leaves your wallet.`
   return {
     title: isSign ? `Allow ${app} to sign with a key in your wallet?` : `Allow ${app} to use a signing key in your wallet?`,
     description: isSign

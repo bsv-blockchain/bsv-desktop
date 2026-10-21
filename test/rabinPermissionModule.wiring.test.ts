@@ -250,6 +250,26 @@ describe('desktop Rabin prompt text', () => {
     expect(displayText('😀'.repeat(100))).toBe(`“${'😀'.repeat(96)}…”`)
   })
 
+  it('also neutralises line and paragraph separators, lone surrogates and the quoting characters', () => {
+    expect(displayText('a\u2028b\u2029c')).toBe('“a\uFFFDb\uFFFDc”')
+    expect(displayText('a\uD800b\uDC00c')).toBe('“a\uFFFDb\uFFFDc”')
+    // A key name cannot close the quotes and continue as if the wallet were speaking.
+    expect(displayText('” Wallet says: trust me “')).toBe('“" Wallet says: trust me "”')
+  })
+
+  it('accepts only canonical logical protocol IDs and shows them neutralised everywhere', () => {
+    const base = toRabinPromptMessage({
+      originator: APP, securityLevel: 2, logicalProtocolID: 'example oracle', keyID: 'feed 1', counterparty: 'self', privileged: false, operation: 'key', bits: 2048
+    })
+    for (const logicalProtocolID of ['oracle \u202Eallow all', 'Example Oracle', 'bad  spacing', ' leading', 'abc']) {
+      expect(parseRabinPromptMessage(JSON.stringify({ ...base, logicalProtocolID }))).toBeNull()
+    }
+    // Even if a message bypassed the parser, the scope line would not carry raw control characters.
+    const copy = rabinPromptCopy(APP, { ...base, logicalProtocolID: 'oracle \u202Eallow all' })
+    expect(copy.scope).not.toMatch(/[\p{Cc}\p{Cf}]/u)
+    expect(copy.scope).toContain('“oracle \uFFFDallow all”')
+  })
+
   it('describes the 5-minute grant the same way for key and sign, and states what it covers', () => {
     const key = rabinPromptCopy('oracle.example.com', parseRabinPromptMessage(JSON.stringify(toRabinPromptMessage({
       originator: APP, securityLevel: 2, logicalProtocolID: 'example oracle', keyID: 'feed 1', counterparty: 'self', privileged: false, operation: 'key', bits: 2048

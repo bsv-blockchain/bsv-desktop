@@ -1,6 +1,6 @@
 import type React from 'react'
 import type { PaletteMode } from '@mui/material'
-import type { WalletInterface } from '@bsv/sdk'
+import type { KeyDeriverApi, WalletInterface } from '@bsv/sdk'
 
 export type PermissionPromptHandler = (app: string, message: string) => Promise<boolean>
 
@@ -18,6 +18,12 @@ export type PermissionModuleFactoryArgs = {
   wallet: WalletInterface
   adminOriginator: string
   promptHandler?: PermissionPromptHandler
+  /**
+   * The wallet's ordinary BRC-42/43 key deriver, for semantic modules that
+   * derive keys inside the wallet (e.g. `p rabin`). Absent when the wallet
+   * does not expose one; such modules must then fail closed.
+   */
+  keyDeriver?: Pick<KeyDeriverApi, 'derivePrivateKey'>
 }
 
 export type PermissionModuleDefinition = {

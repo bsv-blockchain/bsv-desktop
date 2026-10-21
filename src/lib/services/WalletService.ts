@@ -1338,6 +1338,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   logout() {
     setTxStatusScope(undefined)
     this._walletDataGeneration++
+    // Disposes the permission modules, which drop cached keys and pending prompts.
+    this.permissionQueue.setPermissionsManager(null)
     void this.walletData?.close().catch(() => {})
     this.walletData = undefined
     // Clear wallet secrets and lock the vault, but KEEP enrollment (passphrase +

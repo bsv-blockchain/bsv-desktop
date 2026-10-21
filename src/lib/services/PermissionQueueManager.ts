@@ -23,7 +23,7 @@ import {
   CounterpartyPermissionRequest,
   GroupedPermissions,
 } from '../types/GroupedPermissions'
-import type { PermissionPromptHandler } from '../permissionModules/types'
+import type { PermissionModuleFactoryArgs, PermissionPromptHandler } from '../permissionModules/types'
 import { listMandalaTokenOutpoints } from '../permissionModules/mandala'
 import { wrapCreateActionForTokenInputs } from '../permissionModules/mandala/permissionModule'
 import {
@@ -167,12 +167,17 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
   // ---- Permission module support ----
   private _getPermissionModuleById: ((id: string) => any) | null = null
   private _promptHandlers: Map<string, PermissionPromptHandler> = new Map()
+  /** Modules of the current permissions manager; disposed when it is replaced or cleared. */
+  private _permissionModules: unknown[] = []
 
   // ------------------------------------------------------------------
   // Public API
   // ------------------------------------------------------------------
 
   setPermissionsManager(pm: any) {
+    // Replacing or clearing the manager (wallet closed, locked or rebuilt) ends its
+    // modules' lifetime: let them drop cached key material and pending prompts.
+    if (pm !== this._permissionsManager) this._disposePermissionModules()
     this._permissionsManager = pm
   }
 
@@ -939,6 +944,9 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
    * Also monkey-patches grant/deny/dismiss to auto-release the group gate.
    */
   createPermissionsManager(wallet: WalletInterface): WalletPermissionsManager {
+    this._disposePermissionModules()
+    // The toolbox Wallet exposes its ordinary key deriver as a public field.
+    const keyDeriver = (wallet as unknown as { keyDeriver?: PermissionModuleFactoryArgs['keyDeriver'] }).keyDeriver
     const permissionModulesMap: Record<string, any> = {}
     for (const moduleId of this.enabledPermissionModules) {
       const descriptor = this._getPermissionModuleById?.(moduleId)
@@ -946,11 +954,14 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       permissionModulesMap[moduleId] = descriptor.createModule({
         wallet,
         adminOriginator: this.adminOriginator,
+        keyDeriver,
         // Prompts may register after wallet construction or remount on a
         // theme change. Resolve the current handler at the time of the call.
         promptHandler: (app: string, message: string) => this._promptHandlers.get(moduleId)?.(app, message) ?? Promise.resolve(false),
       })
     }
+
+    this._permissionModules = Object.values(permissionModulesMap)
 
     const configWithModules = {
       ...this.permissionsConfig,
@@ -1026,6 +1037,18 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
   // ------------------------------------------------------------------
   // Private helpers
   // ------------------------------------------------------------------
+
+  private _disposePermissionModules() {
+    const modules = this._permissionModules
+    this._permissionModules = []
+    for (const module of modules) {
+      try {
+        ;(module as { dispose?: () => void } | null)?.dispose?.()
+      } catch (error) {
+        console.warn('[PermissionQueueManager] Failed to dispose a permission module:', error)
+      }
+    }
+  }
 
   private _emitSnapshot() {
     this.emit('snapshot', this.getSnapshot())

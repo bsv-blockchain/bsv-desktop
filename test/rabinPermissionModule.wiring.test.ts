@@ -125,6 +125,9 @@ describe('desktop p rabin permissions factory', () => {
     const approve = vi.fn(async () => true)
     const { manager } = createManager(makeWallet(true), approve)
     await expect(manager.encrypt(request('key', { protocolID: [0, 'p rabin key 2048 example oracle'] }), APP)).resolves.toHaveProperty('ciphertext')
+    // No first-use prompt for level-0 generation or signing (BRC-206; the module's rate limits bound the CPU).
+    await expect(manager.encrypt(request('sign', { protocolID: [0, 'p rabin sign 2048 example oracle'] }), APP)).resolves.toHaveProperty('ciphertext')
+    await expect(manager.encrypt(request('key', { protocolID: [0, 'p rabin key 2048 example oracle'], keyID: 'fresh key' }), APP)).resolves.toHaveProperty('ciphertext')
     expect(approve).not.toHaveBeenCalled()
 
     const { manager: withoutDeriver } = createManager(makeWallet(false), approve)

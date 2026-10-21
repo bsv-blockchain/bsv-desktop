@@ -110,6 +110,11 @@ const retry = (payee: Payee, onNeedsAttention: (kept: KeptDirectPaymentInfo) => 
 
 /** An error shaped like the wallet-toolbox / SDK WERR_* classes (they set `name`). */
 const werr = (name: string, message: string) => Object.assign(new Error(message), { name })
+/** What Wallet Toolbox's internalizeAction throws when its post of the payment fails. */
+const reviewActions = (...statuses: string[]) => Object.assign(
+  werr('WERR_REVIEW_ACTIONS', 'Undelayed createAction or signAction results require review.'),
+  { notDelayedResults: statuses.map(status => ({ txid: '00'.repeat(32), status })), sendWithResults: [] }
+)
 
 // ---- real WebRTC peers (node-datachannel, loopback only: the sandbox drops other UDP) -----
 
@@ -606,7 +611,8 @@ describe('receiveDirectPayment', () => {
     ['storage is not ready', new Error('Settings not available - call makeAvailable() first')],
     ['no active storage', werr('WERR_NOT_ACTIVE', "WalletStorageManager is not accessing user's active storage.")],
     ['the network is down', new TypeError('fetch failed')],
-    ['a connection was refused', new Error('connect ECONNREFUSED 127.0.0.1:443')]
+    ['a connection was refused', new Error('connect ECONNREFUSED 127.0.0.1:443')],
+    ['no broadcaster could take the payment', reviewActions('serviceError')]
   ])('keeps the payment for retry and acks received when %s', async (_, failure) => {
     const payer = await makePayer(), payee = await makePayee()
     payee.internalizeAction.mockRejectedValue(failure)
@@ -621,7 +627,10 @@ describe('receiveDirectPayment', () => {
     ['a bad merkle root', werr('WERR_INVALID_MERKLE_ROOT', 'Invalid merkleRoot 00 for block 00 at height 1.')],
     ['a storage validation error', new Error('Storage method internalizeAction failed: The tx parameter must be valid AtomicBEEF')],
     ['a refusal', new Error('The wallet did not accept the payment')],
-    ['an unknown failure', new Error('Something unexpected')]
+    ['an unknown failure', new Error('Something unexpected')],
+    ['a double spend', reviewActions('doubleSpend')],
+    ['an invalid transaction', reviewActions('invalidTx')],
+    ['a double spend reported with a service error', reviewActions('serviceError', 'doubleSpend')]
   ])('rejects and stores nothing for %s', async (_, failure) => {
     const payer = await makePayer(), payee = await makePayee()
     payee.internalizeAction.mockRejectedValue(failure)
@@ -905,7 +914,7 @@ describe('retryReceivedDirectPayments', () => {
     await kept(payer, payee)
     patchRetries(payee, () => ({ attempts: 4, receivedAt: Date.now() - 48 * HOUR }))
     const onNeedsAttention = vi.fn()
-    for (const failure of [new Error('User is not authenticated.'), new TypeError('fetch failed'), new Error('Storage method internalizeAction failed: SQLITE_BUSY: database is locked')]) {
+    for (const failure of [new Error('User is not authenticated.'), new TypeError('fetch failed'), new Error('Storage method internalizeAction failed: SQLITE_BUSY: database is locked'), reviewActions('serviceError')]) {
       payee.internalizeAction.mockRejectedValueOnce(failure)
       await expect(retry(payee, onNeedsAttention)).resolves.toBe(0)
     }

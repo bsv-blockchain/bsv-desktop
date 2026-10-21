@@ -305,7 +305,7 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     if (generation !== this._generation) return
     try {
       await client.startReceiving({
-        onPayment: p => this._onPayment(o, p),
+        onPayment: (p, ctx) => this._onPayment(o, p, ctx?.note),
         onError: e => console.warn('[DirectPayManager] Inbound direct payment session failed:', e)
       })
       // The status follows the relay's connection (see _relayChanged), or the message box's
@@ -411,7 +411,7 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
   }
 
   /** Takes a payment into the wallet; a throw becomes a `rejected` ack for the payer. */
-  private async _onPayment(o: DirectPayStartOptions, p: IncomingPayment): Promise<PaymentDecision> {
+  private async _onPayment(o: DirectPayStartOptions, p: IncomingPayment, note?: string): Promise<PaymentDecision> {
     let release: (() => void) | undefined
     try {
       release = beginUserWalletOperation()
@@ -421,7 +421,7 @@ export class DirectPayManager extends EventEmittable<{ changed: DirectPaySnapsho
     }
     let receipt: DirectReceipt
     try {
-      const args = { wallet: o.wallet, originator: o.originator, identity: o.identity, chain: o.chain, payment: p }
+      const args = { wallet: o.wallet, originator: o.originator, identity: o.identity, chain: o.chain, payment: p, note }
       receipt = release ? await receiveDirectPayment(args) : await keepDirectPayment(args)
     } finally {
       release?.()

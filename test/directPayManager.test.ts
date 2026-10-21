@@ -1300,6 +1300,12 @@ describe('receiving a payment', () => {
     expect(manager.getSnapshot().received).toBe(1)
   })
 
+  it('passes the payer’s note on, so it becomes the payment’s description', async () => {
+    await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))
+    await handlersOf().onPayment(payment, { txid: 'ab'.repeat(32), note: 'Coffee' })
+    expect(h.receive).toHaveBeenCalledWith({ wallet, originator: 'admin.local', identity: IDENTITY, chain: 'main', payment, note: 'Coffee' })
+  })
+
   it('acks a payment kept for a retry as received, and announces it without a balance change', async () => {
     h.receive = vi.fn(async () => ({ status: 'received', repeat: false, added: false }))
     await manager.start(startOptions({ settings: settings({ receiveEnabled: true }) }))

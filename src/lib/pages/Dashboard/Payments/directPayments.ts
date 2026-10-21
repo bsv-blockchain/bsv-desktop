@@ -259,6 +259,20 @@ export interface DirectReceipt {
   added: boolean
 }
 
+/** Activity's description of a direct payment received without a note. */
+export const DIRECT_DESCRIPTION = 'Received direct BSV'
+
+/**
+ * The wallet description of a received direct payment: the payer's note when they sent one
+ * (as BSV Wallet does), else {@link DIRECT_DESCRIPTION}. A note is at most 500 characters
+ * (the package refuses longer ones), so at most 2000 bytes; it is padded to the wallet's
+ * 5-byte minimum.
+ */
+export function directDescription(note: unknown): string {
+  const text = typeof note === 'string' ? Array.from(note.trim()).slice(0, 500).join('') : ''
+  return text ? text.padEnd(5) : DIRECT_DESCRIPTION
+}
+
 /**
  * Takes a payment from an authenticated peer into the wallet (once; see
  * {@link createSeenStore}) and returns the ack status. When the wallet is locked or its
@@ -276,14 +290,16 @@ export async function receiveDirectPayment(o: {
   identity: string
   chain: string
   payment: IncomingPayment
+  /** The payer's note (`onPayment`'s `ctx.note`); it becomes the payment's description in Activity. */
+  note?: string
 }): Promise<DirectReceipt> {
   let result: { txid: string; status: 'accepted' | 'duplicate' }
   try {
-    result = await acceptDirectPayment(o.wallet, o.payment, { originator: o.originator, seen: createSeenStore(o.identity, o.chain) })
+    result = await acceptDirectPayment(o.wallet, o.payment, { originator: o.originator, seen: createSeenStore(o.identity, o.chain), description: directDescription(o.note) })
   } catch (error) {
     if (error instanceof WebRTPayError) throw error
     if (!isTemporary(error)) throw new WebRTPayError('rejected', NOT_ACCEPTED, { cause: error })
-    const kept = keepForRetry(retryStorageKey(o.identity, o.chain), o.payment, error)
+    const kept = keepForRetry(retryStorageKey(o.identity, o.chain), o.payment, error, o.note)
     return { status: 'received', repeat: !kept, added: false }
   }
   // A payment kept for a retry earlier was announced when it was kept.
@@ -305,6 +321,8 @@ export async function keepDirectPayment(o: {
   identity: string
   chain: string
   payment: IncomingPayment
+  /** The payer's note, kept with the payment for its description (see {@link receiveDirectPayment}). */
+  note?: string
 }): Promise<DirectReceipt> {
   try {
     const { txid } = await verifyDirectPayment(o.wallet, o.payment, { originator: o.originator })
@@ -313,7 +331,7 @@ export async function keepDirectPayment(o: {
     if (error instanceof WebRTPayError) throw error
     if (!isTemporary(error)) throw new WebRTPayError('rejected', NOT_ACCEPTED, { cause: error })
   }
-  const kept = keepForRetry(retryStorageKey(o.identity, o.chain), o.payment, new Error(WALLET_CHANGING))
+  const kept = keepForRetry(retryStorageKey(o.identity, o.chain), o.payment, new Error(WALLET_CHANGING), o.note)
   return { status: 'received', repeat: !kept, added: false }
 }
 
@@ -340,6 +358,8 @@ export interface KeptDirectPayment {
     amount: number
     outputIndex: number
   }
+  /** The payer's note, when they sent one. */
+  note?: string
 }
 
 /** Why the wallet could not add a kept payment after retrying, so the user should look at it. */
@@ -403,7 +423,7 @@ export async function retryReceivedDirectPayments(o: {
   for (const entry of readRetries(storageKey)?.entries ?? []) {
     if (entry.needsAttention && !o.includeNeedsAttention) continue
     try {
-      const result = await run(() => acceptDirectPayment(o.wallet, toIncoming(entry), { originator: o.originator, seen }))
+      const result = await run(() => acceptDirectPayment(o.wallet, toIncoming(entry), { originator: o.originator, seen, description: directDescription(entry.payment.note) }))
       if (result.status === 'accepted') accepted++
     } catch (error) {
       if (error instanceof RetryStopped) break
@@ -578,9 +598,9 @@ function infoOf(entry: RetryEntry): KeptDirectPaymentInfo {
  * received, so the payer will not resend it. A payment that cannot be kept is refused
  * instead; the payer still has it. So is every payment while the stored list cannot be read.
  */
-function keepForRetry(storageKey: string, p: IncomingPayment, error: unknown): boolean {
+function keepForRetry(storageKey: string, p: IncomingPayment, error: unknown, note?: string): boolean {
   try {
-    const entry = toEntry(p, error)
+    const entry = toEntry(p, error, note)
     const stored = readRetries(storageKey)
     if (!stored) throw new Error('The kept payments on this device cannot be read.')
     if (stored.entries.some(e => e.key === entry.key)) return false
@@ -707,12 +727,12 @@ const outputIndexOf = (p: IncomingPayment) => p.token.outputIndex ?? p.outputInd
 const keyOf = (p: IncomingPayment, txid: string) =>
   paymentKey(txid, outputIndexOf(p), p.token.customInstructions.derivationPrefix, p.token.customInstructions.derivationSuffix)
 
-function toEntry(p: IncomingPayment, error: unknown): RetryEntry {
+function toEntry(p: IncomingPayment, error: unknown, note?: string): RetryEntry {
   const { transaction, amount, customInstructions: { derivationPrefix, derivationSuffix } } = p.token
   const outputIndex = outputIndexOf(p)
   return {
     key: keyOf(p, Transaction.fromAtomicBEEF(transaction).id('hex')),
-    payment: { messageId: p.messageId, sender: p.sender, token: { customInstructions: { derivationPrefix, derivationSuffix }, transaction: Utils.toBase64(transaction), amount, outputIndex } },
+    payment: { messageId: p.messageId, sender: p.sender, token: { customInstructions: { derivationPrefix, derivationSuffix }, transaction: Utils.toBase64(transaction), amount, outputIndex }, ...(note ? { note } : {}) },
     error: messageOf(error).slice(0, 500),
     receivedAt: Date.now(),
     attempts: 0

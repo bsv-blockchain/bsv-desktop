@@ -3,7 +3,7 @@ import { LockingScript, MerklePath, OP, P2PKH, PrivateKey, ProtoWallet, PublicKe
 import type { WalletInterface } from '@bsv/sdk'
 import { createMemoryHub, DirectPayClient, MAX_DIRECT_TRANSACTION_BYTES, paymentKey, WebRTPayError } from '@bsv/webrtpay'
 import type { AuthenticatedPeer, IncomingPayment, InboundLimits, MemoryHub } from '@bsv/webrtpay'
-import { createSeenStore, deliverDirect, dialFailure, dismissKeptDirectPayment, keepDirectPayment, keptDirectPaymentsOnDevice, keptTowardLimit, listKeptDirectPayments, NotSentError, receiveDirectPayment, retryReceivedDirectPayments, RetryStopped, subscribeKeptDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
+import { createSeenStore, deliverDirect, dialFailure, DIRECT_DESCRIPTION, dismissKeptDirectPayment, keepDirectPayment, keptDirectPaymentsOnDevice, keptTowardLimit, listKeptDirectPayments, NotSentError, receiveDirectPayment, retryReceivedDirectPayments, RetryStopped, subscribeKeptDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import type { KeptDirectPaymentInfo } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import { prepareMessageBoxPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
 import type { OutgoingPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
@@ -573,6 +573,23 @@ describe('receiveDirectPayment', () => {
     await expect(receive(payee, { ...payment, messageId: 'again' })).resolves.toEqual({ status: 'accepted', repeat: true, added: false })
     expect(payee.internalizeAction).toHaveBeenCalledTimes(1)
     expect(seenKeys(payee.identityKey)).toEqual([keyOf(payment)])
+  })
+
+  it('describes the payment with the payer’s note, so Activity shows it', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    await receiveDirectPayment({ wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN, payment: await incoming(payer, payee), note: '  Lunch 🍜  ' })
+    await receive(payee, await incoming(payer, payee))
+    await receiveDirectPayment({ wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN, payment: await incoming(payer, payee), note: 'hi' })
+    expect(payee.internalizeAction.mock.calls.map(([args]) => args.description)).toEqual(['Lunch 🍜', DIRECT_DESCRIPTION, 'hi   '])
+  })
+
+  it('keeps the payer’s note with a payment kept for a retry, and describes it with the note when retried', async () => {
+    const payer = await makePayer(), payee = await makePayee()
+    payee.internalizeAction.mockRejectedValueOnce(new Error('User is not authenticated.'))
+    await receiveDirectPayment({ wallet: payee.wallet, originator: ORIGIN, identity: payee.identityKey, chain: CHAIN, payment: await incoming(payer, payee), note: 'Rent for May' })
+    expect(retries(payee.identityKey)[0]).toMatchObject({ payment: { note: 'Rent for May' } })
+    await expect(retry(payee)).resolves.toBe(1)
+    expect(payee.internalizeAction.mock.calls[1][0].description).toBe('Rent for May')
   })
 
   it('rethrows invalid_payment and stores nothing for a payment that does not pay this wallet', async () => {

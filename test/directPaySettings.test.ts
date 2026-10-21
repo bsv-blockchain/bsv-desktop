@@ -41,6 +41,7 @@ describe('direct-pay settings: loading', () => {
     expect(DEFAULT_RELAY_URL).toBe('wss://webrtpay-relay-us-1.bsvblockchain.tech')
     expect(DEFAULT_DIRECT_PAY_SETTINGS).toEqual({
       receiveEnabled: true,
+      shareLocalAddress: true,
       signaling: 'relay',
       relayUrl: 'wss://webrtpay-relay-us-1.bsvblockchain.tech',
       stunUrls: [
@@ -96,6 +97,7 @@ describe('direct-pay settings: loading', () => {
     )
     expect(loadDirectPaySettings()).toEqual({
       receiveEnabled: true,
+      shareLocalAddress: true,
       signaling: 'relay',
       relayUrl: 'wss://relay.example.com',
       stunUrls: ['stun:one.example:3478']
@@ -104,7 +106,7 @@ describe('direct-pay settings: loading', () => {
 
   it('still loads relay signaling without an address stored before saving refused it (shown as an error, Ruling 14)', () => {
     local.set(DIRECT_PAY_SETTINGS_KEY, JSON.stringify({ receiveEnabled: true, signaling: 'relay', relayUrl: '', stunUrls: [] }))
-    expect(loadDirectPaySettings()).toEqual({ receiveEnabled: true, signaling: 'relay', relayUrl: '', stunUrls: [] })
+    expect(loadDirectPaySettings()).toEqual({ receiveEnabled: true, shareLocalAddress: true, signaling: 'relay', relayUrl: '', stunUrls: [] })
   })
 })
 
@@ -115,19 +117,19 @@ describe('direct-pay settings: migrating to v3 (relay by default)', () => {
     const v3 = { receiveEnabled: false, signaling: 'messagebox', relayUrl: '', stunUrls: stun }
     local.set(DIRECT_PAY_SETTINGS_KEY, JSON.stringify(v3))
     local.set(V2_DIRECT_PAY_SETTINGS_KEY, JSON.stringify({ receiveEnabled: true, signaling: 'relay', relayUrl: 'wss://old.example.com', stunUrls: [] }))
-    expect(loadDirectPaySettings()).toEqual(v3)
+    expect(loadDirectPaySettings()).toEqual({ ...v3, shareLocalAddress: true })
   })
 
   it('moves v2 message box settings to the default relay, keeping receiving off and the STUN servers', () => {
     const v2 = { receiveEnabled: false, signaling: 'messagebox', relayUrl: '', stunUrls: stun }
     local.set(V2_DIRECT_PAY_SETTINGS_KEY, JSON.stringify(v2))
-    expect(loadDirectPaySettings()).toEqual({ receiveEnabled: false, signaling: 'relay', relayUrl: DEFAULT_RELAY_URL, stunUrls: stun })
+    expect(loadDirectPaySettings()).toEqual({ receiveEnabled: false, shareLocalAddress: true, signaling: 'relay', relayUrl: DEFAULT_RELAY_URL, stunUrls: stun })
   })
 
   it('keeps a relay address the user entered in v2 (and v2 receiving on)', () => {
     const v2 = { receiveEnabled: true, signaling: 'messagebox', relayUrl: 'wss://relay.example.com', stunUrls: stun, turn: { urls: 'turn:t.example:3478', username: 'u', credential: 'c' } }
     local.set(V2_DIRECT_PAY_SETTINGS_KEY, JSON.stringify(v2))
-    expect(loadDirectPaySettings()).toEqual({ ...v2, signaling: 'relay' })
+    expect(loadDirectPaySettings()).toEqual({ ...v2, shareLocalAddress: true, signaling: 'relay' })
   })
 
   it('gives a v2 relay address that is no longer valid the default relay', () => {
@@ -138,13 +140,13 @@ describe('direct-pay settings: migrating to v3 (relay by default)', () => {
   it('prefers v2 over v1', () => {
     local.set(V2_DIRECT_PAY_SETTINGS_KEY, JSON.stringify({ receiveEnabled: false, signaling: 'messagebox', relayUrl: '', stunUrls: stun }))
     local.set(V1_DIRECT_PAY_SETTINGS_KEY, JSON.stringify({ receiveEnabled: true, signaling: 'messagebox', relayUrl: 'wss://v1.example.com', stunUrls: [] }))
-    expect(loadDirectPaySettings()).toEqual({ receiveEnabled: false, signaling: 'relay', relayUrl: DEFAULT_RELAY_URL, stunUrls: stun })
+    expect(loadDirectPaySettings()).toEqual({ receiveEnabled: false, shareLocalAddress: true, signaling: 'relay', relayUrl: DEFAULT_RELAY_URL, stunUrls: stun })
   })
 
   it('migrates v1 with receiving turned on and the relay, keeping the other v1 values', () => {
     const v1 = { receiveEnabled: false, signaling: 'messagebox', relayUrl: '', stunUrls: stun }
     local.set(V1_DIRECT_PAY_SETTINGS_KEY, JSON.stringify(v1))
-    expect(loadDirectPaySettings()).toEqual({ receiveEnabled: true, signaling: 'relay', relayUrl: DEFAULT_RELAY_URL, stunUrls: stun })
+    expect(loadDirectPaySettings()).toEqual({ receiveEnabled: true, shareLocalAddress: true, signaling: 'relay', relayUrl: DEFAULT_RELAY_URL, stunUrls: stun })
     local.set(V1_DIRECT_PAY_SETTINGS_KEY, JSON.stringify({ ...v1, relayUrl: 'wss://relay.example.com' }))
     expect(loadDirectPaySettings().relayUrl).toBe('wss://relay.example.com')
   })
@@ -253,14 +255,25 @@ describe('direct-pay settings: saving', () => {
     expect(loadDirectPaySettings().turn).toBeUndefined()
   })
 
-  it('rejects an unknown signaling mode and a non-boolean receive flag', () => {
+  it('rejects an unknown signaling mode and a non-boolean receive or same-network flag', () => {
     expect(() => saveDirectPaySettings({ signaling: 'carrier-pigeon' as any })).toThrow(/signaling/i)
     expect(() => saveDirectPaySettings({ receiveEnabled: 'yes' as any })).toThrow(/receive/i)
+    expect(() => saveDirectPaySettings({ shareLocalAddress: 'yes' as any })).toThrow(/same network/i)
+  })
+
+  it('shares the local address unless the user turned it off, which a reload keeps', () => {
+    expect(saveDirectPaySettings({}).shareLocalAddress).toBe(true)
+    expect(saveDirectPaySettings({ shareLocalAddress: false }).shareLocalAddress).toBe(false)
+    expect(loadDirectPaySettings().shareLocalAddress).toBe(false)
+    // A stored value that is not a boolean falls back to the default, on.
+    local.set(DIRECT_PAY_SETTINGS_KEY, JSON.stringify({ ...DEFAULT_DIRECT_PAY_SETTINGS, shareLocalAddress: 'no' }))
+    expect(loadDirectPaySettings().shareLocalAddress).toBe(true)
   })
 
   it('round-trips every field', () => {
     const settings = {
       receiveEnabled: true,
+      shareLocalAddress: false,
       signaling: 'relay' as const,
       relayUrl: 'wss://relay.example.com/ws',
       stunUrls: ['stun:stun.example.com:3478'],

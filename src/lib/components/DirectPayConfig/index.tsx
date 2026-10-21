@@ -139,6 +139,22 @@ export default function DirectPayConfig({ showTitle = true, embedded = false }: 
           </Alert>
         </Box>
 
+        <Box>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.shareLocalAddress}
+                onChange={(e) => change('shareLocalAddress', e.target.checked)}
+                disabled={busy}
+              />
+            }
+            label={t('directpay_local_label')}
+          />
+          <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5 }}>
+            {t('directpay_local_helper')}
+          </Typography>
+        </Box>
+
         <TextField
           select
           fullWidth

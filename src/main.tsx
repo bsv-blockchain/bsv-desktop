@@ -9,8 +9,11 @@ import { btmsPermissionModule } from './lib/permissionModules/btms';
 import { mandalaPermissionModule } from './lib/permissionModules/mandala';
 import VaultGate from './lib/components/VaultGate';
 import { installTxStatusBridge } from './txStatusBridge';
+import { followLocalAddressSharing } from './lib/utils/localAddressSharing';
 
 installTxStatusBridge();
+// Before any wallet opens: which addresses direct payments offer (electron/webrtcPrivacy.ts).
+followLocalAddressSharing();
 
 // Create the root and render
 const rootElement = document.getElementById('root');

@@ -18,6 +18,12 @@ export type PeerPaySnapshot = {
   anointmentLoading: boolean
 }
 
+/** Closes a client's websocket, without waiting and without failing (it is being dropped). */
+function disconnect(client: PeerPayClient | null) {
+  if (!client || typeof client.disconnectWebSocket !== 'function') return
+  try { void client.disconnectWebSocket().catch(error => console.warn('[PeerPayManager] Could not disconnect the old client:', error)) } catch (error) { console.warn('[PeerPayManager] Could not disconnect the old client:', error) }
+}
+
 type PeerPayEvents = {
   /** Emitted when client or anointment state changes. React subscribes to re-render. */
   changed: PeerPaySnapshot
@@ -83,6 +89,7 @@ export class PeerPayManager extends EventEmittable<PeerPayEvents> {
     messageBoxUrl: string,
     adminOriginator: string
   ): Promise<void> {
+    disconnect(this._client) // its live rooms and handlers would otherwise stay open (review minor 11)
     this._client = null // Clear guard so createClient proceeds
     await this.createClient(walletForPeerPay, messageBoxUrl, adminOriginator)
   }
@@ -144,6 +151,7 @@ export class PeerPayManager extends EventEmittable<PeerPayEvents> {
         }
       }
     }
+    disconnect(this._client)
     this._client = null
     this._isHostAnointed = false
     this._anointedHosts = []

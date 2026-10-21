@@ -9,7 +9,7 @@ import { beginUserWalletOperation } from '../../../services/httpBridgeSession'
 import getBeefForTxid from '../../../utils/getBeefForTxid'
 import { wocApiBase } from '../../../utils/woc'
 import { wocFetch } from '../../../utils/RateLimitedFetch'
-import { PAYMENT_PROTOCOL } from './nearbyProtocol'
+import { PAYMENT_PROTOCOL } from './broadcast'
 
 const SUFFIX = Utils.toBase64(Utils.toArray('legacy', 'utf8'))
 /** Preserve the original date derivation so existing desktop/mobile deposits remain recoverable. */

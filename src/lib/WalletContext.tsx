@@ -5,6 +5,7 @@
  *   src/lib/services/WalletService.ts        — lifecycle state machine
  *   src/lib/services/PermissionQueueManager.ts — permission queues + group gating
  *   src/lib/services/PeerPayManager.ts        — PeerPay client lifecycle
+ *   src/lib/services/DirectPayManager.ts      — direct (peer-to-peer) payment client
  *
  * This file is intentionally minimal: context type definitions, default context
  * value, the provider component, and permission-module prompt rendering.
@@ -24,6 +25,9 @@ import { WalletSettings } from '@bsv/wallet-toolbox-client'
 import { WalletPermissionsManager, PrivilegedKeyManager, WalletStorageManager, WalletAuthenticationManager } from '@bsv/wallet-toolbox-client'
 import { WalletInterface, Utils } from '@bsv/sdk'
 import { PeerPayClient, AdvertisementToken } from '@bsv/message-box-client'
+import type { DirectPaySnapshot } from './services/DirectPayManager'
+import type { ReceivedRecord } from './services/MessageBoxAutoReceiver'
+import type { DirectPaySettings } from './utils/directPaySettings'
 import 'react-toastify/dist/ReactToastify.css'
 
 import { ADMIN_ORIGINATOR, DEFAULT_SETTINGS, MESSAGEBOX_HOST } from './config'
@@ -193,6 +197,13 @@ export interface WalletContextValue {
   anointCurrentHost: () => Promise<void>;
   revokeHostAnointment: (token: AdvertisementToken) => Promise<void>;
   checkAnointmentStatus: () => Promise<void>;
+  /** Direct (peer-to-peer) payments of the open wallet. */
+  directPay: DirectPaySnapshot;
+  /** Use saved direct-pay settings now (they also apply on the next unlock). */
+  applyDirectPaySettings: (settings: DirectPaySettings) => Promise<void>;
+  /** Message box payments the open wallet took automatically (and failures to retry), newest first. */
+  messageBoxReceived: ReceivedRecord[];
+  retryMessageBoxPayment: (messageId: string) => Promise<void>;
 }
 
 export const WalletContext = createContext<WalletContextValue>({
@@ -261,6 +272,10 @@ export const WalletContext = createContext<WalletContextValue>({
   anointCurrentHost: async () => {},
   revokeHostAnointment: async () => {},
   checkAnointmentStatus: async () => {},
+  directPay: { client: null, status: 'off', via: null, relayUnreachable: false, error: '', notice: '', received: 0 },
+  applyDirectPaySettings: async () => {},
+  messageBoxReceived: [],
+  retryMessageBoxPayment: async () => {},
 })
 
 export const createDisabledPrivilegedManager = () =>

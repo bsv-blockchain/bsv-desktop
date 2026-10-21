@@ -70,7 +70,7 @@ export default function QrScanner({ open, onClose, onRead, continuous = false, p
   return <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
     <DialogTitle>{title}</DialogTitle>
     <DialogContent><Stack spacing={2}>
-      <Typography color="text.secondary">{description || (continuous ? 'Point your camera at the animated payment code. Keep scanning until all parts are collected.' : 'Scan a wallet, address, or nearby request.')}</Typography>
+      <Typography color="text.secondary">{description || (continuous ? 'Point your camera at the code. Keep scanning until all parts are collected.' : 'Scan a payment link, identity key, or BSV address.')}</Typography>
       {error && <Alert severity="warning">{error}</Alert>}
       {camera && <Box sx={{ bgcolor: '#0f172a', borderRadius: 2, overflow: 'hidden', minHeight: 180, position: 'relative' }}><video ref={video} muted playsInline style={{ width: '100%', display: 'block' }} />{starting && <CircularProgress size={28} sx={{ position: 'absolute', top: '45%', left: '45%', color: 'white' }} />}</Box>}
       {progress && <Alert severity="info">{progress}</Alert>}

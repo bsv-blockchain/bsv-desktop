@@ -142,6 +142,29 @@ describe('payments', () => {
     expect(acceptPayment).toHaveBeenCalledTimes(2)
     expect(out.fixed).toEqual(['Received 2 payment(s) (1500 sats)'])
   })
+  it('leaves accepting to the running message box receiver (desktop review finding 4)', async () => {
+    const acceptPayment = vi.fn(async () => ({}))
+    const listIncomingPayments = vi.fn(async () => [{ token: { amount: 500 } }])
+    const receiveWaiting = vi.fn(async () => ({ count: 2, sats: 1500, failed: 0 }))
+    const out = await createWalletCheckPorts(deps({ peerPay: () => ({ client: { listIncomingPayments, acceptPayment }, isHostAnointed: true }), receiveWaiting })).payments()
+    expect(receiveWaiting).toHaveBeenCalledOnce()
+    expect(acceptPayment).not.toHaveBeenCalled()
+    expect(listIncomingPayments).not.toHaveBeenCalled()
+    expect(out).toEqual({ status: 'ok', message: 'Received payments', fixed: ['Received 2 payment(s) (1500 sats)'] })
+  })
+  it('says when nothing was waiting, and points to Retry when some payments still fail', async () => {
+    const client = { listIncomingPayments: vi.fn(async () => []), acceptPayment: vi.fn() }
+    expect(await createWalletCheckPorts(deps({ peerPay: () => ({ client, isHostAnointed: true }), receiveWaiting: async () => ({ count: 0, sats: 0, failed: 0 }) })).payments()).toEqual({ status: 'ok', message: 'No payments waiting' })
+    const out = await createWalletCheckPorts(deps({ peerPay: () => ({ client, isHostAnointed: true }), receiveWaiting: async () => ({ count: 1, sats: 10, failed: 2 }) })).payments()
+    expect(out).toMatchObject({ status: 'attention', fixed: ['Received 1 payment(s) (10 sats)'], action: { to: '/dashboard/payments?tab=receive' } })
+    expect(out.message).toMatch(/^2 payment\(s\) could not be added/)
+  })
+  it('accepts by itself when the receiver is not running', async () => {
+    const acceptPayment = vi.fn(async () => ({}))
+    const d = deps({ peerPay: () => ({ client: { listIncomingPayments: async () => [{ token: { amount: 700 } }], acceptPayment }, isHostAnointed: true }), receiveWaiting: async () => null })
+    expect((await createWalletCheckPorts(d).payments()).fixed).toEqual(['Received 1 payment(s) (700 sats)'])
+    expect(acceptPayment).toHaveBeenCalledOnce()
+  })
   it('is skipped without a message box client', async () => {
     const out = await createWalletCheckPorts(deps({ peerPay: () => ({ client: null, isHostAnointed: false }) })).payments()
     expect(out.status).toBe('skipped')

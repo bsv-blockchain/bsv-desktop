@@ -62,3 +62,30 @@ describe('PeerPayManager.anointCurrentHost', () => {
     expect(manager.getSnapshot().anointmentLoading).toBe(false)
   })
 })
+
+describe('PeerPayManager drops old clients cleanly (desktop review minor 11)', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('disconnects the old client\'s websocket when the client is replaced or destroyed', async () => {
+    const disconnectWebSocket = vi.fn(async () => {})
+    ;(client as any).disconnectWebSocket = disconnectWebSocket
+    try {
+      const manager = await managerWithClient()
+      await manager.replaceClient({}, HOST, 'admin.local')
+      expect(disconnectWebSocket).toHaveBeenCalledTimes(1)
+      await manager.destroyClient(HOST)
+      expect(disconnectWebSocket).toHaveBeenCalledTimes(2)
+      expect(manager.getSnapshot().peerPayClient).toBeNull()
+    } finally { delete (client as any).disconnectWebSocket }
+  })
+
+  it('still replaces the client when the disconnect fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    ;(client as any).disconnectWebSocket = vi.fn(async () => { throw new Error('socket gone') })
+    try {
+      const manager = await managerWithClient()
+      await manager.replaceClient({}, HOST, 'admin.local')
+      expect(manager.getSnapshot().peerPayClient).toBe(client)
+    } finally { delete (client as any).disconnectWebSocket; warn.mockRestore() }
+  })
+})

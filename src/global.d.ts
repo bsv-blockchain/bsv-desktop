@@ -44,6 +44,10 @@ export interface ElectronAPI {
     /** Relaunches the app; the process exits and the Promise does not resolve. */
     restart: () => Promise<void>;
   };
+  /** Direct payments: whether WebRTC offers this device's LAN and IPv6 addresses (see electron/webrtcPrivacy.ts). */
+  webrtc: {
+    shareLocalAddress: (share: boolean) => Promise<void>;
+  };
   cert: {
     checkAndRepair: () => Promise<{ trusted: boolean | null; repaired: boolean }>;
   };
@@ -58,7 +62,7 @@ export interface ElectronAPI {
     isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<boolean>;
     makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<{ success: boolean; settings?: any; error?: string }>;
     callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string; walletError?: string }>;
-    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings?: import('./lib/networkConfig').NetworkSettings) => Promise<{ success: boolean; error?: string }>;
+    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings: import('./lib/networkConfig').NetworkSettings | undefined, callbackToken: string) => Promise<{ success: boolean; error?: string }>;
   };
   secrets: {
     getAll: () => Promise<Record<string, string>>;

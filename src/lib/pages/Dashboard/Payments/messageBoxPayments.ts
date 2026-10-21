@@ -1,6 +1,6 @@
 import { PeerPayClient } from '@bsv/message-box-client'
 import { P2PKH, PublicKey, Random, Transaction, Utils, WalletInterface } from '@bsv/sdk'
-import { PAYMENT_PROTOCOL } from './nearbyProtocol'
+import { PAYMENT_PROTOCOL } from './broadcast'
 import { identityKey, validAmount } from './paymentProtocol'
 export interface OutgoingPayment {
   txid: string
@@ -10,6 +10,8 @@ export interface OutgoingPayment {
   createdAt: number
   delivered: boolean
   request?: { requestId: string; messageId: string }
+  /** How it was first sent; rows saved before direct payments existed are message box rows. */
+  via?: 'messagebox' | 'direct'
   token: { transaction: number[]; amount: number; outputIndex: number; customInstructions: { derivationPrefix: string; derivationSuffix: string } }
 }
 /** Persist the signed token before any broadcast or delivery, so retry never pays twice. */

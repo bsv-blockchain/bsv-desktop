@@ -13,6 +13,15 @@ import { FeeSettingsService, registerFeeSettingsIpc } from './feeSettings.js';
 import { arcadeUrl } from './endpoints.js';
 import { getBootConfig } from './bootConfig.js';
 import { checkAndRepairCertTrust } from './sslCert.js';
+import { applyUserDataOverride } from './userDataOverride.js';
+import { hideLocalAddressesFromWebRtc, shareLocalAddressWithWebRtc } from './webrtcPrivacy.js';
+import { isDevMode } from './rendererSource.js';
+
+// BSV_DESKTOP_USER_DATA moves userData so a second copy of the app (a second
+// test wallet) can run on one machine. This has to stay ahead of everything
+// else: it must run before the app is ready, and nothing imported above reads
+// userData while its module loads (they all read it inside functions).
+applyUserDataOverride(app);
 
 const require = createRequire(import.meta.url);
 
@@ -120,7 +129,8 @@ async function cleanupBeforeExit(): Promise<void> {
 // Store previous focused app on macOS
 let prevBundleId: string | null = null;
 
-const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+// Development mode loads the Vite dev server; BSV_DESKTOP_LOAD_DIST=1 loads the build instead.
+const isDev = isDevMode(app.isPackaged);
 
 // Linux display server configuration
 // Add command-line switches for better Wayland/X11 compatibility
@@ -175,6 +185,9 @@ function createWindow() {
     title: 'BSV Desktop',
     show: false
   });
+  // The default of the "Connect directly on the same network" setting; the page sends the
+  // user's choice as soon as it starts, before any wallet can connect (webrtcPrivacy.ts).
+  shareLocalAddressWithWebRtc(mainWindow.webContents, true);
 
   // Load the app
   if (isDev) {
@@ -257,6 +270,10 @@ const feeSettingsService = new FeeSettingsService({
 registerFeeSettingsIpc(ipcMain, feeSettingsService);
 
 // Check if window is focused
+ipcMain.handle('webrtc:share-local-address', (event, share: unknown) => {
+  shareLocalAddressWithWebRtc(event.sender, share);
+});
+
 ipcMain.handle('is-focused', () => {
   return mainWindow?.isFocused() ?? false;
 });
@@ -534,10 +551,10 @@ ipcMain.handle('storage:call-method', async (_event, identityKey: string, chain:
 });
 
 // Initialize services on storage
-ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings?: import('./networkConfig.js').NetworkSettings) => {
+ipcMain.handle('storage:initialize-services', async (_event, identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings: import('./networkConfig.js').NetworkSettings | undefined, callbackToken: string) => {
   try {
     const manager = await getStorageManager();
-    await manager.request(identityKey, chain, () => manager.initializeServices(identityKey, chain, settings));
+    await manager.request(identityKey, chain, () => manager.initializeServices(identityKey, chain, settings, callbackToken));
     return { success: true };
   } catch (error: any) {
     console.error('[IPC] storage:initialize-services error:', error);
@@ -713,6 +730,9 @@ app.whenReady().then(async () => {
   // the toplevel is mapped, so a late-installed desktop entry is not picked up
   // until the next launch.
   integrateAppImageDesktopEntry();
+
+  // Before any page loads: WebRTC (direct payments) must not see raw local addresses.
+  hideLocalAddressesFromWebRtc(session.defaultSession);
 
   buildApplicationMenu({ getMainWindow: () => mainWindow });
   createWindow();

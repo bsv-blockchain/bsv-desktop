@@ -52,6 +52,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     restart: () => ipcRenderer.invoke('app:restart')
   },
 
+  // Direct payments: offer this device's local addresses to wallets on the same network
+  webrtc: {
+    shareLocalAddress: (share: boolean): Promise<void> => ipcRenderer.invoke('webrtc:share-local-address', share)
+  },
+
   // Troubleshoot: re-run the HTTPS bridge certificate trust flow
   cert: {
     checkAndRepair: () => ipcRenderer.invoke('cert:check-and-repair')
@@ -96,8 +101,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('storage:is-available', identityKey, chain),
     makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') =>
       ipcRenderer.invoke('storage:make-available', identityKey, chain),
-    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings?: import('./networkConfig.js').NetworkSettings) =>
-      ipcRenderer.invoke('storage:initialize-services', identityKey, chain, settings),
+    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings: import('./networkConfig.js').NetworkSettings | undefined, callbackToken: string) =>
+      ipcRenderer.invoke('storage:initialize-services', identityKey, chain, settings, callbackToken),
     callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) =>
       ipcRenderer.invoke('storage:call-method', identityKey, chain, method, args)
   },
@@ -199,6 +204,10 @@ export interface ElectronAPI {
     /** Relaunches the app; the process exits and the Promise does not resolve. */
     restart: () => Promise<void>;
   };
+  /** Direct payments: whether WebRTC offers this device's LAN and IPv6 addresses (see electron/webrtcPrivacy.ts). */
+  webrtc: {
+    shareLocalAddress: (share: boolean) => Promise<void>;
+  };
   cert: {
     checkAndRepair: () => Promise<{ trusted: boolean | null; repaired: boolean }>;
   };
@@ -212,7 +221,7 @@ export interface ElectronAPI {
     releaseNetwork: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<{ success: boolean; error?: string }>;
     isAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<boolean>;
     makeAvailable: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<{ success: boolean; settings?: any; error?: string }>;
-    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings?: import('./networkConfig.js').NetworkSettings) => Promise<{ success: boolean; error?: string }>;
+    initializeServices: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', settings: import('./networkConfig.js').NetworkSettings | undefined, callbackToken: string) => Promise<{ success: boolean; error?: string }>;
     callMethod: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', method: string, args: any[]) => Promise<{ success: boolean; result?: any; error?: string; walletError?: string }>;
   };
   secrets: {

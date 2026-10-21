@@ -33,7 +33,7 @@ import {
   WalletSettingsManager,
   type WalletSettings,
 } from '@bsv/wallet-toolbox-client'
-import { createServices } from './createServices'
+import { createServices, deriveArcadeCallbackToken } from './createServices'
 import { setTxStatusScope } from '../txStatusScope'
 import {
   PrivateKey,
@@ -47,6 +47,8 @@ import { toast } from 'react-toastify'
 import { EventEmittable } from './EventEmittable'
 import { PermissionQueueManager } from './PermissionQueueManager'
 import { PeerPayManager } from './PeerPayManager'
+import { MessageBoxAutoReceiver, RECEIVED_RECORDS_PREFIX } from './MessageBoxAutoReceiver'
+import { DirectPayManager } from './DirectPayManager'
 import { StorageElectronIPC } from '../StorageElectronIPC'
 import { WalletDataStorageManager } from '../walletPortability/WalletDataStorageManager'
 import { WalletDataSession, walletDataCall } from '../walletPortability/session'
@@ -61,12 +63,30 @@ import {
   seedDisplayPreferences,
   withDisplayPreferences,
 } from '../utils/displayPreferences'
+import { ALL_DIRECT_PAY_SETTINGS_KEYS, loadDirectPaySettings } from '../utils/directPaySettings'
+import { KEPT_DIRECT_PAYMENTS_PREFIX } from '../pages/Dashboard/Payments/directPayments'
 import type { LoginType, WABConfig } from '../WalletContext'
 import type { WalletProfile } from '../types/WalletProfile'
 import { defaultNetworkSettingsMap, isWalletNetwork, normalizeMessageBoxUrl, normalizeNetworkSettings, restoreNetworkSettings, type NetworkSettings, type NetworkSettingsMap, type WalletNetwork } from '../networkConfig'
 import { setWocEndpoints } from '../utils/woc'
-import { activeHttpBridgeRequests, activeUserWalletOperations, isHttpBridgePaused, setHttpBridgePaused } from './httpBridgeSession'
+import { isHttpBridgePaused, setHttpBridgePaused, walletChangeBlocker } from './httpBridgeSession'
 import { clearWalletForHttpRoute } from '../../onWalletReady'
+
+// Device-local payment state a logout must not drop: the MessageBox and nearby outboxes,
+// the direct-pay settings plus its retry and idempotency lists, and the record of message
+// box payments received automatically. Removing the wallet
+// from the device wipes them with everything else, except the keys below.
+const PAYMENT_STATE_KEY_PREFIXES = ['peerpay-outbox-v1:', 'nearby-payment-v1:', 'direct-pay-', RECEIVED_RECORDS_PREFIX]
+
+function isPaymentStateKey(key: string): boolean {
+  return (ALL_DIRECT_PAY_SETTINGS_KEYS as readonly string[]).includes(key) || PAYMENT_STATE_KEY_PREFIXES.some(prefix => key.startsWith(prefix))
+}
+
+// Kept even when the wallet is removed: payment requests, and direct payments this device
+// acknowledged as received but has not added to the wallet yet. Their payers will not resend
+// them and only this device has their derivation (Ruling 36); the lists are keyed by identity
+// and network, so the same wallet opened here again adds them, and no other wallet sees them.
+const ALWAYS_KEPT_KEY_PREFIXES = ['payReq_', KEPT_DIRECT_PAYMENTS_PREFIX]
 
 export type WalletLifecycle =
   | 'unconfigured'
@@ -126,6 +146,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   // ---- Service composition ----
   readonly permissionQueue: PermissionQueueManager
   readonly peerPay: PeerPayManager
+  readonly directPay: DirectPayManager
+  /** Takes message box payments into the open wallet without a click. */
+  readonly messageBoxReceiver: MessageBoxAutoReceiver
 
   // ---- Lifecycle ----
   private _lifecycle: WalletLifecycle = 'unconfigured'
@@ -178,10 +201,13 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     super()
     this.permissionQueue = new PermissionQueueManager()
     this.peerPay = new PeerPayManager()
+    this.directPay = new DirectPayManager()
+    this.messageBoxReceiver = new MessageBoxAutoReceiver()
 
     // Propagate sub-service changes as stateChanged
     this.permissionQueue.on('snapshot', () => this._emitState())
     this.peerPay.on('changed', () => this._emitState())
+    this.directPay.on('changed', () => this._emitState())
   }
 
   // ------------------------------------------------------------------
@@ -429,9 +455,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     const identityWallet = this._wallet
     const identityKey = (await identityWallet.getPublicKey({ identityKey: true })).publicKey
     if (isHttpBridgePaused() || this._switchingNetwork || this._lifecycle !== 'ready' || this._wallet !== identityWallet) throw new Error('The wallet is already changing. Try again when it is ready.')
-    if (this._hasPendingWalletWork()) {
-      throw new Error('Finish the current app request or payment approval before changing networks.')
-    }
+    const pending = this._pendingWalletWork('changing networks')
+    if (pending) throw new Error(pending)
 
     // Pause synchronously so another app cannot start between the guard and
     // snapshot capture. Storage close drains already-running in-app operations.
@@ -513,7 +538,10 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     // Detach old balances/managers before sub-services emit the new chain.
     this._emitState()
     const cleanup = await Promise.allSettled([
+      // First: it stops at once, before suspendClient() closes the websocket it listens on.
+      this.messageBoxReceiver.stop(),
       this.peerPay.suspendClient(),
+      this.directPay.stop(),
       Promise.resolve().then(() => previousManager?.destroy?.()),
       (async () => {
         try { await previousSession?.close() }
@@ -529,10 +557,15 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     if (failed) throw failed.reason
   }
 
-  /** An app request, payment or permission decision that a wallet change would cut off. */
-  private _hasPendingWalletWork(): boolean {
+  /**
+   * Why a wallet change (`action`) must wait: an app request, payment or permission decision it
+   * would cut off, or the background retry of kept direct payments (which is asked to stop);
+   * '' when nothing holds the wallet.
+   */
+  private _pendingWalletWork(action: string): string {
     const queues = this.permissionQueue.getSnapshot()
-    return !!(activeHttpBridgeRequests() || activeUserWalletOperations() || queues.groupPhase === 'pending' || Object.entries(queues).some(([key, value]) => key.endsWith('Requests') && Array.isArray(value) && value.length > 0))
+    const decisions = queues.groupPhase === 'pending' || Object.entries(queues).some(([key, value]) => key.endsWith('Requests') && Array.isArray(value) && value.length > 0)
+    return walletChangeBlocker(`Finish the current app request or payment approval before ${action}.`, decisions)
   }
 
   /**
@@ -720,7 +753,10 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
 
     try {
       const cleanup = await Promise.allSettled([
+        // First: it stops at once, before suspendClient() closes the websocket it listens on.
+        this.messageBoxReceiver.stop(),
         this.peerPay.suspendClient(),
+        this.directPay.stop(),
         (async () => {
           try { await previousSession?.close() }
           finally {
@@ -736,8 +772,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while closing storage')
       const chain = this._selectedNetwork
       const keyDeriver = new CachedKeyDeriver(new PrivateKey(primaryKey))
+      const callbackToken = deriveArcadeCallbackToken(keyDeriver)
       const serviceSettings = this._networkSettings[chain]
-      const services = createServices(chain, keyDeriver.identityKey, serviceSettings)
+      const services = createServices(chain, callbackToken, serviceSettings)
 
       let binding: { preferLocal: boolean } | undefined
       try {
@@ -758,7 +795,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       if (this._useRemoteStorage) {
         activeStorage = null // Created after wallet
       } else {
-        const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain, serviceSettings)
+        const electronStorage = new StorageElectronIPC(keyDeriver.identityKey, chain, serviceSettings, callbackToken)
         electronStorage.setServices(services as any)
         openedLocal = { identityKey: keyDeriver.identityKey, chain }
         await electronStorage.initializeBackendServices()
@@ -842,6 +879,11 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       }
 
       if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while starting services')
+      // After the check above (a superseded build's failure path does not stop it), and not
+      // awaited: receiving through a relay can take seconds to connect and the wallet is
+      // usable without it. Failures show in the direct-pay status.
+      this._startDirectPay()
+      this._startMessageBoxReceiver()
       // Clear the initializing flag BEFORE the ready emit so React (e.g. Greeter)
       // does not stay stuck on the non-interactive initializingBackendServices screen.
       // Previously this was only cleared in `finally` without an emit, so the UI
@@ -863,7 +905,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       console.error('[WalletService] _buildWallet failed:', error)
       clearWalletForHttpRoute()
       this.permissionQueue.setPermissionsManager(null)
+      await this.messageBoxReceiver.stop()
       await this.peerPay.suspendClient().catch(() => {})
+      await this.directPay.stop()
       this._managers = walletManager ? { walletManager } : {}
       this._startupError = error.message || 'Could not open the wallet services.'
       this._wallet = undefined
@@ -1063,7 +1107,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
       const identityKey = (storageManager as any)?._authId?.identityKey
       if (!identityKey) throw new Error('Could not get identity key from wallet')
       const electronStorage = new StorageElectronIPC(identityKey, this._selectedNetwork, this._networkSettings[this._selectedNetwork])
-      const services = createServices(this._selectedNetwork, identityKey, this._networkSettings[this._selectedNetwork])
+      // The wallet's own Services, which carry its callback token. A backup
+      // never starts backend services, so a fresh instance needs none.
+      const services = (wallet as any).services ?? createServices(this._selectedNetwork, undefined, this._networkSettings[this._selectedNetwork])
       electronStorage.setServices(services as any)
       await electronStorage.makeAvailable()
       backupProvider = electronStorage
@@ -1237,6 +1283,9 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     if (walletForPeerPay) {
       await this.peerPay.replaceClient(walletForPeerPay, trimmedUrl, this._adminOriginator)
     }
+    // Direct payments signal through the message box client, so they follow it.
+    this._startDirectPay()
+    this._startMessageBoxReceiver()
 
     const snapshot = this.saveEnhancedSnapshot({ messageBoxUrl: trimmedUrl, useMessageBox: true })
     secrets.setSnapshot(snapshot)
@@ -1245,9 +1294,12 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
   }
 
   async removeMessageBoxUrl(): Promise<void> {
+    await this.messageBoxReceiver.stop()
     await this.peerPay.destroyClient(this._messageBoxUrl)
     this._messageBoxUrl = MESSAGEBOX_HOST
     this._useMessageBox = false
+    this._startDirectPay()
+    this._startMessageBoxReceiver()
 
     const snapshot = this.saveEnhancedSnapshot()
     secrets.setSnapshot(snapshot)
@@ -1293,7 +1345,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     void secrets.endSession().catch((err) =>
       console.warn('[WalletService] endSession on logout failed:', err)
     )
-    this._clearLocalWalletState()
+    // Undelivered and unaccepted payments outlive a logout; removal scrubs all but kept direct payments.
+    this._clearLocalWalletState({ preservePayments: true })
     this._lifecycle = 'configured'
     this._emitState()
   }
@@ -1311,9 +1364,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     if (this._removingWallet || isHttpBridgePaused() || this._switchingNetwork || this._initInFlight || this._lifecycle !== 'ready' || !this._wallet) {
       throw new Error('Wait for the wallet to finish opening before removing it.')
     }
-    if (this._hasPendingWalletWork()) {
-      throw new Error('Finish the current app request or payment approval before removing this wallet.')
-    }
+    const pending = this._pendingWalletWork('removing this wallet')
+    if (pending) throw new Error(pending)
 
     this._removingWallet = true
     setHttpBridgePaused(true)
@@ -1334,7 +1386,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         this._tryAutoInitialize()
         throw new Error('The wallet could not be removed from this device. It is unchanged and will reopen.')
       }
-      this._clearLocalWalletState()
+      this._clearLocalWalletState({ preservePayments: false })
       this._lifecycle = 'unconfigured'
       this._emitState()
     } finally {
@@ -1342,12 +1394,17 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     }
   }
 
-  /** Forget the wallet in this renderer: local storage (payment requests aside), secret cache and runtime state. */
-  private _clearLocalWalletState() {
+  /**
+   * Forget the wallet in this renderer: local storage, secret cache and runtime state.
+   * Payment requests and kept direct payments are always kept. With `preservePayments`
+   * (logout), so are the payment outboxes and the rest of the direct-pay state, which a
+   * payment still in flight depends on.
+   */
+  private _clearLocalWalletState({ preservePayments }: { preservePayments: boolean }) {
     const preservedKeys: Record<string, string> = {}
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
-      if (key?.startsWith('payReq_')) {
+      if (key && (ALWAYS_KEPT_KEY_PREFIXES.some(prefix => key.startsWith(prefix)) || (preservePayments && isPaymentStateKey(key)))) {
         preservedKeys[key] = localStorage.getItem(key) ?? ''
       }
     }
@@ -1365,12 +1422,47 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     this._snapshotLoaded = false
     this._activeProfile = null
     this._mnemonicProfiles = defaultMnemonicProfiles()
+    void this.messageBoxReceiver.stop()
     this.peerPay.reset()
+    void this.directPay.stop()
   }
 
   // ------------------------------------------------------------------
   // Internal helpers
   // ------------------------------------------------------------------
+
+  /**
+   * Starts direct payments for the open wallet with the current message box client and
+   * device settings, or restarts them when one of those changed. Never throws.
+   */
+  private _startDirectPay() {
+    const wallet = this._managers.permissionsManager
+    const session = this.walletData
+    if (!wallet || !session) return
+    void this.directPay.start({
+      wallet,
+      originator: this._adminOriginator,
+      identity: session.identityKey,
+      chain: session.chain,
+      peerPayClient: this.peerPay.getSnapshot().peerPayClient,
+      messageBoxUrl: this._useMessageBox ? this._messageBoxUrl : undefined,
+      settings: loadDirectPaySettings(),
+    })
+  }
+
+  /**
+   * Starts taking message box payments for the open wallet with the current message box
+   * client, or restarts with a new one; stops when there is no wallet or message box. Never throws.
+   */
+  private _startMessageBoxReceiver() {
+    const session = this.walletData
+    const client = this.peerPay.getSnapshot().peerPayClient
+    if (!this._managers.permissionsManager || !session || !client || !this._useMessageBox || !this._messageBoxUrl) {
+      void this.messageBoxReceiver.stop()
+      return
+    }
+    void this.messageBoxReceiver.start({ client, host: this._messageBoxUrl, identity: session.identityKey, chain: session.chain })
+  }
 
   private _tryAutoInitialize() {
     const directKeyMode = this._loginType === 'direct-key' || this._loginType === 'mnemonic'

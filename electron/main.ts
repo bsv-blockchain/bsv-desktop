@@ -11,7 +11,7 @@ import type { WalletPortabilityService } from './wallet-portability/service.js';
 import { integrateAppImageDesktopEntry } from './linuxDesktopIntegration.js';
 import { FeeSettingsService, registerFeeSettingsIpc } from './feeSettings.js';
 import { ColorStoreService, registerColorStoreIpc } from './colorStore.js';
-import { COLOR_GUARD_CHANNELS, registerColorGuardIpc, sharedColorGuardJournal } from './colorBroadcastGuard.js';
+import { COLOR_GUARD_CHANNELS, createColorHeldSweeper, registerColorGuardIpc, sharedColorGuardJournal, sweepColorGuard } from './colorBroadcastGuard.js';
 import { arcadeUrl } from './endpoints.js';
 import { getBootConfig } from './bootConfig.js';
 import { checkAndRepairCertTrust } from './sslCert.js';
@@ -34,6 +34,16 @@ let storageCallFailure: ((error: unknown) => { success: false; error: string; wa
 // One load shared by concurrent callers, so the listener below is added once.
 // A failed load is forgotten, so the next caller tries again.
 let storageManagerLoad: Promise<any> | null = null;
+
+/** The 1Color broadcast guard's release/sweep options (contract §8.2): every storage access inside the storage fence. */
+const colorGuardIpcOptions: Parameters<typeof registerColorGuardIpc>[1] = {
+  journal: sharedColorGuardJournal(),
+  withStorage: async (identityKey, chain, fn) => {
+    const manager = await getStorageManager();
+    return await manager.withColorGuardStorage(identityKey, chain, fn);
+  }
+};
+
 async function getStorageManager() {
   storageManagerLoad ??= import('./storage.js').then(module => {
     // Push monitor-observed status changes (Arcade SSE events among them) to
@@ -42,8 +52,13 @@ async function getStorageManager() {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('wallet:tx-status-changed', event);
     });
     // A held 1Color broadcast: every window's color module runs a settle tick,
-    // which ends with a release drain (contract §8.2).
-    module.storageManager.onColorHeld((event: { txid: string }) => {
+    // which ends with a release drain (contract §8.2). Main also re-parks the
+    // withheld req itself, so no window is needed to stop its attempts growing.
+    const sweepHeld = createColorHeldSweeper({
+      sweep: async (identityKey, chain) => await sweepColorGuard(colorGuardIpcOptions, identityKey, chain)
+    });
+    module.storageManager.onColorHeld((event: { identityKey: string; chain: string; txid: string }) => {
+      sweepHeld(event);
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) window.webContents.send(COLOR_GUARD_CHANNELS.held, event.txid);
       }
@@ -286,13 +301,7 @@ registerColorStoreIpc(ipcMain, new ColorStoreService());
 // 1Color broadcast guard (contract §8.2): the renderer lists held txids and
 // releases each one once its color module reports it settled. The release
 // posts inside the storage access fence.
-registerColorGuardIpc(ipcMain, {
-  journal: sharedColorGuardJournal(),
-  withStorage: async (identityKey, chain, fn) => {
-    const manager = await getStorageManager();
-    return await manager.withColorGuardStorage(identityKey, chain, fn);
-  }
-});
+registerColorGuardIpc(ipcMain, colorGuardIpcOptions);
 
 // Check if window is focused
 ipcMain.handle('webrtc:share-local-address', (event, share: unknown) => {

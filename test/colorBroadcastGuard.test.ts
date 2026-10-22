@@ -30,6 +30,7 @@ import { Beef, LockingScript, MerklePath, P2PKH, Transaction, UnlockingScript } 
 import { OneColor } from '@bsv/templates'
 import {
   ColorGuardJournal,
+  createColorHeldSweeper,
   guardPostBeef,
   installColorBroadcastGuard,
   loadColorClassifier,
@@ -216,11 +217,14 @@ describe('storage layer (main)', () => {
     const storage = await guarded(mkStorage())
     const { T, t } = scenario()
     const reqT = mkReq(T, 'unsent')
+    reqT.attempts = 150
     storage.setTxStatus(reqT, 'sending')
     const r = await storage.attemptToPostReqsToNetwork([reqT])
     expect(r.details).toEqual([{ txid: t, req: reqT, status: 'success' }])
     expect(storage.arc.postBeef).not.toHaveBeenCalled()
     expect(reqT.status).toBe('nosend')
+    // TaskCheckNoSends applies the proof timeout to nosend reqs too (ignoreStatus false)
+    expect(reqT.attempts).toBe(0)
     expect(await journal.held(A, 'test')).toEqual([t])
   })
 
@@ -506,6 +510,63 @@ describe('services layer (worker)', () => {
   })
 })
 
+describe('held sweeper (main)', () => {
+  test('coalesces held events per wallet into one delayed sweep, and never throws', async () => {
+    vi.useFakeTimers()
+    try {
+      const sweep = vi.fn(async () => ({ parked: [], unparked: [] }))
+      const onHeld = createColorHeldSweeper({ sweep, delayMs: 5000 })
+      const B = '03' + 'bb'.repeat(32)
+      onHeld({ identityKey: A, chain: 'test', txid: 'aa'.repeat(32) })
+      onHeld({ identityKey: A, chain: 'test', txid: 'bb'.repeat(32) })
+      onHeld({ identityKey: B, chain: 'main', txid: 'cc'.repeat(32) })
+      expect(sweep).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(sweep).toHaveBeenCalledTimes(2)
+      expect(sweep).toHaveBeenCalledWith(A, 'test')
+      expect(sweep).toHaveBeenCalledWith(B, 'main')
+
+      // a failing sweep is logged; the next event sweeps again
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      sweep.mockRejectedValueOnce(new Error('storage closed'))
+      onHeld({ identityKey: A, chain: 'test', txid: 'aa'.repeat(32) })
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(warn).toHaveBeenCalled()
+      onHeld({ identityKey: A, chain: 'test', txid: 'aa'.repeat(32) })
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(sweep).toHaveBeenCalledTimes(4)
+
+      // malformed events are ignored
+      onHeld({ identityKey: 'nope', chain: 'test', txid: 'aa'.repeat(32) } as any)
+      onHeld(undefined as any)
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(sweep).toHaveBeenCalledTimes(4)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('an event during a running sweep schedules one more after it', async () => {
+    vi.useFakeTimers()
+    try {
+      let finish: () => void = () => {}
+      const sweep = vi.fn(() => new Promise<any>(resolve => { finish = () => resolve({ parked: [], unparked: [] }) }))
+      const onHeld = createColorHeldSweeper({ sweep, delayMs: 1000 })
+      onHeld({ identityKey: A, chain: 'test', txid: 'aa'.repeat(32) })
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(sweep).toHaveBeenCalledTimes(1)
+      onHeld({ identityKey: A, chain: 'test', txid: 'aa'.repeat(32) })
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(sweep).toHaveBeenCalledTimes(1) // single flight
+      finish()
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(sweep).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('release IPC', () => {
   function setup (storage: any, withStorage?: (id: string, chain: string, fn: (s: any) => Promise<any>) => Promise<any>) {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
@@ -557,12 +618,16 @@ describe('release IPC', () => {
 
     // the worker raced the park and wrote 'sending' back: the next list re-parks it
     reqT.status = 'sending'
+    reqT.attempts = 145
     await ipc.held()
     expect(reqT.status).toBe('nosend')
+    expect(reqT.attempts).toBe(0)
+    reqT.attempts = 3 // a stale count: the release starts it from zero
 
     await ipc.release(t)
     expect(storage.arc.calls.filter(c => c.txids.includes(t))).toHaveLength(1)
     expect(reqT.status).toBe('unmined')
+    expect(reqT.attempts).toBe(0)
     expect(await ipc.held()).toEqual([])
   })
 
@@ -607,18 +672,22 @@ describe('release IPC', () => {
     await workerPost(storage, reqC)
     expect(reqC.status).toBe('sending')
     expect(reqG.status).toBe('sending')
+    reqC.attempts = 200
 
     const ipc = setup(storage)
     expect(await ipc.held()).toEqual([t]) // children are not listed: never isSettled
     expect(reqC.status).toBe('nosend')
     expect(reqG.status).toBe('nosend')
     expect(notes(reqC)).toEqual(['colorGuardHoldChild'])
+    expect(reqC.attempts).toBe(0)
+    reqC.attempts = 4
 
     await ipc.release(t)
     expect(reqT.status).toBe('unmined')
     expect(reqC.status).toBe('unsent')
     expect(reqG.status).toBe('unsent')
     expect(notes(reqC)).toContain('colorGuardReleaseChild')
+    expect(reqC.attempts).toBe(0)
     expect(storage.arc.sawTxid(c)).toBe(false)
 
     // TaskSendWaiting posts them; the guard lets them pass

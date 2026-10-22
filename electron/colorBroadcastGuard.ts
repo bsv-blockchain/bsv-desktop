@@ -669,6 +669,7 @@ export function installColorBroadcastGuard (storage: GuardedStorageLike, o: Colo
         for (const req of park) {
           await o.journal.markHeld(o.identityKey, o.chain, req.txid)
           req.status = 'nosend'
+          req.attempts = 0 // see parkReq
           req.addHistoryNote({ when: new Date().toISOString(), what: NOTE_HOLD }, true)
           await req.updateStorageDynamicProperties(storage, trx)
         }
@@ -759,6 +760,7 @@ async function doRelease (o: ColorGuardIpcOptions, identityKey: string, chain: C
       const req = await toReq(rows[0])
       if (req.status === 'nosend') {
         req.status = 'unsent'
+        req.attempts = 0 // a real serviceError after the release starts from a clean count
         req.addHistoryNote({ when: new Date().toISOString(), what: NOTE_RELEASE })
         await req.updateStorageDynamicProperties(storage)
       }
@@ -797,6 +799,11 @@ async function parkReq (storage: any, req: any, what: string): Promise<boolean> 
   if (!PARKABLE_REQ_STATUSES.has(req?.status)) return false
   if (!(await txRowsHoldSafe(storage, req))) return false
   req.status = 'nosend'
+  // TaskCheckNoSends runs the proof timeout on nosend reqs too (getProofs
+  // ignoreStatus false, toolbox 2.15.0 TaskCheckNoSends.js:157), so attempts
+  // raised by withheld posts must not survive the park; no task raises them at
+  // nosend. The toolbox's own rebroadcast reset does the same.
+  req.attempts = 0
   // noDupes: the worker can write a stale copy back ('sending'), so one req may be parked many times
   req.addHistoryNote({ when: new Date().toISOString(), what }, true)
   await req.updateStorageDynamicProperties(storage)
@@ -920,6 +927,7 @@ export async function sweepColorGuardStorage (
           if (await parkReq(storage, req, NOTE_HOLD_CHILD)) out.parked.push(req.txid)
         } else if (req.status === 'nosend') {
           req.status = 'unsent'
+          req.attempts = 0
           req.addHistoryNote({ when: new Date().toISOString(), what: NOTE_RELEASE_CHILD })
           await req.updateStorageDynamicProperties(storage)
           out.unparked.push(req.txid)
@@ -930,6 +938,60 @@ export async function sweepColorGuardStorage (
     }
     return out
   })
+}
+
+export interface ColorHeldSweeperOptions {
+  sweep: (identityKey: string, chain: ColorGuardChain) => Promise<unknown>
+  /** Quiet period after a held event (the worker writes the req after its post returns). Default 5 s. */
+  delayMs?: number
+}
+
+/**
+ * Main-side trigger for the sweep on every held event (main or worker), so a
+ * withheld req is re-parked even when no window runs a drain (no color module
+ * loaded, window closed). Per wallet: events are coalesced into one sweep after
+ * `delayMs`, sweeps never overlap (an event during one schedules one more), and
+ * a fault is logged. The returned listener never throws.
+ */
+export function createColorHeldSweeper (o: ColorHeldSweeperOptions): (event: { identityKey: string, chain: string, txid?: string }) => void {
+  const delayMs = o.delayMs ?? 5000
+  const state = new Map<string, { timer?: ReturnType<typeof setTimeout>, running: boolean, again: boolean }>()
+  const schedule = (identityKey: string, chain: ColorGuardChain): void => {
+    const key = `${identityKey}-${chain}`
+    let s = state.get(key)
+    if (s === undefined) { s = { running: false, again: false }; state.set(key, s) }
+    if (s.running) { s.again = true; return }
+    if (s.timer !== undefined) return
+    const entry = s
+    entry.timer = setTimeout(() => {
+      entry.timer = undefined
+      entry.running = true
+      void Promise.resolve()
+        .then(async () => await o.sweep(identityKey, chain))
+        .catch(error => { console.warn('[color-guard] held sweep failed', error) })
+        .finally(() => {
+          entry.running = false
+          if (entry.again) {
+            entry.again = false
+            schedule(identityKey, chain)
+          } else {
+            state.delete(key)
+          }
+        })
+    }, delayMs)
+    ;(entry.timer as { unref?: () => void }).unref?.()
+  }
+  return event => {
+    try {
+      const identityKey = event?.identityKey
+      const chain = event?.chain
+      assertIdentity(identityKey)
+      assertChain(chain)
+      schedule(identityKey, chain)
+    } catch {
+      // a malformed event: nothing to sweep
+    }
+  }
 }
 
 /** Runs the sweep inside the storage fence. */

@@ -6,6 +6,7 @@ import { onWalletReady } from './onWalletReady';
 import { electronFunctions } from './electronFunctions';
 import packageJson from '../package.json';
 import { btmsPermissionModule } from './lib/permissionModules/btms';
+import { colorPermissionModule } from './lib/permissionModules/color';
 import VaultGate from './lib/components/VaultGate';
 import { installTxStatusBridge } from './txStatusBridge';
 import { followLocalAddressSharing } from './lib/utils/localAddressSharing';
@@ -29,7 +30,7 @@ if (rootElement) {
           nativeHandlers={electronFunctions}
           appVersion={packageJson.version}
           appName="BSV Desktop"
-          permissionModules={[btmsPermissionModule]}
+          permissionModules={[btmsPermissionModule, colorPermissionModule]}
         />
       </VaultGate>
     </React.StrictMode>

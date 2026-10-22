@@ -23,7 +23,17 @@ import {
   CounterpartyPermissionRequest,
   GroupedPermissions,
 } from '../types/GroupedPermissions'
-import type { PermissionPromptHandler } from '../permissionModules/types'
+import type {
+  PermissionModuleContext,
+  PermissionModuleDefinition,
+  PermissionPromptHandler,
+} from '../permissionModules/types'
+import {
+  createColorLinkageGrantPolicy,
+  linkagePromptDescription,
+  type ColorLinkageGrantPolicy,
+  type LinkageRequest,
+} from '../permissionModules/color/linkageGrant'
 import {
   markHttpBridgeSessionCancelled,
   normalizeBridgeOrigin,
@@ -74,6 +84,8 @@ export type ProtocolAccessRequest = {
   description?: string
   renewal?: boolean
   type?: PermissionType
+  /** A holder-send linkage request (D20): approve it with `approveColorLinkage`. */
+  colorLinkage?: boolean
 }
 
 export type SpendingRequest = {
@@ -165,13 +177,86 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
   // ---- Permission module support ----
   private _getPermissionModuleById: ((id: string) => any) | null = null
   private _promptHandlers: Map<string, PermissionPromptHandler> = new Map()
+  /** Modules built for the current wallet, disposed on rebuild and close. */
+  private _permissionModuleInstances: Array<{ definition: PermissionModuleDefinition; module: unknown }> = []
+
+  // ---- Holder-send linkage grants (D20) ----
+  private _linkagePolicy: ColorLinkageGrantPolicy = createColorLinkageGrantPolicy({ overlayKeys: () => [] })
+  /** Queued `Mandala token sending` requests by requestID. */
+  private _colorLinkageRequests = new Map<string, LinkageRequest>()
+  /** Bumped by disposePermissionModules(); an approval that spans it grants nothing. */
+  private _linkageGeneration = 0
 
   // ------------------------------------------------------------------
   // Public API
   // ------------------------------------------------------------------
 
+  /**
+   * `null` closes the wallet: the modules built for it are disposed (timers,
+   * listeners and grants), so every close path releases them.
+   */
   setPermissionsManager(pm: any) {
     this._permissionsManager = pm
+    if (pm === null) this.disposePermissionModules()
+  }
+
+  /**
+   * Disposes every module built by createPermissionsManager exactly once and
+   * drops the linkage grants and pending linkage requests. Idempotent; a
+   * module whose dispose throws is logged and the rest are still disposed.
+   */
+  disposePermissionModules(): void {
+    const instances = this._permissionModuleInstances
+    this._permissionModuleInstances = []
+    this._linkageGeneration++
+    this._linkagePolicy.clear()
+    this._colorLinkageRequests.clear()
+    for (const { definition, module } of instances) {
+      try {
+        definition.dispose?.(module)
+      } catch (error) {
+        console.error(`[PermissionQueueManager] disposing permission module ${definition.id} failed:`, error)
+      }
+    }
+  }
+
+  /**
+   * The user approved a `Mandala token sending` prompt. Grants it ephemerally,
+   * records the linkage grant for its family, then grants (ephemerally, no
+   * prompt) every queued request of the same originator the grant now covers.
+   * The approved item stays queued: the prompt advances the queue itself.
+   */
+  async approveColorLinkage(requestID: string): Promise<void> {
+    const request = this._colorLinkageRequests.get(requestID)
+    if (!request) throw new Error('Not a Mandala token sending request')
+    // Removed before the first await: a double-click approves once.
+    this._colorLinkageRequests.delete(requestID)
+    const pm = this._permissionsManager
+    if (!pm) throw new Error('Not a Mandala token sending request')
+    const generation = this._linkageGeneration
+    const policy = this._linkagePolicy
+
+    await pm.grantPermission({ requestID, ephemeral: true })
+    // The wallet was rebuilt or closed while granting: its grants are gone.
+    if (generation !== this._linkageGeneration || pm !== this._permissionsManager) return
+    policy.grant(request)
+
+    const covered: string[] = []
+    for (const [id, r] of this._colorLinkageRequests) {
+      if (r.originator === request.originator && policy.live(r)) covered.push(id)
+    }
+    if (covered.length === 0) return
+    for (const id of covered) this._colorLinkageRequests.delete(id)
+    this._removeRequestIdsFromQueues(new Set(covered))
+    this._emitSnapshot()
+    if (this._allQueuesEmpty()) this.emit('focusReleasable', this._wasOriginallyFocused)
+    for (const id of covered) {
+      try {
+        await pm.grantPermission({ requestID: id, ephemeral: true })
+      } catch {
+        // Already answered or cancelled (e.g. the app went away).
+      }
+    }
   }
 
   /**
@@ -605,6 +690,7 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
 
     for (const id of ids) {
       this._groupRequestCooldownKeyById.delete(id)
+      this._colorLinkageRequests.delete(id)
     }
 
     // If group queue drained mid-pending, release deferred items.
@@ -723,6 +809,32 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       return Promise.resolve()
     }
 
+    // Holder-send linkage toward a configured Mandala overlay (D20).
+    const linkage: LinkageRequest = { originator, protocolID: protocolID as [number, string], counterparty }
+    if (this._linkagePolicy.matches(linkage)) {
+      const pm = this._permissionsManager
+      if (pm && this._linkagePolicy.live(linkage)) {
+        return Promise.resolve()
+          .then(() => pm.grantPermission({ requestID, ephemeral: true }))
+          .then(
+            () => undefined,
+            (error: unknown) => {
+              // Not this manager's request (a rebuild raced it): let the user answer it.
+              console.warn('[PermissionQueue] linkage grant failed, prompting instead:', error)
+              this._queueProtocolRequest(args, linkage)
+            }
+          )
+      }
+      this._queueProtocolRequest(args, linkage)
+      return Promise.resolve()
+    }
+
+    this._queueProtocolRequest(args)
+    return Promise.resolve()
+  }
+
+  private _queueProtocolRequest(args: PermissionRequest & { requestID: string }, linkage?: LinkageRequest): void {
+    const { requestID, counterparty, originator, reason, renewal, protocolID } = args
     const [protocolSecurityLevel, protocolNameString] = protocolID as any
 
     let permissionType: PermissionType = 'protocol'
@@ -744,19 +856,21 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       renewal,
       type: permissionType,
     }
+    if (linkage) {
+      newItem.colorLinkage = true
+      newItem.description = linkagePromptDescription(linkage)
+      this._colorLinkageRequests.set(requestID, linkage)
+    }
 
     if (this._groupPhase === 'pending') {
       this._deferred.protocol.push(newItem)
-      return Promise.resolve()
+      return
     }
 
-    return new Promise<void>(resolve => {
-      const wasEmpty = this._protocolRequests.length === 0
-      this._protocolRequests = [...this._protocolRequests, newItem]
-      if (wasEmpty) this.emit('focusNeeded')
-      this._emitSnapshot()
-      resolve()
-    })
+    const wasEmpty = this._protocolRequests.length === 0
+    this._protocolRequests = [...this._protocolRequests, newItem]
+    if (wasEmpty) this.emit('focusNeeded')
+    this._emitSnapshot()
   }
 
   /** Spending authorization callback — bound by createPermissionsManager. */
@@ -936,26 +1050,44 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
    * Creates a WalletPermissionsManager with all callbacks bound to this queue.
    * Also monkey-patches grant/deny/dismiss to auto-release the group gate.
    */
-  createPermissionsManager(wallet: WalletInterface): WalletPermissionsManager {
+  createPermissionsManager(wallet: WalletInterface, context?: PermissionModuleContext): WalletPermissionsManager {
+    // A rebuild (network/profile switch) never leaves the previous wallet's
+    // modules running: their timers, listeners and grants go first.
+    this.disposePermissionModules()
+    const overlayKeys = (Array.isArray(context?.settings?.mandalaOverlays) ? context!.settings.mandalaOverlays : [])
+      .map(o => o?.identityKey)
+      .filter((k): k is string => typeof k === 'string')
+    this._linkagePolicy = createColorLinkageGrantPolicy({ overlayKeys: () => overlayKeys })
+
     const permissionModulesMap: Record<string, any> = {}
-    for (const moduleId of this.enabledPermissionModules) {
-      const descriptor = this._getPermissionModuleById?.(moduleId)
-      if (!descriptor) continue
-      permissionModulesMap[moduleId] = descriptor.createModule({
-        wallet,
-        adminOriginator: this.adminOriginator,
-        // Prompts may register after wallet construction or remount on a
-        // theme change. Resolve the current handler at the time of the call.
-        promptHandler: (app: string, message: string) => this._promptHandlers.get(moduleId)?.(app, message) ?? Promise.resolve(false),
-      })
-    }
+    let pm: WalletPermissionsManager
+    try {
+      for (const moduleId of this.enabledPermissionModules) {
+        const descriptor = this._getPermissionModuleById?.(moduleId) as PermissionModuleDefinition | undefined
+        if (!descriptor) continue
+        const module = descriptor.createModule({
+          wallet,
+          adminOriginator: this.adminOriginator,
+          // Prompts may register after wallet construction or remount on a
+          // theme change. Resolve the current handler at the time of the call.
+          promptHandler: (app: string, message: string) => this._promptHandlers.get(moduleId)?.(app, message) ?? Promise.resolve(false),
+          context,
+        })
+        this._permissionModuleInstances.push({ definition: descriptor, module })
+        permissionModulesMap[moduleId] = module
+      }
 
-    const configWithModules = {
-      ...this.permissionsConfig,
-      permissionModules: permissionModulesMap,
-    }
+      const configWithModules = {
+        ...this.permissionsConfig,
+        permissionModules: permissionModulesMap,
+      }
 
-    const pm = new WalletPermissionsManager(wallet, this.adminOriginator, configWithModules as any)
+      pm = new WalletPermissionsManager(wallet, this.adminOriginator, configWithModules as any)
+    } catch (error) {
+      // Nothing half-built keeps running without a manager.
+      this.disposePermissionModules()
+      throw error
+    }
 
     pm.bindCallback('onProtocolPermissionRequested', this.protocolPermissionCallback)
     pm.bindCallback('onBasketAccessRequested', this.basketAccessCallback)

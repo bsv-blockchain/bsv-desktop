@@ -95,6 +95,13 @@ describe('coins', () => {
     expect(d.walletClass!.reviewSpendableOutputs).toHaveBeenCalledWith(true, true)
     expect(out.fixed).toEqual(['Updated 3 coin(s) that were already spent'])
   })
+
+  it('reads a 4.0 decimal-string count exactly and refuses one that is not a count', async () => {
+    const ok = deps({ walletClass: { ...deps().walletClass!, reviewSpendableOutputs: vi.fn(async () => ({ totalOutputs: '3' })) } })
+    expect((await createWalletCheckPorts(ok).coins()).fixed).toEqual(['Updated 3 coin(s) that were already spent'])
+    const bad = deps({ walletClass: { ...deps().walletClass!, reviewSpendableOutputs: vi.fn(async () => ({ totalOutputs: '03' })) } })
+    await expect(createWalletCheckPorts(bad).coins()).rejects.toThrow('Updated coins is not a safe non-negative integer count')
+  })
 })
 
 describe('messageBox', () => {

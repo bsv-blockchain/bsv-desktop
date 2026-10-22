@@ -1,5 +1,6 @@
 import type { WalletInterface } from '@bsv/sdk'
 import type { PermissionModuleDefinition } from './types'
+import { readCount } from '../utils/listOutputsCount'
 import { MandalaPermissionPrompt } from './mandala/Prompt'
 import {
   listAllOutpoints,
@@ -16,7 +17,7 @@ export const listMandalaTokenOutpoints = (wallet: WalletInterface, adminOriginat
     includeCustomInstructions: false,
     limit,
     offset
-  }, adminOriginator))
+  }, adminOriginator).then(page => ({ outputs: page.outputs, totalOutputs: readCount(page.totalOutputs, 'Mandala token outputs') })))
 
 export const mandalaPermissionModule: PermissionModuleDefinition = {
   id: 'mandala',
@@ -32,7 +33,7 @@ export const mandalaPermissionModule: PermissionModuleDefinition = {
       includeCustomInstructions: false,
       limit,
       offset
-    }, adminOriginator), outpoint),
+    }, adminOriginator).then(page => ({ outputs: page.outputs, totalOutputs: readCount(page.totalOutputs, 'Mandala token outputs') })), outpoint),
     resolveAssetMetadata: async () => null
   }),
   Prompt: MandalaPermissionPrompt

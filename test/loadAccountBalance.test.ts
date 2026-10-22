@@ -28,4 +28,18 @@ describe('bounded wallet balance reads', () => {
     await expect(loadAccountBalance(wallet, 'wallet.internal')).rejects.toThrow('Storage unavailable')
     expect(listOutputs).toHaveBeenCalledTimes(1)
   })
+
+  test('accepts a decimal-string total from a 4.0 wallet', async () => {
+    const listOutputs = vi.fn().mockResolvedValue({ totalOutputs: '1234567', outputs: [] })
+    const wallet = { listOutputs } as unknown as WalletInterface
+    await expect(loadAccountBalance(wallet, 'wallet.internal')).resolves.toBe(1234567)
+  })
+
+  test('refuses a total that cannot be an exact satoshi count instead of reporting a wrong balance', async () => {
+    for (const totalOutputs of ['9007199254740992', '01', 1.5, -1]) {
+      const listOutputs = vi.fn().mockResolvedValue({ totalOutputs, outputs: [] })
+      const wallet = { listOutputs } as unknown as WalletInterface
+      await expect(loadAccountBalance(wallet, 'wallet.internal')).rejects.toThrow('is not a safe non-negative integer count')
+    }
+  })
 })

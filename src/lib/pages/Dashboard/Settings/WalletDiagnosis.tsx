@@ -10,6 +10,7 @@ import { WalletContext } from '../../../WalletContext.js'
 import type { ListActionsArgs, ListOutputsResult } from '@bsv/sdk'
 import { Wallet } from '@bsv/wallet-toolbox-client'
 import { beginUserWalletOperation } from '../../../services/httpBridgeSession'
+import { readCount } from '../../../utils/listOutputsCount'
 
 interface DiagnosisResults {
   failedCount: number
@@ -19,6 +20,9 @@ interface DiagnosisResults {
   totalOutputs: number
   spendableOutputs: number
 }
+
+/** A listOutputs page whose `totalOutputs` has been read as an exact count. */
+type OutputsView = Omit<ListOutputsResult, 'totalOutputs'> & { totalOutputs: number }
 
 interface ActionItem {
   txid: string
@@ -44,7 +48,7 @@ const WalletDiagnosis = () => {
   const [loading, setLoading] = useState(false)
   const [diagnosis, setDiagnosis] = useState<DiagnosisResults | null>(null)
   const [actions, setActions] = useState<ActionItem[]>([])
-  const [outputs, setOutputs] = useState<ListOutputsResult | null>(null)
+  const [outputs, setOutputs] = useState<OutputsView | null>(null)
   const [operationLog, setOperationLog] = useState<string[]>([])
   const [confirmation, setConfirmation] = useState<ConfirmationState>({
     open: false, title: '', message: '', onConfirm: () => {}
@@ -137,7 +141,7 @@ const WalletDiagnosis = () => {
           limit: 10000,
           offset: 0
         })
-        totalOutputs = outputRes.totalOutputs
+        totalOutputs = readCount(outputRes.totalOutputs, 'Outputs')
         spendableOutputs = outputRes.outputs.filter(o => o.spendable).length
       } catch (e) {
         addLog(`Warning: Could not query outputs - ${e instanceof Error ? e.message : String(e)}`)
@@ -295,9 +299,10 @@ const WalletDiagnosis = () => {
         limit: 10000,
         offset: 0
       })
-      setOutputs(result)
-      const spendable = result.outputs.filter(o => o.spendable).length
-      addLog(`Found ${result.totalOutputs} output(s), ${spendable} spendable`)
+      const view: OutputsView = { ...result, totalOutputs: readCount(result.totalOutputs, 'Outputs') }
+      setOutputs(view)
+      const spendable = view.outputs.filter(o => o.spendable).length
+      addLog(`Found ${view.totalOutputs} output(s), ${spendable} spendable`)
     } catch (e: any) {
       const msg = e?.message || String(e)
       addLog(`Failed to load outputs: ${msg}`)
@@ -321,13 +326,15 @@ const WalletDiagnosis = () => {
           await wallet.relinquishOutput({ basket: 'default', output: outpoint })
           addLog(`Successfully relinquished output ${outpoint.substring(0, 20)}...`)
           toast.success('Output relinquished')
-          if (outputs) {
-            setOutputs({
-              ...outputs,
-              totalOutputs: outputs.totalOutputs - 1,
-              outputs: outputs.outputs.filter(o => `${o.outpoint}` !== outpoint),
-            })
-          }
+          // Functional update: a reload that landed while the relinquish was in
+          // flight must not be overwritten by the list captured before it.
+          setOutputs(prev => prev && prev.outputs.some(o => `${o.outpoint}` === outpoint)
+            ? {
+                ...prev,
+                totalOutputs: Math.max(0, prev.totalOutputs - 1),
+                outputs: prev.outputs.filter(o => `${o.outpoint}` !== outpoint),
+              }
+            : prev)
         } catch (e: any) {
           const msg = e?.message || String(e)
           addLog(`Failed to relinquish output: ${msg}`)
@@ -414,7 +421,7 @@ const WalletDiagnosis = () => {
         try {
           const walletClass = getWalletClass()
           const result = await walletClass.reviewSpendableOutputs(true, release)
-          const invalidCount = result.totalOutputs
+          const invalidCount = readCount(result.totalOutputs, 'Invalid outputs')
           setReviewResults({ total: invalidCount, invalid: invalidCount })
           if (invalidCount === 0) {
             addLog('All spendable outputs verified successfully — no invalid outputs found')

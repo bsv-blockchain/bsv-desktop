@@ -27,6 +27,17 @@
  * pass it) and deletes `<txid>.held`. A crash anywhere before the delete leaves
  * `.held`, so the next drain redoes the (idempotent) steps.
  *
+ * Re-park sweep (`sweepColorGuard`, run by every `color-guard:list` and after
+ * every release): a req that layer 3 withheld is left by the toolbox at
+ * `sending` with `attempts` raised, and `TaskCheckForProofs` fails a
+ * never-broadcast `sending` req as `invalid` once attempts pass the
+ * unproven-attempts limit (EntityProvenTxReq.applyProofTimeout), which would
+ * restore its inputs while the overlay may still admit it. The sweep parks such
+ * reqs at `nosend` (no task counts attempts there): every unreleased 1Color
+ * txid, and every own req withheld only because an ancestor is held (a
+ * "child"). It un-parks a child once no ancestor is held. Attempts therefore
+ * grow only between a withhold and the next drain, which a withhold triggers.
+ *
  * Every guard fault holds: an unloadable classifier or an unreadable journal
  * posts nothing.
  */
@@ -37,11 +48,11 @@ import os from 'os'
 import path from 'path'
 
 export const COLOR_GUARD_CHANNELS = {
-  /** invoke: (identityKey, chain) -> string[] of held txids */
+  /** invoke: (identityKey, chain) -> string[] of held txids (runs the re-park sweep first) */
   list: 'color-guard:list',
   /** invoke: (identityKey, chain, txid) -> void */
   release: 'color-guard:release',
-  /** main -> renderer event: (txid) */
+  /** main -> renderer event: (txid) a broadcast was withheld (1Color or child); run a tick */
   held: 'color-guard:held'
 } as const
 
@@ -53,15 +64,29 @@ const CHAINS = new Set(['main', 'test', 'ttn', 'tstn'])
 const HELD_RE = /^([0-9a-f]{64})\.held$/
 
 /**
- * Transaction-row statuses a req can be parked under (copied, with its
- * rationale, from bsv-wallet `core/offline/hold.ts` `holdSafeTxStatuses`).
- * Parking writes nothing to the transaction row, so the row must already be one
- * no monitor task acts on: 'unproven' (what `internalizeAction` sets; ignored by
- * `TaskFailAbandoned`, outputs stay spendable) and 'nosend'. 'unprocessed' (a
- * non-delayed `createAction`) is excluded: held there, `TaskFailAbandoned` would
- * fail it within minutes.
+ * Transaction-row statuses a req can be parked under (after bsv-wallet
+ * `core/offline/hold.ts` `holdSafeTxStatuses`). Parking writes nothing to the
+ * transaction row, so the row must already be one no monitor task fails:
+ * 'unproven' (what `internalizeAction` sets; outputs stay spendable), 'nosend',
+ * and 'sending' (a delayed `createAction`, and every req after a withheld post:
+ * `applyAggregateStatus` serviceError). `TaskFailAbandoned` fails only
+ * 'unprocessed'/'unsigned' rows (toolbox 2.15.0 TaskFailAbandoned.js:37), so
+ * 'unprocessed' (a non-delayed `createAction` before its post) is excluded.
  */
-export const HOLD_SAFE_TX_STATUSES: readonly string[] = ['unproven', 'nosend']
+export const HOLD_SAFE_TX_STATUSES: readonly string[] = ['unproven', 'nosend', 'sending']
+
+/** Req statuses a withheld post leaves (`unsent` before, `sending` after): the ones the sweep parks. */
+const PARKABLE_REQ_STATUSES = new Set(['unsent', 'sending'])
+/** Own 1Color req statuses that are not on the network yet (their descendants stay held). */
+const UNBROADCAST_REQ_STATUSES = new Set(['nosend', 'unsent', 'sending', 'unprocessed', 'unsigned'])
+
+const NOTE_HOLD = 'colorGuardHold'
+const NOTE_RELEASE = 'colorGuardRelease'
+const NOTE_HOLD_CHILD = 'colorGuardHoldChild'
+const NOTE_RELEASE_CHILD = 'colorGuardReleaseChild'
+
+/** A crashed atomic write's temp file is removed once it is this old (never one in flight in another process). */
+const STALE_TMP_MSECS = 60_000
 
 /** Req statuses the release posts; anything else is already broadcast or final. */
 const RELEASE_POST_STATUSES = new Set(['unsent', 'sending', 'unprocessed'])
@@ -125,6 +150,16 @@ async function writeFileAtomic (dir: string, name: string, contents: string): Pr
   await syncDirectory(dir)
 }
 
+/** Best effort: only a temp file older than STALE_TMP_MSECS (so never another process's write in flight). */
+async function removeIfStale (file: string): Promise<void> {
+  try {
+    const st = await fsp.stat(file)
+    if (Date.now() - st.mtimeMs > STALE_TMP_MSECS) await fsp.unlink(file)
+  } catch {
+    // already gone, or not removable: harmless, held() ignores it
+  }
+}
+
 async function exists (file: string): Promise<boolean> {
   try {
     await fsp.stat(file)
@@ -173,7 +208,10 @@ export class ColorGuardJournal {
     return await exists(path.join(dir, `${txid}.released`))
   }
 
-  /** Every `<txid>.held`, sorted, released or not (a release is done only once `.held` is gone). */
+  /**
+   * Every `<txid>.held`, sorted, released or not (a release is done only once
+   * `.held` is gone). Removes temp files that a crash mid-write left behind.
+   */
   async held (identityKey: string, chain: string): Promise<string[]> {
     const dir = this.dir(identityKey, chain)
     let entries: string[]
@@ -187,6 +225,7 @@ export class ColorGuardJournal {
     for (const entry of entries) {
       const m = HELD_RE.exec(entry)
       if (m) out.push(m[1])
+      else if (entry.endsWith('.tmp')) await removeIfStale(path.join(dir, entry))
     }
     return out.sort()
   }
@@ -258,6 +297,22 @@ export function txHasColorOutput (tx: TxLike, classify: ScriptClassifier): boole
   return tx.outputs.some(o => o.lockingScript !== undefined && classify(o.lockingScript))
 }
 
+const OP_PUSHDATA4 = 0x4e
+const OP_1NEGATE = 0x4f
+const OP_1 = 0x51
+const OP_16 = 0x60
+const OP_2DROP = 0x6d
+const isPushOp = (op: number): boolean => op <= OP_PUSHDATA4 || op === OP_1NEGATE || (op >= OP_1 && op <= OP_16)
+
+/**
+ * The BRC-162 prefix shape `<push> <push> OP_2DROP` (0162:86; a push is any push
+ * opcode, 0162:101). Mirrors @bsv/templates `isTokenShaped`, which the package
+ * root does not export.
+ */
+export function isOneColorShaped (chunks: ReadonlyArray<{ op: number }>): boolean {
+  return chunks.length >= 3 && isPushOp(chunks[0].op) && isPushOp(chunks[1].op) && chunks[2].op === OP_2DROP
+}
+
 interface ColorKit {
   classify: ScriptClassifier
   parseTx: (rawTx: number[] | Uint8Array) => TxLike & { id: (enc: 'hex') => string }
@@ -274,27 +329,34 @@ async function loadKit (): Promise<ColorKit> {
       import('@bsv/templates'),
       import('@bsv/sdk')
     ])
-    // `OneColor.decode` reads the 1Color prefix and accepts any remainder
-    // (0162:102-104), so it is the complete test: lib `decodeToken` is non-null
-    // only for a P2PKH remainder, a strict subset.
+    // An output is held when it has the 1Color prefix shape (0162:86), even if
+    // `OneColor.decode` then rejects it (a bad id, a non-canonical amount): such
+    // an output can never be admitted, but holding it fails closed. A decodable
+    // script is shaped, so decode is only a second opinion. `OneColor.decode`
+    // accepts any remainder (0162:102-104); lib `decodeToken` (P2PKH remainder
+    // only) is a strict subset.
     const classify: ScriptClassifier = script => {
-      let hex: string
+      let parsed: { chunks: Array<{ op: number }> }
       try {
-        hex = typeof script === 'string' ? script : script.toHex()
+        const hex = typeof script === 'string' ? script : script.toHex()
+        parsed = LockingScript.fromHex(hex)
       } catch {
         return false
       }
+      if (isOneColorShaped(parsed.chunks)) return true
       try {
-        OneColor.decode(LockingScript.fromHex(hex))
+        OneColor.decode(parsed as any)
         return true
       } catch {
         return false
       }
     }
-    // Self-test: a classifier that cannot tell a token from P2PKH must not load.
+    // Self-test: a classifier that cannot tell a token from P2PKH, or that lets a
+    // malformed token-shaped output through, must not load.
     const token = new OneColor().lock(`${'ab'.repeat(32)}_0`, 1n, new Array(20).fill(1))
     const p2pkh = `76a914${'01'.repeat(20)}88ac`
-    if (!classify(token) || !classify(token.toHex()) || classify(p2pkh)) {
+    const malformed = `1f${'07'.repeat(31)}516d${p2pkh}` // 31-byte id: shaped, not decodable
+    if (!classify(token) || !classify(token.toHex()) || classify(p2pkh) || !classify(malformed)) {
       throw new Error('1Color classifier self-test failed')
     }
     return { classify, parseTx: raw => Transaction.fromBinary(Array.from(raw)) as any }
@@ -481,7 +543,10 @@ export function isColorGuardedServices (services: unknown): boolean {
  * Wraps `services.postBeef` (main and worker). Held txids never reach the
  * providers: they are removed from the call and from the BEEF, and each
  * provider result reports them as `serviceError`, which the toolbox retries
- * (`TaskSendWaiting`) and never turns into `invalid` by itself. Idempotent.
+ * (`TaskSendWaiting`). Each serviceError raises the req's `attempts`, which
+ * `TaskCheckForProofs` would eventually turn into `invalid`; `notifyHeld`
+ * (every withheld txid, 1Color or child) runs a drain, whose list call re-parks
+ * the req at `nosend` (`sweepColorGuard`). Idempotent.
  */
 export function guardPostBeef (services: { postBeef: (...args: any[]) => Promise<any> }, o: GuardPostBeefOptions): void {
   if (isColorGuardedServices(services)) return
@@ -508,6 +573,11 @@ export function guardPostBeef (services: { postBeef: (...args: any[]) => Promise
         console.warn('[color-guard] cannot record a held tx', txid, error)
       }
     }
+    // A child (held only through an ancestor) gets no journal entry: it is never
+    // isSettled. The tick this runs lets the sweep park it.
+    for (const txid of held) {
+      if (!colorHeld.includes(txid)) safeNotify(o.notifyHeld, txid)
+    }
     const remaining = list.filter(txid => !held.has(txid))
     const heldResults = list.filter(txid => held.has(txid)).map(withheld)
     if (remaining.length === 0) {
@@ -523,6 +593,25 @@ export function guardPostBeef (services: { postBeef: (...args: any[]) => Promise
 
 // ---------------------------------------------------------------------------
 // Layer 2: StorageKnex.attemptToPostReqsToNetwork (main)
+
+/** True iff every transaction row the req notifies exists and is hold-safe. */
+async function txRowsHoldSafe (
+  storage: Pick<GuardedStorageLike, 'findTransactions'>,
+  req: any,
+  trx?: unknown
+): Promise<boolean> {
+  const ids: unknown[] = req?.notify?.transactionIds ?? []
+  if (ids.length === 0) return false
+  for (const transactionId of ids) {
+    const rows = await storage.findTransactions({
+      partial: { transactionId: transactionId as number },
+      noRawTx: true,
+      ...(trx === undefined ? {} : { trx })
+    })
+    if (rows.length === 0 || !rows.every(row => HOLD_SAFE_TX_STATUSES.includes(row?.status))) return false
+  }
+  return true
+}
 
 export interface GuardedStorageLike {
   attemptToPostReqsToNetwork: (reqs: any[], trx?: unknown, logger?: unknown) => Promise<any>
@@ -541,20 +630,6 @@ export interface GuardedStorageLike {
 export function installColorBroadcastGuard (storage: GuardedStorageLike, o: ColorGuardOptions): void {
   if ((storage as any)[GUARDED] === true) return
   const original = storage.attemptToPostReqsToNetwork.bind(storage)
-
-  const holdSafe = async (req: any, trx: unknown): Promise<boolean> => {
-    const ids: unknown[] = req?.notify?.transactionIds ?? []
-    if (ids.length === 0) return false
-    for (const transactionId of ids) {
-      const rows = await storage.findTransactions({
-        partial: { transactionId: transactionId as number },
-        noRawTx: true,
-        ...(trx === undefined ? {} : { trx })
-      })
-      if (rows.length === 0 || !rows.every(row => HOLD_SAFE_TX_STATUSES.includes(row?.status))) return false
-    }
-    return true
-  }
 
   const assertGuardedServices = (): void => {
     let services: unknown
@@ -586,7 +661,7 @@ export function installColorBroadcastGuard (storage: GuardedStorageLike, o: Colo
           }
           if (!txHasColorOutput(tx, kit.classify)) continue
           if (await o.journal.isReleased(o.identityKey, o.chain, req.txid)) continue
-          if (await holdSafe(req, trx)) park.push(req)
+          if (await txRowsHoldSafe(storage, req, trx)) park.push(req)
           else markedOnly.push(req.txid)
         }
         // Journal first: a crash after markHeld leaves an entry the drain releases
@@ -594,7 +669,7 @@ export function installColorBroadcastGuard (storage: GuardedStorageLike, o: Colo
         for (const req of park) {
           await o.journal.markHeld(o.identityKey, o.chain, req.txid)
           req.status = 'nosend'
-          req.addHistoryNote({ when: new Date().toISOString(), what: 'colorGuardHold' })
+          req.addHistoryNote({ when: new Date().toISOString(), what: NOTE_HOLD }, true)
           await req.updateStorageDynamicProperties(storage, trx)
         }
         for (const txid of markedOnly) await o.journal.markHeld(o.identityKey, o.chain, txid)
@@ -621,7 +696,7 @@ export function installColorBroadcastGuard (storage: GuardedStorageLike, o: Colo
   ;(storage as any)[GUARDED] = true
 }
 
-async function loadKitVia (o: ColorGuardOptions): Promise<ColorKit> {
+async function loadKitVia (o: { classify: () => Promise<ScriptClassifier> }): Promise<ColorKit> {
   // The caller's classifier decides (tests and hosts may inject one); the sdk
   // parser always comes from the shared kit.
   const [classify, kit] = await Promise.all([o.classify(), loadKit()])
@@ -641,6 +716,8 @@ export interface ColorGuardIpcOptions {
   withStorage: <T>(identityKey: string, chain: ColorGuardChain, fn: (storage: any) => Promise<T>) => Promise<T>
   /** Wraps a `proven_tx_reqs` row as an `EntityProvenTxReq` (default: the toolbox class). */
   toReq?: (row: any) => any | Promise<any>
+  /** The sweep's 1Color classifier (default: `loadColorClassifier`). */
+  classify?: () => Promise<ScriptClassifier>
 }
 
 async function defaultToReq (row: any): Promise<any> {
@@ -682,26 +759,199 @@ async function doRelease (o: ColorGuardIpcOptions, identityKey: string, chain: C
       const req = await toReq(rows[0])
       if (req.status === 'nosend') {
         req.status = 'unsent'
-        req.addHistoryNote({ when: new Date().toISOString(), what: 'colorGuardRelease' })
+        req.addHistoryNote({ when: new Date().toISOString(), what: NOTE_RELEASE })
         await req.updateStorageDynamicProperties(storage)
       }
       return req
     })
     // Outside the exclusive section: the post passes through the storage layer,
     // which takes it. "Already known/mined" and success are done; a serviceError
-    // leaves the req 'sending' for TaskSendWaiting, which the guard now lets pass.
+    // leaves the req 'sending' for TaskSendWaiting, which the guard now lets pass
+    // unless an ancestor is still held (then the sweep below parks it).
     if (req !== undefined && RELEASE_POST_STATUSES.has(req.status)) {
       await storage.attemptToPostReqsToNetwork([req])
+    }
+    // Un-parks the children this release freed (TaskSendWaiting then posts them)
+    // and parks this tx again if an ancestor still holds it. A fault here is
+    // redone by the next list call; the release itself is done.
+    try {
+      await sweepColorGuardStorage(o, identityKey, chain, storage)
+    } catch (error) {
+      console.warn('[color-guard] sweep after release failed', txid, error)
     }
   })
   await journal.exclusive(identityKey, chain, async () => await journal.clearHeld(identityKey, chain, txid))
 }
 
+// ---------------------------------------------------------------------------
+// Re-park sweep (main)
+
+function hasNote (req: any, what: string): boolean {
+  const h = req?.history
+  const notes: unknown = Array.isArray(h) ? h : h?.notes
+  return Array.isArray(notes) && notes.some(n => (n as any)?.what === what)
+}
+
+/** Parks a req at `nosend` iff it is `unsent`/`sending` on hold-safe transaction rows. */
+async function parkReq (storage: any, req: any, what: string): Promise<boolean> {
+  if (!PARKABLE_REQ_STATUSES.has(req?.status)) return false
+  if (!(await txRowsHoldSafe(storage, req))) return false
+  req.status = 'nosend'
+  // noDupes: the worker can write a stale copy back ('sending'), so one req may be parked many times
+  req.addHistoryNote({ when: new Date().toISOString(), what }, true)
+  await req.updateStorageDynamicProperties(storage)
+  return true
+}
+
+export interface ColorGuardSweepResult { parked: string[], unparked: string[] }
+
+/**
+ * Runs the re-park sweep with this wallet's storage (inside `withStorage`).
+ * 1. Every unreleased held 1Color txid whose req is `unsent`/`sending` on a
+ *    hold-safe row is parked (`colorGuardHold`); the release un-parks it.
+ * 2. Every other own req at `unsent`/`sending` that spends, directly or through
+ *    other such reqs, an output of a held tx (an unreleased journal entry, or an
+ *    own 1Color tx not yet broadcast) is parked (`colorGuardHoldChild`). A req
+ *    parked so, with no held ancestor left, goes back to `unsent` for
+ *    `TaskSendWaiting` (`colorGuardReleaseChild`). A `nosend` req without that
+ *    note is the toolbox's own and is never touched.
+ * Parking is liveness only: layer 3 still withholds whatever is held, so a
+ * wrong un-park posts nothing it should not. Never posts. Per-req faults are
+ * logged and skipped.
+ */
+export async function sweepColorGuardStorage (
+  o: ColorGuardIpcOptions,
+  identityKey: string,
+  chain: ColorGuardChain,
+  storage: any
+): Promise<ColorGuardSweepResult> {
+  const { journal } = o
+  const toReq = o.toReq ?? defaultToReq
+  const kit = await loadKitVia({ classify: o.classify ?? loadColorClassifier })
+  return await journal.exclusive(identityKey, chain, async () => {
+    const out: ColorGuardSweepResult = { parked: [], unparked: [] }
+    const heldUnreleased = await journal.heldUnreleased(identityKey, chain)
+
+    for (const txid of heldUnreleased) {
+      if (releasesInFlight.has(`${identityKey}-${chain}:${txid}`)) continue
+      try {
+        const rows: any[] = await storage.findProvenTxReqs({ partial: { txid } })
+        if (rows.length === 0) continue
+        if (await parkReq(storage, await toReq(rows[0]), NOTE_HOLD)) out.parked.push(txid)
+      } catch (error) {
+        console.warn('[color-guard] cannot re-park a held tx', txid, error)
+      }
+    }
+
+    const released = new Map<string, Promise<boolean>>()
+    const isReleased = async (txid: string): Promise<boolean> => {
+      let r = released.get(txid)
+      if (r === undefined) { r = journal.isReleased(identityKey, chain, txid); released.set(txid, r) }
+      return await r
+    }
+    const reqs = new Map<string, any>()
+    const reqOf = async (txid: string): Promise<any> => {
+      if (!reqs.has(txid)) {
+        const rows: any[] = await storage.findProvenTxReqs({ partial: { txid } })
+        reqs.set(txid, rows.length === 0 ? undefined : await toReq(rows[0]))
+      }
+      return reqs.get(txid)
+    }
+    const infos = new Map<string, { color: boolean, parents: string[] } | null>()
+    const infoOf = (req: any): { color: boolean, parents: string[] } | null => {
+      let info = infos.get(req.txid)
+      if (info === undefined) {
+        try {
+          const tx = kit.parseTx(req.rawTx)
+          info = {
+            color: txHasColorOutput(tx, kit.classify),
+            parents: tx.inputs.map(i => i.sourceTXID).filter((t): t is string => typeof t === 'string')
+          }
+        } catch {
+          info = null
+        }
+        infos.set(req.txid, info)
+      }
+      return info
+    }
+    const isChildCandidate = (req: any): boolean =>
+      PARKABLE_REQ_STATUSES.has(req?.status) || (req?.status === 'nosend' && hasNote(req, NOTE_HOLD_CHILD))
+
+    // holdsChildren(txid): spending an output of txid keeps a req off the network.
+    const memo = new Map<string, boolean>()
+    const visiting = new Set<string>()
+    const holdsChildren = async (txid: string): Promise<boolean> => {
+      if (heldUnreleased.has(txid)) return true
+      if (await isReleased(txid)) return false
+      const req = await reqOf(txid)
+      if (req === undefined) return false // foreign or long proven
+      const info = infoOf(req)
+      if (info === null) return true // an own tx we cannot read: fail closed
+      if (info.color && UNBROADCAST_REQ_STATUSES.has(req.status)) return true
+      if (!isChildCandidate(req)) return false
+      return await hasHeldAncestor(txid, info)
+    }
+    const hasHeldAncestor = async (txid: string, info: { parents: string[] }): Promise<boolean> => {
+      const known = memo.get(txid)
+      if (known !== undefined) return known
+      if (visiting.has(txid)) return false
+      visiting.add(txid)
+      let r = false
+      for (const parent of info.parents) {
+        if (await holdsChildren(parent)) { r = true; break }
+      }
+      visiting.delete(txid)
+      memo.set(txid, r)
+      return r
+    }
+
+    const rows: any[] = await storage.findProvenTxReqs({ partial: {}, status: ['unsent', 'sending', 'nosend'] })
+    for (const row of rows) {
+      try {
+        if (heldUnreleased.has(row?.txid)) continue // step 1 owns it
+        const req = await toReq(row)
+        if (!isChildCandidate(req)) continue
+        reqs.set(req.txid, req)
+        const info = infoOf(req)
+        if (info === null) continue
+        if (info.color && !(await isReleased(req.txid))) continue // layer 2/3 journal it first
+        const held = await hasHeldAncestor(req.txid, info)
+        if (held) {
+          if (await parkReq(storage, req, NOTE_HOLD_CHILD)) out.parked.push(req.txid)
+        } else if (req.status === 'nosend') {
+          req.status = 'unsent'
+          req.addHistoryNote({ when: new Date().toISOString(), what: NOTE_RELEASE_CHILD })
+          await req.updateStorageDynamicProperties(storage)
+          out.unparked.push(req.txid)
+        }
+      } catch (error) {
+        console.warn('[color-guard] cannot sweep a req', row?.txid, error)
+      }
+    }
+    return out
+  })
+}
+
+/** Runs the sweep inside the storage fence. */
+export async function sweepColorGuard (o: ColorGuardIpcOptions, identityKey: unknown, chain: unknown): Promise<ColorGuardSweepResult> {
+  assertIdentity(identityKey)
+  assertChain(chain)
+  return await o.withStorage(identityKey, chain, async storage => await sweepColorGuardStorage(o, identityKey, chain, storage))
+}
+
 /** Registers `color-guard:list` and `color-guard:release`. */
 export function registerColorGuardIpc (ipcMain: ColorGuardIpcMainLike, o: ColorGuardIpcOptions): void {
+  // Not a pure read: every drain starts with this call, so it first runs the
+  // re-park sweep. A sweep fault is logged and the list is still returned (the
+  // releases are the other way out of a hold).
   ipcMain.handle(COLOR_GUARD_CHANNELS.list, async (_event, identityKey, chain) => {
     assertIdentity(identityKey)
     assertChain(chain)
+    try {
+      await sweepColorGuard(o, identityKey, chain)
+    } catch (error) {
+      console.warn('[color-guard] re-park sweep failed', error)
+    }
     return await o.journal.held(identityKey, chain)
   })
   ipcMain.handle(COLOR_GUARD_CHANNELS.release, async (_event, identityKey, chain, txid) =>

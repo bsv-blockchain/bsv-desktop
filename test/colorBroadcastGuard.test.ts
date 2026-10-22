@@ -12,7 +12,13 @@
  *   twice is held twice without error (markHeld is idempotent);
  * - multi-window: releases are serialized per namespace in main;
  * - stale cache: none, every journal read goes to disk;
- * - retry: a withheld req is reported `serviceError` (never invalid);
+ * - retry: a withheld req is reported `serviceError`, which raises its
+ *   `attempts`; past the toolbox's unproven-attempts limit `TaskCheckForProofs`
+ *   would fail a never-broadcast req as `invalid`. So every list call (each
+ *   drain) re-parks a withheld req at `nosend`, where no task counts attempts,
+ *   and attempts grow only in the window between a withhold and the next drain;
+ * - children: a req withheld because an ancestor is held is parked the same
+ *   way and un-parked once no ancestor is held any more;
  * - guard fault: a classifier or journal fault posts nothing.
  */
 
@@ -79,8 +85,8 @@ function mkReq (tx: Transaction, status = 'unsent', parents: Transaction[] = [])
     attempts: 0,
     notify: { transactionIds: [nextTransactionId++] },
     inputBEEF: inputBeef.toBinary(),
-    history: [] as any[],
-    addHistoryNote: vi.fn((n: any) => { req.history.push(n) }),
+    history: { notes: [] as any[] },
+    addHistoryNote: vi.fn((n: any) => { req.history.notes.push(n) }),
     updateStorageDynamicProperties: vi.fn(async () => {})
   }
   return req
@@ -115,7 +121,9 @@ function mkStorage (o: { txStatus?: Record<string, string>, reqRows?: any[], arc
       const status = statusByTransactionId.get(partial.transactionId)
       return status === undefined ? [] : [{ transactionId: partial.transactionId, status }]
     }),
-    findProvenTxReqs: vi.fn(async ({ partial }: any) => storage.reqRows.filter((r: any) => r.txid === partial.txid))
+    findProvenTxReqs: vi.fn(async ({ partial, status }: any) => storage.reqRows.filter((r: any) =>
+      (partial?.txid === undefined || r.txid === partial.txid) &&
+      (status === undefined || status.includes(r.status))))
   }
   const original = vi.fn(async (reqs: any[], _trx?: unknown, _logger?: unknown) => {
     const beef = new Beef()
@@ -168,9 +176,54 @@ describe('classifier', () => {
     expect(txHasColorOutput(T, classify)).toBe(true)
     expect(txHasColorOutput(P, classify)).toBe(false)
   })
+
+  test('a 1Color-shaped output that does not decode is still held (fail closed)', async () => {
+    const classify = await loadColorClassifier()
+    const p2pkhTail = new P2PKH().lock(PKH).chunks
+    // 0162:86 shape `<push> <push> OP_2DROP`, but a 31-byte token id
+    const badId = new LockingScript([{ op: 31, data: new Array(31).fill(7) }, { op: 0x51 }, { op: 0x6d }, ...p2pkhTail])
+    // a non-minimal amount push (0 must be OP_0)
+    const badAmount = new LockingScript([{ op: 32, data: new Array(32).fill(7) }, { op: 1, data: [0] }, { op: 0x6d }, ...p2pkhTail])
+    for (const s of [badId, badAmount]) {
+      expect(() => OneColor.decode(s)).toThrow()
+      expect(classify(s)).toBe(true)
+      expect(classify(s.toHex())).toBe(true)
+    }
+    // not the shape: a push, then a non-push, then OP_2DROP
+    expect(classify(new LockingScript([{ op: 0x51 }, { op: 0x76 }, { op: 0x6d }]))).toBe(false)
+  })
+})
+
+describe('journal', () => {
+  test('held() removes stale temp files from an interrupted write and keeps fresh ones', async () => {
+    const t = 'cd'.repeat(32)
+    await journal.markHeld(A, 'test', t)
+    const dir = path.join(root, `${A}-test`)
+    const stale = path.join(dir, `${t}.held.1111.tmp`)
+    const fresh = path.join(dir, `${t}.released.2222.tmp`)
+    fs.writeFileSync(stale, 'x')
+    fs.writeFileSync(fresh, 'x')
+    const old = new Date(Date.now() - 5 * 60_000)
+    fs.utimesSync(stale, old, old)
+    expect(await journal.held(A, 'test')).toEqual([t])
+    expect(fs.existsSync(stale)).toBe(false)
+    expect(fs.existsSync(fresh)).toBe(true)
+  })
 })
 
 describe('storage layer (main)', () => {
+  test("parks a delayed token send whose transaction row is 'sending'", async () => {
+    const storage = await guarded(mkStorage())
+    const { T, t } = scenario()
+    const reqT = mkReq(T, 'unsent')
+    storage.setTxStatus(reqT, 'sending')
+    const r = await storage.attemptToPostReqsToNetwork([reqT])
+    expect(r.details).toEqual([{ txid: t, req: reqT, status: 'success' }])
+    expect(storage.arc.postBeef).not.toHaveBeenCalled()
+    expect(reqT.status).toBe('nosend')
+    expect(await journal.held(A, 'test')).toEqual([t])
+  })
+
   test('holds an offline 1Color receipt and reports success', async () => {
     const storage = await guarded(mkStorage())
     const { T, t } = scenario()
@@ -181,7 +234,7 @@ describe('storage layer (main)', () => {
     expect(storage.original).not.toHaveBeenCalled()
     expect(storage.arc.postBeef).not.toHaveBeenCalled()
     expect(reqT.status).toBe('nosend')
-    expect(reqT.history).toEqual([expect.objectContaining({ what: 'colorGuardHold' })])
+    expect(reqT.history.notes).toEqual([expect.objectContaining({ what: 'colorGuardHold' })])
     expect(reqT.updateStorageDynamicProperties).toHaveBeenCalled()
     expect(await journal.held(A, 'test')).toEqual([t])
     expect(notifyHeld).toHaveBeenCalledWith(t)
@@ -383,7 +436,8 @@ describe('services layer (worker)', () => {
   test('withholds a grandchild of a held tx and strips the whole held chain', async () => {
     const arc = mkArc()
     const services: any = { postBeef: arc.postBeef }
-    guardPostBeef(services, { identityKey: A, chain: 'test', journal, classify: () => loadColorClassifier() })
+    const workerNotify = vi.fn()
+    guardPostBeef(services, { identityKey: A, chain: 'test', journal, classify: () => loadColorClassifier(), notifyHeld: workerNotify })
     const { T, C, t } = scenario()
     await journal.markHeld(A, 'test', t)
     const G = mkTx([{ txid: C.id('hex'), vout: 0 }], [plainLock()])
@@ -395,6 +449,10 @@ describe('services layer (worker)', () => {
     expect(arc.postBeef).not.toHaveBeenCalled()
     expect(rs).toEqual([expect.objectContaining({ name: 'ColorBroadcastGuard', status: 'error' })])
     expect(rs[0].txidResults).toEqual([{ txid: G.id('hex'), status: 'error', serviceError: true }])
+    // a tick (and with it the re-park sweep) follows a withheld child too
+    expect(workerNotify).toHaveBeenCalledWith(G.id('hex'))
+    // a child is not a 1Color tx: it never gets its own journal entry
+    expect(await journal.held(A, 'test')).toEqual([t])
   })
 
   test('a pruned BEEF that drops a proven ancestor still parses strictly', async () => {
@@ -449,12 +507,12 @@ describe('services layer (worker)', () => {
 })
 
 describe('release IPC', () => {
-  function setup (storage: any) {
+  function setup (storage: any, withStorage?: (id: string, chain: string, fn: (s: any) => Promise<any>) => Promise<any>) {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
     const ipcMain = { handle: (channel: string, fn: (event: unknown, ...args: unknown[]) => unknown) => { handlers.set(channel, fn) } }
     registerColorGuardIpc(ipcMain, {
       journal,
-      withStorage: async (_id: string, _chain: string, fn: (s: any) => Promise<any>) => await fn(storage),
+      withStorage: (withStorage ?? (async (_id: string, _chain: string, fn: (s: any) => Promise<any>) => await fn(storage))) as any,
       toReq: (row: any) => row
     })
     return {
@@ -471,8 +529,165 @@ describe('release IPC', () => {
     storage.setTxStatus(reqT, 'unproven')
     await storage.attemptToPostReqsToNetwork([reqT])
     storage.reqRows.push(reqT)
-    return { storage, reqT, t }
+    return { storage, reqT, t, T }
   }
+
+  /** The monitor worker's TaskSendWaiting: guarded services only, no storage layer. */
+  const workerPost = async (storage: any, req: any) => await storage.original([req])
+  const notes = (req: any): string[] => req.history.notes.map((n: any) => n.what)
+
+  test('list re-parks a withheld delayed token send; release posts it exactly once', async () => {
+    const storage = await guarded(mkStorage())
+    const { T, t } = scenario()
+    const reqT = mkReq(T, 'unsent')
+    storage.reqRows.push(reqT)
+    storage.setTxStatus(reqT, 'sending')
+    await workerPost(storage, reqT)
+    expect(reqT.status).toBe('sending')
+    expect(storage.arc.sawTxid(t)).toBe(false)
+    expect(await journal.held(A, 'test')).toEqual([t])
+
+    const ipc = setup(storage)
+    expect(await ipc.held()).toEqual([t])
+    expect(reqT.status).toBe('nosend')
+    expect(notes(reqT)).toEqual(['colorGuardHold'])
+    expect(reqT.addHistoryNote).toHaveBeenLastCalledWith(expect.objectContaining({ what: 'colorGuardHold' }), true)
+    await ipc.held()
+    expect(reqT.updateStorageDynamicProperties).toHaveBeenCalledTimes(1)
+
+    // the worker raced the park and wrote 'sending' back: the next list re-parks it
+    reqT.status = 'sending'
+    await ipc.held()
+    expect(reqT.status).toBe('nosend')
+
+    await ipc.release(t)
+    expect(storage.arc.calls.filter(c => c.txids.includes(t))).toHaveLength(1)
+    expect(reqT.status).toBe('unmined')
+    expect(await ipc.held()).toEqual([])
+  })
+
+  test('list leaves a held txid alone unless its req is unsent/sending on a hold-safe row', async () => {
+    const storage = await guarded(mkStorage())
+    const cases: Array<[string, string]> = [
+      ['unprocessed', 'unprocessed'],
+      ['sending', 'unprocessed'],
+      ['unsigned', 'unsigned'],
+      ['invalid', 'failed'],
+      ['unmined', 'unproven'],
+      ['completed', 'completed'],
+      ['nosend', 'nosend']
+    ]
+    const reqs = cases.map(([reqStatus, txStatus]) => {
+      const { T } = scenario()
+      const req = mkReq(T, reqStatus)
+      storage.reqRows.push(req)
+      storage.setTxStatus(req, txStatus)
+      return req
+    })
+    for (const req of reqs) await journal.markHeld(A, 'test', req.txid)
+    const ipc = setup(storage)
+    await ipc.held()
+    expect(reqs.map(r => r.status)).toEqual(cases.map(([reqStatus]) => reqStatus))
+    for (const req of reqs) expect(req.updateStorageDynamicProperties).not.toHaveBeenCalled()
+  })
+
+  test('a withheld child (and grandchild) of a held receipt is parked, and un-parked once the receipt is released', async () => {
+    const { storage, reqT, t, T } = await parkedReceipt()
+    const C = mkTx([{ txid: t, vout: 1 }], [plainLock()])
+    const G = mkTx([{ txid: C.id('hex'), vout: 0 }], [plainLock()])
+    const c = C.id('hex')
+    const g = G.id('hex')
+    const reqC = mkReq(C, 'unsent', [T])
+    const reqG = mkReq(G, 'unsent', [T, C])
+    for (const req of [reqC, reqG]) {
+      storage.reqRows.push(req)
+      storage.setTxStatus(req, 'sending')
+    }
+    await workerPost(storage, reqG)
+    await workerPost(storage, reqC)
+    expect(reqC.status).toBe('sending')
+    expect(reqG.status).toBe('sending')
+
+    const ipc = setup(storage)
+    expect(await ipc.held()).toEqual([t]) // children are not listed: never isSettled
+    expect(reqC.status).toBe('nosend')
+    expect(reqG.status).toBe('nosend')
+    expect(notes(reqC)).toEqual(['colorGuardHoldChild'])
+
+    await ipc.release(t)
+    expect(reqT.status).toBe('unmined')
+    expect(reqC.status).toBe('unsent')
+    expect(reqG.status).toBe('unsent')
+    expect(notes(reqC)).toContain('colorGuardReleaseChild')
+    expect(storage.arc.sawTxid(c)).toBe(false)
+
+    // TaskSendWaiting posts them; the guard lets them pass
+    await workerPost(storage, reqC)
+    await workerPost(storage, reqG)
+    expect(reqC.status).toBe('unmined')
+    expect(reqG.status).toBe('unmined')
+    expect(storage.arc.calls.filter(x => x.txids.includes(c))).toHaveLength(1)
+    expect(storage.arc.calls.filter(x => x.txids.includes(g))).toHaveLength(1)
+  })
+
+  test('a 1Color child released before its 1Color parent is re-parked, then released after it', async () => {
+    const storage = await guarded(mkStorage())
+    const T = mkTx([{ txid: fundingTxid(), vout: 0 }], [colorLock(), plainLock()])
+    const t = T.id('hex')
+    const T2 = mkTx([{ txid: t, vout: 0 }], [colorLock()])
+    const t2 = T2.id('hex')
+    const reqT = mkReq(T, 'unsent')
+    const reqT2 = mkReq(T2, 'unsent', [T])
+    for (const req of [reqT, reqT2]) {
+      storage.reqRows.push(req)
+      storage.setTxStatus(req, 'unproven')
+      await storage.attemptToPostReqsToNetwork([req])
+    }
+    expect(await journal.held(A, 'test')).toEqual([t, t2].sort())
+
+    const ipc = setup(storage)
+    await ipc.release(t2)
+    expect(storage.arc.sawTxid(t2)).toBe(false)
+    expect(reqT2.status).toBe('nosend')
+    expect(notes(reqT2)).toContain('colorGuardHoldChild')
+    expect(await ipc.held()).toEqual([t])
+
+    await ipc.release(t)
+    expect(reqT.status).toBe('unmined')
+    expect(reqT2.status).toBe('unsent')
+    await workerPost(storage, reqT2)
+    expect(reqT2.status).toBe('unmined')
+    expect(storage.arc.calls.filter(x => x.txids.includes(t2))).toHaveLength(1)
+  })
+
+  test("a child of an own nosend 1Color hand-over is parked; the toolbox's own nosend reqs are never un-parked", async () => {
+    const storage = await guarded(mkStorage())
+    const { T: H, C, t: h } = scenario()
+    const reqH = mkReq(H, 'nosend')
+    const reqC = mkReq(C, 'unsent', [H])
+    const { P } = scenario()
+    const reqP = mkReq(P, 'nosend')
+    for (const [req, txStatus] of [[reqH, 'nosend'], [reqC, 'sending'], [reqP, 'nosend']] as const) {
+      storage.reqRows.push(req)
+      storage.setTxStatus(req, txStatus)
+    }
+    const ipc = setup(storage)
+    expect(await ipc.held()).toEqual([])
+    expect(reqC.status).toBe('nosend')
+    expect(reqH.status).toBe('nosend')
+    expect(reqP.status).toBe('nosend')
+    expect(reqH.updateStorageDynamicProperties).not.toHaveBeenCalled()
+    expect(reqP.updateStorageDynamicProperties).not.toHaveBeenCalled()
+    expect(await journal.held(A, 'test')).not.toContain(h)
+  })
+
+  test('a sweep fault still lists the held txids', async () => {
+    const { storage, t } = await parkedReceipt()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const ipc = setup(storage, async () => { throw new Error('storage closed') })
+    expect(await ipc.held()).toEqual([t])
+    expect(warn).toHaveBeenCalled()
+  })
 
   test('lists held txids and releases a parked receipt', async () => {
     const { storage, reqT, t } = await parkedReceipt()
@@ -481,7 +696,7 @@ describe('release IPC', () => {
     await ipc.release(t)
     expect(storage.arc.calls.filter(c => c.txids.includes(t))).toHaveLength(1)
     expect(reqT.status).toBe('unmined')
-    expect(reqT.history.map((n: any) => n.what)).toContain('colorGuardRelease')
+    expect(reqT.history.notes.map((n: any) => n.what)).toContain('colorGuardRelease')
     expect(await ipc.held()).toEqual([])
     expect(await journal.isReleased(A, 'test', t)).toBe(true)
   })

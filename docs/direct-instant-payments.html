@@ -1,0 +1,890 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<meta charset="utf-8">
+<title>Push Payments on BSV</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one 1120px reading column. A midnight hero, then three ranked ways to pay, an interactive
+   stage that walks each way step by step, the specification, the privacy table grouped by way, and the
+   builder guide. The upward triangle is the only ornament. */
+:root {
+  --blue: #0040FF;
+  --indigo: #1A1EAF;
+  --midnight: #0A0E27;
+  --bg: #FFFFFF;
+  --bg-subtle: #F4F6FB;
+  --fg: #0F1430;
+  --muted: #4A5274;
+  --line: #DDE2EF;
+  --card: #FFFFFF;
+  --accent: #0040FF;
+  --accent-soft: #E7EDFF;
+  --ok: #0E7A4E;
+  --ok-soft: #E3F5EC;
+  --warn: #8A5600;
+  --warn-soft: #FFF2DB;
+  --bad: #B42318;
+  --bad-soft: #FDECEA;
+  --stage: #0A0E27;
+  --stage-node: #121842;
+  --stage-line: #3A4590;
+  --stage-fg: #F3F5FF;
+  --stage-muted: #AEB6DD;
+  --hero-fg: #F3F5FF;
+  --hero-muted: #AEB6DD;
+  --display: "Sora", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius-card: 20px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0A0E27; --bg-subtle: #10153A; --fg: #EEF1FF; --muted: #A7AFD6; --line: #252C57; --card: #121842;
+    --accent: #6F8BFF; --accent-soft: #1B2466; --ok: #5FD3A0; --ok-soft: #0F3326; --warn: #F2B55A; --warn-soft: #3A2A0E;
+    --bad: #FF8A80; --bad-soft: #3D1614; --stage: #060920; --stage-node: #141B4A; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0A0E27; --bg-subtle: #10153A; --fg: #EEF1FF; --muted: #A7AFD6; --line: #252C57; --card: #121842;
+  --accent: #6F8BFF; --accent-soft: #1B2466; --ok: #5FD3A0; --ok-soft: #0F3326; --warn: #F2B55A; --warn-soft: #3A2A0E;
+  --bad: #FF8A80; --bad-soft: #3D1614; --stage: #060920; --stage-node: #141B4A; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.6; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+section { padding-block: 72px; }
+section.subtle { background: var(--bg-subtle); }
+h1, h2, h3 { font-family: var(--display); letter-spacing: -0.02em; text-wrap: balance; margin: 0; }
+h2 { font-size: clamp(1.7rem, 3.2vw, 2.4rem); line-height: 1.15; }
+h3 { font-size: 1.15rem; line-height: 1.3; }
+p { margin: 0; }
+.prose { max-width: 66ch; color: var(--muted); }
+.eyebrow { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+.eyebrow::before { content: ""; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 10px solid currentColor; }
+.head { display: grid; gap: 14px; margin-bottom: 36px; }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+code { background: var(--accent-soft); color: var(--fg); padding: 1px 6px; border-radius: 6px; }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+/* Hero */
+.hero { background: var(--midnight); color: var(--hero-fg); padding-block: 64px 56px; position: relative; overflow: hidden; }
+.hero .eyebrow { color: #8FA6FF; }
+.hero h1 { font-size: clamp(2.2rem, 5.4vw, 3.8rem); line-height: 1.05; margin-top: 16px; max-width: 16ch; }
+.hero h1 em { font-style: normal; background: linear-gradient(122deg, #6F8BFF, #FFFFFF); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero .lede { color: var(--hero-muted); font-size: 1.12rem; max-width: 60ch; margin-top: 18px; }
+.hero-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+.pill { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 6px 14px; font-size: 0.86rem; font-weight: 500; }
+.hero .pill { background: rgba(255,255,255,0.08); color: var(--hero-fg); border: 1px solid rgba(255,255,255,0.14); }
+.hero .pill b { font-family: var(--mono); font-weight: 500; color: #9FB3FF; }
+.hero-mark { position: absolute; right: -60px; top: -40px; width: 380px; height: 380px; opacity: 0.07; pointer-events: none; }
+
+/* Ranked ways */
+.ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 18px; }
+.way { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 24px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.way .rank { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.way .rank span:first-child { font-family: var(--mono); font-size: 0.82rem; color: var(--accent); }
+.way .best { font-size: 0.74rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.way ul { margin: 0; padding-left: 1.1em; color: var(--muted); display: grid; gap: 6px; font-size: 0.95rem; }
+.way .bar { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.way .bar i { display: block; height: 100%; background: var(--ok); border-radius: 999px; }
+.principle { margin-top: 26px; border: 1px solid var(--line); border-radius: var(--radius-card); padding: 20px 24px; background: var(--accent-soft); display: grid; gap: 6px; }
+.principle b { font-family: var(--display); }
+
+/* Interactive explainer */
+.explainer { border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card); overflow: hidden; }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; border-bottom: 1px solid var(--line); }
+.tab { font: 600 0.92rem var(--body); border: 1px solid var(--line); background: transparent; color: var(--fg); border-radius: 999px; padding: 8px 16px; cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #FFFFFF; }
+.stage-wrap { background: var(--stage); padding: 14px; overflow-x: auto; }
+.stage-wrap svg { display: block; width: 100%; min-width: 700px; height: auto; }
+.panel { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 22px; padding: 22px; }
+@media (max-width: 760px) { .panel { grid-template-columns: 1fr; } }
+.step-no { font-family: var(--mono); font-size: 0.82rem; color: var(--accent); }
+.step-title { font-family: var(--display); font-size: 1.25rem; margin-top: 4px; }
+.step-text { color: var(--muted); margin-top: 8px; max-width: 60ch; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; }
+.btn { font: 600 0.9rem var(--body); border-radius: 999px; padding: 8px 16px; cursor: pointer; border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #FFFFFF; }
+.dots { display: flex; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; border: 0; background: var(--line); cursor: pointer; padding: 0; }
+.dot[aria-current="step"] { background: var(--accent); }
+.sees h4 { font: 600 0.74rem var(--body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+.sees ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.sees li { display: grid; gap: 4px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.sees li b { font-size: 0.92rem; }
+.sees li span.t { color: var(--muted); font-size: 0.9rem; }
+
+/* Specification steps */
+.steps { display: grid; border-left: 2px solid var(--line); margin-left: 10px; }
+.step { position: relative; padding: 0 0 30px 34px; display: grid; gap: 8px; }
+.step:last-child { padding-bottom: 0; }
+.step::before { content: ""; position: absolute; left: -9px; top: 4px; width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-bottom: 14px solid var(--accent); }
+.step .when { font-family: var(--mono); font-size: 0.82rem; color: var(--accent); }
+.step p { color: var(--muted); max-width: 68ch; }
+.ui { display: inline-block; border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 10px 14px; font-size: 0.92rem; color: var(--fg); max-width: 540px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-top: 36px; }
+.fact { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: var(--card); display: grid; gap: 4px; }
+.fact .v { font-family: var(--display); font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fact .k { color: var(--muted); font-size: 0.88rem; }
+
+/* Privacy table */
+.legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+.chip.enc { background: var(--ok-soft); color: var(--ok); }
+.chip.meta { background: var(--warn-soft); color: var(--warn); }
+.chip.open { background: var(--bad-soft); color: var(--bad); }
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card); }
+table { border-collapse: collapse; width: 100%; min-width: 900px; font-size: 0.92rem; }
+th, td { text-align: left; vertical-align: top; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+thead th { font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); background: var(--bg-subtle); }
+tr.group th { background: var(--accent-soft); color: var(--fg); font-family: var(--display); font-size: 0.95rem; letter-spacing: 0; text-transform: none; }
+tr.group th small { font-family: var(--body); color: var(--muted); font-weight: 400; margin-left: 8px; }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 600; min-width: 190px; }
+td:first-child .op { display: block; font-weight: 400; color: var(--muted); font-size: 0.84rem; margin-top: 2px; }
+.note { margin-top: 14px; color: var(--muted); font-size: 0.88rem; max-width: 80ch; }
+.status { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 28px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 22px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.card h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card ul { margin: 0; padding-left: 1.1em; color: var(--muted); display: grid; gap: 6px; }
+
+/* Builder guide */
+pre { margin: 0; background: var(--midnight); color: #E6EAFF; border-radius: 14px; padding: 18px 20px; overflow-x: auto; font-family: var(--mono); font-size: 0.85rem; line-height: 1.6; }
+pre .c { color: #8C95C4; }
+pre .k { color: #9FB3FF; }
+.dev-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+footer { padding-block: 40px; color: var(--muted); font-size: 0.86rem; border-top: 1px solid var(--line); }
+</style>
+
+<header class="hero">
+  <svg class="hero-mark" viewBox="0 0 100 100" aria-hidden="true"><polygon points="50,6 96,92 4,92" fill="#FFFFFF"/></svg>
+  <div class="wrap">
+    <span class="eyebrow">Payments</span>
+    <h1>Pay a <em>person</em>, not an address.</h1>
+    <p class="lede">BSV wallets now hand a payment straight to the person you're paying. Phone to phone when you're together, wallet to wallet over the internet when you're apart, and through a message box when they're offline. This page explains how each way works, and shows openly what every device and server involved can and can't see.</p>
+    <div class="hero-meta">
+      <span class="pill">Shipped in <b>BSV Desktop 3.2.0</b></span>
+      <span class="pill">and <b>BSV Browser 1.8.0</b> (iOS, Android)</span>
+      <span class="pill">Open protocol <b>@bsv/webrtpay</b></span>
+      <span class="pill">Status <b>live, confirmed device to device</b></span>
+    </div>
+  </div>
+</header>
+
+<main>
+<section id="ways">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Three ways to pay</span>
+      <h2>The most private way that works, every time</h2>
+      <p class="prose">Your wallet picks the way that reveals the least about you, given where the other person is. Each way down the list involves one more party, so it shares a little more.</p>
+    </div>
+    <div class="ways">
+      <article class="way">
+        <div class="rank"><span>1 · Nearby</span><span class="best">Best for privacy</span></div>
+        <h3>Phone to phone, when you're together</h3>
+        <div class="bar" aria-hidden="true"><i style="width:100%"></i></div>
+        <ul>
+          <li>You scan their payment code; the phones talk directly over Wi-Fi or Bluetooth, or by animated QR codes.</li>
+          <li>No server carries the payment. Nothing leaves the room until the transaction is sent to the network.</li>
+          <li>Phones only (BSV Browser).</li>
+        </ul>
+      </article>
+      <article class="way">
+        <div class="rank"><span>2 · Live</span><span class="best">When you're apart</span></div>
+        <h3>Wallet to wallet, over the internet</h3>
+        <div class="bar" aria-hidden="true"><i style="width:68%"></i></div>
+        <ul>
+          <li>A relay introduces the two wallets; they then connect directly, encrypted end to end.</li>
+          <li>The relay sees who connects to whom and when, never the payment.</li>
+          <li>Phones and desktops, in any combination.</li>
+        </ul>
+      </article>
+      <article class="way">
+        <div class="rank"><span>3 · Message box</span><span class="best">When they're offline</span></div>
+        <h3>Left for them to collect</h3>
+        <div class="bar" aria-hidden="true"><i style="width:42%"></i></div>
+        <ul>
+          <li>The payment is sealed for the recipient and held until their wallet next opens.</li>
+          <li>The message box sees who paid whom and when, never the payment or amount.</li>
+          <li>Used only after you agree, when live delivery can't reach them.</li>
+        </ul>
+      </article>
+    </div>
+    <div class="principle">
+      <b>One rule for all three</b>
+      <p class="prose">Privacy first: share only what's needed for the payment to arrive. In every way, the payment itself (the transaction, the amount, and the private details needed to spend it) is encrypted so only the recipient can read it. What differs is how much <em>metadata</em> the people and servers in between can see.</p>
+    </div>
+  </div>
+</section>
+
+<section class="subtle" id="explainer">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">See it happen</span>
+      <h2>Follow a payment, step by step</h2>
+      <p class="prose">Choose a way to pay, then play it through or step one stage at a time. You pay from the left; the person you're paying is on the right. A line appears only while two parties are connected, and a locked envelope is encrypted. The panel lists who can see what at that moment.</p>
+    </div>
+    <div class="explainer">
+      <div class="tabs" role="tablist" aria-label="Way to pay">
+        <button class="tab" role="tab" id="tab-nearby" aria-selected="true" aria-controls="stage-panel" data-mode="nearby">1 · Nearby</button>
+        <button class="tab" role="tab" id="tab-live" aria-selected="false" aria-controls="stage-panel" data-mode="live">2 · Live</button>
+        <button class="tab" role="tab" id="tab-box" aria-selected="false" aria-controls="stage-panel" data-mode="box">3 · Message box</button>
+      </div>
+      <div id="stage-panel" role="tabpanel" aria-labelledby="tab-nearby">
+        <div class="stage-wrap"><svg id="stage" viewBox="0 0 760 320" role="img" aria-label="Animated diagram of the selected way to pay"></svg></div>
+        <div class="panel">
+          <div>
+            <div class="step-no" id="step-no">Step 1 of 5</div>
+            <div class="step-title" id="step-title"></div>
+            <p class="step-text" id="step-text"></p>
+            <div class="controls">
+              <button class="btn" id="prev" type="button">Back</button>
+              <button class="btn primary" id="play" type="button">Play</button>
+              <button class="btn" id="next" type="button">Next</button>
+              <div class="dots" id="dots" aria-label="Steps"></div>
+            </div>
+          </div>
+          <div class="sees" aria-live="polite">
+            <h4>Who can see what, at this step</h4>
+            <ul id="sees"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="flow">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">The specification</span>
+      <h2>What happens when you press Pay</h2>
+      <p class="prose">This is what shipped in BSV Desktop and BSV Browser. Timings are the defaults the apps use.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <span class="when">in person · phones</span>
+        <h3>Nearby: scan, then pay</h3>
+        <p>The person being paid shows a payment code. Scanning it gives your phone their identity, the amount and a one-time secret for this payment. Your phone then finds theirs over Apple's peer-to-peer Wi-Fi, Google's Nearby Connections or Bluetooth, trying the quickest first. If no radio works, it shows the payment as a short series of animated QR codes for their camera to read. Whichever path it takes, the payment is sealed with that one-time secret. Their phone checks it and replies "got it". Their phone then sends the transaction to the network as it takes the payment in, and yours sends the same transaction too.</p>
+      </div>
+      <div class="step">
+        <span class="when">step 1 · you</span>
+        <h3>Apart: choose a person</h3>
+        <p>Search by name, handle, email or identity key and enter an amount. That's all you do. The wallet decides how the payment travels.</p>
+      </div>
+      <div class="step">
+        <span class="when">step 2 · 0 to 2 seconds</span>
+        <h3>Knock</h3>
+        <p>Your wallet sends a small <em>knock</em> through the relay, encrypted so only the recipient's wallet can open it. If their wallet is open it answers with a <em>ring</em>, usually in well under a second. If not, the relay says so straight away. Your wallet waits at most 2 seconds before treating them as offline.</p>
+      </div>
+      <div class="step">
+        <span class="when">step 3 · up to 10 seconds</span>
+        <h3>Connect</h3>
+        <p>The wallets open an encrypted WebRTC link. Each asks a STUN server for its public address; wallets on the same network use local addresses. If no direct path exists, for example on some mobile hotspots or strict office firewalls, the link is relayed by a TURN server. It stays encrypted end to end either way. Each wallet checks that the other end of the link really is the identity it expected.</p>
+      </div>
+      <div class="step">
+        <span class="when">step 4 · about a second</span>
+        <h3>Pay</h3>
+        <p>Your wallet sends the payment over the link: the signed transaction and the private details the recipient needs to spend it. Their wallet checks the payment is really to them, sends the transaction to the network as it takes it in, and confirms. Your wallet then sends the same transaction too; the network already has it, so nothing is paid twice. One payment is always one transaction. If the link drops after the payment has left your wallet, the same payment finishes through the message box, never a second time.</p>
+        <div class="ui">Success screen: "Paid live: it's already in their wallet."</div>
+      </div>
+      <div class="step">
+        <span class="when">fallback · when they're not online</span>
+        <h3>Offer the message box</h3>
+        <p>When the recipient isn't online, or the direct link can't form and nothing was spent, you're asked first:</p>
+        <div class="ui">"Sam isn't online right now. Send it to their message box? They'll get it next time they open their wallet."</div>
+        <p>Say yes, and the same encrypted payment is left in their message box. A few seconds later your wallet sends the transaction to the network in the background. Their wallet collects the payment automatically the next time it opens, sends the transaction again as it takes it in, and the box deletes its copy. There's nothing for them to press.</p>
+      </div>
+      <div class="step">
+        <span class="when">receiving · on by default</span>
+        <h3>Be payable</h3>
+        <p>While your wallet is open it stays reachable through the relay, and the Receive screen says <em>"Open to live payments"</em>. On desktop that's while the wallet is unlocked. On a phone, it's while the app is in the foreground; the rest of the time payers are offered your message box. Every arrival shows a short notice. You can turn live receiving off in Settings at any time.</p>
+      </div>
+    </div>
+    <div class="facts" aria-label="Measured and default figures">
+      <div class="fact"><span class="v">≤ 2 s</span><span class="k">to know someone is offline</span></div>
+      <div class="fact"><span class="v">122 ms</span><span class="k">relay delivery, measured in production</span></div>
+      <div class="fact"><span class="v">59 ms</span><span class="k">"not online" answer, measured in production</span></div>
+      <div class="fact"><span class="v">10 s</span><span class="k">for the live link to form once they answer</span></div>
+      <div class="fact"><span class="v">4 paths</span><span class="k">nearby: peer-to-peer Wi-Fi, Nearby Connections, Bluetooth, animated QR</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="subtle" id="privacy">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">Privacy, in the open</span>
+      <h2>What each party can see</h2>
+      <p class="prose">The payment is encrypted in every way. What isn't hidden is <em>metadata</em>: who connects to whom, from which address, and when. Wherever a server routes a message, it can see who it routes for. We'd rather show you exactly where that line sits than claim the system is invisible, because it isn't.</p>
+    </div>
+    <div class="legend" aria-label="Legend">
+      <span class="chip enc">Encrypted / never sees</span>
+      <span class="chip meta">Metadata it can see</span>
+      <span class="chip open">Visible in the clear</span>
+    </div>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="Privacy table; scrolls sideways on small screens">
+      <table>
+        <thead>
+          <tr><th>Who</th><th>When</th><th>Can see</th><th>Never sees</th><th>Keeps</th><th>Your control</th></tr>
+        </thead>
+        <tbody>
+          <tr class="group"><th colspan="6">1 · Nearby <small>phone to phone, in person</small></th></tr>
+          <tr>
+            <td>People nearby<span class="op">anyone within radio range</span></td>
+            <td>While two phones pair and pay.</td>
+            <td><span class="chip meta">Metadata</span><br>That a payment session is happening close by: a random session name that changes every payment, and on iPhone the Bluetooth name "BSV Pay".</td>
+            <td><span class="chip enc">Encrypted</span><br>Either identity, the amount and the payment. Everything sent is scrambled with the one-time secret.</td>
+            <td>Nothing.</td>
+            <td>Pay somewhere you're comfortable being seen paying.</td>
+          </tr>
+          <tr>
+            <td>The payment code<span class="op">the QR the payee shows</span></td>
+            <td>When the payee shows it.</td>
+            <td><span class="chip open">In the clear</span><br>The payee's identity key, the amount, which radios to try, and the one-time secret for this payment. Anyone who photographs the code holds that secret.</td>
+            <td>Anything about the payer.</td>
+            <td>Valid for one payment only.</td>
+            <td>Show your code only to the person paying you.</td>
+          </tr>
+          <tr>
+            <td>The other phone</td>
+            <td>Every nearby payment.</td>
+            <td><span class="chip open">In the clear</span><br>Each phone learns the other's identity key and its radio address on the local link. The payee also receives the payment and any note.</td>
+            <td>Your IP address on the internet.</td>
+            <td>The payment and the payer's identity key, as with any payment.</td>
+            <td>Only scan codes from people you mean to pay.</td>
+          </tr>
+          <tr>
+            <td>Apple or Google<span class="op">the phone's own radio services</span></td>
+            <td>Peer-to-peer Wi-Fi on iPhone; Nearby Connections (Play services) on Android.</td>
+            <td><span class="chip meta">Metadata</span><br>The operating system runs the radio link. Whether it reports anything to its maker isn't something our code controls.</td>
+            <td><span class="chip enc">Encrypted</span><br>The payment, which is sealed before the radio sees it.</td>
+            <td>Per Apple and Google.</td>
+            <td>The Bluetooth and animated-QR paths avoid both services.</td>
+          </tr>
+
+          <tr class="group"><th colspan="6">2 · Live <small>wallet to wallet, over the internet</small></th></tr>
+          <tr>
+            <td>Signalling relay<span class="op">BSV Association · behind Cloudflare</span></td>
+            <td>The whole time your wallet is open with receiving on, and whenever you pay live.</td>
+            <td><span class="chip meta">Metadata</span><br>Identity keys of connected wallets, their IP addresses and how long they're online. For each payment attempt: both identity keys, the time and the size of the sealed envelopes.</td>
+            <td><span class="chip enc">Encrypted</span><br>The payment, the amount, the transaction, and the network addresses exchanged inside the envelopes.</td>
+            <td>Nothing on disk. Connection state lives in memory and is gone on restart. The relay writes no identity keys or IPs to its logs.</td>
+            <td>Turn off live receiving, or choose the message box for signalling.</td>
+          </tr>
+          <tr>
+            <td>"Is this wallet online?"<span class="op">anyone, through the relay</span></td>
+            <td>Any time receiving is on.</td>
+            <td><span class="chip meta">Metadata</span><br>Anyone who knows your identity key can learn whether your wallet is open right now. This is what makes the 2-second answer possible.</td>
+            <td><span class="chip enc">Encrypted</span><br>Anything else about you.</td>
+            <td>Nothing.</td>
+            <td>With live receiving off you always appear offline.</td>
+          </tr>
+          <tr>
+            <td>The person you pay, or who pays you</td>
+            <td>Every live payment and every live connection attempt.</td>
+            <td><span class="chip open">In the clear</span><br>Your identity key and public IP address. With "Connect directly on the same network" on (the desktop default), also your local network and IPv6 address. Anyone who knows your key can learn your IP and that you're online by starting a connection, even without paying.</td>
+            <td>Anything outside the payment.</td>
+            <td>The payment and your identity key, as with any payment.</td>
+            <td>Turn off live receiving; turn off "same network" to hide local addresses.</td>
+          </tr>
+          <tr>
+            <td>STUN servers<span class="op">BSV Association, Google, Cloudflare (default list)</span></td>
+            <td>Each time a link is set up, by both sides.</td>
+            <td><span class="chip meta">Metadata</span><br>Your device's public IP address and port, and the time.</td>
+            <td><span class="chip enc">Encrypted</span><br>Identity keys, who is paying whom, the payment.</td>
+            <td>Our STUN server isn't configured to log these requests. Google and Cloudflare follow their own policies.</td>
+            <td>Edit the STUN list in Settings (desktop).</td>
+          </tr>
+          <tr>
+            <td>TURN relay<span class="op">Cloudflare</span></td>
+            <td>Only when two wallets can't connect directly.</td>
+            <td><span class="chip meta">Metadata</span><br>Both devices' IP addresses, the time and how much data passed. The amount of data roughly matches the transaction size.</td>
+            <td><span class="chip enc">Encrypted</span><br>Identity keys and the payment.</td>
+            <td>Per Cloudflare. We receive aggregate usage only.</td>
+            <td>None today; it's used automatically when needed.</td>
+          </tr>
+
+          <tr class="group"><th colspan="6">3 · Message box <small>held until they're online</small></th></tr>
+          <tr>
+            <td>Message box<span class="op">BSV Association · behind Cloudflare</span></td>
+            <td>Offline payments, and the wallet's inbox check about once a minute while open.</td>
+            <td><span class="chip meta">Metadata</span><br>Sender and recipient identity keys, that it's a payment (the mailbox is named for payments), the message size and when it was sent and collected.</td>
+            <td><span class="chip enc">Encrypted</span><br>The transaction, the amount and the private spending details. Only the recipient can open them.</td>
+            <td>The sealed message until it's collected, then it's deleted. A lasting record that an identity has received payments. Today the server also logs each payment's recipient key; that's being fixed (see below).</td>
+            <td>The message box can be turned off; payments then go live or nearby only.</td>
+          </tr>
+          <tr>
+            <td>Push notifications<span class="op">Apple, Google · phones only</span></td>
+            <td>When a message box payment arrives for a phone.</td>
+            <td><span class="chip meta">Metadata</span><br>The phone's notification token, the time and the words "Payment received".</td>
+            <td><span class="chip enc">Encrypted</span><br>Amount, sender and transaction.</td>
+            <td>Per Apple and Google.</td>
+            <td>The phone's notification settings.</td>
+          </tr>
+
+          <tr class="group"><th colspan="6">Every way <small>once the payment exists</small></th></tr>
+          <tr>
+            <td>Cloudflare<span class="op">network edge for our servers</span></td>
+            <td>Every request to the relay, the message box and the broadcaster.</td>
+            <td><span class="chip meta">Metadata</span><br>What those services see, plus your IP address and app version.</td>
+            <td><span class="chip enc">Encrypted</span><br>Envelopes, payments and messages, which are encrypted end to end inside the connection Cloudflare handles.</td>
+            <td>Per Cloudflare.</td>
+            <td>None.</td>
+          </tr>
+          <tr>
+            <td>Transaction broadcaster<span class="op">Arcade, BSV Association</span></td>
+            <td>Every payment, as it's sent to the network.</td>
+            <td><span class="chip open">In the clear</span><br>The transaction and the IP address of each wallet that sends it (normally both), plus a status token derived privately from each wallet's key, so nobody else can work it out from a public identity.</td>
+            <td>Your identity key.</td>
+            <td>Transaction status records.</td>
+            <td>None.</td>
+          </tr>
+          <tr>
+            <td>The public blockchain</td>
+            <td>Every payment.</td>
+            <td><span class="chip open">In the clear</span><br>The amount and the transaction.</td>
+            <td><span class="chip enc">Unlinked</span><br>Identity keys. Each payment goes to a fresh one-time key, so the chain alone doesn't link payments to you.</td>
+            <td>Permanently.</td>
+            <td>None.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Logs from the relay, STUN and message box servers are kept by a third-party log processor in the EU; we're confirming how long. This table is also going into the BSV wallet privacy policy, which is under legal review.</p>
+
+    <div class="status">
+      <div class="card">
+        <h3>Fixed in this release <span class="chip enc">Done</span></h3>
+        <p class="prose">The broadcaster's status token is now derived from your private wallet key, the same way on desktop and mobile. It used to come from your public identity.</p>
+      </div>
+      <div class="card">
+        <h3>Message box logging <span class="chip meta">Fix released, rollout pending</span></h3>
+        <p class="prose">Message box 1.5.2 stops logging identity keys and message ids. Production runs 1.3.4 until the upgrade is deployed.</p>
+      </div>
+      <div class="card">
+        <h3>Next for privacy <span class="chip meta">Planned</span></h3>
+        <p class="prose">Planned changes:</p>
+        <ul>
+          <li>Fixed-size envelopes, so sizes reveal nothing.</li>
+          <li>An option to answer "online?" only for your contacts.</li>
+          <li>One-off signalling keys, so the relay can't tie a payment to the payer.</li>
+          <li>Rotating meeting tags in place of identity keys.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="build">
+  <div class="wrap">
+    <div class="head">
+      <span class="eyebrow">For wallet builders</span>
+      <h2>Add live payments to your wallet</h2>
+      <p class="prose">The live protocol is open source in the BSV TypeScript stack. Your wallet needs:</p>
+      <ul class="prose">
+        <li>the standard BSV wallet interface</li>
+        <li>a WebRTC implementation</li>
+        <li>a way to signal (the public relay works out of the box)</li>
+      </ul>
+      <p class="prose">Nearby payments ship in the BSV mobile toolkit.</p>
+    </div>
+    <div class="dev-grid">
+      <div class="card">
+        <h3>Install</h3>
+<pre><span class="c"># browsers and Electron</span>
+npm install @bsv/webrtpay
+
+<span class="c"># React Native: add the native WebRTC module</span>
+npm install @bsv/webrtpay react-native-webrtc</pre>
+        <p class="prose">Expo apps can use <code>@bsv/expo-wallet-toolbox</code> (0.19+). It includes the ready-made pieces:</p>
+        <ul>
+          <li>live payments, with the pay flow, the Receive card and the message box fallback</li>
+          <li>nearby payments, through <code>@bsv/react-native-localpay-transport</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Pay and be paid live</h3>
+<pre><span class="k">const</span> relay = <span class="k">new</span> RelaySignaler({
+  url: <span class="c">'wss://webrtpay-relay-us-1.bsvblockchain.tech'</span>,
+  wallet, originator
+})
+<span class="k">const</span> client = <span class="k">new</span> DirectPayClient({
+  wallet, originator, chain: <span class="c">'main'</span>,
+  signaler: relay,
+  rtc: { iceServers: [{ urls: <span class="c">'stun:stun-us-1.bsvb.tech:3478'</span> }] },
+  iceServersProvider: relay.turnProvider()
+})
+
+<span class="c">// payee</span>
+<span class="k">await</span> client.startReceiving({ onPayment })
+<span class="c">// payer</span>
+<span class="k">const</span> peer = <span class="k">await</span> client.connect(payeeIdentityKey)
+<span class="k">const</span> ack = <span class="k">await</span> client.sendPayment(peer, token)</pre>
+        <p class="prose">Abridged from the package README. <code>onPayment</code> checks the payment with <code>verifyDirectPayment</code> and takes it in once. The README covers retries and storage.</p>
+      </div>
+      <div class="card">
+        <h3>Protocol at a glance</h3>
+        <ul>
+          <li><b>Presence:</b> knock, then ring or reject, answered before any network address is shared.</li>
+          <li><b>Signalling:</b> every message is encrypted for the other wallet; the relay sees only who it's for.</li>
+          <li><b>Identity:</b> each wallet proves who it is as part of setting up the encrypted link.</li>
+          <li><b>Payment:</b> the transaction with its proof history, plus the private spending details, checked by the recipient before it's accepted.</li>
+          <li><b>Errors:</b> <code>peer_unreachable</code>, <code>rejected</code>, <code>unavailable</code>, <code>timeout</code>, so wallets can offer the right fallback.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Run your own infrastructure</h3>
+        <ul>
+          <li><b>Relay:</b> a stateless WebSocket service, published as a container image. Point clients at your own to keep presence metadata in your hands.</li>
+          <li><b>STUN and TURN:</b> ordinary WebRTC servers. Use ours, your own, or a provider's.</li>
+          <li><b>Message box:</b> can carry signalling as well as offline payments.</li>
+        </ul>
+        <p class="prose">Wallets on different relays can't find each other live, but message boxes still connect them.</p>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>BSV Association · Specification as shipped in BSV Desktop 3.2.0, BSV Browser 1.8.0 and <span class="mono">@bsv/webrtpay</span> 0.2.x · Privacy table reflects production as of 21 October 2026.</p>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const NS = 'http://www.w3.org/2000/svg'
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  // The stage is 760×320. The payer always sits on the left and the payee on the right, so the payment
+  // only ever travels left to right; the network is the line along the bottom. A line between two
+  // parties is drawn only while they are actually connected, and it draws on the moment they connect.
+  const PAYER = { x: 110, y: 150 }, PAYEE = { x: 650, y: 150 }
+  const NET_Y = 296
+  const DROP = { payer: [[PAYER.x, 222], [PAYER.x, 288]], payee: [[PAYEE.x, 222], [PAYEE.x, 288]] }
+  const NET_LINKS = { 'payer-net': [[PAYER.x, 214], [PAYER.x, NET_Y - 4]], 'payee-net': [[PAYEE.x, 214], [PAYEE.x, NET_Y - 4]] }
+  // Each step lists the connections that exist during it (`links`), the ones the payment or message
+  // uses (`hot`), what moves (`moves`, `drops`), and what each screen shows. `sees` fills the panel.
+  const MODES = {
+    nearby: {
+      actors: {
+        payer: { ...PAYER, label: 'Your phone', sub: 'payer', kind: 'phone' },
+        payee: { ...PAYEE, label: 'Their phone', sub: 'payee', kind: 'phone' },
+        crowd: { x: 380, y: 50, label: 'People nearby', sub: 'within radio range', kind: 'people', from: 1 },
+        net: { kind: 'net', from: 4 }
+      },
+      geo: { sight: [[176, 128], [584, 128]], radio: [[176, 150], [584, 150]], ...NET_LINKS },
+      steps: [
+        { title: 'They show a payment code', links: ['sight'], screens: { payee: 'qr', payer: 'qr' },
+          text: 'Their phone shows a payment code: their identity, the amount and a one-time secret for this payment. Your camera reads it. Nothing has gone over the air or the internet yet.',
+          sees: [['open', 'Your phone', 'Their identity key, the amount, the one-time secret.'], ['open', 'Anyone who photographs the code', 'The same. Show it only to the person paying.'], ['enc', 'Every server', 'Nothing. No server is involved.']] },
+        { title: 'The phones find each other', links: ['radio'], linkAt: 900, pulse: 'payer', active: ['crowd'],
+          text: 'Your phone looks for theirs over peer-to-peer Wi-Fi, Nearby Connections or Bluetooth, quickest first. They meet under a random name that changes with every payment.',
+          sees: [['meta', 'People nearby', 'That a payment session is close by, under a random name. No identities.'], ['meta', 'Apple or Google', 'Run the radio link on the phone itself.']] },
+        { title: 'The payment crosses, sealed', links: ['radio'], hot: ['radio'], moves: [{ item: 'env', sealed: true, path: [[200, 150], [560, 150]] }],
+          text: 'The transaction and the private spending details are sealed with the one-time secret, then sent over the radio. If no radio works, they go as animated QR codes from your screen to their camera.',
+          sees: [['enc', 'People nearby', 'Scrambled data only.'], ['open', 'Their phone', 'Unseals the payment and your identity key.']] },
+        { title: 'Their phone says "got it"', links: ['radio'], screens: { payee: 'tick', payer: 'tick' }, screenAt: { payee: 300, payer: 1100 },
+          text: 'Their wallet checks the payment really pays them and matches the code, saves it, and replies "got it" over the same link. Then it adds the money to their balance.',
+          sees: [['meta', 'People nearby', 'At most, that a short reply was sent. Nothing about the payment.']] },
+        { title: 'Their phone sends it to the network', links: ['payee-net'], hot: ['payee-net'], drops: [{ who: 'payee', at: 500 }], screens: { payee: 'tick', payer: 'tick' },
+          text: 'Their wallet sends the finished transaction to the network as it takes the payment in. This is the first time anything about the payment leaves the room.',
+          sees: [['open', 'The broadcaster and blockchain', 'The transaction and amount, paid to a one-time key that isn\'t linked to either identity. The broadcaster also sees their IP address.'], ['enc', 'Everyone else', 'That this was a payment between the two of you.']] },
+        { title: 'Your phone sends it too', links: ['payer-net'], hot: ['payer-net'], drops: [{ who: 'payer', at: 500 }], screens: { payee: 'tick', payer: 'tick' },
+          text: 'Having heard "got it", your phone sends the same transaction as well. The network already has it, so nothing is paid twice.',
+          sees: [['open', 'The broadcaster', 'The same transaction again, and your IP address.']] }
+      ]
+    },
+    live: {
+      actors: {
+        payer: { ...PAYER, label: 'Your wallet', sub: 'phone or desktop', kind: 'phone' },
+        payee: { ...PAYEE, label: 'Their wallet', sub: 'open to live payments', kind: 'phone' },
+        relay: { x: 380, y: 40, label: 'Relay', sub: 'introduces the wallets', kind: 'server' },
+        stun: { x: 380, y: 106, label: 'STUN', sub: 'address check', kind: 'small', from: 2 },
+        turn: { x: 380, y: 210, label: 'TURN', sub: 'only if needed', kind: 'small', dashed: true, from: 2, until: 2 },
+        net: { kind: 'net', from: 4 }
+      },
+      geo: {
+        'payer-relay': [[150, 88], [300, 46]], 'payee-relay': [[610, 88], [460, 46]],
+        'payer-stun': [[172, 120], [334, 108]], 'payee-stun': [[588, 120], [426, 108]],
+        direct: [[176, 150], [584, 150]], ...NET_LINKS
+      },
+      steps: [
+        { title: 'Knock', links: ['payer-relay', 'payee-relay'], hot: ['payer-relay', 'payee-relay'], moves: [{ item: 'env', sealed: true, path: [[150, 88], [380, 40], [610, 88]], at: 700 }],
+          text: 'Both wallets are already connected to the relay while they\'re open. Yours sends a small knock through it, encrypted so only their wallet can open it.',
+          sees: [['meta', 'Relay', 'Both identity keys, both IP addresses, the time, the envelope size.'], ['enc', 'Relay', 'What\'s inside the envelope.']] },
+        { title: 'Ring, within 2 seconds', links: ['payer-relay', 'payee-relay'], hot: ['payee-relay'], pulse: 'payee', screens: { payer: 'ring' }, screenAt: { payer: 1200 },
+          text: 'Their wallet rings back, usually in well under a second. If it isn\'t open, the relay says so straight away and you\'re offered the message box.',
+          sees: [['meta', 'Relay', 'That their wallet answered, and when.']] },
+        { title: 'Find a route', links: ['payer-relay', 'payee-relay', 'payer-stun', 'payee-stun'], hot: ['payer-stun', 'payee-stun'], active: ['stun'],
+          text: 'Each wallet asks a STUN server for its own public address. On the same network they can use local addresses. A TURN server steps in only if no direct path exists.',
+          sees: [['meta', 'STUN server', 'Your public IP address and the time. Not who you are.'], ['meta', 'TURN (if used)', 'Both IP addresses and how much data passes.']] },
+        { title: 'The payment crosses the direct link', links: ['payer-relay', 'payee-relay', 'direct'], hot: ['direct'], moves: [{ item: 'env', sealed: true, path: [[200, 150], [560, 150]], at: 900 }],
+          text: 'The wallets connect directly, each checks the other is who it expected, and the sealed payment goes straight across. It never passes through the relay.',
+          sees: [['open', 'Their wallet', 'Your identity key, your IP address, and the payment.'], ['enc', 'Relay, STUN, TURN', 'The payment and the amount.']] },
+        { title: 'Their wallet sends it to the network', links: ['direct', 'payee-net'], hot: ['payee-net'], drops: [{ who: 'payee', at: 500 }], screens: { payee: 'tick', payer: 'tick' }, screenAt: { payee: 300, payer: 1900 },
+          text: 'Their wallet checks the payment really pays them and sends the transaction to the network as it takes it in. Then it tells your wallet the payment is accepted.',
+          sees: [['open', 'The broadcaster and blockchain', 'The transaction and amount, paid to a one-time key. The broadcaster also sees their IP address.'], ['enc', 'Everyone else', 'Who paid whom.']] },
+        { title: 'Your wallet sends it too', links: ['payer-net'], hot: ['payer-net'], drops: [{ who: 'payer', at: 500 }], screens: { payee: 'tick', payer: 'tick' },
+          text: 'Your wallet sends the same transaction as well, and the success screen says "Paid live". The network already has it, so nothing is paid twice.',
+          sees: [['open', 'The broadcaster', 'The same transaction again, and your IP address.']] }
+      ]
+    },
+    box: {
+      actors: {
+        payer: { ...PAYER, label: 'Your wallet', sub: 'phone or desktop', kind: 'phone' },
+        box: { x: 380, y: 150, label: 'Message box', sub: 'holds sealed payments', kind: 'server' },
+        payee: { ...PAYEE, label: 'Their wallet', sub: 'offline, then opens', kind: 'phone', offlineUntil: 3 },
+        net: { kind: 'net', from: 2 }
+      },
+      geo: { 'payer-box': [[176, 150], [296, 150]], 'box-payee': [[464, 150], [584, 150]], ...NET_LINKS },
+      steps: [
+        { title: 'They\'re not online, so you\'re asked', links: [], screens: { payer: 'ask' },
+          text: '"Sam isn\'t online right now. Send it to their message box?" Say yes, and your wallet seals the payment so only their wallet can open it.',
+          sees: [['enc', 'Every server', 'Nothing yet.']] },
+        { title: 'Left in their message box', links: ['payer-box'], hot: ['payer-box'], moves: [{ item: 'env', sealed: true, path: [[200, 150], [300, 150], [380, 102]], at: 700, dur: 1600, stay: true }],
+          text: 'The sealed payment waits in their message box. The box can\'t open it.',
+          sees: [['meta', 'Message box', 'Sender and recipient identity keys, that it\'s a payment, its size and the time.'], ['enc', 'Message box', 'The transaction, the amount and the spending details.']] },
+        { title: 'Your wallet sends it to the network', links: ['payer-net'], hot: ['payer-net'], held: true, drops: [{ who: 'payer', at: 500 }],
+          text: 'A few seconds later, while your wallet is open, it sends the transaction to the network in the background. They don\'t need to be online for that.',
+          sees: [['open', 'The broadcaster and blockchain', 'The transaction and amount, paid to a one-time key. The broadcaster also sees your IP address.']] },
+        { title: 'They open their wallet', links: ['box-payee'], hot: ['box-payee'], wake: true, moves: [{ item: 'env', sealed: true, path: [[380, 102], [464, 150], [560, 150]], at: 900, dur: 1600 }],
+          text: 'Next time their wallet opens, it collects the payment, unseals it and takes it in automatically. A phone may get a "Payment received" notice.',
+          sees: [['open', 'Their wallet', 'The payment and your identity key.'], ['meta', 'Apple or Google (phones)', 'That a notice was sent, and when.']] },
+        { title: 'Their wallet sends it again', links: ['box-payee', 'payee-net'], hot: ['payee-net'], drops: [{ who: 'payee', at: 500 }], screens: { payee: 'tick' },
+          text: 'As their wallet takes the payment in, it also sends the transaction to the network. The network already has it, so nothing is paid twice.',
+          sees: [['open', 'The broadcaster', 'The same transaction, and their IP address.']] },
+        { title: 'Collected and deleted', links: ['box-payee'], screens: { payee: 'tick' },
+          text: 'Their wallet tells the box it has the payment, and the box deletes it.',
+          sees: [['meta', 'Message box', 'When it was collected. It keeps a record that this identity receives payments.']] }
+      ]
+    }
+  }
+
+  const svg = document.getElementById('stage')
+  const ui = {
+    no: document.getElementById('step-no'), title: document.getElementById('step-title'), text: document.getElementById('step-text'),
+    sees: document.getElementById('sees'), dots: document.getElementById('dots'), play: document.getElementById('play'),
+    prev: document.getElementById('prev'), next: document.getElementById('next'), panel: document.getElementById('stage-panel')
+  }
+  const LEVEL = { enc: ['enc', 'Encrypted / can\'t see'], meta: ['meta', 'Metadata'], open: ['open', 'In the clear'] }
+  const HOT = '#6F8BFF'
+  const STEP_MS = 2600, AUTO_MS = 4200
+  let mode = 'nearby', step = 0, playing = false, timer = null, raf = null
+
+  const el = (name, attrs = {}, parent = svg) => {
+    const n = document.createElementNS(NS, name)
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v)
+    parent.appendChild(n)
+    return n
+  }
+  const text = (x, y, s, size, fill, weight = 400, parent, anchor = 'middle') => {
+    const t = el('text', { x, y, 'text-anchor': anchor, fill, 'font-size': size, 'font-weight': weight, 'font-family': 'IBM Plex Sans, system-ui, sans-serif' }, parent)
+    t.textContent = s
+    return t
+  }
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  const clamp = v => Math.max(0, Math.min(1, v))
+  const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
+  const span = (t, at, dur) => ease(clamp((t - at) / dur))
+  const along = (pts, p) => {
+    const segs = pts.length - 1, f = p * segs, i = Math.min(segs - 1, Math.floor(f)), q = f - i
+    return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * q, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * q]
+  }
+  const visible = (a, i) => (a.from === undefined || i >= a.from) && (a.until === undefined || i <= a.until)
+
+  function drawScreen(a, kind, k) {
+    // The screen of the small phone icon in a device tile, centred at (a.x, a.y - 18).
+    const g = el('g', { opacity: k })
+    const cx = a.x, cy = a.y - 18
+    if (kind === 'qr') {
+      el('rect', { x: cx - 11, y: cy - 11, width: 22, height: 22, fill: '#FFFFFF' }, g)
+      for (const [qx, qy] of [[-9, -9], [3, -9], [-9, 3], [3, 3], [-3, -3]]) el('rect', { x: cx + qx, y: cy + qy, width: 6, height: 6, fill: '#0A0E27' }, g)
+    } else if (kind === 'tick') {
+      el('path', { d: `M${cx - 9} ${cy} l6 6 l12 -13`, fill: 'none', stroke: '#5FD3A0', 'stroke-width': 3, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g)
+    } else if (kind === 'ring') {
+      text(cx, cy + 5, 'ring', 11, HOT, 600, g)
+    } else if (kind === 'ask') {
+      text(cx, cy + 6, '?', 18, HOT, 700, g)
+    }
+  }
+
+  function drawActor(a, id, s, t, i) {
+    const offline = a.offlineUntil !== undefined && i < a.offlineUntil && !(s.wake && id === 'payee')
+    const woke = s.wake && id === 'payee' ? span(t, 0, 700) : 1
+    const active = id === 'payer' || id === 'payee' ? false : (s.active || []).includes(id)
+    const appear = a.from === i ? span(t, 0, 600) : 1
+    const g = el('g', { opacity: (offline ? 0.45 : (s.wake && id === 'payee' ? 0.45 + 0.55 * woke : 1)) * appear })
+    const node = css('--stage-node'), line = css('--stage-line'), fg = css('--stage-fg'), mut = css('--stage-muted')
+    const hi = active ? HOT : line
+    if (a.kind === 'phone') {
+      el('rect', { x: a.x - 62, y: a.y - 62, width: 124, height: 124, rx: 22, fill: node, stroke: line, 'stroke-width': 1.5 }, g)
+      el('rect', { x: a.x - 16, y: a.y - 44, width: 32, height: 52, rx: 6, fill: 'none', stroke: mut, 'stroke-width': 1.5 }, g)
+      text(a.x, a.y + 28, a.label, 13.5, fg, 600, g)
+      text(a.x, a.y + 46, a.sub, 11, mut, 400, g)
+    } else if (a.kind === 'server') {
+      el('rect', { x: a.x - 80, y: a.y - 26, width: 160, height: 52, rx: 14, fill: css('--stage'), stroke: hi, 'stroke-width': active ? 2.5 : 1.5 }, g)
+      text(a.x, a.y - 3, a.label, 13.5, fg, 600, g)
+      text(a.x, a.y + 14, a.sub, 11, mut, 400, g)
+    } else if (a.kind === 'small') {
+      const attrs = { x: a.x - 46, y: a.y - 20, width: 92, height: 40, rx: 12, fill: css('--stage'), stroke: hi, 'stroke-width': active ? 2.5 : 1.5 }
+      if (a.dashed) attrs['stroke-dasharray'] = '4 3'
+      el('rect', attrs, g)
+      text(a.x, a.y - 3, a.label, 12, fg, 600, g)
+      text(a.x, a.y + 12, a.sub, 10, mut, 400, g)
+    } else if (a.kind === 'people') {
+      for (const dx of [-22, 0, 22]) {
+        el('circle', { cx: a.x + dx, cy: a.y - 14, r: 7, fill: 'none', stroke: active ? HOT : mut, 'stroke-width': 1.5 }, g)
+        el('path', { d: `M${a.x + dx - 11} ${a.y + 8} q11 -16 22 0`, fill: 'none', stroke: active ? HOT : mut, 'stroke-width': 1.5 }, g)
+      }
+      text(a.x, a.y + 26, a.label, 12.5, fg, 600, g)
+      text(a.x, a.y + 42, a.sub, 10.5, mut, 400, g)
+    } else if (a.kind === 'net') {
+      el('line', { x1: 24, y1: NET_Y, x2: 736, y2: NET_Y, stroke: line, 'stroke-width': 2 }, g)
+      text(380, NET_Y + 18, 'BSV network, via the broadcaster', 11, mut, 500, g)
+    }
+  }
+
+  function envelope(x, y, sealed, opacity = 1) {
+    const g = el('g', { transform: `translate(${x} ${y})`, opacity })
+    el('rect', { x: -16, y: -11, width: 32, height: 22, rx: 4, fill: '#FFFFFF' }, g)
+    el('path', { d: 'M-16 -10 L0 2 L16 -10', fill: 'none', stroke: '#0A0E27', 'stroke-width': 1.5 }, g)
+    if (sealed) {
+      el('rect', { x: 6, y: 1, width: 14, height: 11, rx: 2, fill: '#1A1EAF', stroke: '#FFFFFF', 'stroke-width': 1 }, g)
+      el('path', { d: 'M9 1 v-3 a4 4 0 0 1 8 0 v3', fill: 'none', stroke: '#FFFFFF', 'stroke-width': 1.5 }, g)
+    }
+  }
+
+  // Renders the current step at `t` ms into its animation (Infinity = the settled end state).
+  function draw(t) {
+    const m = MODES[mode], s = m.steps[step], prev = m.steps[step - 1]
+    svg.textContent = ''
+    el('rect', { x: 0, y: 0, width: 760, height: 320, fill: css('--stage') })
+    for (const [id, a] of Object.entries(m.actors)) if (id !== 'payer' && id !== 'payee' && visible(a, step)) drawActor(a, id, s, t, step)
+    // Connections: drawn on the moment they open, then held while they last.
+    const linkAt = s.linkAt || 0
+    for (const id of s.links) {
+      const [[x1, y1], [x2, y2]] = m.geo[id]
+      const fresh = !prev || !prev.links.includes(id)
+      const k = fresh ? span(t, linkAt, 700) : 1
+      if (k <= 0) continue
+      const hot = (s.hot || []).includes(id)
+      const sight = id === 'sight'
+      el('line', { x1, y1, x2: x1 + (x2 - x1) * k, y2: y1 + (y2 - y1) * k, stroke: hot ? HOT : css(sight ? '--stage-muted' : '--stage-line'), 'stroke-width': hot ? 2.5 : (sight ? 1 : 1.6), 'stroke-linecap': 'round', opacity: sight ? 0.7 : 1 })
+    }
+    if (s.pulse) {
+      const a = m.actors[s.pulse]
+      for (const d of [0, 650]) {
+        const p = clamp((t - d) / 1500)
+        if (p > 0 && p < 1) el('circle', { cx: a.x, cy: a.y, r: 66 + 34 * p, fill: 'none', stroke: HOT, 'stroke-width': 1.5, opacity: 0.6 * (1 - p) })
+      }
+    }
+    for (const id of ['payer', 'payee']) drawActor(m.actors[id], id, s, t, step)
+    for (const [who, kind] of Object.entries(s.screens || {})) {
+      const carried = prev && prev.screens && prev.screens[who] === kind
+      drawScreen(m.actors[who], kind, carried ? 1 : span(t, (s.screenAt || {})[who] || 200, 500))
+    }
+    // A sealed payment resting in the message box.
+    if (s.held) envelope(380, 102, true)
+    // Movers: the payment and the knock, always left to right.
+    for (const v of s.moves || []) {
+      const at = v.at || 300, dur = v.dur || 1400
+      if (t < at) continue
+      const p = span(t, at, dur)
+      if (p >= 1 && !v.stay) continue
+      const [x, y] = along(v.path, p)
+      envelope(x, y, v.sealed, Math.min(1, (t - at) / 200))
+    }
+    // Broadcasts: the transaction drops to the network line, then a short pulse runs along it.
+    for (const d of s.drops || []) {
+      const [[x, y1], [, y2]] = DROP[d.who]
+      const p = span(t, d.at, 1000)
+      if (p > 0 && p < 1) el('polygon', { points: `${x},${y1 + (y2 - y1) * p - 11} ${x + 11},${y1 + (y2 - y1) * p + 8} ${x - 11},${y1 + (y2 - y1) * p + 8}`, fill: '#FFFFFF' })
+      const r = clamp((t - d.at - 1000) / 1000)
+      if (r > 0 && r < 1) {
+        const w = 150 * ease(r)
+        el('line', { x1: x - w, y1: NET_Y, x2: x + w, y2: NET_Y, stroke: HOT, 'stroke-width': 3, opacity: 1 - r * r })
+      }
+    }
+  }
+
+  function animate() {
+    cancelAnimationFrame(raf)
+    if (reduce) { draw(Infinity); return }
+    const start = performance.now()
+    const tick = now => {
+      const t = now - start
+      draw(t)
+      if (t < STEP_MS + 200) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+  }
+
+  function renderPanel() {
+    const m = MODES[mode], s = m.steps[step]
+    ui.no.textContent = `Step ${step + 1} of ${m.steps.length}`
+    ui.title.textContent = s.title
+    ui.text.textContent = s.text
+    ui.sees.textContent = ''
+    for (const [lvl, who, what] of s.sees) {
+      const li = document.createElement('li')
+      const chip = document.createElement('span'); chip.className = 'chip ' + LEVEL[lvl][0]; chip.textContent = LEVEL[lvl][1]
+      const b = document.createElement('b'); b.textContent = who
+      const t = document.createElement('span'); t.className = 't'; t.textContent = what
+      li.append(chip, b, t); ui.sees.appendChild(li)
+    }
+    ui.dots.textContent = ''
+    m.steps.forEach((st, i) => {
+      const d = document.createElement('button')
+      d.className = 'dot'; d.type = 'button'; d.setAttribute('aria-label', `Step ${i + 1}: ${st.title}`)
+      if (i === step) d.setAttribute('aria-current', 'step')
+      d.addEventListener('click', () => { stop(); go(i) })
+      ui.dots.appendChild(d)
+    })
+    ui.prev.disabled = step === 0
+    ui.next.disabled = step === m.steps.length - 1
+  }
+
+  function go(i) { step = i; renderPanel(); animate() }
+  function stop() { playing = false; clearTimeout(timer); ui.play.textContent = 'Play' }
+  function play() {
+    playing = true; ui.play.textContent = 'Pause'
+    const advance = () => {
+      if (!playing) return
+      const last = MODES[mode].steps.length - 1
+      if (step >= last) { stop(); return }
+      go(step + 1); timer = setTimeout(advance, AUTO_MS)
+    }
+    if (step >= MODES[mode].steps.length - 1) go(0)
+    timer = setTimeout(advance, AUTO_MS)
+  }
+  ui.play.addEventListener('click', () => playing ? stop() : play())
+  ui.prev.addEventListener('click', () => { stop(); if (step > 0) go(step - 1) })
+  ui.next.addEventListener('click', () => { stop(); if (step < MODES[mode].steps.length - 1) go(step + 1) })
+
+  const tabs = [...document.querySelectorAll('.tab')]
+  function selectMode(m) {
+    stop(); mode = m
+    for (const t of tabs) { const on = t.dataset.mode === m; t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; if (on) ui.panel.setAttribute('aria-labelledby', t.id) }
+    go(0)
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => selectMode(t.dataset.mode))
+    t.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      const n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]
+      n.focus(); selectMode(n.dataset.mode)
+    })
+  })
+  // Redraw on theme change so the stage tokens follow.
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => draw(Infinity))
+  new MutationObserver(() => draw(Infinity)).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+  selectMode('nearby')
+})()
+</script>
+
+</body></html>

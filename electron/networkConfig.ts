@@ -12,6 +12,16 @@ export interface NetworkSettings {
   /** Empty means the wallet data stays on this device. */
   storageUrl: string
   backupStorageUrls: string[]
+  /**
+   * Mandala issuer overlays for this network. Empty refuses Mandala assets
+   * (fail closed); the wallet never invents an overlay.
+   */
+  mandalaOverlays: MandalaOverlaySetting[]
+}
+export interface MandalaOverlaySetting {
+  url: string
+  /** Lowercase compressed identity key of the overlay operator. */
+  identityKey: string
 }
 export type NetworkSettingsMap = Record<WalletNetwork, NetworkSettings>
 export const DEFAULT_MESSAGE_BOX_URL = 'https://messagebox.bsvblockchain.tech'
@@ -35,6 +45,7 @@ export function defaultNetworkSettings(chain: WalletNetwork): NetworkSettings {
     useMessageBox: true,
     storageUrl: '',
     backupStorageUrls: [],
+    mandalaOverlays: [],
   }
 }
 export function defaultNetworkSettingsMap(): NetworkSettingsMap {
@@ -57,6 +68,43 @@ function serviceUrl(value: unknown, label: string, required: boolean): string {
 export function normalizeMessageBoxUrl(value?: string | null): string {
   return serviceUrl(value ?? '', 'Message Box URL', false) || DEFAULT_MESSAGE_BOX_URL
 }
+export const MAX_MANDALA_OVERLAYS = 4
+const IDENTITY_KEY = /^0[23][0-9a-f]{64}$/
+function mandalaOverlay(value: unknown): MandalaOverlaySetting {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Mandala overlay settings are invalid')
+  const entry = value as Partial<Record<keyof MandalaOverlaySetting, unknown>>
+  const url = serviceUrl(entry.url, 'Mandala overlay URL', true)
+  const identityKey = typeof entry.identityKey === 'string' ? entry.identityKey.trim().toLowerCase() : ''
+  if (!IDENTITY_KEY.test(identityKey)) throw new Error('Mandala overlay identity key must be a 66-character compressed public key in hex')
+  return { url, identityKey }
+}
+/**
+ * Strict rejects the whole list on any bad entry. Lenient (restoring saved
+ * settings) keeps the valid entries: first of a duplicate key wins, capped at 4.
+ */
+export function normalizeMandalaOverlays(value: unknown, strict: boolean): MandalaOverlaySetting[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) {
+    if (strict) throw new Error('Mandala overlay settings are invalid')
+    return []
+  }
+  if (strict && value.length > MAX_MANDALA_OVERLAYS) throw new Error(`At most ${MAX_MANDALA_OVERLAYS} Mandala overlays`)
+  const overlays: MandalaOverlaySetting[] = []
+  for (const item of value) {
+    if (overlays.length === MAX_MANDALA_OVERLAYS) break
+    let overlay: MandalaOverlaySetting
+    try { overlay = mandalaOverlay(item) } catch (error) {
+      if (strict) throw error
+      continue
+    }
+    if (overlays.some(existing => existing.identityKey === overlay.identityKey)) {
+      if (strict) throw new Error('Each Mandala overlay identity key may appear once')
+      continue
+    }
+    overlays.push(overlay)
+  }
+  return overlays
+}
 export function normalizeNetworkSettings(chain: WalletNetwork, settings: Partial<NetworkSettings>, requireServices = true): NetworkSettings {
   if (!isWalletNetwork(chain)) throw new Error('Choose a supported BSV network')
   const merged = { ...defaultNetworkSettings(chain), ...settings }
@@ -69,6 +117,7 @@ export function normalizeNetworkSettings(chain: WalletNetwork, settings: Partial
     useMessageBox: merged.useMessageBox !== false,
     storageUrl: serviceUrl(merged.storageUrl, 'Wallet storage URL', false),
     backupStorageUrls: merged.backupStorageUrls.map(url => url === 'LOCAL_STORAGE' ? url : serviceUrl(url, 'Backup storage URL', true)),
+    mandalaOverlays: normalizeMandalaOverlays(merged.mandalaOverlays, requireServices),
   }
 }
 export function restoreNetworkSettings(value: unknown): NetworkSettingsMap {

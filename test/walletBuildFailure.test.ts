@@ -24,6 +24,7 @@ import { CachedKeyDeriver, PrivateKey } from '@bsv/sdk'
 import { WalletService } from '../src/lib/services/WalletService'
 import { createServices, deriveArcadeCallbackToken } from '../src/lib/services/createServices'
 import { StorageElectronIPC } from '../src/lib/StorageElectronIPC'
+import { WalletDataStorageManager } from '../src/lib/walletPortability/WalletDataStorageManager'
 import { getReadyAppWalletSnapshot } from '../src/lib/services/appWalletBridge'
 import { clearWalletForHttpRoute } from '../src/onWalletReady'
 
@@ -146,6 +147,54 @@ describe('successful wallet build', () => {
     expect(service.lifecycle).toBe('ready')
     expect(vi.mocked(createServices).mock.calls[0][1]).toBe(token)
     expect(vi.mocked(StorageElectronIPC).mock.calls[0][3]).toBe(token)
+  })
+
+  it('tells the permission modules, live, whether the local storage is the active one (contract §8.2)', async () => {
+    const service = new WalletService()
+    const state = service as any
+    state._useMessageBox = false
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {} })
+    vi.stubGlobal('window', { electronAPI: { walletData: { call: vi.fn(async () => ({ preferLocal: false })) }, storage: { releaseNetwork: vi.fn(async () => ({ success: true })) } } })
+    vi.spyOn(service.directPay, 'start').mockResolvedValue()
+    const create = vi.spyOn(service.permissionQueue, 'createPermissionsManager')
+    vi.mocked(WalletDataStorageManager).mockClear()
+
+    await state._buildWallet(new Array(32).fill(1), {})
+
+    expect(service.lifecycle).toBe('ready')
+    const context = create.mock.calls[0][1] as any
+    expect(context.localStorageSelected).toBe(true)
+    const { isLocalStorageActive } = context
+    const manager = vi.mocked(WalletDataStorageManager).mock.results[0].value as any
+    const local = { isActive: true, isConflicting: false, endpointURL: undefined }
+    const remote = { isActive: true, isConflicting: false, endpointURL: 'https://store.example' }
+    // an unused manager is made available first: its active store is only known then
+    // (user.activeStorage may name a backup)
+    manager.isAvailable = () => false
+    manager.makeAvailable = vi.fn(async () => {
+      manager.isAvailable = () => true
+      manager.getStores = () => [remote, { ...local, isActive: false }]
+    })
+    await expect(isLocalStorageActive()).resolves.toBe(false)
+    expect(manager.makeAvailable).toHaveBeenCalledOnce()
+    manager.getStores = () => [local, { ...remote, isActive: false }]
+    await expect(isLocalStorageActive()).resolves.toBe(true)
+    expect(manager.makeAvailable).toHaveBeenCalledOnce()
+    // a primary switch flips the active store in place, without a rebuild
+    manager.getStores = () => [remote, { ...local, isActive: false }]
+    await expect(isLocalStorageActive()).resolves.toBe(false)
+    // no active store, conflicting actives, a throwing manager or the remote flag: not local
+    manager.getStores = () => []
+    await expect(isLocalStorageActive()).resolves.toBe(false)
+    manager.getStores = () => [local, { ...remote, isConflicting: true }]
+    await expect(isLocalStorageActive()).resolves.toBe(false)
+    manager.getStores = () => { throw new Error('not available') }
+    await expect(isLocalStorageActive()).resolves.toBe(false)
+    manager.getStores = () => [local]
+    state._useRemoteStorage = true
+    await expect(isLocalStorageActive()).resolves.toBe(false)
+    state._useRemoteStorage = false
+    await expect(isLocalStorageActive()).resolves.toBe(true)
   })
 
   it('does not start direct payments for a build that was superseded meanwhile', async () => {

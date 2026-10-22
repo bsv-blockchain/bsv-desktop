@@ -1,5 +1,6 @@
 import type { WalletInterface } from '@bsv/sdk'
 import { sdk as WalletToolboxSdk } from '@bsv/wallet-toolbox-client'
+import { readCount } from './listOutputsCount'
 
 /** Wallet Storage returns the exact satoshi total without paging wallet outputs. */
 export async function loadAccountBalance(
@@ -13,5 +14,5 @@ export async function loadAccountBalance(
       : { basket, tags: [WalletToolboxSdk.specOpWalletBalance] },
     originator
   )
-  return result.totalOutputs
+  return readCount(result.totalOutputs, 'Wallet balance')
 }

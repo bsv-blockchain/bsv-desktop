@@ -17,6 +17,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 const loop = { started: false, ended: false, fail: (_error: Error) => {} }
 /** The callback tokens the worker built its Services and its SSE wiring with. */
 const tokens = { services: [] as unknown[], sse: [] as unknown[] }
+/** The Services stand-ins the worker built, and every postBeef that reached them. */
+const built = { services: [] as any[], posted: [] as string[][] }
 const CALLBACK_TOKEN = '0123456789abcdef'.repeat(2)
 
 vi.mock('@bsv/wallet-toolbox', () => ({
@@ -39,7 +41,15 @@ vi.mock('@bsv/wallet-toolbox', () => ({
 vi.mock('../electron/arcade', () => ({
   createArcadeServices: (_chain: string, callbackToken: unknown) => {
     tokens.services.push(callbackToken)
-    return { options: { arcadeUrl: 'http://127.0.0.1:9' } }
+    const services = {
+      options: { arcadeUrl: 'http://127.0.0.1:9' },
+      postBeef: async (_beef: unknown, txids: string[]) => {
+        built.posted.push([...txids])
+        return [{ name: 'FakeArc', status: 'success', txidResults: txids.map(txid => ({ txid, status: 'success' })) }]
+      }
+    }
+    built.services.push(services)
+    return services
   }
 }))
 vi.mock('../electron/arcadeSse', () => ({
@@ -52,7 +62,7 @@ vi.mock('../electron/arcadeSse', () => ({
   tolerateTransientArcadeRejections: () => true
 }))
 
-const workerMessages = new Set(['ready', 'monitor-started', 'monitor-error', 'monitor-stopped', 'tx-status-changed'])
+const workerMessages = new Set(['ready', 'monitor-started', 'monitor-error', 'monitor-stopped', 'tx-status-changed', 'color-held'])
 const startMessage = {
   type: 'start',
   config: {
@@ -70,6 +80,7 @@ let restoreProcess = () => {}
 beforeEach(() => {
   Object.assign(loop, { started: false, ended: false })
   Object.assign(tokens, { services: [], sse: [] })
+  Object.assign(built, { services: [], posted: [] })
   vi.resetModules()
 })
 
@@ -157,4 +168,41 @@ test('monitor-worker broadcasts and subscribes with the callback token it is sta
 
   await handle({ type: 'stop' })
   await running
+})
+
+test('monitor-worker withholds an unreleased 1Color tx from its broadcasters (contract §8.2)', async () => {
+  const fs = await import('fs')
+  const { Beef, P2PKH, Transaction, UnlockingScript } = await import('@bsv/sdk')
+  const { OneColor } = await import('@bsv/templates')
+  const { ColorGuardJournal } = await import('../electron/colorBroadcastGuard')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bsv-desktop-worker-guard-'))
+  try {
+    const { handle, sent } = await loadWorker()
+    const config = { ...startMessage.config, colorGuardRoot: root }
+    const running = handle({ type: 'start', config })
+    await vi.waitFor(() => expect(sent.map(m => m.type)).toContain('monitor-started'), { timeout: 5000 })
+
+    const pkh = new Array(20).fill(3)
+    const mk = (locking: any) => {
+      const tx = new Transaction()
+      tx.addInput({ sourceTXID: 'cd'.repeat(32), sourceOutputIndex: 0, unlockingScript: new UnlockingScript(), sequence: 0xffffffff })
+      tx.addOutput({ lockingScript: locking, satoshis: 1 })
+      return tx
+    }
+    const T = mk(new OneColor().lock('ef'.repeat(32) + '_0', 5n, pkh))
+    const P = mk(new P2PKH().lock(pkh))
+    const beef = new Beef()
+    beef.mergeTransaction(T)
+    beef.mergeTransaction(P)
+    const rs = await built.services[0].postBeef(beef, [T.id('hex'), P.id('hex')])
+    expect(built.posted).toEqual([[P.id('hex')]])
+    expect(rs[0].txidResults).toContainEqual({ txid: T.id('hex'), status: 'error', serviceError: true })
+    expect(await new ColorGuardJournal({ root }).held(config.identityKey, 'test')).toEqual([T.id('hex')])
+    expect(sent.map(m => m.type)).toContain('color-held')
+
+    await handle({ type: 'stop' })
+    await running
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
 })

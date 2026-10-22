@@ -37,4 +37,24 @@ describe('inactive network storage lifecycle', () => {
     await closing
     expect(database.destroy).toHaveBeenCalledOnce()
   })
+
+  it('runs the color guard only on an already-open storage: never opens or creates a wallet database', async () => {
+    const manager = storageManager as any
+    const open = vi.spyOn(storageManager, 'getOrCreateStorage')
+    const fn = vi.fn(async () => 'ran')
+    const closed = storageManager.withColorGuardStorage(identity, 'main', fn)
+    await expect(closed).rejects.toMatchObject({ code: 'COLOR_GUARD_STORAGE_UNAVAILABLE' })
+    expect(fn).not.toHaveBeenCalled()
+    expect(open).not.toHaveBeenCalled()
+
+    const key = walletStorageKey(identity, 'main')
+    const storage = { network: 'main' }
+    manager.storages.set(key, storage)
+    try {
+      await expect(storageManager.withColorGuardStorage(identity, 'main', async s => s)).resolves.toBe(storage)
+      expect(open).not.toHaveBeenCalled()
+    } finally {
+      manager.storages.delete(key)
+    }
+  })
 })

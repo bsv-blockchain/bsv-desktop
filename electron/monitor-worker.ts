@@ -41,6 +41,8 @@ interface MonitorConfig {
   serviceSettings?: import('./networkConfig.js').NetworkSettings;
   /** The wallet's Arcade callback token, derived by the renderer and passed on by the parent. */
   callbackToken: string;
+  /** Root of the 1Color broadcast-guard journal main uses (electron/colorBroadcastGuard.ts). */
+  colorGuardRoot?: string;
 }
 
 let monitor: Monitor | null = null;
@@ -80,12 +82,14 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
       { StorageKnex, Monitor, WalletStorageManager },
       { createArcadeServices },
       { arcadeSseCursorPath, createArcadeMonitorOptions, startArcadeSsePump, tolerateTransientArcadeRejections },
-      { DEFAULT_MONITOR_FEE_RATE, getConfiguredFeeRate }
+      { DEFAULT_MONITOR_FEE_RATE, getConfiguredFeeRate },
+      colorGuard
     ] = await Promise.all([
       import('@bsv/wallet-toolbox'),
       import('./arcade.js'),
       import('./arcadeSse.js'),
-      import('./feeSettings.js')
+      import('./feeSettings.js'),
+      import('./colorBroadcastGuard.js')
     ]);
     if (stopping) return;
 
@@ -137,6 +141,20 @@ async function startMonitor(config: MonitorConfig): Promise<void> {
     // the main process's broadcasts never report into.
     const services = createArcadeServices(chain, config.callbackToken, config.serviceSettings);
     console.log(`[Monitor Worker] Broadcasting, proofs and SSE via Arcade at ${services.options.arcadeUrl}`);
+
+    // TaskSendWaiting posts through the attemptToPostReqsToNetwork module function,
+    // past main's storage-layer guard, so every broadcast from this process goes
+    // through the services-layer guard (contract §8.2): an unreleased 1Color tx,
+    // or a tx spending one this wallet holds, is withheld as a service error.
+    colorGuard.guardPostBeef(services as any, {
+      identityKey,
+      chain,
+      journal: new colorGuard.ColorGuardJournal({ root: config.colorGuardRoot }),
+      classify: colorGuard.loadColorClassifier,
+      storage: storage as any,
+      notifyHeld: txid => tellParent({ type: 'color-held', txid })
+    });
+    void colorGuard.loadColorClassifier().catch(() => { /* logged once by the loader; every broadcast is held */ });
 
     // Set services on storage
     const storageAny = storage as any;

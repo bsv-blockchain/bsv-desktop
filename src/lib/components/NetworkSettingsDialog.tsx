@@ -7,8 +7,26 @@ import {
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded'
 import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded'
 import { toast } from 'react-toastify'
+import { PublicKey } from '@bsv/sdk'
 import { WalletContext } from '../WalletContext'
-import { defaultNetworkSettings, NETWORKS, type NetworkSettings, type WalletNetwork } from '../networkConfig'
+import { defaultNetworkSettings, NETWORKS, normalizeNetworkSettings, type NetworkSettings, type WalletNetwork } from '../networkConfig'
+
+/**
+ * The dialog edits mandalaOverlays[0]. Both fields empty clears it; both set
+ * must pass the shared validator and lie on the curve. Throws a user-facing message.
+ */
+function withMandalaOverlay(network: WalletNetwork, form: NetworkSettings, url: string, identityKey: string): NetworkSettings {
+  const rest = (form.mandalaOverlays || []).slice(1)
+  const trimmedUrl = url.trim()
+  const trimmedKey = identityKey.trim()
+  if (!trimmedUrl && !trimmedKey) return { ...form, mandalaOverlays: rest }
+  if (!trimmedUrl || !trimmedKey) throw new Error('Mandala overlay URL and identity key must be set together')
+  const normalized = normalizeNetworkSettings(network, { ...form, mandalaOverlays: [{ url: trimmedUrl, identityKey: trimmedKey }, ...rest] })
+  try { PublicKey.fromString(normalized.mandalaOverlays[0].identityKey) } catch {
+    throw new Error('Mandala overlay identity key is not a valid public key')
+  }
+  return normalized
+}
 
 /** Opened by Settings or the native Network menu. */
 const NetworkSettingsDialog: React.FC = () => {
@@ -18,15 +36,22 @@ const NetworkSettingsDialog: React.FC = () => {
   const [form, setForm] = useState<NetworkSettings>(networkSettings[chain])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [overlayUrl, setOverlayUrl] = useState(networkSettings[chain]?.mandalaOverlays?.[0]?.url ?? '')
+  const [overlayKey, setOverlayKey] = useState(networkSettings[chain]?.mandalaOverlays?.[0]?.identityKey ?? '')
   const [proxyEnabled, setProxyEnabled] = useState(false)
   const [proxyUrl, setProxyUrl] = useState('')
   const [restartRequired, setRestartRequired] = useState(false)
   const [proxySaving, setProxySaving] = useState(false)
   const busy = saving || switchingNetwork
+  const loadForm = useCallback((settings: NetworkSettings) => {
+    setForm(settings)
+    setOverlayUrl(settings.mandalaOverlays?.[0]?.url ?? '')
+    setOverlayKey(settings.mandalaOverlays?.[0]?.identityKey ?? '')
+  }, [])
 
   const openSettings = useCallback(() => {
     setSelected(chain)
-    setForm(networkSettings[chain])
+    loadForm(networkSettings[chain])
     setError('')
     setOpen(true)
     if (window.electronAPI?.network) {
@@ -36,7 +61,7 @@ const NetworkSettingsDialog: React.FC = () => {
         setRestartRequired(Boolean(settings.restartRequired))
       }).catch(() => setError('Proxy settings could not be loaded.'))
     }
-  }, [chain, networkSettings])
+  }, [chain, networkSettings, loadForm])
 
   useEffect(() => {
     window.addEventListener('open-network-settings', openSettings)
@@ -49,7 +74,7 @@ const NetworkSettingsDialog: React.FC = () => {
 
   const choose = (network: WalletNetwork) => {
     setSelected(network)
-    setForm(networkSettings[network])
+    loadForm(networkSettings[network])
     setError('')
   }
   const update = (field: keyof NetworkSettings, value: string) => {
@@ -57,10 +82,16 @@ const NetworkSettingsDialog: React.FC = () => {
     setError('')
   }
   const save = async () => {
+    if (busy) return
+    let settings: NetworkSettings
+    try { settings = withMandalaOverlay(selected, form, overlayUrl, overlayKey) } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Mandala overlay settings are invalid')
+      return
+    }
     setSaving(true)
     setError('')
     try {
-      await applyNetworkSettings(selected, form)
+      await applyNetworkSettings(selected, settings)
       toast.success(`${NETWORKS.find(network => network.id === selected)?.label} is ready.`)
       setOpen(false)
     } catch (cause) {
@@ -119,8 +150,10 @@ const NetworkSettingsDialog: React.FC = () => {
                 <TextField label="Address explorer API URL" value={form.whatsOnChainUrl} onChange={event => update('whatsOnChainUrl', event.target.value)} disabled={busy} fullWidth helperText="WhatsOnChain compatible API, including its /v1/bsv/network path" />
                 <FormControlLabel label="Use Message Box for identity payments" control={<Switch checked={form.useMessageBox !== false} onChange={event => setForm(previous => ({ ...previous, useMessageBox: event.target.checked }))} disabled={busy} />} />
                 <TextField label="Message Box URL" value={form.messageBoxUrl} onChange={event => update('messageBoxUrl', event.target.value)} disabled={busy || form.useMessageBox === false} fullWidth helperText="Leave empty to use https://messagebox.bsvblockchain.tech" />
+                <TextField label="Mandala overlay URL (optional)" value={overlayUrl} onChange={event => { setOverlayUrl(event.target.value); setError('') }} disabled={busy} fullWidth helperText="Overlay that admits Mandala tokens on this network. Leave both Mandala fields empty to refuse Mandala tokens." />
+                <TextField label="Mandala overlay identity key" value={overlayKey} onChange={event => { setOverlayKey(event.target.value); setError('') }} disabled={busy} fullWidth helperText="The overlay operator's 66-character compressed public key" inputProps={{ spellCheck: false, autoCapitalize: 'off' }} />
                 <TextField label="Remote wallet storage URL (optional)" value={form.storageUrl} onChange={event => update('storageUrl', event.target.value)} disabled={busy} fullWidth helperText="Leave empty to keep your wallet data on this device." />
-                <Button size="small" onClick={() => setForm(defaultNetworkSettings(selected))} disabled={busy} sx={{ alignSelf: 'flex-start' }}>Restore defaults</Button>
+                <Button size="small" onClick={() => loadForm(defaultNetworkSettings(selected))} disabled={busy} sx={{ alignSelf: 'flex-start' }}>Restore defaults</Button>
               </Stack>
             </AccordionDetails>
           </Accordion>

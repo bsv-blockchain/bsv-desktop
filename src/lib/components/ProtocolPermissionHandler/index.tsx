@@ -11,6 +11,7 @@ import CodeIcon from '@mui/icons-material/Code'
 import CachedIcon from '@mui/icons-material/Cached'
 import ShoppingBasketIcon from '@mui/icons-material/ShoppingBasket'
 import deterministicColor from '../../utils/deterministicColor'
+import { getWalletService } from '../../hooks/useWalletService'
 
 // Permission request types
 type PermissionType = 'identity' | 'protocol' | 'renewal' | 'basket';
@@ -66,8 +67,16 @@ const ProtocolPermissionHandler = () => {
   // Handle granting the top request in the queue
   const handleGrant = () => {
     if (protocolRequests.length > 0) {
-      const { requestID, originator, protocolID, protocolSecurityLevel, counterparty } = protocolRequests[0]
-      const p = managers.permissionsManager?.grantPermission({ requestID })
+      const { requestID, originator, protocolID, protocolSecurityLevel, counterparty, colorLinkage } = protocolRequests[0]
+      // A Mandala token sending prompt (D20) grants ephemerally and records a
+      // 30-minute linkage grant, so later sends of this app do not prompt. If
+      // it is no longer known (double-click, wallet rebuilt) the click still
+      // answers this one request, ephemerally.
+      const p = colorLinkage
+        ? getWalletService().permissionQueue.approveColorLinkage(requestID)
+          .catch(() => managers.permissionsManager?.grantPermission({ requestID, ephemeral: true }))
+          .catch(() => {})
+        : managers.permissionsManager?.grantPermission({ requestID })
       p?.finally(() => {
         window.dispatchEvent(new CustomEvent('protocol-permissions-changed', {
           detail: {
@@ -109,7 +118,7 @@ const ProtocolPermissionHandler = () => {
   return (
     <CustomDialog
       open={protocolAccessModalOpen}
-      title={getPermissionTypeDoc().title}
+      title={currentPerm.colorLinkage ? 'Mandala token sending' : getPermissionTypeDoc().title}
       icon={getPermissionTypeDoc().icon}
       onClose={handleDeny} // If the user closes via the X, treat as "deny"
     >

@@ -28,6 +28,27 @@ export interface ElectronAPI {
     get: (chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<FeeSettingsView>;
     set: (chain: 'main' | 'test' | 'ttn' | 'tstn', rate: number | null) => Promise<{ success: boolean; settings?: FeeSettingsView; error?: string }>;
   };
+  /**
+   * Durable color-module store in the main process (electron/colorStore.ts),
+   * namespaced per identity and chain. Keys must start with `color.v1.`.
+   */
+  colorStore: {
+    get: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string) => Promise<string | undefined>;
+    set: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string, value: string) => Promise<void>;
+    delete: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string) => Promise<void>;
+    keys: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', prefix: string) => Promise<string[]>;
+  };
+  /**
+   * 1Color broadcast guard (electron/colorBroadcastGuard.ts, contract §8.2): the
+   * main process and the monitor worker hold every unreleased tx with a BRC-162
+   * output; the renderer releases a txid once the color module reports it settled.
+   */
+  colorGuard: {
+    held: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<string[]>;
+    release: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', txid: string) => Promise<void>;
+    /** Fired on every park; returns an unsubscribe function. */
+    onHeld: (cb: (txid: string) => void) => () => void;
+  };
   isFocused: () => Promise<boolean>;
   requestFocus: () => Promise<void>;
   relinquishFocus: () => Promise<void>;

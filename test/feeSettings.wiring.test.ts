@@ -85,9 +85,11 @@ describe.skipIf(!sqliteAvailable)('fee rate wiring', () => {
     const configs = forked.map(worker => worker.send.mock.calls[0][0])
     const databasePath = (chain: string) => path.join(home, '.bsv-desktop', `wallet-${identityKey}-${chain}.db`)
     const sseCursorPath = (chain: string) => path.join(home, '.bsv-desktop', 'arcade-sse', `${identityKey}-${chain}.json`)
+    // The worker's 1Color broadcast guard reads main's hold journal (contract §8.2).
+    const colorGuardRoot = path.join(home, '.bsv-desktop', 'color-guard')
     expect(configs).toEqual([
-      { type: 'start', config: { identityKey, chain: 'test', databasePath: databasePath('test'), feeRate: 321, sseCursorPath: sseCursorPath('test') } },
-      { type: 'start', config: { identityKey, chain: 'main', databasePath: databasePath('main'), feeRate: 100, sseCursorPath: sseCursorPath('main') } }
+      { type: 'start', config: { identityKey, chain: 'test', databasePath: databasePath('test'), feeRate: 321, sseCursorPath: sseCursorPath('test'), colorGuardRoot } },
+      { type: 'start', config: { identityKey, chain: 'main', databasePath: databasePath('main'), feeRate: 100, sseCursorPath: sseCursorPath('main'), colorGuardRoot } }
     ])
   })
 })

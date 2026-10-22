@@ -1,6 +1,7 @@
 import type React from 'react'
 import type { PaletteMode } from '@mui/material'
 import type { WalletInterface } from '@bsv/sdk'
+import type { NetworkSettings, WalletNetwork } from '../networkConfig'
 
 export type PermissionPromptHandler = (app: string, message: string) => Promise<boolean>
 
@@ -14,10 +15,31 @@ export type PermissionPromptProps = {
   onUnregister?: (id: string) => void
 }
 
+/** The open wallet a module is built for; it changes on every wallet build. */
+export type PermissionModuleContext = {
+  identityKey: string
+  chain: WalletNetwork
+  settings: NetworkSettings
+  /**
+   * The build selected the local (main-process) storage as active, the only
+   * storage the 1Color broadcast guard covers (contract §8.2). False (or
+   * missing) for remote storage.
+   */
+  localStorageSelected: boolean
+  /**
+   * Authoritative and live: resolves true iff the storage manager's active
+   * store is the local one right now (a primary-storage switch does not
+   * rebuild the wallet; an unused manager is made available first). A
+   * rejection, or any value but `true`, counts as not local.
+   */
+  isLocalStorageActive: () => Promise<boolean>
+}
+
 export type PermissionModuleFactoryArgs = {
   wallet: WalletInterface
   adminOriginator: string
   promptHandler?: PermissionPromptHandler
+  context?: PermissionModuleContext
 }
 
 export type PermissionModuleDefinition = {
@@ -25,5 +47,10 @@ export type PermissionModuleDefinition = {
   label: string
   enabledByDefault?: boolean
   createModule: (args: PermissionModuleFactoryArgs) => unknown
+  /**
+   * Releases what `createModule` started (timers, listeners, grants). Called
+   * once per module when the wallet is rebuilt or closed; it must not throw.
+   */
+  dispose?: (module: unknown) => void
   Prompt?: React.ComponentType<PermissionPromptProps>
 }

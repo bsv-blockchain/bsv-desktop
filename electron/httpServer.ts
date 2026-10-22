@@ -4,6 +4,7 @@ import { BrowserWindow } from 'electron';
 import { Server } from 'https';
 import https from 'https';
 import { generateSelfSignedCert, ensureCertTrusted, HTTPS_BRIDGE_PORT, HTTP_BRIDGE_PORT } from './sslCert.js';
+import { HTTP_JSON_BODY_LIMIT } from './httpLimits.js';
 
 interface HttpRequestEvent {
   method: string;
@@ -85,9 +86,9 @@ export async function startHttpServer(mainWindow: BrowserWindow): Promise<() => 
     preflightContinue: true
   }));
 
-  // Parse JSON bodies
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.text({ type: '*/*', limit: '50mb' }));
+  // Parse JSON bodies. D30: at least 32 MiB, so a 16 MiB `p color` receipt fits.
+  app.use(express.json({ limit: HTTP_JSON_BODY_LIMIT }));
+  app.use(express.text({ type: '*/*', limit: HTTP_JSON_BODY_LIMIT }));
 
   // Handle OPTIONS for all routes (runs after cors middleware with preflightContinue)
   app.options('*', (_req: Request, res: Response) => {

@@ -24,6 +24,25 @@ import { createServices } from '../src/lib/services/createServices'
 import { defaultNetworkSettings, type NetworkSettings, type WalletNetwork } from '../src/lib/networkConfig'
 import { deriveMnemonicWallet } from '../src/lib/utils/mnemonicRecovery'
 import { _test_resetHttpBridgeSessions, isHttpBridgePaused } from '../src/lib/services/httpBridgeSession'
+import { colorPermissionModule } from '../src/lib/permissionModules/color'
+
+/** Registers the 1Color module as WalletContext does, so every build makes one. */
+function withColorModule(service: WalletService): WalletService {
+  service.permissionQueue.enabledPermissionModules = ['color']
+  service.permissionQueue.setPermissionsModuleHelpers(id => (id === 'color' ? colorPermissionModule : undefined), new Map())
+  return service
+}
+
+async function colorCapability(service: WalletService): Promise<boolean> {
+  const { version } = await service.managers.permissionsManager!.getVersion({}, 'app.example.com')
+  return version.includes('brc207-color')
+}
+
+/** A p color read reaches the module (its own refusal), not the remote-storage refusal. */
+async function colorReachesModule(service: WalletService): Promise<void> {
+  await expect(service.managers.permissionsManager!.listOutputs({ basket: 'p color assets', seekPermission: false }, 'app.example.com'))
+    .rejects.toThrow('Colored Tokens inventory read permission is required')
+}
 
 async function canUseSqlite(): Promise<boolean> {
   const db = knex({ client: 'better-sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true })
@@ -57,10 +76,19 @@ beforeEach(() => {
   vi.spyOn(PeerPayManager.prototype, 'createClient').mockResolvedValue(undefined)
   vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('Live network access is forbidden in this test') }))
   vi.stubGlobal('CustomEvent', class { constructor(public type: string, public options?: unknown) {} })
-  vi.stubGlobal('window', {
+  // A real EventTarget for the listeners: the wallet build subscribes to
+  // direct-pay settings, and the color settle scheduler to `online`.
+  vi.stubGlobal('window', Object.assign(new EventTarget(), {
+    // CustomEvent is stubbed above, so dispatch stays a spy.
     dispatchEvent: vi.fn(),
     electronAPI: {
       bootConfig: { set: vi.fn(async () => {}) },
+      colorStore: {
+        get: vi.fn(async () => undefined),
+        set: vi.fn(async () => {}),
+        delete: vi.fn(async () => {}),
+        keys: vi.fn(async () => [])
+      },
       walletData: { call: vi.fn(async (action: string) => {
         if (action === 'binding') return undefined
         if (action === 'cancel') return undefined
@@ -98,7 +126,7 @@ beforeEach(() => {
         }),
       },
     },
-  })
+  }))
 })
 
 afterEach(async () => {
@@ -122,7 +150,7 @@ async function returningWallet(loginType: 'direct-key' | 'mnemonic'): Promise<Wa
   seed._managers = { walletManager: snapshotManager }
   vault.snapshot = seed.saveEnhancedSnapshot()
 
-  const service = new WalletService()
+  const service = withColorModule(new WalletService())
   liveWallets.push(service)
   service.restoreConfigFromSnapshot()
   await service.initialize()
@@ -135,6 +163,8 @@ describe.skipIf(!sqliteAvailable)('runtime network changes with real wallet-tool
   it.each(['direct-key', 'mnemonic'] as const)('keeps %s identity and saved services through main → test → ttn and restart', async loginType => {
     const service = await returningWallet(loginType)
     const identity = (await service.wallet!.getPublicKey({ identityKey: true })).publicKey
+    expect(await colorCapability(service)).toBe(true)
+    await colorReachesModule(service)
     // RecoveryKeyHandler re-registers its callback when managers change.
     // This must not start a second initialize during transition teardown.
     service.on('stateChanged', snapshot => {
@@ -174,7 +204,7 @@ describe.skipIf(!sqliteAvailable)('runtime network changes with real wallet-tool
     expect(started.at(-1)).toEqual({ chain: 'ttn', settings: custom })
     await service.walletData!.close()
     service.managers.walletManager.destroy()
-    const restored = new WalletService()
+    const restored = withColorModule(new WalletService())
     liveWallets.push(restored)
     restored.restoreConfigFromSnapshot()
     await restored.initialize()
@@ -183,6 +213,9 @@ describe.skipIf(!sqliteAvailable)('runtime network changes with real wallet-tool
     expect(restored.getSnapshot().networkSettings.ttn).toEqual(custom)
     expect(started.at(-1)).toEqual({ chain: 'ttn', settings: custom })
     expect((await restored.wallet!.getPublicKey({ identityKey: true })).publicKey).toBe(identity)
+    // local active storage: the color module serves p color on every build
+    expect(await colorCapability(restored)).toBe(true)
+    await colorReachesModule(restored)
     expect([...stores.keys()]).toEqual(['main', 'test', 'ttn'])
     expect(vi.mocked(fetch)).not.toHaveBeenCalled()
   })

@@ -9,6 +9,22 @@ export interface TxStatusChangedEvent {
   status: string;
 }
 
+/** Mirrors the colorStore entry in src/global.d.ts. */
+export interface ColorStoreAPI {
+  get: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string) => Promise<string | undefined>;
+  set: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string, value: string) => Promise<void>;
+  delete: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string) => Promise<void>;
+  keys: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', prefix: string) => Promise<string[]>;
+}
+
+/** Mirrors the colorGuard entry in src/global.d.ts (electron/colorBroadcastGuard.ts). */
+export interface ColorGuardAPI {
+  held: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<string[]>;
+  release: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', txid: string) => Promise<void>;
+  /** Returns an unsubscribe function. */
+  onHeld: (cb: (txid: string) => void) => () => void;
+}
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -46,6 +62,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('fees:get', chain),
     set: (chain: 'main' | 'test' | 'ttn' | 'tstn', rate: number | null) =>
       ipcRenderer.invoke('fees:set', chain, rate)
+  },
+
+  // Durable color-module store (electron/colorStore.ts): main process is the single writer
+  colorStore: {
+    get: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string): Promise<string | undefined> =>
+      ipcRenderer.invoke('color-store:get', identityKey, chain, key),
+    set: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string, value: string): Promise<void> =>
+      ipcRenderer.invoke('color-store:set', identityKey, chain, key, value),
+    delete: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string): Promise<void> =>
+      ipcRenderer.invoke('color-store:delete', identityKey, chain, key),
+    keys: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', prefix: string): Promise<string[]> =>
+      ipcRenderer.invoke('color-store:keys', identityKey, chain, prefix)
+  },
+
+  // 1Color broadcast guard (electron/colorBroadcastGuard.ts): the renderer releases a
+  // held txid only after the color module reports it settled
+  colorGuard: {
+    held: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn'): Promise<string[]> =>
+      ipcRenderer.invoke('color-guard:list', identityKey, chain),
+    release: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', txid: string): Promise<void> =>
+      ipcRenderer.invoke('color-guard:release', identityKey, chain, txid),
+    onHeld: (cb: (txid: string) => void): (() => void) => {
+      const listener = (_event: unknown, txid: unknown) => { if (typeof txid === 'string') cb(txid); };
+      ipcRenderer.on('color-guard:held', listener);
+      return () => { ipcRenderer.removeListener('color-guard:held', listener); };
+    }
   },
 
   app: {
@@ -200,6 +242,10 @@ export interface ElectronAPI {
       error?: string;
     }>;
   };
+  /** Durable color-module store, namespaced per identity and chain (electron/colorStore.ts). */
+  colorStore: ColorStoreAPI;
+  /** 1Color broadcast guard: held txids and their release (electron/colorBroadcastGuard.ts). */
+  colorGuard: ColorGuardAPI;
   app: {
     /** Relaunches the app; the process exits and the Promise does not resolve. */
     restart: () => Promise<void>;

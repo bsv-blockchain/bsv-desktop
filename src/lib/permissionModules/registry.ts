@@ -21,9 +21,10 @@ export const buildPermissionModuleRegistry = (modules: PermissionModuleDefinitio
 
   // The settings UI no longer offers a way to disable a module, so a saved
   // list can only ever lose a default module by accident (e.g. a build that
-  // did not ship it normalized it away, which then left Mandala calls failing
-  // with "Unsupported P-module scheme: p mandala"). Default-enabled modules are
-  // therefore always restored; `knownIds` is kept for signature compatibility.
+  // did not ship it normalized it away, which then left that module's calls
+  // failing with "Unsupported P-module scheme"). Default-enabled modules are
+  // therefore always restored, and ids no longer registered are dropped;
+  // `knownIds` is kept for signature compatibility.
   const restoreEnabledPermissionModules = (ids?: string[], _knownIds?: string[]) => {
     const enabled = normalizeEnabledPermissionModules(ids)
     return [...new Set([...enabled, ...getDefaultEnabledPermissionModules()])]

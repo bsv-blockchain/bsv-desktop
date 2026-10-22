@@ -74,6 +74,48 @@ describe('network service preferences', () => {
     setWocEndpoints({})
   })
 
+  const K = '02798b81951a6a8c7ef8beda09b06a23031d7efaf37b663265e0188ab378124046'
+  it('defaults to no Mandala overlay on every network in both processes', () => {
+    for (const { id } of frontend.NETWORKS) {
+      expect(frontend.defaultNetworkSettings(id).mandalaOverlays).toEqual([])
+      expect(backend.defaultNetworkSettings(id).mandalaOverlays).toEqual([])
+    }
+  })
+
+  it('normalizes a valid overlay and rejects bad ones strictly', () => {
+    for (const config of [frontend, backend]) {
+      expect(config.normalizeNetworkSettings('test', { mandalaOverlays: [{ url: 'https://ov.example/', identityKey: ` ${K.toUpperCase()} ` }] }).mandalaOverlays)
+        .toEqual([{ url: 'https://ov.example', identityKey: K }])
+      expect(() => config.normalizeNetworkSettings('test', { mandalaOverlays: [{ url: 'https://ov.example', identityKey: '04' + 'ab'.repeat(32) }] }))
+        .toThrow('Mandala overlay identity key must be a 66-character compressed public key in hex')
+      expect(() => config.normalizeNetworkSettings('test', { mandalaOverlays: [{ url: 'https://a.example', identityKey: K }, { url: 'https://b.example', identityKey: K }] }))
+        .toThrow('Each Mandala overlay identity key may appear once')
+      expect(() => config.normalizeNetworkSettings('test', { mandalaOverlays: [{ url: 'ftp://x', identityKey: K }] })).toThrow('Mandala overlay URL')
+      const five = [2, 3, 4, 5, 6].map(n => ({ url: `https://o${n}.example`, identityKey: `0${n % 2 ? 3 : 2}${String(n).repeat(64)}` }))
+      expect(() => config.normalizeNetworkSettings('test', { mandalaOverlays: five })).toThrow('At most 4 Mandala overlays')
+      expect(() => config.normalizeNetworkSettings('test', { mandalaOverlays: 'x' as any })).toThrow('Mandala overlay settings are invalid')
+    }
+  })
+
+  it('restoring saved settings drops an invalid overlay instead of failing', () => {
+    expect(frontend.restoreNetworkSettings({ test: { mandalaOverlays: [{ url: 'nope', identityKey: 'x' }] } }).test.mandalaOverlays).toEqual([])
+    for (const config of [frontend, backend]) {
+      // Old snapshots have no field; a corrupt one keeps valid entries, first duplicate wins, capped at 4.
+      expect(config.restoreNetworkSettings({ test: { arcadeUrl: 'https://arc.example' } }).test.mandalaOverlays).toEqual([])
+      expect(config.restoreNetworkSettings({ test: { mandalaOverlays: 7 } }).test.mandalaOverlays).toEqual([])
+      const saved = [
+        null,
+        { url: 'https://a.example', identityKey: K },
+        { url: 'https://dup.example', identityKey: K },
+        ...[4, 5, 6, 7].map(n => ({ url: `https://o${n}.example`, identityKey: `02${String(n).repeat(64)}` })),
+      ]
+      expect(config.restoreNetworkSettings({ test: { mandalaOverlays: saved } }).test.mandalaOverlays).toEqual([
+        { url: 'https://a.example', identityKey: K },
+        ...[4, 5, 6].map(n => ({ url: `https://o${n}.example`, identityKey: `02${String(n).repeat(64)}` })),
+      ])
+    }
+  })
+
   it('isolates storage and SSE replay cursors across all four networks', () => {
     const storageKeys = frontend.NETWORKS.map(({ id }) => walletStorageKey(identity, id))
     const cursorPaths = frontend.NETWORKS.map(({ id }) => arcadeSseCursorPath(identity, id))

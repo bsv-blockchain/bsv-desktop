@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **1Color tokens (BRC-207) replace the `p mandala` permission module.** The desktop now hosts the upstream `@bsv/color-permission-module` 0.2.0, registered under the scheme id `color`, with the attested issuer profile and the Mandala issuer profile from `@bsv/mandala` 0.5.0. The old `p mandala` module, its prompts and its tests are deleted. Holdings in the `p mandala` basket and keys under `[2, 'p mandala token']` are not migrated.
+- Dependencies move to `@bsv/sdk` 4.0.0, `@bsv/wallet-toolbox` and `@bsv/wallet-toolbox-client` 2.15.0, and `@bsv/templates` 2.2.0. `listOutputs` `totalOutputs` (number or decimal string in sdk 4.0) is read as an exact count.
+
+### Features
+
+- **Mandala overlay setting.** Each network has a Mandala overlay URL and operator identity key (Settings → BSV network). Both are empty by default, and Mandala assets are refused until they are set (fail closed). Assets that require no profile use a SHIP/lookup-resolver default provider, which fails closed on TSTN.
+- **Color consent prompts** for send, signature, inventory access, relinquish and offline receive. They show exact decimal amounts using the deploy's `dec`, digit-exact at the uint64 maximum and for sums beyond it. The asset id is always shown. Malformed or non-canonical consent messages are declined without a prompt.
+- **Grant policy.** Approving inventory access gives an app a 30-minute read grant. Spends, signatures, relinquishments and offline receipts prompt every time and never set or use it. A `seekPermission: false` request with no grant fails with `Colored Tokens inventory read permission is required` or `Colored Tokens spending permission is required`, without a prompt.
+- **Holder-send linkage grant.** With the encrypt / key-linkage prompts enabled, one `Mandala token sending` approval covers an app's `specific linkage revelation 2 p color …` calls toward a configured overlay key for 30 minutes. Only keys the color module accepted count (an off-curve or duplicate settings row does not), and none while it refuses requests. `counterparty key linkage revelation <B>` prompts once per (app, B) per 30 minutes.
+- **Settlement.** The module's `settle()` runs 1 s after the wallet opens, every 5 minutes, and when the window comes back online. It runs one pass at a time and stops on close. A network or profile switch, or a logout, disposes the old module, its timers and its grants.
+- **Durable module store** in the main process under `~/.bsv-desktop/color-store/<identityKey>-<chain>/`, with atomic writes and ordered concurrent access.
+- **Broadcast hold.** Transactions with a 1Color output, and children of ones this wallet holds, wait in `~/.bsv-desktop/color-guard/<identityKey>-<chain>/` until the module reports them settled (`isSettled(txid)`). Only then are they released to ARC/Arcade. This covers the main process and the monitor worker. Offline receipts are credited and show as pending meanwhile. Any guard fault holds the transaction.
+- **Local wallet storage required.** The broadcast hold lives in the main-process storage, so Colored Tokens need local wallet storage. With remote primary storage every `p color` request fails with `ColorLocalStorageRequiredError` (`ERR_COLOR_LOCAL_STORAGE_REQUIRED`, `Colored Tokens need local wallet storage`), no `brc207-color` capability is advertised, and the wallet still opens. A live switch of the primary to remote storage refuses requests from then on. A remote backup keeps tokens enabled, and every backup sync first runs the guard's re-park sweep, so a withheld transaction is synced at `nosend`, not `sending`.
+- **HTTP bridge.** Errors are returned as `{ message, name, code?, retryable?, transport? }`, never with `isError`. The JSON body limit stays at 50 MB, so 16 MiB attested receipts and `signAction`'s `colorHandoff` pass through unchanged.
+
+### Known gaps
+
+- Only labelled `p color` requests are refused on remote storage. An app's transaction with a BRC-162 output and no `p color` basket or label is not held there.
+- Profile-free assets (SHIP default provider) are released only when their SHIP host returns an attested admission (`admissionSignature` / `admissionIdentityKey`). Module 0.2.0 otherwise reports `retry` (`ERR_NO_ATTESTATION`) and never marks the transaction settled, so it and its parked children stay held, with nothing shown in the UI (CG-DESK-SETTLED, owned by the module).
+- The guard holds any output shaped `<push> <push> OP_2DROP …`, even one that does not decode as 1Color (for example a 2-field PushDrop with `lockPosition: 'after'`). Such a transaction and its children are never broadcast by this wallet, and held txids are not shown in the UI yet.
+- A withhold that lands while a backup sync is running can still reach the backup at `sending`.
+
+### Publish prerequisites
+
+The six `@bsv` packages above are vendored as tarballs (`file:vendor/*.tgz`), with a `"$name"` override for each. Before release, publish them in this order:
+
+1. `@bsv/sdk` 4.0.0
+2. `@bsv/templates` 2.2.0
+3. `@bsv/wallet-toolbox` and `@bsv/wallet-toolbox-client` 2.15.0
+4. `@bsv/color-permission-module` 0.2.0
+5. `@bsv/mandala` 0.5.0
+
+Then swap the `file:vendor/*` specs in `package.json` for registry ranges, remove the matching `$name` overrides, delete `vendor/*.tgz`, and regenerate `package-lock.json`. Toolbox 2.15.0 also asks for `@bsv/auth-express-middleware` ^2.2.10 and `@bsv/payment-express-middleware` ^2.1.10. These are not published yet, so they are pinned to 2.2.9 / 2.1.9 through overrides. Drop those pins once the two versions ship.
+
 ### Bug Fixes
 
 - The receiving wallet now broadcasts an incoming payment while it takes it in. Wallet Toolbox's `internalizeAction` is meant to post an unproven transaction that is new to the wallet before crediting it, but up to 2.14.6 that step was gated on an `isNew` flag that storage never set, so it never ran: the payee only queued the transaction, and the payee's and payer's background monitors each sent it seconds later. `@bsv/wallet-toolbox` and `@bsv/wallet-toolbox-client` are now 2.14.9, where the payee posts the transaction before a live payment is acknowledged. If the network refuses it (a double spend or an invalid transaction), the payment is not credited and the payer is told it was rejected. If no broadcaster can be reached, the toolbox credits nothing either, so the live payment is kept on this device and acknowledged as received, like a payment that arrives while the network is down, and the wallet takes it on a later retry. The payer's own later post of the same transaction is accepted as a re-submission. Local wallet databases gain an `internalize_receipts` table the first time they open.

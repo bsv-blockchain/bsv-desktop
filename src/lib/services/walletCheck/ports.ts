@@ -5,11 +5,12 @@
 import type { WalletService } from '../WalletService'
 import { getWalletBackupTime } from './backupMarker'
 import type { StepOutcome, WalletCheckPorts } from './runWalletCheck'
+import { readCount } from '../../utils/listOutputsCount'
 
 export interface PeerPayView { client: { listIncomingPayments(): Promise<Array<{ token: { amount: number } }>>; acceptPayment(p: any): Promise<unknown> } | null; isHostAnointed: boolean }
 export interface WalletClassLike {
   listFailedActions(args: { labels: string[]; limit: number; offset?: number }, unfail?: boolean): Promise<{ totalActions: number }>
-  reviewSpendableOutputs(all?: boolean, release?: boolean): Promise<{ totalOutputs: number }>
+  reviewSpendableOutputs(all?: boolean, release?: boolean): Promise<{ totalOutputs: number | string }>
 }
 export interface WalletCheckDeps {
   wallet: { getHeight(args: object): Promise<{ height: number }> }
@@ -81,7 +82,7 @@ export function createWalletCheckPorts(deps: WalletCheckDeps): WalletCheckPorts 
 
     async coins() {
       if (!deps.walletClass) return NO_REMOTE
-      const n = (await deps.walletClass.reviewSpendableOutputs(true, true)).totalOutputs
+      const n = readCount((await deps.walletClass.reviewSpendableOutputs(true, true)).totalOutputs, 'Updated coins')
       if (n > 0) return { status: 'ok', message: 'Updated coins', fixed: [`Updated ${n} coin(s) that were already spent`] }
       return { status: 'ok', message: 'Coins match the blockchain' }
     },

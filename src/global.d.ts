@@ -28,6 +28,16 @@ export interface ElectronAPI {
     get: (chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<FeeSettingsView>;
     set: (chain: 'main' | 'test' | 'ttn' | 'tstn', rate: number | null) => Promise<{ success: boolean; settings?: FeeSettingsView; error?: string }>;
   };
+  /**
+   * Durable color-module store in the main process (electron/colorStore.ts),
+   * namespaced per identity and chain. Keys must start with `color.v1.`.
+   */
+  colorStore: {
+    get: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string) => Promise<string | undefined>;
+    set: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string, value: string) => Promise<void>;
+    delete: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string) => Promise<void>;
+    keys: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', prefix: string) => Promise<string[]>;
+  };
   isFocused: () => Promise<boolean>;
   requestFocus: () => Promise<void>;
   relinquishFocus: () => Promise<void>;

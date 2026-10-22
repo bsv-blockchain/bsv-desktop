@@ -9,6 +9,14 @@ export interface TxStatusChangedEvent {
   status: string;
 }
 
+/** Mirrors the colorStore entry in src/global.d.ts. */
+export interface ColorStoreAPI {
+  get: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string) => Promise<string | undefined>;
+  set: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string, value: string) => Promise<void>;
+  delete: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string) => Promise<void>;
+  keys: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', prefix: string) => Promise<string[]>;
+}
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -46,6 +54,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('fees:get', chain),
     set: (chain: 'main' | 'test' | 'ttn' | 'tstn', rate: number | null) =>
       ipcRenderer.invoke('fees:set', chain, rate)
+  },
+
+  // Durable color-module store (electron/colorStore.ts): main process is the single writer
+  colorStore: {
+    get: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string): Promise<string | undefined> =>
+      ipcRenderer.invoke('color-store:get', identityKey, chain, key),
+    set: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string, value: string): Promise<void> =>
+      ipcRenderer.invoke('color-store:set', identityKey, chain, key, value),
+    delete: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string): Promise<void> =>
+      ipcRenderer.invoke('color-store:delete', identityKey, chain, key),
+    keys: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', prefix: string): Promise<string[]> =>
+      ipcRenderer.invoke('color-store:keys', identityKey, chain, prefix)
   },
 
   app: {
@@ -200,6 +220,8 @@ export interface ElectronAPI {
       error?: string;
     }>;
   };
+  /** Durable color-module store, namespaced per identity and chain (electron/colorStore.ts). */
+  colorStore: ColorStoreAPI;
   app: {
     /** Relaunches the app; the process exits and the Promise does not resolve. */
     restart: () => Promise<void>;

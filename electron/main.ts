@@ -10,6 +10,7 @@ import { registerWalletPortabilityIpc } from './wallet-portability/ipc.js';
 import type { WalletPortabilityService } from './wallet-portability/service.js';
 import { integrateAppImageDesktopEntry } from './linuxDesktopIntegration.js';
 import { FeeSettingsService, registerFeeSettingsIpc } from './feeSettings.js';
+import { ColorStoreService, registerColorStoreIpc } from './colorStore.js';
 import { arcadeUrl } from './endpoints.js';
 import { getBootConfig } from './bootConfig.js';
 import { checkAndRepairCertTrust } from './sslCert.js';
@@ -269,6 +270,10 @@ const feeSettingsService = new FeeSettingsService({
   fetch: (url, options) => session.defaultSession.fetch(url, options as any) as any
 });
 registerFeeSettingsIpc(ipcMain, feeSettingsService);
+
+// Durable store for the BRC-207 color module (receipt and settlement evidence,
+// contract D5). The main process is its single writer; every window uses IPC.
+registerColorStoreIpc(ipcMain, new ColorStoreService());
 
 // Check if window is focused
 ipcMain.handle('webrtc:share-local-address', (event, share: unknown) => {

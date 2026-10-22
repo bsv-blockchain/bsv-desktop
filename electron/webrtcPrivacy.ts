@@ -31,12 +31,21 @@ export interface PermissionCheckTarget {
 
 /** The part of Electron's `WebContents` this needs, so it can be tested without Electron. */
 export interface IpHandlingTarget {
-  setWebRTCIPHandlingPolicy(policy: 'default' | 'default_public_and_private_interfaces'): void;
+  setWebRTCIPHandlingPolicy(policy: 'default' | 'default_public_and_private_interfaces' | 'disable_non_proxied_udp'): void;
 }
 
 /** Call once the app is ready and before any window loads a page. */
 export function hideLocalAddressesFromWebRtc(session: PermissionCheckTarget): void {
   session.setPermissionCheckHandler((_webContents, permission) => permission !== 'media');
+}
+
+/**
+ * The wallet window does no WebRTC: direct payments run in the live payments worker
+ * (electron/liveWorker.ts). Its policy is set so that a connection made there anyway gets no
+ * UDP route and gathers no address of this device.
+ */
+export function keepWebRtcOutOfWalletWindow(webContents: IpHandlingTarget): void {
+  webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
 }
 
 /**

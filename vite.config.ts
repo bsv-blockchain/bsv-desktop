@@ -24,6 +24,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      // The wallet window, and the live payments worker's page (electron/liveWorker.ts).
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        liveWorker: path.resolve(__dirname, 'live-worker.html'),
+      },
+    },
     // Some CommonJS dependencies mix require() with ES module syntax.
     commonjsOptions: {
       transformMixedEsModules: true,

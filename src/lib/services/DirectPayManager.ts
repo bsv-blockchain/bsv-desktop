@@ -33,12 +33,18 @@
  * network comes back, one wallet call at a time and never while the wallet is busy. A pass
  * stops between payments once 15 s have passed, and gives way to Lock, a switch or removal.
  *
+ * The client's WebRTC runs in the live payments worker, a hidden sandboxed window that holds
+ * no keys (electron/liveWorker.ts, ./liveWorker): this window keeps the wallet, the signalers
+ * and the payments, and answers the worker's few checked requests.
+ *
  * React integration: subscribe to 'changed', like PeerPayManager.
  */
 
 import { toast } from 'react-toastify'
 import type { WalletInterface } from '@bsv/sdk'
-import { DirectPayClient, MessageBoxSignaler, RelaySignaler } from '@bsv/webrtpay'
+import { MessageBoxSignaler, RelaySignaler } from '@bsv/webrtpay'
+// WebRTC runs in the live payments worker, a sandboxed window with no keys (liveWorker/).
+import { DirectPayClient } from './liveWorker'
 import type { IncomingPayment, MessageBoxLike, PaymentDecision, RelayConnectionState, Signaler, WebRTPayError } from '@bsv/webrtpay'
 import { EventEmittable } from './EventEmittable'
 import { activeHttpBridgeRequests, activeUserWalletOperations, beginBackgroundWalletOperation, beginUserWalletOperation, isHttpBridgePaused, walletChangeRequests } from './httpBridgeSession'

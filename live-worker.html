@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- The live payments worker (electron/liveWorker.ts): no UI, no network of its own. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; connect-src 'self' ws://localhost:5173; base-uri 'none'; form-action 'none'" />
+    <title>BSV Desktop live payments</title>
+  </head>
+  <body>
+    <script type="module" src="/src/liveWorkerPage.ts"></script>
+  </body>
+</html>

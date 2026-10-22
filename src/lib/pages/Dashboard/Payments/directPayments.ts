@@ -113,7 +113,7 @@ export function dialFailure(error: unknown): DialFailure {
  * it and nothing is spent. These refusals, and a failed connect, throw {@link NotSentError}.
  */
 export async function deliverDirect(o: {
-  client: DirectPayClient
+  client: Pick<DirectPayClient, 'connect' | 'sendPayment'>
   wallet: WalletInterface
   originator: string
   recipient: string
@@ -174,7 +174,7 @@ export async function deliverDirect(o: {
 }
 
 /** Any connect failure happens before the payment exists (or before a saved one is resent). */
-async function connect(client: DirectPayClient, recipient: string, saved: boolean, signal?: AbortSignal): Promise<AuthenticatedPeer> {
+async function connect(client: Pick<DirectPayClient, 'connect'>, recipient: string, saved: boolean, signal?: AbortSignal): Promise<AuthenticatedPeer> {
   try {
     return await client.connect(recipient, signal ? { signal } : undefined)
   } catch (error) {

@@ -152,7 +152,7 @@ describe.skipIf(!sqliteAvailable)('1Color broadcast guard over a real wallet', (
     expect(arc.posts.filter(p => p.txids.includes(t))).toHaveLength(1)
   })
 
-  test('a withheld req is re-parked by the sweep, and a held receipt child is parked until the receipt is released', async () => {
+  test('a withheld req is re-parked by the sweep, and a held receipt child is credited and parked until the receipt is released', async () => {
     const pkh = new Array(20).fill(4)
     const { T, t, atomic } = receipt([new OneColor().lock(`${'ab'.repeat(32)}_0`, 1500n, pkh), new P2PKH().lock(pkh)])
     await wallet.internalizeAction({
@@ -174,25 +174,34 @@ describe.skipIf(!sqliteAvailable)('1Color broadcast guard over a real wallet', (
     // idempotent
     expect(await sweepColorGuard(ipc, identityKey, 'test')).toEqual({ parked: [], unparked: [] })
 
-    // A plain receipt C spending T:1 is withheld (its parent is held), then parked by the sweep.
+    // A plain receipt C spending T:1 (its parent is held) is credited and parked
+    // as a child: no journal entry, nothing posted.
     const C = new Transaction()
     C.addInput({ sourceTransaction: T, sourceOutputIndex: 1, unlockingScript: new UnlockingScript(), sequence: 0xffffffff })
     C.addOutput({ lockingScript: new P2PKH().lock(new Array(20).fill(6)), satoshis: 1 })
     const c = C.id('hex')
     const beefC = new Beef()
     beefC.mergeTransaction(C)
-    await wallet.internalizeAction({
+    const rc = await wallet.internalizeAction({
       tx: beefC.toBinaryAtomic(c),
       outputs: [{ outputIndex: 0, protocol: 'basket insertion', insertionRemittance: { basket: 'plain' } }],
       description: 'child of a held receipt'
-    }).catch(() => undefined)
+    })
+    expect(rc.accepted).toBe(true)
+    const listedC = await wallet.listOutputs({ basket: 'plain' })
+    expect(listedC.outputs.map((o: any) => o.outpoint)).toEqual([`${c}.0`])
     expect(arc.posts.some(p => p.txids.includes(c) || p.beefTxids.includes(c))).toBe(false)
     const rowC = await reqOf(c)
-    expect(rowC).toBeDefined()
-    expect(rowC.status).toBe('sending') // serviceError: what TaskCheckForProofs would time out
-    expect(await sweepColorGuard(ipc, identityKey, 'test')).toEqual({ parked: [c], unparked: [] })
+    expect(rowC.status).toBe('nosend')
+    expect(JSON.parse(rowC.history).notes.map((n: any) => n.what)).toContain('colorGuardHoldChild')
+    expect(await sweepColorGuard(ipc, identityKey, 'test')).toEqual({ parked: [], unparked: [] })
     expect((await reqOf(c)).status).toBe('nosend')
     expect(await journal.held(identityKey, 'test')).toEqual([t])
+
+    // What a worker race leaves behind (a withheld post writes 'sending' back): the sweep re-parks C.
+    await storage.updateProvenTxReq(rowC.provenTxReqId, { status: 'sending', attempts: 50 })
+    expect(await sweepColorGuard(ipc, identityKey, 'test')).toEqual({ parked: [c], unparked: [] })
+    expect((await reqOf(c)).attempts).toBe(0)
 
     // Release T: it is posted once, and C goes back to 'unsent' for TaskSendWaiting.
     await releaseColorTx(ipc, identityKey, 'test', t)

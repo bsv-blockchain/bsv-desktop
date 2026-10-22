@@ -31,6 +31,7 @@ import {
 } from './feeSettings.js';
 import { ensureUniqueLocalStorageIdentity } from './storage-identity.js';
 import {
+  ColorGuardStorageUnavailableError,
   guardPostBeef,
   installColorBroadcastGuard,
   loadColorClassifier,
@@ -202,11 +203,19 @@ class StorageManager {
   }
 
   /**
-   * The color guard's release runs here: inside the everyday storage fence, so a
-   * quiesce or activation never sees it mid-post.
+   * The color guard's release and sweep run here: inside the everyday storage
+   * fence, so a quiesce or activation never sees them mid-post. Only on an
+   * already-open storage (checked inside the fence, so never one that
+   * `releaseNetwork`/`closeForActivation` just closed): the guard never reopens
+   * a closed wallet database or creates one for an identity it is handed.
    */
   withColorGuardStorage<T>(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', fn: (storage: StorageKnex) => Promise<T>): Promise<T> {
-    return this.request(identityKey, chain, async () => fn(await this.getOrCreateStorage(identityKey, chain)));
+    return this.request(identityKey, chain, async () => {
+      const key = walletStorageKey(identityKey, chain);
+      const storage = this.storages.get(key) ?? await this.storageInitializations.get(key);
+      if (storage === undefined) throw new ColorGuardStorageUnavailableError(key);
+      return await fn(storage);
+    });
   }
 
   /** Subscribe to transaction status changes seen by any monitor worker. */

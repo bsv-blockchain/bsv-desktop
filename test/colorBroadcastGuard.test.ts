@@ -35,6 +35,7 @@ import {
   installColorBroadcastGuard,
   loadColorClassifier,
   registerColorGuardIpc,
+  sweepColorGuard,
   txHasColorOutput
 } from '../electron/colorBroadcastGuard.js'
 
@@ -325,6 +326,101 @@ describe('storage layer (main)', () => {
     expect(storage.arc.sawTxid(c)).toBe(true)
   })
 
+  test('a hold-safe child of a held receipt is parked (no journal entry) and reported success', async () => {
+    const storage = await guarded(mkStorage())
+    const { T, C, t, c } = scenario()
+    const reqT = mkReq(T)
+    storage.setTxStatus(reqT, 'unproven')
+    await storage.attemptToPostReqsToNetwork([reqT])
+    notifyHeld.mockReset()
+
+    // a plain payment spending the held receipt's BSV change, internalized ('unproven')
+    const reqC = mkReq(C, 'unsent', [T])
+    reqC.attempts = 7
+    storage.setTxStatus(reqC, 'unproven')
+    const r = await storage.attemptToPostReqsToNetwork([reqC])
+    expect(r.details).toEqual([{ txid: c, req: reqC, status: 'success' }])
+    expect(storage.arc.postBeef).not.toHaveBeenCalled()
+    expect(reqC.status).toBe('nosend')
+    expect(reqC.attempts).toBe(0)
+    expect(reqC.history.notes).toEqual([expect.objectContaining({ what: 'colorGuardHoldChild' })])
+    expect(reqC.addHistoryNote).toHaveBeenLastCalledWith(expect.objectContaining({ what: 'colorGuardHoldChild' }), true)
+    expect(reqC.updateStorageDynamicProperties).toHaveBeenCalled()
+    expect(notifyHeld).toHaveBeenCalledWith(c)
+    // a child is never isSettled: no journal entry
+    expect(await journal.held(A, 'test')).toEqual([t])
+  })
+
+  test('a hold-safe child of an own unbroadcast 1Color tx (no journal entry) is parked', async () => {
+    const { T, C, t, c } = scenario()
+    // T: a delayed token send, not yet tried by TaskSendWaiting, so no .held file
+    const storage = await guarded(mkStorage({ reqRows: [{ txid: t, status: 'unsent', rawTx: T.toBinary() }] }))
+    const reqC = mkReq(C, 'unsent', [T])
+    storage.setTxStatus(reqC, 'sending')
+    const r = await storage.attemptToPostReqsToNetwork([reqC])
+    expect(r.details).toEqual([{ txid: c, req: reqC, status: 'success' }])
+    expect(storage.arc.postBeef).not.toHaveBeenCalled()
+    expect(reqC.status).toBe('nosend')
+  })
+
+  test('a token and its child in one batch are both parked', async () => {
+    const storage = await guarded(mkStorage())
+    const { T, C, t, c } = scenario()
+    const reqT = mkReq(T)
+    const reqC = mkReq(C, 'unsent', [T])
+    storage.setTxStatus(reqT, 'nosend')
+    storage.setTxStatus(reqC, 'nosend')
+    const r = await storage.attemptToPostReqsToNetwork([reqT, reqC])
+    expect(r.details).toEqual(expect.arrayContaining([
+      { txid: t, req: reqT, status: 'success' },
+      { txid: c, req: reqC, status: 'success' }
+    ]))
+    expect(storage.original).not.toHaveBeenCalled()
+    expect(storage.arc.postBeef).not.toHaveBeenCalled()
+    expect(reqT.history.notes.map((n: any) => n.what)).toEqual(['colorGuardHold'])
+    expect(reqC.history.notes.map((n: any) => n.what)).toEqual(['colorGuardHoldChild'])
+    expect(await journal.held(A, 'test')).toEqual([t])
+  })
+
+  test('a grandchild of a parked child is parked (storage rows carry history as a JSON string)', async () => {
+    const { T, C, t, c } = scenario()
+    await journal.markHeld(A, 'test', t)
+    const G = mkTx([{ txid: c, vout: 0 }], [plainLock()])
+    // C is parked by the guard; its stored row has a string history, as StorageKnex returns it
+    const rowC = { txid: c, status: 'nosend', rawTx: C.toBinary(), history: JSON.stringify({ notes: [{ what: 'colorGuardHoldChild' }] }) }
+    const storage = await guarded(mkStorage({ reqRows: [rowC] }))
+    const reqG = mkReq(G, 'unsent', [T, C])
+    storage.setTxStatus(reqG, 'unproven')
+    const r = await storage.attemptToPostReqsToNetwork([reqG])
+    expect(r.details).toEqual([{ txid: G.id('hex'), req: reqG, status: 'success' }])
+    expect(reqG.status).toBe('nosend')
+    expect(storage.arc.postBeef).not.toHaveBeenCalled()
+  })
+
+  for (const status of ['unsent', 'sending', 'unprocessed', 'unsigned']) {
+    test(`an own 1Color ancestor at '${status}' never reaches the network inside a child's BEEF`, async () => {
+      const { T, C, t, c } = scenario()
+      const storage = await guarded(mkStorage({ reqRows: [{ txid: t, status, rawTx: T.toBinary() }] }))
+      const reqC = mkReq(C, 'unsent', [T])
+      storage.setTxStatus(reqC, 'unprocessed') // not hold-safe: reaches layer 3
+      const r = await storage.attemptToPostReqsToNetwork([reqC])
+      expect(r.details).toEqual([{ txid: c, req: reqC, status: 'serviceError' }])
+      expect(storage.arc.postBeef).not.toHaveBeenCalled()
+      expect(storage.arc.sawTxid(t)).toBe(false)
+    })
+  }
+
+  test('a child whose held parent is missing from its BEEF is withheld', async () => {
+    const storage = await guarded(mkStorage())
+    const { C, t, c } = scenario()
+    await journal.markHeld(A, 'test', t)
+    const reqC = mkReq(C, 'unsent', []) // T not in the input BEEF
+    storage.setTxStatus(reqC, 'unprocessed')
+    const r = await storage.attemptToPostReqsToNetwork([reqC])
+    expect(r.details).toEqual([{ txid: c, req: reqC, status: 'serviceError' }])
+    expect(storage.arc.postBeef).not.toHaveBeenCalled()
+  })
+
   test("a child spending an own nosend hand-over's change is held", async () => {
     const { T: H, C, t: h, c } = scenario()
     // H is parked by the toolbox (plain noSend), so it has no .held file.
@@ -457,6 +553,35 @@ describe('services layer (worker)', () => {
     expect(workerNotify).toHaveBeenCalledWith(G.id('hex'))
     // a child is not a 1Color tx: it never gets its own journal entry
     expect(await journal.held(A, 'test')).toEqual([t])
+  })
+
+  test('the worker withholds a child whose BEEF carries an own unsent 1Color tx', async () => {
+    const arc = mkArc()
+    const services: any = { postBeef: arc.postBeef }
+    const { T, C, t, c } = scenario()
+    const storage = { findProvenTxReqs: vi.fn(async ({ partial }: any) => partial.txid === t ? [{ txid: t, status: 'unsent', rawTx: T.toBinary() }] : []) }
+    guardPostBeef(services, { identityKey: A, chain: 'test', journal, classify: () => loadColorClassifier(), storage })
+    const beef = new Beef()
+    beef.mergeTransaction(T)
+    beef.mergeTransaction(C)
+    const rs = await services.postBeef(beef, [c])
+    expect(arc.postBeef).not.toHaveBeenCalled()
+    expect(arc.sawTxid(t)).toBe(false)
+    expect(rs[0].txidResults).toEqual([{ txid: c, status: 'error', serviceError: true }])
+  })
+
+  test('the worker withholds a child whose held parent is not in the BEEF', async () => {
+    const arc = mkArc()
+    const services: any = { postBeef: arc.postBeef }
+    guardPostBeef(services, { identityKey: A, chain: 'test', journal, classify: () => loadColorClassifier() })
+    const { C, t, c } = scenario()
+    await journal.markHeld(A, 'test', t)
+    const beef = new Beef()
+    beef.mergeTransaction(C) // txid-only reference to T: T is absent
+    expect(beef.findTxid(t)).toBeUndefined()
+    const rs = await services.postBeef(beef, [c])
+    expect(arc.postBeef).not.toHaveBeenCalled()
+    expect(rs[0].txidResults).toEqual([{ txid: c, status: 'error', serviceError: true }])
   })
 
   test('a pruned BEEF that drops a proven ancestor still parses strictly', async () => {
@@ -756,6 +881,17 @@ describe('release IPC', () => {
     const ipc = setup(storage, async () => { throw new Error('storage closed') })
     expect(await ipc.held()).toEqual([t])
     expect(warn).toHaveBeenCalled()
+  })
+
+  test('a closed wallet storage: the sweep has nothing to do, a release fails and stays held', async () => {
+    const { storage, t } = await parkedReceipt()
+    const closed = async () => { throw Object.assign(new Error('closed'), { code: 'COLOR_GUARD_STORAGE_UNAVAILABLE' }) }
+    const o = { journal, withStorage: closed as any, toReq: (row: any) => row }
+    expect(await sweepColorGuard(o, A, 'test')).toEqual({ parked: [], unparked: [] })
+    const ipc = setup(storage, closed)
+    await expect(ipc.release(t)).rejects.toMatchObject({ code: 'COLOR_GUARD_STORAGE_UNAVAILABLE' })
+    expect(await journal.held(A, 'test')).toEqual([t])
+    expect(storage.arc.sawTxid(t)).toBe(false)
   })
 
   test('lists held txids and releases a parked receipt', async () => {

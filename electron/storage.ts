@@ -30,6 +30,12 @@ import {
   getConfiguredFeeRate
 } from './feeSettings.js';
 import { ensureUniqueLocalStorageIdentity } from './storage-identity.js';
+import {
+  guardPostBeef,
+  installColorBroadcastGuard,
+  loadColorClassifier,
+  sharedColorGuardJournal
+} from './colorBroadcastGuard.js';
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
@@ -106,6 +112,13 @@ export interface TxStatusChangedEvent {
   status: string;
 }
 
+/** A 1Color transaction the broadcast guard has just held (contract §8.2). */
+export interface ColorHeldEvent {
+  identityKey: string;
+  chain: 'main' | 'test' | 'ttn' | 'tstn';
+  txid: string;
+}
+
 /**
  * Storage instance manager
  * Maintains a map of storage instances keyed by identityKey
@@ -174,6 +187,27 @@ class StorageManager {
   // Workers asked to stop, which never count as running again
   private stoppingWorkers = new WeakSet<ChildProcess>();
   private txStatusListeners = new Set<(event: TxStatusChangedEvent) => void>();
+  private colorHeldListeners = new Set<(event: ColorHeldEvent) => void>();
+
+  /** Subscribe to 1Color broadcasts held by the guard, in main or in a monitor worker. */
+  onColorHeld(listener: (event: ColorHeldEvent) => void): () => void {
+    this.colorHeldListeners.add(listener);
+    return () => { this.colorHeldListeners.delete(listener); };
+  }
+
+  private emitColorHeld(event: ColorHeldEvent): void {
+    for (const listener of this.colorHeldListeners) {
+      try { listener(event); } catch (error) { console.error('[Storage] color held listener failed:', error); }
+    }
+  }
+
+  /**
+   * The color guard's release runs here: inside the everyday storage fence, so a
+   * quiesce or activation never sees it mid-post.
+   */
+  withColorGuardStorage<T>(identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', fn: (storage: StorageKnex) => Promise<T>): Promise<T> {
+    return this.request(identityKey, chain, async () => fn(await this.getOrCreateStorage(identityKey, chain)));
+  }
 
   /** Subscribe to transaction status changes seen by any monitor worker. */
   onTxStatusChanged(listener: (event: TxStatusChangedEvent) => void): () => void {
@@ -310,6 +344,17 @@ class StorageManager {
     // Replace upstream N+1 listCertificates with batched version
     patchListCertificates(storage);
 
+    // Hold every unreleased 1Color broadcast (contract §8.2). Installed before the
+    // storage is published, so no caller ever sees an unguarded instance.
+    installColorBroadcastGuard(storage as any, {
+      identityKey,
+      chain,
+      journal: sharedColorGuardJournal(),
+      classify: loadColorClassifier,
+      notifyHeld: txid => this.emitColorHeld({ identityKey, chain, txid })
+    });
+    void loadColorClassifier().catch(() => { /* logged once by the loader; every broadcast is held */ });
+
     // Store references
     this.databases.set(key, db);
     this.storages.set(key, storage);
@@ -374,6 +419,16 @@ class StorageManager {
     // reports its status to the monitor worker's SSE subscription.
     const services = createArcadeServices(chain, callbackToken, resolved);
     console.log(`[Storage] Broadcasting and proofs via Arcade at ${resolved.arcadeUrl}`);
+    // Defence in depth under the storage-layer guard: no unreleased 1Color tx, and
+    // no tx spending one, ever reaches a broadcaster from this process.
+    guardPostBeef(services as any, {
+      identityKey,
+      chain,
+      journal: sharedColorGuardJournal(),
+      classify: loadColorClassifier,
+      storage: storage as any,
+      notifyHeld: txid => this.emitColorHeld({ identityKey, chain, txid })
+    });
 
     // Type assertion to access setServices method
     const storageAny = storage as any;
@@ -430,6 +485,8 @@ class StorageManager {
           console.error(`[Monitor Worker] Error in ${key}:`, message.error);
         } else if (message.type === 'monitor-started') {
           if (!this.stoppingWorkers.has(worker)) this.monitoringWorkers.add(worker);
+        } else if (message.type === 'color-held' && typeof message.txid === 'string') {
+          this.emitColorHeld({ identityKey, chain, txid: message.txid });
         } else if (message.type === 'tx-status-changed' && typeof message.txid === 'string') {
           const event: TxStatusChangedEvent = { identityKey, chain, txid: message.txid, status: String(message.status ?? '') };
           for (const listener of this.txStatusListeners) {
@@ -512,7 +569,9 @@ class StorageManager {
           serviceSettings: this.serviceSettings.get(key),
           // The worker subscribes with the token the main process broadcasts
           // with, and refuses to start without one.
-          callbackToken: this.callbackTokens.get(key)
+          callbackToken: this.callbackTokens.get(key),
+          // The worker's broadcast guard reads the same hold journal as main.
+          colorGuardRoot: sharedColorGuardJournal().root
         }
       });
 

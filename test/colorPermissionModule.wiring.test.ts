@@ -83,11 +83,26 @@ function memoryColorStore () {
 }
 
 function spyDeps () {
-  const module = { settle: vi.fn(async () => ({ results: [] })), dispose: vi.fn() }
+  const module = { settle: vi.fn(async () => ({ results: [] })), dispose: vi.fn(), isSettled: vi.fn(async (_txid: string) => false) }
   const scheduler = { stop: vi.fn(), runNow: vi.fn(async () => {}) }
+  const heldListeners = new Set<(txid: string) => void>()
+  const guard = {
+    held: vi.fn(async () => [] as string[]),
+    release: vi.fn(async () => {}),
+    onHeld: vi.fn((cb: (txid: string) => void) => {
+      heldListeners.add(cb)
+      return () => { heldListeners.delete(cb) }
+    })
+  }
+  const drain = { drain: vi.fn(async () => ({ released: [] as string[] })) }
   return {
     module,
     scheduler,
+    guard,
+    drain,
+    heldListeners,
+    guardBridge: vi.fn(() => guard as any),
+    createReleaseDrain: vi.fn((_o: any) => drain),
     createColorModule: vi.fn((_o: any) => module as any),
     createAttestedProfile: vi.fn(() => ({ id: ATTESTED_PROFILE_ID }) as any),
     createMandalaProfile: vi.fn((_o: any) => ({ id: MANDALA_PROFILE_ID }) as any),
@@ -154,6 +169,49 @@ describe('createHostColorModule', () => {
     createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([]) }, deps)
     await deps.startScheduler.mock.calls[0][0].settle()
     expect(deps.module.settle).toHaveBeenCalledWith(undefined, 'admin')
+  })
+
+  test('every settle tick ends with a release drain (contract §8.2)', async () => {
+    const deps = spyDeps()
+    createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([]) }, deps)
+    const o = deps.createReleaseDrain.mock.calls[0][0]
+    expect(o).toMatchObject({ api: deps.guard, identityKey: IDENTITY, chain: 'test' })
+    deps.module.isSettled.mockResolvedValueOnce(true)
+    expect(await o.isSettled('ab'.repeat(32))).toBe(true)
+    expect(deps.module.isSettled).toHaveBeenCalledWith('ab'.repeat(32))
+
+    const order: string[] = []
+    deps.module.settle.mockImplementation(async () => { order.push('settle'); return { results: [] } })
+    deps.drain.drain.mockImplementation(async () => { order.push('drain'); return { released: [] } })
+    await deps.startScheduler.mock.calls[0][0].settle()
+    expect(order).toEqual(['settle', 'drain'])
+  })
+
+  test('a failing settle still drains, and the failure reaches the scheduler', async () => {
+    const deps = spyDeps()
+    deps.module.settle.mockRejectedValue(new Error('overlay down'))
+    createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([]) }, deps)
+    await expect(deps.startScheduler.mock.calls[0][0].settle()).rejects.toThrow('overlay down')
+    expect(deps.drain.drain).toHaveBeenCalledTimes(1)
+  })
+
+  test('a held event runs a settle tick; dispose unsubscribes it', () => {
+    const deps = spyDeps()
+    const m = createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([]) }, deps)
+    expect(deps.heldListeners.size).toBe(1)
+    for (const cb of deps.heldListeners) cb('ab'.repeat(32))
+    expect(deps.scheduler.runNow).toHaveBeenCalledTimes(1)
+    colorPermissionModule.dispose!(m)
+    expect(deps.heldListeners.size).toBe(0)
+  })
+
+  test('without the guard bridge nothing is released and the module still builds', async () => {
+    const deps = spyDeps()
+    deps.guardBridge.mockReturnValue(undefined)
+    createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([]) }, deps)
+    expect(deps.createReleaseDrain).not.toHaveBeenCalled()
+    await deps.startScheduler.mock.calls[0][0].settle()
+    expect(deps.module.settle).toHaveBeenCalledTimes(1)
   })
 
   test('dispose stops the scheduler and disposes the module once', () => {

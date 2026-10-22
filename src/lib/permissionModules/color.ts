@@ -12,10 +12,15 @@
  * logged and skipped (one bad settings row must not stop the wallet from
  * opening); none configured means Mandala assets are refused.
  *
+ * Broadcast guard (contract §8.2): the main process and the monitor worker
+ * hold every unreleased transaction with a BRC-162 output. Every settle tick
+ * ends with a release drain, which releases a held txid only once
+ * `module.isSettled(txid)`; a `color-guard:held` event from main runs a tick.
+ *
  * Lifecycle: the wallet build disposes the previous module before building
  * the next (PermissionQueueManager). `dispose(module)` stops the scheduler
- * (timers and the `online` listener), drops the host read grants and
- * disposes the module, once.
+ * (timers and the `online` listener), unsubscribes the held event, drops the
+ * host read grants and disposes the module, once.
  */
 
 import {
@@ -37,6 +42,7 @@ import { createColorConsentGate } from './color/consentGate'
 import { createAssetDisplayResolver, enrichConsentMessage } from './color/assetDisplay'
 import { createShipColorProvider } from './color/defaultProvider'
 import { startColorSettleScheduler } from './color/settleScheduler'
+import { createColorReleaseDrain, type ColorGuardBridge } from './color/releaseDrain'
 import { ColorPermissionPrompt } from './color/Prompt'
 
 export interface HostColorModuleDeps {
@@ -47,6 +53,9 @@ export interface HostColorModuleDeps {
   createStore: typeof createIpcColorModuleStore
   createDefaultProvider: typeof createShipColorProvider
   startScheduler: typeof startColorSettleScheduler
+  /** The main-process broadcast guard over IPC; undefined outside Electron. */
+  guardBridge: () => ColorGuardBridge | undefined
+  createReleaseDrain: typeof createColorReleaseDrain
 }
 
 const defaultDeps: HostColorModuleDeps = {
@@ -56,7 +65,9 @@ const defaultDeps: HostColorModuleDeps = {
   createMandalaOverlayProvider,
   createStore: createIpcColorModuleStore,
   createDefaultProvider: createShipColorProvider,
-  startScheduler: startColorSettleScheduler
+  startScheduler: startColorSettleScheduler,
+  guardBridge: () => (globalThis as { window?: Window }).window?.electronAPI?.colorGuard,
+  createReleaseDrain: createColorReleaseDrain
 }
 
 /** module -> its host cleanup; an entry is removed when it runs (once). */
@@ -134,16 +145,45 @@ export function createHostColorModule (
     }
   })
 
+  // Without the bridge (not in Electron) nothing is ever released: the guard in
+  // main still holds every 1Color broadcast, so this fails closed.
+  const guard = d.guardBridge()
+  if (!guard) console.warn('[color] broadcast guard bridge unavailable; held 1Color transactions stay held')
+  const drain = guard
+    ? d.createReleaseDrain({
+      isSettled: txid => module.isSettled(txid),
+      api: guard,
+      identityKey: context.identityKey,
+      chain: context.chain
+    })
+    : undefined
+
   let scheduler: ReturnType<HostColorModuleDeps['startScheduler']>
+  let unsubscribeHeld: () => void = () => {}
   try {
-    scheduler = d.startScheduler({ settle: () => module.settle(undefined, adminOriginator) })
+    scheduler = d.startScheduler({
+      settle: async () => {
+        try {
+          return await module.settle(undefined, adminOriginator)
+        } finally {
+          // Admissions recorded by this settle (and parks it caused through
+          // sendWith) are released in the same tick. drain() never rejects.
+          if (drain) await drain.drain()
+        }
+      }
+    })
+    // A park in main runs a tick now rather than at the next interval; it joins
+    // an in-flight tick, whose drain runs after its settle.
+    if (guard) unsubscribeHeld = guard.onHeld(() => { void scheduler.runNow() })
   } catch (e) {
+    try { scheduler?.stop() } catch { /* already failing */ }
     gate.clear()
     try { module.dispose() } catch { /* already failing */ }
     throw e
   }
 
   cleanups.set(module, () => {
+    try { unsubscribeHeld() } catch (e) { console.error('[color] held listener removal failed', e) }
     try { scheduler.stop() } catch (e) { console.error('[color] scheduler stop failed', e) }
     gate.clear()
     module.dispose()

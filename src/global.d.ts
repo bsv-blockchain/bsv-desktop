@@ -38,6 +38,17 @@ export interface ElectronAPI {
     delete: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string) => Promise<void>;
     keys: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', prefix: string) => Promise<string[]>;
   };
+  /**
+   * 1Color broadcast guard (electron/colorBroadcastGuard.ts, contract §8.2): the
+   * main process and the monitor worker hold every unreleased tx with a BRC-162
+   * output; the renderer releases a txid once the color module reports it settled.
+   */
+  colorGuard: {
+    held: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<string[]>;
+    release: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', txid: string) => Promise<void>;
+    /** Fired on every park; returns an unsubscribe function. */
+    onHeld: (cb: (txid: string) => void) => () => void;
+  };
   isFocused: () => Promise<boolean>;
   requestFocus: () => Promise<void>;
   relinquishFocus: () => Promise<void>;

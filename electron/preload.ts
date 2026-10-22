@@ -17,6 +17,14 @@ export interface ColorStoreAPI {
   keys: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', prefix: string) => Promise<string[]>;
 }
 
+/** Mirrors the colorGuard entry in src/global.d.ts (electron/colorBroadcastGuard.ts). */
+export interface ColorGuardAPI {
+  held: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn') => Promise<string[]>;
+  release: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', txid: string) => Promise<void>;
+  /** Returns an unsubscribe function. */
+  onHeld: (cb: (txid: string) => void) => () => void;
+}
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -66,6 +74,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('color-store:delete', identityKey, chain, key),
     keys: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', prefix: string): Promise<string[]> =>
       ipcRenderer.invoke('color-store:keys', identityKey, chain, prefix)
+  },
+
+  // 1Color broadcast guard (electron/colorBroadcastGuard.ts): the renderer releases a
+  // held txid only after the color module reports it settled
+  colorGuard: {
+    held: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn'): Promise<string[]> =>
+      ipcRenderer.invoke('color-guard:list', identityKey, chain),
+    release: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', txid: string): Promise<void> =>
+      ipcRenderer.invoke('color-guard:release', identityKey, chain, txid),
+    onHeld: (cb: (txid: string) => void): (() => void) => {
+      const listener = (_event: unknown, txid: unknown) => { if (typeof txid === 'string') cb(txid); };
+      ipcRenderer.on('color-guard:held', listener);
+      return () => { ipcRenderer.removeListener('color-guard:held', listener); };
+    }
   },
 
   app: {
@@ -222,6 +244,8 @@ export interface ElectronAPI {
   };
   /** Durable color-module store, namespaced per identity and chain (electron/colorStore.ts). */
   colorStore: ColorStoreAPI;
+  /** 1Color broadcast guard: held txids and their release (electron/colorBroadcastGuard.ts). */
+  colorGuard: ColorGuardAPI;
   app: {
     /** Relaunches the app; the process exits and the Promise does not resolve. */
     restart: () => Promise<void>;

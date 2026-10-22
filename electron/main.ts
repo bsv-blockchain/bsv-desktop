@@ -11,6 +11,7 @@ import type { WalletPortabilityService } from './wallet-portability/service.js';
 import { integrateAppImageDesktopEntry } from './linuxDesktopIntegration.js';
 import { FeeSettingsService, registerFeeSettingsIpc } from './feeSettings.js';
 import { ColorStoreService, registerColorStoreIpc } from './colorStore.js';
+import { COLOR_GUARD_CHANNELS, registerColorGuardIpc, sharedColorGuardJournal } from './colorBroadcastGuard.js';
 import { arcadeUrl } from './endpoints.js';
 import { getBootConfig } from './bootConfig.js';
 import { checkAndRepairCertTrust } from './sslCert.js';
@@ -39,6 +40,13 @@ async function getStorageManager() {
     // the renderer, so the UI refreshes as they happen rather than on its next poll.
     module.storageManager.onTxStatusChanged((event: unknown) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('wallet:tx-status-changed', event);
+    });
+    // A held 1Color broadcast: every window's color module runs a settle tick,
+    // which ends with a release drain (contract §8.2).
+    module.storageManager.onColorHeld((event: { txid: string }) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send(COLOR_GUARD_CHANNELS.held, event.txid);
+      }
     });
     storageManager = module.storageManager;
     storageCallFailure = module.storageCallFailure;
@@ -274,6 +282,17 @@ registerFeeSettingsIpc(ipcMain, feeSettingsService);
 // Durable store for the BRC-207 color module (receipt and settlement evidence,
 // contract D5). The main process is its single writer; every window uses IPC.
 registerColorStoreIpc(ipcMain, new ColorStoreService());
+
+// 1Color broadcast guard (contract §8.2): the renderer lists held txids and
+// releases each one once its color module reports it settled. The release
+// posts inside the storage access fence.
+registerColorGuardIpc(ipcMain, {
+  journal: sharedColorGuardJournal(),
+  withStorage: async (identityKey, chain, fn) => {
+    const manager = await getStorageManager();
+    return await manager.withColorGuardStorage(identityKey, chain, fn);
+  }
+});
 
 // Check if window is focused
 ipcMain.handle('webrtc:share-local-address', (event, share: unknown) => {

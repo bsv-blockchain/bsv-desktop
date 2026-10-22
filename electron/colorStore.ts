@@ -166,7 +166,10 @@ export class ColorStoreService {
   /** Keys starting with `prefix`, sorted ascending. */
   async keys(identityKey: unknown, chain: unknown, prefix: unknown): Promise<string[]> {
     const ns = this.namespace(identityKey, chain)
-    assertKey(prefix)
+    // Any prefix is safe to enumerate: the namespace only ever holds 'color.v1.' keys.
+    if (typeof prefix !== 'string' || prefix.length > MAX_KEY_LENGTH) {
+      throw new Error('Invalid color store key')
+    }
     return this.enqueue(ns, async () => {
       const index = await this.ensureIndex(ns)
       return [...index.keys()].filter(k => k.startsWith(prefix)).sort()

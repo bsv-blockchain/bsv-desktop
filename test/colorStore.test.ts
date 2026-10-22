@@ -67,6 +67,10 @@ describe('ColorStoreService', () => {
     expect(await s.keys(B, 'test', 'color.v1.')).toEqual(['color.v1.settled.z'])
     expect(await s.keys(A, 'main', 'color.v1.')).toEqual(['color.v1.settled.z'])
     expect(await s.keys(B, 'main', 'color.v1.')).toEqual([])
+    // A prefix need not carry 'color.v1.': the namespace holds nothing else.
+    expect(await s.keys(B, 'test', '')).toEqual(['color.v1.settled.z'])
+    expect(await s.keys(B, 'test', 'color.v1')).toEqual(['color.v1.settled.z'])
+    expect(await s.keys(B, 'test', 'other.')).toEqual([])
     expect(await s.get(B, 'test', 'color.v1.settled.a')).toBeUndefined()
   })
 
@@ -164,7 +168,8 @@ describe('ColorStoreService', () => {
     await expect(s.set(A, 'test', 7, 'v')).rejects.toThrow('Invalid color store key')
     await expect(s.set(A, 'test', 'color.v1.' + 'a'.repeat(1016), 'v')).rejects.toThrow('Invalid color store key')
     await expect(s.set(A, 'test', 'color.v1.\ud800', 'v')).rejects.toThrow('Invalid color store key')
-    await expect(s.keys(A, 'test', 'other.')).rejects.toThrow('Invalid color store key')
+    await expect(s.keys(A, 'test', 7)).rejects.toThrow('Invalid color store key')
+    await expect(s.keys(A, 'test', 'c'.repeat(1025))).rejects.toThrow('Invalid color store key')
     await expect(s.set(A, 'test', 'color.v1.a', 5)).rejects.toThrow('Color store value exceeds 32 MiB')
     await s.set(A, 'test', 'color.v1.' + 'a'.repeat(1015), 'v') // exactly 1024 chars
     expect(fs.readdirSync(root)).toEqual([`${A}-test`])

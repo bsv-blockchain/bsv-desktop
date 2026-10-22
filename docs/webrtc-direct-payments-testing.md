@@ -16,7 +16,7 @@ This recipe walks through every path: signaling through the message box, signali
 
 Direct payments need **both wallets online and unlocked at the same moment**. If the recipient is offline, use the message box; that is what it is for.
 
-**What the other side learns.** Sending directly shows your IP address to the recipient's wallet, and the codes in a face-to-face exchange show each wallet's network address to anyone who can read them. While receiving is on, any wallet that knows your identity key can learn your public IP address and when your wallet is unlocked by starting a connection, without paying you; the switch applies to every wallet profile on the device. The STUN servers see each wallet's IP address when it connects, and the message box, relay and any TURN server see which wallets connect, their addresses and when, never the payment. The app says so next to the switches; use test wallets if that matters to you.
+**What the other side learns.** Sending directly shows your IP address to the recipient's wallet, and the codes in a face-to-face exchange show each wallet's network address to anyone who can read them. Live payments are answered only while Payments → Receive is open; while it is, any wallet that knows your identity key can learn your public IP address and that the screen is open by starting a connection, without paying you; the switch applies to every wallet profile on the device. The STUN servers see each wallet's IP address when it connects, and the message box, relay and any TURN server see which wallets connect, their addresses and when, never the payment. The app says so next to the switches; use test wallets if that matters to you.
 
 ## Two wallets on one machine
 
@@ -79,7 +79,7 @@ On the wallet that will **receive** (do the same on both for the reverse test):
 
 1. Settings → Advanced settings → the **Direct Payments** card (below Message Box Configuration).
 2. Turn on **Receive direct payments**. The warning under the switch explains what that discloses.
-3. Leave **Signaling** on **Message box** for now. STUN servers stay at their defaults (`stun:stun.l.google.com:19302, stun:stun.cloudflare.com:3478`); once the BSVA STUN service is deployed you can add `stun:stun-us-1.bsvb.tech:3478`.
+3. Leave **Signaling** on **Message box** for now. STUN stays at its default, `stun:stun-us-1.bsvb.tech:3478`. Keep the payee on **Payments → Receive**: it answers live payments only while that screen is open.
 4. **Save**. The **Status** chip reads **Starting...** until the wallet has checked its message box once (a few seconds), then **Online via message box**, and the Receive tab of the Payments page says **Direct payments: online via the message box.** If the message box cannot be reached, the chip reads **Cannot receive** with *the message box cannot be reached (…). Trying again…*, and it recovers by itself.
 
 If the wallet has no message box, the chip reads **Not set up** and a note explains that direct payments reach other wallets through the message box: connect one, or use a relay server. That is not an error; face-to-face codes (test 4) still work.

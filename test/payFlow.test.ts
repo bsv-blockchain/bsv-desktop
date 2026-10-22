@@ -26,6 +26,11 @@ describe('payIdentity', () => {
     await expect(payIdentity({ direct: dialFails('link_failed'), messageBox: async () => {} })).resolves.toEqual({ kind: 'ask_fallback', reason: 'link_failed' })
   })
 
+  it('asks before falling back when the new payment is over the 1 MB live limit (released, nothing spent)', async () => {
+    await expect(payIdentity({ direct: dialFails('too_large'), messageBox: async () => {} })).resolves.toEqual({ kind: 'ask_fallback', reason: 'too_large' })
+    await expect(payIdentity({ direct: dialFails('too_large', 'Too large. Nothing was spent.') })).resolves.toEqual({ kind: 'failed', message: 'Too large. Nothing was spent.' })
+  })
+
   it('fails with the network copy when the signal could not be posted, offering no fallback', async () => {
     const messageBox = vi.fn(async () => {})
     await expect(payIdentity({ direct: dialFails('network'), messageBox })).resolves.toEqual({ kind: 'failed', message: "Couldn't reach the payment network — check your connection." })
@@ -67,5 +72,6 @@ describe('fallbackPrompt', () => {
   it('words the offline and link failure prompts', () => {
     expect(fallbackPrompt('offline', 'Alice')).toBe("Alice isn't online right now. Send it to their message box? They'll get it next time they open their wallet.")
     expect(fallbackPrompt('link_failed', 'Alice')).toBe("Couldn't connect to Alice directly. Send it to their message box instead?")
+    expect(fallbackPrompt('too_large', 'Alice')).toBe("This payment is too large to send live (over 1 MB). Send it to Alice's message box instead? Nothing has been spent yet.")
   })
 })

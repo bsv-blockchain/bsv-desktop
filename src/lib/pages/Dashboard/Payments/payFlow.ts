@@ -8,12 +8,15 @@
  */
 import { NotSentError } from './directPayments'
 
+/** Why the live attempt stopped before anything was made, so the message box is offered. */
+export type FallbackReason = 'offline' | 'link_failed' | 'too_large'
+
 export const NETWORK_FAILED = "Couldn't reach the payment network — check your connection."
 
 export type PayOutcome =
   | { kind: 'paid_live'; ackStatus: string }
   | { kind: 'paid_messagebox' }
-  | { kind: 'ask_fallback'; reason: 'offline' | 'link_failed' }
+  | { kind: 'ask_fallback'; reason: FallbackReason }
   | { kind: 'failed'; message: string }
 
 const messageOf = (error: unknown) => (error instanceof Error && error.message) || 'The payment could not be sent.'
@@ -43,6 +46,9 @@ export async function payIdentity(o: {
         case 'link_failed':
           if (o.messageBox) return { kind: 'ask_fallback', reason: 'link_failed' }
           return { kind: 'failed', message: `Couldn't connect to ${o.name || 'the recipient'} directly. Nothing was spent.` }
+        case 'too_large':
+          if (o.messageBox) return { kind: 'ask_fallback', reason: 'too_large' }
+          return { kind: 'failed', message: messageOf(error) }
         case 'network':
           return { kind: 'failed', message: NETWORK_FAILED }
         default:
@@ -60,8 +66,10 @@ export async function payIdentity(o: {
 }
 
 /** The fallback prompt for `reason`, naming the recipient. */
-export function fallbackPrompt(reason: 'offline' | 'link_failed', name: string): string {
-  return reason === 'offline'
-    ? `${name} isn't online right now. Send it to their message box? They'll get it next time they open their wallet.`
-    : `Couldn't connect to ${name} directly. Send it to their message box instead?`
+export function fallbackPrompt(reason: FallbackReason, name: string): string {
+  switch (reason) {
+    case 'offline': return `${name} isn't online right now. Send it to their message box? They'll get it next time they open their wallet.`
+    case 'too_large': return `This payment is too large to send live (over 1 MB). Send it to ${name}'s message box instead? Nothing has been spent yet.`
+    default: return `Couldn't connect to ${name} directly. Send it to their message box instead?`
+  }
 }

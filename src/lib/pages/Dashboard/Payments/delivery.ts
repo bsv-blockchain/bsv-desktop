@@ -23,7 +23,7 @@ export function deliveryProblem(delivery: Delivery, o: { messageBoxAvailable: bo
 
 export type LiveStatus = { tone: 'on' | 'off' | 'starting' | 'error'; title: string; body: string }
 
-const OPEN = 'People can pay you directly while this app is open.'
+const OPEN = 'People can pay you directly while this screen is open.'
 
 /** The Receive tab's card about receiving live (direct) payments, naming the way it receives. */
 export function liveStatus(s: Pick<DirectPaySnapshot, 'status' | 'via' | 'error' | 'notice'> & { relayUnreachable?: boolean }): LiveStatus {
@@ -35,6 +35,6 @@ export function liveStatus(s: Pick<DirectPaySnapshot, 'status' | 'via' | 'error'
     // No message box to signal through: off, and the notice says why.
     case 'not_set_up': return { tone: 'off', title: 'Live payments are off', body: s.notice }
     case 'failed': return { tone: 'error', title: "Live payments aren't working right now", body: s.error || 'Live payments cannot be received right now.' }
-    default: return { tone: 'off', title: 'Live payments are off', body: 'Turn them on in Settings so people can pay you directly while this app is open.' }
+    default: return { tone: 'off', title: 'Live payments are off', body: 'Turn them on in Settings so people can pay you directly while this screen is open.' }
   }
 }

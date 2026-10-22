@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import type { PeerPayClient } from '@bsv/message-box-client'
 import { WebRTPayError } from '@bsv/webrtpay'
 import type { MessageBoxLike } from '@bsv/webrtpay'
-import { DEFAULT_DIRECT_PAY_SETTINGS, iceServersFrom, type DirectPaySettings } from '../src/lib/utils/directPaySettings'
+import { DEFAULT_DIRECT_PAY_SETTINGS, iceServersFrom, MAX_LIVE_MESSAGE_BYTES, MAX_LIVE_TRANSACTION_BYTES, type DirectPaySettings } from '../src/lib/utils/directPaySettings'
 
 // Type level (checked by tsc, not at run time): message-box-client's PeerPayClient carries
 // signals for MessageBoxSignaler as it is, with no adapter.
@@ -38,6 +38,7 @@ vi.mock('@bsv/webrtpay', async importOriginal => ({
     const client: any = {
       options,
       startReceiving: vi.fn((...args: unknown[]) => h.startReceiving(client, ...args)),
+      stopReceiving: vi.fn(async () => {}),
       updateRtc: vi.fn(),
       close: vi.fn(async () => {})
     }
@@ -50,7 +51,7 @@ vi.mock('@bsv/webrtpay', async importOriginal => ({
     return signaler
   }),
   RelaySignaler: vi.fn(function (options: any) {
-    const provider = async () => []
+    const provider = vi.fn(async (): Promise<RTCIceServer[]> => [])
     const signaler = {
       options,
       provider,
@@ -105,6 +106,7 @@ let settingsListeners: Array<() => void>
 let onlineListeners: Array<() => void>
 let stored: Record<string, string>
 let manager: DirectPayManager
+let closeReceiveScreen: () => void
 
 /** The handlers the manager passed to startReceiving on the nth client. */
 const handlersOf = (n = 0) => h.made.clients[n].startReceiving.mock.calls[0][0]
@@ -157,6 +159,9 @@ beforeEach(() => {
   })
   vi.stubGlobal('localStorage', { getItem: (k: string) => stored[k] ?? null, setItem: (k: string, v: string) => { stored[k] = v } })
   manager = new DirectPayManager()
+  // Receiving runs only while a Receive tab is showing; most tests are about receiving, so
+  // one is showing (the Receive tab tests close it).
+  closeReceiveScreen = manager.openReceiveScreen()
 })
 
 afterEach(async () => {
@@ -470,7 +475,16 @@ describe('DirectPayManager.start', () => {
     // One provider for the client's life: it reuses live credentials instead of asking the
     // relay (and spending this address's TURN budget) on every gather.
     expect(relay.turnProvider).toHaveBeenCalledOnce()
-    expect(client.options.iceServersProvider).toBe(relay.provider)
+    // Through the relay's provider, without the STUN servers its answer names (Cloudflare's):
+    // only the settings' STUN list is asked.
+    relay.provider.mockResolvedValueOnce([
+      { urls: ['stun:stun.cloudflare.com:3478'] },
+      { urls: ['turn:turn.cloudflare.com:3478?transport=udp', 'turns:turn.cloudflare.com:5349'], username: 'u', credential: 'c' }
+    ])
+    await expect(client.options.iceServersProvider()).resolves.toEqual([
+      { urls: ['turn:turn.cloudflare.com:3478?transport=udp', 'turns:turn.cloudflare.com:5349'], username: 'u', credential: 'c' }
+    ])
+    expect(relay.provider).toHaveBeenCalledOnce()
     // The provider's servers replace the relay's per-connection ones; nothing else updates the client.
     expect(relay.options.onIceServers).toBeUndefined()
     expect(client.updateRtc).not.toHaveBeenCalled()
@@ -935,6 +949,108 @@ describe('relay by default, message box as the fallback', () => {
     }
   })
 
+  describe('only while a Receive tab is showing', () => {
+    it('answers no dial until a Receive tab opens, then receives on the same client, and stops when it closes', async () => {
+      relayState = 'online'
+      closeReceiveScreen()
+      await manager.start(startOptions({ settings: relayReceiving() }))
+      const [client] = h.made.clients
+      expect(client.startReceiving).not.toHaveBeenCalled()
+      expect(manager.getSnapshot()).toMatchObject({ status: 'off', via: 'relay', client })
+
+      const close = manager.openReceiveScreen()
+      await vi.waitFor(() => expect(client.startReceiving).toHaveBeenCalledOnce())
+      expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'relay' })
+
+      close()
+      expect(client.stopReceiving).toHaveBeenCalledOnce()
+      expect(manager.getSnapshot()).toMatchObject({ status: 'off', error: '', client })
+      // The client stays, for sending: nothing was rebuilt or closed.
+      expect(h.made.clients).toHaveLength(1)
+      expect(client.close).not.toHaveBeenCalled()
+      // A second call of the same close does nothing.
+      close()
+      expect(client.stopReceiving).toHaveBeenCalledOnce()
+    })
+
+    it('ignores the relay connection while no Receive tab is showing, and never falls back', async () => {
+      vi.useFakeTimers()
+      closeReceiveScreen()
+      await manager.start(startOptions({ settings: relayReceiving() }))
+      relayOf(h.made.clients[0]).options.onStateChange('offline', unreachable())
+      await vi.advanceTimersByTimeAsync(RELAY_START_MS + RELAY_RETRY_MAX_MS)
+      expect(h.made.clients).toHaveLength(1)
+      expect(h.made.messageBoxes).toHaveLength(0)
+      expect(h.made.relays).toHaveLength(1)
+      expect(manager.getSnapshot()).toMatchObject({ status: 'off', error: '' })
+    })
+
+    it('cancels the relay start timer when the tab closes before the relay is online', async () => {
+      vi.useFakeTimers()
+      relayState = 'connecting'
+      await manager.start(startOptions({ settings: relayReceiving() }))
+      await settle()
+      closeReceiveScreen()
+      await vi.advanceTimersByTimeAsync(RELAY_START_MS)
+      expect(h.made.clients).toHaveLength(1)
+      expect(h.made.messageBoxes).toHaveLength(0)
+      expect(manager.getSnapshot()).toMatchObject({ status: 'off' })
+    })
+
+    it('closes the relay being retried when the tab closes on the fallback, and retries again once it reopens', async () => {
+      vi.useFakeTimers()
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      await manager.start(startOptions({ settings: relayReceiving() }))
+      await vi.advanceTimersByTimeAsync(RELAY_RETRY_FIRST_MS)
+      expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'messagebox', relayUnreachable: true })
+      const fallback = h.made.clients[1]
+      const retried = h.made.relays[1]
+
+      closeReceiveScreen()
+      expect(retried.close).toHaveBeenCalledOnce()
+      expect(fallback.stopReceiving).toHaveBeenCalledOnce()
+      expect(manager.getSnapshot()).toMatchObject({ status: 'off', via: 'messagebox', relayUnreachable: true })
+      await vi.advanceTimersByTimeAsync(RELAY_RETRY_MAX_MS)
+      expect(h.made.relays).toHaveLength(2)
+
+      manager.openReceiveScreen()
+      await settle()
+      expect(fallback.startReceiving).toHaveBeenCalledTimes(2)
+      expect(manager.getSnapshot()).toMatchObject({ status: 'online', via: 'messagebox' })
+      await vi.advanceTimersByTimeAsync(RELAY_RETRY_MAX_MS)
+      expect(h.made.relays).toHaveLength(3)
+      expect(h.made.clients).toHaveLength(2)
+    })
+
+    it('keeps receiving while another Receive tab is still showing', async () => {
+      relayState = 'online'
+      const second = manager.openReceiveScreen()
+      await manager.start(startOptions({ settings: relayReceiving() }))
+      const [client] = h.made.clients
+      closeReceiveScreen()
+      expect(client.stopReceiving).not.toHaveBeenCalled()
+      expect(manager.getSnapshot()).toMatchObject({ status: 'online' })
+      second()
+      expect(client.stopReceiving).toHaveBeenCalledOnce()
+    })
+
+    it('does not start receiving when the settings turn it off', async () => {
+      closeReceiveScreen()
+      await manager.start(startOptions({ settings: relayReceiving({ receiveEnabled: false }) }))
+      manager.openReceiveScreen()
+      expect(h.made.clients[0].startReceiving).not.toHaveBeenCalled()
+      expect(manager.getSnapshot()).toMatchObject({ status: 'off' })
+    })
+  })
+
+  it('takes at most a 1 MB transaction from a live peer, receiving or dialing', async () => {
+    await manager.start(startOptions({ settings: relayReceiving() }))
+    const [client] = h.made.clients
+    expect(MAX_LIVE_MESSAGE_BYTES).toBe(4 * Math.ceil(MAX_LIVE_TRANSACTION_BYTES / 3) + 4096)
+    expect(client.options.limits).toEqual({ maxMessageBytes: MAX_LIVE_MESSAGE_BYTES })
+    expect(client.options.maxMessageBytes).toBe(MAX_LIVE_MESSAGE_BYTES)
+  })
+
   it('receives through the relay when it is reachable', async () => {
     relayState = 'online'
     await manager.start(startOptions({ settings: relayReceiving() }))
@@ -995,7 +1111,8 @@ describe('relay by default, message box as the fallback', () => {
     expect(h.made.clients).toHaveLength(3)
     expect(h.made.relays).toHaveLength(3)
     expect(h.made.clients[2].options.signaler).toBe(h.made.relays[2])
-    expect(h.made.clients[2].options.iceServersProvider).toBe(h.made.relays[2].provider)
+    await h.made.clients[2].options.iceServersProvider()
+    expect(h.made.relays[2].provider).toHaveBeenCalledOnce()
     // The retry of an older carrier no longer changes anything.
     retried.options.onStateChange('online')
     expect(h.made.clients).toHaveLength(3)

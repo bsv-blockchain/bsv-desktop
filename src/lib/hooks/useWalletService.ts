@@ -350,6 +350,7 @@ export function useWalletService() {
     (settings: DirectPaySettings) => svc.directPay.applySettings(settings),
     [svc]
   )
+  const openLiveReceiving = useCallback(() => svc.directPay.openReceiveScreen(), [svc])
   const retryMessageBoxPayment = useCallback((messageId: string) => svc.messageBoxReceiver.retry(messageId), [svc])
 
   const setConfigStatus = useCallback((status: any) => {
@@ -483,6 +484,7 @@ export function useWalletService() {
     // Direct (peer-to-peer) payments
     directPay: directPayState,
     applyDirectPaySettings,
+    openLiveReceiving,
     // Message box payments received automatically
     messageBoxReceived,
     retryMessageBoxPayment,

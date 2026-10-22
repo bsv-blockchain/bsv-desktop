@@ -66,7 +66,9 @@ describe('Payments page wiring', () => {
   })
 
   it('pays live first through payIdentity, and pays requests and the fallback through the message box only', () => {
-    expect(page).toMatch(/import \{ fallbackPrompt, payIdentity \} from '\.\/payFlow'/)
+    expect(page).toMatch(/import \{ fallbackPrompt, payIdentity, type FallbackReason \} from '\.\/payFlow'/)
+    // Live payments are answered only while the Receive tab is showing.
+    expect(page).toMatch(/useEffect\(\(\) => \(tab === 'receive' \? openLiveReceiving\(\) : undefined\), \[tab, openLiveReceiving\]\)/)
     expect(page).toMatch(/const direct = !viaMessageBox && !review\.request && directSendable \? async \(\) => \{/)
     expect(page).toMatch(/const messageBox = messageBoxAvailable \? async \(\) => \{/)
     expect(page).toMatch(/const outcome = await payIdentity\(\{ direct, messageBox, name: review\.name \}\)/)

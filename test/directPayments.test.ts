@@ -7,6 +7,7 @@ import type { AuthenticatedPeer, IncomingPayment, InboundLimits, MemoryHub } fro
 import { createSeenStore, deliverDirect, dialFailure, DIRECT_DESCRIPTION, dismissKeptDirectPayment, keepDirectPayment, keptDirectPaymentsOnDevice, keptTowardLimit, listKeptDirectPayments, NotSentError, receiveDirectPayment, retryReceivedDirectPayments, RetryStopped, subscribeKeptDirectPayments } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import type { KeptDirectPaymentInfo } from '../src/lib/pages/Dashboard/Payments/directPayments'
 import { prepareMessageBoxPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
+import { MAX_LIVE_TRANSACTION_BYTES } from '../src/lib/utils/directPaySettings'
 import type { OutgoingPayment } from '../src/lib/pages/Dashboard/Payments/messageBoxPayments'
 import { addToOutbox, outboxStorageKey } from '../src/lib/pages/Dashboard/Payments/outbox'
 
@@ -445,17 +446,19 @@ describe('deliverDirect', () => {
     expect(payee.internalizeAction).not.toHaveBeenCalled()
   })
 
-  it('refuses a saved payment too large to deliver directly, before broadcasting it', async () => {
+  it('refuses a saved payment over the 1 MB live limit, before broadcasting it', async () => {
     const hub = createMemoryHub()
     const payer = await makePayer(), payee = await makePayee()
     await receiving(hub, payee)
     const saved = await prepareMessageBoxPayment(payer.wallet, payee.identityKey, 2500, ORIGIN, undefined, () => {})
     payer.createAction.mockClear()
-    const existing = { ...saved, token: { ...saved.token, transaction: new Array(MAX_DIRECT_TRANSACTION_BYTES + 1).fill(0) } }
+    expect(MAX_LIVE_TRANSACTION_BYTES).toBe(1_000_000)
+    expect(MAX_LIVE_TRANSACTION_BYTES).toBeLessThan(MAX_DIRECT_TRANSACTION_BYTES)
+    const existing = { ...saved, token: { ...saved.token, transaction: new Array(MAX_LIVE_TRANSACTION_BYTES + 1).fill(0) } }
     const box = outbox()
     const error = await deliverDirect({ client: client(hub, payer), wallet: payer.wallet, originator: ORIGIN, recipient: payee.identityKey, amount: 2500, existing, persist: box.persist, markDelivered: box.markDelivered }).catch(e => e)
     expect(error).toBeInstanceOf(NotSentError)
-    expect(error.message).toBe(`This payment is too large to deliver directly: its transaction is ${(MAX_DIRECT_TRANSACTION_BYTES + 1).toLocaleString()} bytes, and at most ${MAX_DIRECT_TRANSACTION_BYTES.toLocaleString()} can be delivered. Your saved payment is unchanged; deliver it through the message box.`)
+    expect(error.message).toBe(`This payment is too large to deliver directly: its transaction is ${(MAX_LIVE_TRANSACTION_BYTES + 1).toLocaleString()} bytes, and at most ${MAX_LIVE_TRANSACTION_BYTES.toLocaleString()} can be delivered. Your saved payment is unchanged; deliver it through the message box.`)
     expect(payer.createAction).not.toHaveBeenCalled()
     expect(payee.internalizeAction).not.toHaveBeenCalled()
   })

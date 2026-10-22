@@ -201,6 +201,11 @@ export interface WalletContextValue {
   directPay: DirectPaySnapshot;
   /** Use saved direct-pay settings now (they also apply on the next unlock). */
   applyDirectPaySettings: (settings: DirectPaySettings) => Promise<void>;
+  /**
+   * The Receive tab is showing: live payments are answered only while it is (see
+   * DirectPayManager.openReceiveScreen). Returns the function to call when it stops showing.
+   */
+  openLiveReceiving: () => () => void;
   /** Message box payments the open wallet took automatically (and failures to retry), newest first. */
   messageBoxReceived: ReceivedRecord[];
   retryMessageBoxPayment: (messageId: string) => Promise<void>;
@@ -274,6 +279,7 @@ export const WalletContext = createContext<WalletContextValue>({
   checkAnointmentStatus: async () => {},
   directPay: { client: null, status: 'off', via: null, relayUnreachable: false, error: '', notice: '', received: 0 },
   applyDirectPaySettings: async () => {},
+  openLiveReceiving: () => () => {},
   messageBoxReceived: [],
   retryMessageBoxPayment: async () => {},
 })

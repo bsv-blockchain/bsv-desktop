@@ -26,7 +26,7 @@ import { deliverMessageBoxPayment, OutgoingPayment, prepareMessageBoxPayment } f
 import { deliverDirect } from './directPayments'
 import { payerReceipt } from './directReceipts'
 import { deliveryProblem, liveStatus } from './delivery'
-import { fallbackPrompt, payIdentity } from './payFlow'
+import { fallbackPrompt, payIdentity, type FallbackReason } from './payFlow'
 import { identityName } from '../../../utils/identityNames'
 import { addToOutbox, markOutboxDelivered, outboxStorageKey, readOutbox, subscribeOutbox } from './outbox'
 
@@ -39,7 +39,7 @@ const IDENTITY_KEY = /^(02|03)[0-9a-f]{64}$/i
 
 export default function Payments() {
   const context = useContext(WalletContext)
-  const { managers, chain, activeProfile, adminOriginator, peerPayClient, messageBoxUrl, useMessageBox, isHostAnointed, anointCurrentHost, anointmentLoading, switchingNetwork, directPay, messageBoxReceived, retryMessageBoxPayment, settings } = context
+  const { managers, chain, activeProfile, adminOriginator, peerPayClient, messageBoxUrl, useMessageBox, isHostAnointed, anointCurrentHost, anointmentLoading, switchingNetwork, directPay, openLiveReceiving, messageBoxReceived, retryMessageBoxPayment, settings } = context
   const wallet = managers.permissionsManager
   const scope = useMemo(() => ({ wallet, chain }), [wallet, chain])
   const scopeRef = useRef(scope)
@@ -58,7 +58,7 @@ export default function Payments() {
   const [busy, setBusy] = useState(false)
   const [review, setReview] = useState<Review | null>(null)
   /** The live attempt could not reach the recipient: the review asks before using their message box. */
-  const [fallback, setFallback] = useState<'offline' | 'link_failed' | null>(null)
+  const [fallback, setFallback] = useState<FallbackReason | null>(null)
   /** A live attempt is under way; Cancel aborts its dial. */
   const [reaching, setReaching] = useState(false)
   const [cancelling, setCancelling] = useState(false)
@@ -98,6 +98,8 @@ export default function Payments() {
   // A dial still reaching someone is for the wallet and network that were open: abort it (nothing is made before it connects).
   useEffect(() => { dialAbort.current?.abort(); setReview(null); setRecipient(''); setRecipientLabel(''); setAmount(null); setError(''); setNotice(''); }, [wallet, chain])
   useEffect(() => () => dialAbort.current?.abort(), [])
+  // Live payments are answered only while the Receive tab is showing (see DirectPayManager).
+  useEffect(() => (tab === 'receive' ? openLiveReceiving() : undefined), [tab, openLiveReceiving])
   // Arrivals are announced app-wide by PaymentToasts; message box payments are taken by MessageBoxAutoReceiver.
   useEffect(() => { setFallback(null); setCancelling(false) }, [review])
   useEffect(() => { let alive = true; setIdentityLabel(''); if (identity) void identityName(wallet, adminOriginator, identity).then(name => { if (alive) setIdentityLabel(name) }); return () => { alive = false } }, [wallet, adminOriginator, identity])

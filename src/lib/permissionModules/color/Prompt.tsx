@@ -158,7 +158,7 @@ export const ColorConsentDetails: React.FC<{ view: ColorConsentView }> = ({ view
       {access && (
         <Section title="Requested access">
           {access.basket !== undefined && <Row label="Basket" value={access.basket} mono />}
-          {access.labels !== undefined && <Row label="Labels" value={access.labels.length > 0 ? access.labels.join(', ') : 'All token activity'} mono />}
+          {access.labels !== undefined && <Row label="Labels" value={access.labels.length > 0 ? access.labels.join(', ') : 'none'} mono />}
           {access.role !== undefined && <Row label="Role" value={access.role} />}
           {access.assetId !== undefined && <Typography variant="caption" color="text.secondary" sx={monoSx}>Asset ID: {access.assetId}</Typography>}
         </Section>

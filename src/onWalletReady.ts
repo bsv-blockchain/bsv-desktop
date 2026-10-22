@@ -110,6 +110,64 @@ function toSdkWerrReviewActions(error: WerrReviewActionsLike): WERR_REVIEW_ACTIO
   );
 }
 
+/**
+ * The error body the BRC-100 HTTP bridge returns with status 400 (contract
+ * §8.2, D22): `{ message, name?, code?, retryable?, transport? }`.
+ *
+ * - A non-`Error` throw gives `{ message: String(error) }`.
+ * - `name` is read as an own or inherited property, never from
+ *   `constructor.name`: Vite/esbuild minification mangles class names (see
+ *   `isWerrReviewActions`). The BRC-207 module classes set `name` explicitly,
+ *   and receivers match on it or on the `'[ClassName] '` message prefix.
+ * - `code` is copied only when it is a string, `retryable` / `transport` only
+ *   when they are booleans (`ColorProviderError`). Nothing else is copied: no
+ *   stack, no `cause`.
+ * - `isError` is never set: the sdk client treats a body with `isError` as a
+ *   typed wallet-error envelope and rejects one whose `code` is not an integer.
+ *
+ * Pure and stateless, so a retried or concurrent failing call gets the same
+ * body. A throwing property getter drops that field instead of failing the
+ * response.
+ */
+export interface BridgeErrorBody {
+  message: string;
+  name?: string;
+  code?: string;
+  retryable?: boolean;
+  transport?: boolean;
+}
+
+function readErrorField(error: Error, key: string): unknown {
+  try {
+    return (error as unknown as Record<string, unknown>)[key];
+  } catch {
+    return undefined;
+  }
+}
+
+function safeString(value: unknown): string {
+  try {
+    return String(value);
+  } catch {
+    return 'Unknown error';
+  }
+}
+
+export function bridgeErrorBody(error: unknown): BridgeErrorBody {
+  if (!(error instanceof Error)) return { message: safeString(error) };
+  const rawMessage = readErrorField(error, 'message');
+  const body: BridgeErrorBody = { message: typeof rawMessage === 'string' ? rawMessage : safeString(rawMessage ?? '') };
+  const name = readErrorField(error, 'name');
+  if (typeof name === 'string' && name !== '') body.name = name;
+  const code = readErrorField(error, 'code');
+  if (typeof code === 'string') body.code = code;
+  const retryable = readErrorField(error, 'retryable');
+  if (typeof retryable === 'boolean') body.retryable = retryable;
+  const transport = readErrorField(error, 'transport');
+  if (typeof transport === 'boolean') body.transport = transport;
+  return body;
+}
+
 // Parse the origin header and turn it into a fqdn (e.g. projectbabbage.com:8080)
 // Handles both origin and legacy originator headers
 function parseOrigin(headers: Record<string, string>): string | null {
@@ -247,9 +305,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: stringifyWalletPayload({
-                  message: error instanceof Error ? error.message : String(error)
-                })
+                body: stringifyWalletPayload(bridgeErrorBody(error))
               };
             }
           }
@@ -280,9 +336,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: stringifyWalletPayload({
-                  message: error instanceof Error ? error.message : String(error)
-                })
+                body: stringifyWalletPayload(bridgeErrorBody(error))
               };
             }
           }
@@ -304,9 +358,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -327,9 +379,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -359,9 +409,7 @@ export const onWalletReady = async (
               response = {
                 request_id: req.request_id,
                 status: 400,
-                body: stringifyWalletPayload({
-                  message: error instanceof Error ? error.message : String(error)
-                }),
+                body: stringifyWalletPayload(bridgeErrorBody(error)),
               };
             }
           }
@@ -383,9 +431,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -406,9 +452,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -429,9 +473,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -452,9 +494,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -475,9 +515,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -498,9 +536,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -521,9 +557,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -544,9 +578,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -567,9 +599,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -590,9 +620,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -613,9 +641,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -636,9 +662,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -659,9 +683,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -682,9 +704,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -705,9 +725,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -728,9 +746,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -751,9 +767,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -773,9 +787,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -795,9 +807,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -817,9 +827,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -840,9 +848,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -862,9 +868,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;
@@ -884,9 +888,7 @@ export const onWalletReady = async (
             response = {
               request_id: req.request_id,
               status: 400,
-              body: stringifyWalletPayload({
-                message: error instanceof Error ? error.message : String(error)
-              }),
+              body: stringifyWalletPayload(bridgeErrorBody(error)),
             };
           }
           break;

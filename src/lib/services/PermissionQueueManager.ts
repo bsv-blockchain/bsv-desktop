@@ -24,8 +24,6 @@ import {
   GroupedPermissions,
 } from '../types/GroupedPermissions'
 import type { PermissionPromptHandler } from '../permissionModules/types'
-import { listMandalaTokenOutpoints } from '../permissionModules/mandala'
-import { wrapCreateActionForTokenInputs } from '../permissionModules/mandala/permissionModule'
 import {
   markHttpBridgeSessionCancelled,
   normalizeBridgeOrigin,
@@ -957,11 +955,7 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       permissionModules: permissionModulesMap,
     }
 
-    const pm = wrapCreateActionForTokenInputs(
-      new WalletPermissionsManager(wallet, this.adminOriginator, configWithModules as any),
-      () => listMandalaTokenOutpoints(wallet, this.adminOriginator),
-      this.adminOriginator
-    )
+    const pm = new WalletPermissionsManager(wallet, this.adminOriginator, configWithModules as any)
 
     pm.bindCallback('onProtocolPermissionRequested', this.protocolPermissionCallback)
     pm.bindCallback('onBasketAccessRequested', this.basketAccessCallback)

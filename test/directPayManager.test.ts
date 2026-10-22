@@ -32,8 +32,8 @@ const h = vi.hoisted(() => {
   }
 })
 
-vi.mock('@bsv/webrtpay', async importOriginal => ({
-  ...(await importOriginal<typeof import('@bsv/webrtpay')>()),
+// The manager's client is the live payments worker's (its WebRTC runs in a sandboxed window).
+vi.mock('../src/lib/services/liveWorker', () => ({
   DirectPayClient: vi.fn(function (options: any) {
     const client: any = {
       options,
@@ -44,7 +44,10 @@ vi.mock('@bsv/webrtpay', async importOriginal => ({
     }
     h.made.clients.push(client)
     return client
-  }),
+  })
+}))
+vi.mock('@bsv/webrtpay', async importOriginal => ({
+  ...(await importOriginal<typeof import('@bsv/webrtpay')>()),
   MessageBoxSignaler: vi.fn(function (client: unknown, options: unknown) {
     const signaler = { client, options }
     h.made.messageBoxes.push(signaler)

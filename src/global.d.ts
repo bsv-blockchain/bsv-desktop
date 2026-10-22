@@ -48,6 +48,16 @@ export interface ElectronAPI {
   webrtc: {
     shareLocalAddress: (share: boolean) => Promise<void>;
   };
+  /**
+   * The live payments worker: a hidden sandboxed window that runs WebRTC for direct payments
+   * (see electron/liveWorker.ts). `open` starts it (or reuses it); its port then arrives as a
+   * window message (src/lib/services/liveWorker/index.ts). `onGone` fires when it dies.
+   */
+  liveWorker?: {
+    open: () => Promise<void>;
+    close: () => Promise<void>;
+    onGone: (callback: () => void) => () => void;
+  };
   cert: {
     checkAndRepair: () => Promise<{ trusted: boolean | null; repaired: boolean }>;
   };

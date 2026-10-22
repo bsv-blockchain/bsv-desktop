@@ -11,7 +11,7 @@ import { readFileSync } from 'fs'
 import path from 'path'
 
 // electron/main.ts cannot be imported under vitest (it opens windows and servers).
-import { hideLocalAddressesFromWebRtc, shareLocalAddressWithWebRtc } from '../electron/webrtcPrivacy'
+import { hideLocalAddressesFromWebRtc, keepWebRtcOutOfWalletWindow, shareLocalAddressWithWebRtc } from '../electron/webrtcPrivacy'
 
 function installed() {
   const session = { setPermissionCheckHandler: vi.fn() }
@@ -62,16 +62,26 @@ describe('shareLocalAddressWithWebRtc', () => {
     expect(t.setWebRTCIPHandlingPolicy).not.toHaveBeenCalled()
   })
 
-  it('is on for the main window before it loads, and the page can change it over IPC', () => {
+  it('applies to the live payments worker, where the connections are, and the wallet window does no WebRTC', () => {
     const main = readFileSync(path.join(__dirname, '..', 'electron', 'main.ts'), 'utf8')
     const created = main.indexOf('mainWindow = new BrowserWindow(')
-    const share = main.indexOf('shareLocalAddressWithWebRtc(mainWindow.webContents, true)')
+    const keepOut = main.indexOf('keepWebRtcOutOfWalletWindow(mainWindow.webContents)')
     const load = main.indexOf('mainWindow.loadURL(', created)
     expect(created).toBeGreaterThan(-1)
-    expect(share).toBeGreaterThan(created)
-    expect(share).toBeLessThan(load)
-    expect(main).toContain("ipcMain.handle('webrtc:share-local-address', (event, share: unknown) => {\n  shareLocalAddressWithWebRtc(event.sender, share);")
+    expect(keepOut).toBeGreaterThan(created)
+    expect(keepOut).toBeLessThan(load)
+    expect(main).not.toContain('shareLocalAddressWithWebRtc(')
+    // Only the wallet window may change it, and it goes to the worker.
+    expect(main).toContain("ipcMain.handle('webrtc:share-local-address', (event, share: unknown) => {\n  if (event.sender !== mainWindow?.webContents) return;\n  liveWorker.setShareLocalAddress(share);")
     // The media check stays denied, so VPN and virtual adapters are never published.
     expect(main).toContain('hideLocalAddressesFromWebRtc(session.defaultSession)')
+  })
+})
+
+describe('keepWebRtcOutOfWalletWindow', () => {
+  it('gives WebRTC in the wallet window no UDP route', () => {
+    const t = { setWebRTCIPHandlingPolicy: vi.fn() }
+    keepWebRtcOutOfWalletWindow(t)
+    expect(t.setWebRTCIPHandlingPolicy).toHaveBeenCalledExactlyOnceWith('disable_non_proxied_udp')
   })
 })

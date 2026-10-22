@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, session, powerMonitor } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, session, powerMonitor, MessageChannelMain } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -14,7 +14,8 @@ import { arcadeUrl } from './endpoints.js';
 import { getBootConfig } from './bootConfig.js';
 import { checkAndRepairCertTrust } from './sslCert.js';
 import { applyUserDataOverride } from './userDataOverride.js';
-import { hideLocalAddressesFromWebRtc, shareLocalAddressWithWebRtc } from './webrtcPrivacy.js';
+import { hideLocalAddressesFromWebRtc, keepWebRtcOutOfWalletWindow } from './webrtcPrivacy.js';
+import { registerLiveWorker } from './liveWorker.js';
 import { isDevMode } from './rendererSource.js';
 import { validateManifestUrl } from './manifestSecurity.js';
 
@@ -186,9 +187,8 @@ function createWindow() {
     title: 'BSV Desktop',
     show: false
   });
-  // The default of the "Connect directly on the same network" setting; the page sends the
-  // user's choice as soon as it starts, before any wallet can connect (webrtcPrivacy.ts).
-  shareLocalAddressWithWebRtc(mainWindow.webContents, true);
+  // Direct payments run in the live payments worker, not here (electron/liveWorker.ts).
+  keepWebRtcOutOfWalletWindow(mainWindow.webContents);
 
   // Load the app
   if (isDev) {
@@ -271,8 +271,23 @@ const feeSettingsService = new FeeSettingsService({
 registerFeeSettingsIpc(ipcMain, feeSettingsService);
 
 // Check if window is focused
+// The live payments worker runs WebRTC for the wallet window, which holds the keys and does
+// none itself (electron/liveWorker.ts).
+const liveWorker = registerLiveWorker({
+  BrowserWindow,
+  MessageChannelMain,
+  ipcMain,
+  fromPartition: partition => session.fromPartition(partition),
+  walletContents: () => mainWindow?.webContents,
+  isDev,
+  dir: __dirname
+});
+
+// The "Connect directly on the same network" choice (on until the page says otherwise,
+// before any wallet can connect) applies to the worker, where the connections are.
 ipcMain.handle('webrtc:share-local-address', (event, share: unknown) => {
-  shareLocalAddressWithWebRtc(event.sender, share);
+  if (event.sender !== mainWindow?.webContents) return;
+  liveWorker.setShareLocalAddress(share);
 });
 
 ipcMain.handle('is-focused', () => {
@@ -807,6 +822,7 @@ app.on('window-all-closed', async () => {
 });
 
 app.on('before-quit', async (event) => {
+  liveWorker.destroy();
   // Prevent default quit to perform async cleanup
   if (storageManager || httpServerCleanup) {
     event.preventDefault();

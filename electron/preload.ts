@@ -57,6 +57,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     shareLocalAddress: (share: boolean): Promise<void> => ipcRenderer.invoke('webrtc:share-local-address', share)
   },
 
+  // The live payments worker (electron/liveWorker.ts). Its port arrives as a window message,
+  // posted below: a MessagePort cannot cross contextBridge.
+  liveWorker: {
+    open: (): Promise<void> => ipcRenderer.invoke('live-worker:open'),
+    close: (): Promise<void> => ipcRenderer.invoke('live-worker:close'),
+    onGone: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('live-worker:gone', listener);
+      return () => { ipcRenderer.removeListener('live-worker:gone', listener); };
+    }
+  },
+
   // Troubleshoot: re-run the HTTPS bridge certificate trust flow
   cert: {
     checkAndRepair: () => ipcRenderer.invoke('cert:check-and-repair')
@@ -270,3 +282,11 @@ declare global {
     electronAPI: ElectronAPI;
   }
 }
+
+// The live payments worker's port, from main: handed to the page, which only takes it from
+// this window (src/lib/services/liveWorker/index.ts).
+ipcRenderer.on('live-worker:port', (event) => {
+  // The electron build has no DOM types; this is the page's window.postMessage.
+  const page = globalThis as unknown as { postMessage(message: string, targetOrigin: string, transfer: unknown[]): void };
+  if (event.ports.length === 1) page.postMessage('bsv-desktop:live-worker-port', '*', [event.ports[0]]);
+});

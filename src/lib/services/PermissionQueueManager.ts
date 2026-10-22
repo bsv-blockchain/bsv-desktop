@@ -34,6 +34,7 @@ import {
   type ColorLinkageGrantPolicy,
   type LinkageRequest,
 } from '../permissionModules/color/linkageGrant'
+import { colorLinkageOverlayKeys } from '../permissionModules/color/overlayKeys'
 import {
   markHttpBridgeSessionCancelled,
   normalizeBridgeOrigin,
@@ -1054,10 +1055,12 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
     // A rebuild (network/profile switch) never leaves the previous wallet's
     // modules running: their timers, listeners and grants go first.
     this.disposePermissionModules()
-    const overlayKeys = (Array.isArray(context?.settings?.mandalaOverlays) ? context!.settings.mandalaOverlays : [])
-      .map(o => o?.identityKey)
-      .filter((k): k is string => typeof k === 'string')
-    this._linkagePolicy = createColorLinkageGrantPolicy({ overlayKeys: () => overlayKeys })
+    // The overlay keys the color module of this build accepted (validated, and
+    // none while it refuses requests or once it is disposed), not raw settings.
+    const built = (): Array<{ module: unknown }> => this._permissionModuleInstances
+    this._linkagePolicy = createColorLinkageGrantPolicy({
+      overlayKeys: () => built().flatMap(i => colorLinkageOverlayKeys(i.module))
+    })
 
     const permissionModulesMap: Record<string, any> = {}
     let pm: WalletPermissionsManager

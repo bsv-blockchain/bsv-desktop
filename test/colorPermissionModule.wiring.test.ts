@@ -50,7 +50,8 @@ vi.mock('@bsv/btms-permission-module-ui', () => ({ BtmsPermissionPrompt: () => n
 import { PrivateKey } from '@bsv/sdk'
 import { ATTESTED_PROFILE_ID } from '@bsv/color-permission-module'
 import { MANDALA_PROFILE_ID, createMandalaOverlayProvider } from '@bsv/mandala/profile'
-import { colorPermissionModule, createHostColorModule } from '../src/lib/permissionModules/color'
+import { colorPermissionModule, createHostColorModule, ColorLocalStorageRequiredError } from '../src/lib/permissionModules/color'
+import { colorLinkageOverlayKeys } from '../src/lib/permissionModules/color/overlayKeys'
 import { PermissionQueueManager } from '../src/lib/services/PermissionQueueManager'
 import type { PermissionModuleContext, PermissionModuleDefinition } from '../src/lib/permissionModules/types'
 import type { MandalaOverlaySetting } from '../src/lib/networkConfig'
@@ -62,11 +63,16 @@ const B = '02' + 'ab'.repeat(32)
 const B2 = '03' + 'ef'.repeat(32)
 const wallet = {} as any
 
-const ctx = (overlays: MandalaOverlaySetting[]): PermissionModuleContext => ({
+/** `local`: null = remote storage selected at build; else the live answer. */
+const ctx = (overlays: MandalaOverlaySetting[], local: (() => boolean) | null = () => true): PermissionModuleContext => ({
   identityKey: IDENTITY,
   chain: 'test',
-  settings: { mandalaOverlays: overlays } as any
+  settings: { mandalaOverlays: overlays } as any,
+  localStorageSelected: local !== null,
+  isLocalStorageActive: async () => local?.() === true
 })
+// On the curve's x range but not a point: it passes the identity-key regex.
+const OFF_CURVE = '02' + 'ff'.repeat(32)
 
 function memoryColorStore () {
   const data = new Map<string, string>()
@@ -83,7 +89,15 @@ function memoryColorStore () {
 }
 
 function spyDeps () {
-  const module = { settle: vi.fn(async () => ({ results: [] })), dispose: vi.fn(), isSettled: vi.fn(async (_txid: string) => false) }
+  const module = {
+    capabilities: { 'brc207-color': '4' },
+    settle: vi.fn(async () => ({ results: [] })),
+    dispose: vi.fn(),
+    isSettled: vi.fn(async (_txid: string) => false),
+    handleRequest: vi.fn(async (_req: any, _next: any) => 'handled'),
+    onRequest: vi.fn(async (req: any) => ({ args: req.args })),
+    onResponse: vi.fn(async (res: unknown) => res)
+  }
   const scheduler = { stop: vi.fn(), runNow: vi.fn(async () => {}) }
   const heldListeners = new Set<(txid: string) => void>()
   const guard = {
@@ -125,7 +139,9 @@ describe('createHostColorModule', () => {
   test('registers attested + Mandala issuer profiles with the configured overlay', () => {
     const deps = spyDeps()
     const m = createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([{ url: 'https://ov.example', identityKey: K }]) }, deps)
-    expect(m).toBe(deps.module)
+    // a storage-mode guard around the module: everything else passes through
+    expect(m.capabilities).toEqual({ 'brc207-color': '4' })
+    expect(colorLinkageOverlayKeys(m)).toEqual([K])
     const opts = deps.createColorModule.mock.calls[0][0]
     expect(Object.keys(opts.profiles).sort()).toEqual([ATTESTED_PROFILE_ID, MANDALA_PROFILE_ID].sort())
     expect(opts.wallet).toBe(wallet)
@@ -153,7 +169,7 @@ describe('createHostColorModule', () => {
       wallet,
       adminOriginator: 'admin',
       context: ctx([
-        { url: 'https://bad.example', identityKey: '02' + 'ff'.repeat(32) }, // not on the curve
+        { url: 'https://bad.example', identityKey: OFF_CURVE }, // not on the curve
         { url: 'https://ov.example', identityKey: K },
         { url: 'https://dup.example', identityKey: K },
         { url: 'https://ov2.example', identityKey: K2 }
@@ -161,6 +177,114 @@ describe('createHostColorModule', () => {
     }, deps)
     expect(deps.createMandalaProfile).toHaveBeenCalledWith({
       overlays: [{ url: 'https://ov.example', identityKey: K }, { url: 'https://ov2.example', identityKey: K2 }]
+    })
+  })
+
+  test('the linkage policy gets the same validated overlay keys as the profile', () => {
+    const deps = spyDeps()
+    const m = createHostColorModule({
+      wallet,
+      adminOriginator: 'admin',
+      context: ctx([
+        { url: 'https://bad.example', identityKey: OFF_CURVE },
+        { url: 'https://ov.example', identityKey: K },
+        { url: 'https://dup.example', identityKey: K.toUpperCase() }
+      ])
+    }, deps)
+    expect(colorLinkageOverlayKeys(m)).toEqual([K])
+    expect(colorLinkageOverlayKeys({})).toEqual([])
+    expect(colorLinkageOverlayKeys(undefined)).toEqual([])
+    colorPermissionModule.dispose!(m)
+    expect(colorLinkageOverlayKeys(m)).toEqual([])
+  })
+
+  describe('storage mode (contract §8.2: the broadcast guard lives in local storage only)', () => {
+    const req = { method: 'listOutputs', args: { basket: 'p color assets' }, originator: 'app.example' }
+    const refused = { name: 'ColorLocalStorageRequiredError', code: 'ERR_COLOR_LOCAL_STORAGE_REQUIRED', message: 'Colored Tokens need local wallet storage' }
+
+    const expectRefusing = async (m: any, deps: ReturnType<typeof spyDeps>) => {
+      const next = vi.fn(async () => 'raw')
+      await expect(m.handleRequest(req, next)).rejects.toMatchObject(refused)
+      await expect(m.handleRequest(req, next)).rejects.toBeInstanceOf(ColorLocalStorageRequiredError)
+      await expect(m.onRequest(req)).rejects.toMatchObject(refused)
+      await expect(m.onResponse({}, { method: 'createAction', originator: 'app.example' })).rejects.toMatchObject(refused)
+      expect(next).not.toHaveBeenCalled()
+      expect(deps.module.handleRequest).not.toHaveBeenCalled()
+      expect(deps.module.onRequest).not.toHaveBeenCalled()
+    }
+
+    test('remote active storage builds a refusing module and starts nothing', async () => {
+      const deps = spyDeps()
+      const m: any = createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([{ url: 'https://ov.example', identityKey: K }], null) }, deps)
+      await expectRefusing(m, deps)
+      // no BRC-207 capability: an app must not think it can use p color here
+      expect(m.capabilities ?? {}).toEqual({})
+      expect(await m.isSettled('ab'.repeat(32))).toBe(false)
+      expect(await m.settle()).toEqual({ results: [] })
+      expect(colorLinkageOverlayKeys(m)).toEqual([])
+      for (const f of ['createColorModule', 'createStore', 'createDefaultProvider', 'startScheduler', 'createReleaseDrain', 'guardBridge'] as const) {
+        expect(deps[f]).not.toHaveBeenCalled()
+      }
+      colorPermissionModule.dispose!(m)
+      colorPermissionModule.dispose!(m)
+    })
+
+    test('a missing storage mode or a failing live check counts as remote (fail closed)', async () => {
+      const deps = spyDeps()
+      const { localStorageSelected: _, ...noMode } = ctx([])
+      await expectRefusing(createHostColorModule({ wallet, adminOriginator: 'admin', context: noMode as any }, deps), deps)
+      expect(deps.createColorModule).not.toHaveBeenCalled()
+
+      // local selected, but the live check rejects, answers non-true, or is missing
+      for (const isLocalStorageActive of [
+        async () => { throw new Error('no manager') },
+        () => { throw new Error('sync throw') },
+        async () => 'yes',
+        undefined
+      ]) {
+        const d = spyDeps()
+        const m: any = createHostColorModule({ wallet, adminOriginator: 'admin', context: { ...ctx([]), isLocalStorageActive } as any }, d)
+        await expect(m.handleRequest(req, vi.fn())).rejects.toMatchObject(refused)
+        await expect(m.onRequest(req)).rejects.toMatchObject(refused)
+        expect(d.module.handleRequest).not.toHaveBeenCalled()
+        expect(d.module.onRequest).not.toHaveBeenCalled()
+        expect(await d.startScheduler.mock.calls[0][0].settle()).toEqual({ results: [] })
+        expect(d.module.settle).not.toHaveBeenCalled()
+        expect(m.capabilities).toEqual({})
+        colorPermissionModule.dispose!(m)
+      }
+    })
+
+    test('a switch to remote storage after the build refuses requests live and skips settle', async () => {
+      const deps = spyDeps()
+      let local = true
+      const m: any = createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([{ url: 'https://ov.example', identityKey: K }], () => local) }, deps)
+      const next = vi.fn(async () => 'raw')
+      expect(await m.handleRequest(req, next)).toBe('handled')
+      expect(deps.module.handleRequest).toHaveBeenCalledWith(req, next)
+
+      local = false
+      await expect(m.handleRequest(req, next)).rejects.toMatchObject(refused)
+      await expect(m.onRequest(req)).rejects.toMatchObject(refused)
+      expect(next).not.toHaveBeenCalled()
+      expect(m.capabilities).toEqual({})
+      expect(deps.module.handleRequest).toHaveBeenCalledTimes(1)
+      expect(deps.module.onRequest).not.toHaveBeenCalled()
+      expect(colorLinkageOverlayKeys(m)).toEqual([])
+      expect(await deps.startScheduler.mock.calls[0][0].settle()).toEqual({ results: [] })
+      expect(deps.module.settle).not.toHaveBeenCalled()
+
+      local = true
+      expect(await m.onRequest(req)).toEqual({ args: req.args })
+      expect(m.capabilities).toEqual({ 'brc207-color': '4' })
+      expect(colorLinkageOverlayKeys(m)).toEqual([K])
+      await deps.startScheduler.mock.calls[0][0].settle()
+      expect(deps.module.settle).toHaveBeenCalledTimes(1)
+      // the host still drives the real module through the guard
+      deps.module.isSettled.mockResolvedValueOnce(true)
+      expect(await m.isSettled('ab'.repeat(32))).toBe(true)
+      colorPermissionModule.dispose!(m)
+      expect(deps.module.dispose).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -320,7 +444,7 @@ describe('real module behind the real manager', () => {
   let protocolPrompts: any[]
   let fakeWindow: EventTarget & { electronAPI: unknown }
 
-  const build = (overlays: MandalaOverlaySetting[] = [{ url: 'https://ov.example', identityKey: K }]) => {
+  const build = (overlays: MandalaOverlaySetting[] = [{ url: 'https://ov.example', identityKey: K }], local: (() => boolean) | null = () => true) => {
     queue = new PermissionQueueManager()
     queue.adminOriginator = 'admin.example.com'
     queue.permissionsConfig = { ...DEFAULTS } as any
@@ -331,7 +455,7 @@ describe('real module behind the real manager', () => {
     queue.on('snapshot', s => {
       for (const item of s.protocolRequests) if (!protocolPrompts.includes(item)) protocolPrompts.push(item)
     })
-    pm = queue.createPermissionsManager(fakeWallet as any, ctx(overlays))
+    pm = queue.createPermissionsManager(fakeWallet as any, ctx(overlays, local))
     queue.setPermissionsManager(pm)
     return pm
   }
@@ -448,6 +572,63 @@ describe('real module behind the real manager', () => {
     await holderSend(B, linkageName('CCCC', 'DDDD'))
     console.info(`[measurement] linkage prompts across two sends without the policy: ${protocolPrompts.length}`)
     expect(protocolPrompts).toHaveLength(6) // reveal + 2 encrypts per send, ephemerally approved
+    expect(protocolPrompts.some(p => p.colorLinkage)).toBe(false)
+  })
+
+  test('an off-curve overlay key the profile drops gets no linkage grant', async () => {
+    queue.disposePermissionModules()
+    build([{ url: 'https://bad.example', identityKey: OFF_CURVE }])
+    promptsOn()
+    autoApprove()
+    await holderSend(B, linkageName('AAAA', 'BBBB'), 'app.example', OFF_CURVE)
+    await holderSend(B, linkageName('CCCC', 'DDDD'), 'app.example', OFF_CURVE)
+    expect(protocolPrompts).toHaveLength(6)
+    expect(protocolPrompts.some(p => p.colorLinkage)).toBe(false)
+  })
+
+  test('remote active storage: p color requests fail typed, without a prompt or the capability', async () => {
+    queue.disposePermissionModules()
+    build(undefined, null)
+    expect((await pm.getVersion({}, 'app.example')).version).not.toContain('brc207-color')
+    const refused = { name: 'ColorLocalStorageRequiredError', code: 'ERR_COLOR_LOCAL_STORAGE_REQUIRED', message: 'Colored Tokens need local wallet storage' }
+    await expect(pm.listOutputs({ basket: 'p color assets' }, 'app.example')).rejects.toMatchObject(refused)
+    fakeWallet.createAction = vi.fn(async () => ({ txid: 'ab'.repeat(32) }))
+    await expect(pm.createAction({
+      description: 'a color send',
+      outputs: [{ lockingScript: '51', satoshis: 1, outputDescription: 'token', basket: `p color ${'a'.repeat(64)}v0 value` }]
+    }, 'app.example')).rejects.toMatchObject(refused)
+    fakeWallet.internalizeAction = vi.fn(async () => ({ accepted: true }))
+    await expect(pm.internalizeAction({
+      tx: [1, 2, 3],
+      description: 'a color receipt',
+      labels: ['color_offline'],
+      outputs: [{ outputIndex: 0, protocol: 'basket insertion', insertionRemittance: { basket: `p color ${'a'.repeat(64)}v0 value` } }]
+    }, 'app.example')).rejects.toMatchObject(refused)
+    expect(fakeWallet.createAction).not.toHaveBeenCalled()
+    expect(fakeWallet.internalizeAction).not.toHaveBeenCalled()
+    expect(fakeWallet.listOutputs).not.toHaveBeenCalled()
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
+  test('a live switch to remote storage refuses the next p color request', async () => {
+    let local = true
+    queue.disposePermissionModules()
+    build(undefined, () => local)
+    await expect(pm.listOutputs({ basket: 'p color assets', seekPermission: false }, 'app.example'))
+      .rejects.toThrow('Colored Tokens inventory read permission is required')
+    local = false
+    await expect(pm.listOutputs({ basket: 'p color assets', seekPermission: false }, 'app.example'))
+      .rejects.toMatchObject({ name: 'ColorLocalStorageRequiredError' })
+    expect((await pm.getVersion({}, 'app.example')).version).not.toContain('brc207-color')
+  })
+
+  test('remote active storage: no linkage grant toward the overlay', async () => {
+    queue.disposePermissionModules()
+    build(undefined, null)
+    promptsOn()
+    autoApprove()
+    await holderSend(B, linkageName('AAAA', 'BBBB'))
+    expect(protocolPrompts).toHaveLength(3)
     expect(protocolPrompts.some(p => p.colorLinkage)).toBe(false)
   })
 

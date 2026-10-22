@@ -20,6 +20,19 @@ export type PermissionModuleContext = {
   identityKey: string
   chain: WalletNetwork
   settings: NetworkSettings
+  /**
+   * The build selected the local (main-process) storage as active, the only
+   * storage the 1Color broadcast guard covers (contract §8.2). False (or
+   * missing) for remote storage.
+   */
+  localStorageSelected: boolean
+  /**
+   * Authoritative and live: resolves true iff the storage manager's active
+   * store is the local one right now (a primary-storage switch does not
+   * rebuild the wallet; an unused manager is made available first). A
+   * rejection, or any value but `true`, counts as not local.
+   */
+  isLocalStorageActive: () => Promise<boolean>
 }
 
 export type PermissionModuleFactoryArgs = {

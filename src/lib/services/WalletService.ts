@@ -51,6 +51,7 @@ import { MessageBoxAutoReceiver, RECEIVED_RECORDS_PREFIX } from './MessageBoxAut
 import { DirectPayManager } from './DirectPayManager'
 import { StorageElectronIPC } from '../StorageElectronIPC'
 import { WalletDataStorageManager } from '../walletPortability/WalletDataStorageManager'
+import { isLocalStoreActive } from './localStoreActive'
 import { WalletDataSession, walletDataCall } from '../walletPortability/session'
 import * as secrets from './secrets'
 import { deriveMnemonicWallet, verifyMnemonicWallet } from '../utils/mnemonicRecovery'
@@ -844,7 +845,21 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
 
       if (generation !== this._walletDataGeneration) throw new Error('Wallet profile changed while opening storage')
       this.walletData = candidate
-      const permissionsManager = this.permissionQueue.createPermissionsManager(wallet, { identityKey: keyDeriver.identityKey, chain, settings: serviceSettings })
+      const permissionsManager = this.permissionQueue.createPermissionsManager(wallet, {
+        identityKey: keyDeriver.identityKey,
+        chain,
+        settings: serviceSettings,
+        // Remote selected at build: the color module refuses p color for this build.
+        localStorageSelected: !this._useRemoteStorage,
+        // Per request: setPrimaryStorage switches the active store without a
+        // rebuild, and before the manager's first use its active store is only
+        // known after makeAvailable (user.activeStorage may name a backup).
+        isLocalStorageActive: async () => {
+          if (this._useRemoteStorage) return false
+          if (!storageManager.isAvailable()) await storageManager.makeAvailable()
+          return isLocalStoreActive(storageManager)
+        },
+      })
       this.permissionQueue.setPermissionsManager(permissionsManager)
 
       this._managers = {
@@ -1124,6 +1139,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     await storageManager.addWalletStorageProvider(backupProvider)
 
     const stores = storageManager.getStores()
+    await this._sweepColorGuardBeforeSync()
     if (stores?.length > 0) await storageManager.setActive(stores[0].storageIdentityKey)
 
     const newBackupUrls = [...this._backupStorageUrls, url]
@@ -1166,9 +1182,27 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     setTimeout(() => window.location.reload(), 600)
   }
 
+  /**
+   * Runs main's 1Color re-park sweep (contract §8.2) before a backup sync. A
+   * req the guard withheld waits at `sending` until the sweep parks it at
+   * `nosend`; a backup server's monitor would post it if it were synced in
+   * that state. Best effort: a failure is logged and the sync goes ahead.
+   */
+  private async _sweepColorGuardBeforeSync(): Promise<void> {
+    const session = this.walletData
+    const colorGuard = typeof window !== 'undefined' ? window.electronAPI?.colorGuard : undefined
+    if (!session || !colorGuard) return
+    try {
+      await colorGuard.held(session.identityKey, session.chain)
+    } catch (error) {
+      console.warn('[WalletService] color guard sweep before backup sync failed:', error)
+    }
+  }
+
   async syncBackupStorage(progressCallback?: (message: string) => void): Promise<void> {
     const { storageManager } = this._managers
     if (!storageManager) throw new Error('Storage manager not available')
+    await this._sweepColorGuardBeforeSync()
     if (typeof storageManager.updateBackups === 'function') {
       await storageManager.updateBackups(undefined, (s: string) => {
         console.log('[WalletService syncBackup]', s)
@@ -1220,6 +1254,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
     const targetWasAlreadyActive = targetStore.isActive
 
     if (!targetWasAlreadyActive) {
+      await this._sweepColorGuardBeforeSync()
       await storageManager.setActive(targetStore.storageIdentityKey, (s: string) => {
         console.log('[WalletService setPrimaryStorage]', s)
         progressCallback?.(s)

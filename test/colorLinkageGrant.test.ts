@@ -32,7 +32,8 @@ import {
   createColorLinkageGrantPolicy
 } from '../src/lib/permissionModules/color/linkageGrant'
 import { PermissionQueueManager } from '../src/lib/services/PermissionQueueManager'
-import type { PermissionModuleContext } from '../src/lib/permissionModules/types'
+import type { PermissionModuleContext, PermissionModuleDefinition } from '../src/lib/permissionModules/types'
+import { setColorLinkageOverlayKeys } from '../src/lib/permissionModules/color/overlayKeys'
 
 const K = '02798b81951a6a8c7ef8beda09b06a23031d7efaf37b663265e0188ab378124046'
 const K2 = '03' + 'cd'.repeat(32)
@@ -150,10 +151,22 @@ describe('PermissionQueueManager.approveColorLinkage', () => {
   const ctx = (overlays: Array<{ url: string, identityKey: string }>): PermissionModuleContext => ({
     identityKey: '02' + '11'.repeat(32),
     chain: 'test',
-    settings: { mandalaOverlays: overlays } as any
+    settings: { mandalaOverlays: overlays } as any,
+    localStorageSelected: true,
+    isLocalStorageActive: async () => true
   })
   let queue: PermissionQueueManager
   let pm: { grantPermission: ReturnType<typeof vi.fn>, denyPermission: ReturnType<typeof vi.fn> }
+  const colorStandIn: PermissionModuleDefinition = {
+    id: 'color',
+    label: 'color',
+    createModule: ({ context }) => {
+      const m = {}
+      setColorLinkageOverlayKeys(m, () => (context?.settings.mandalaOverlays ?? []).map(o => o.identityKey))
+      return m
+    },
+    dispose: m => setColorLinkageOverlayKeys(m as object, undefined)
+  }
 
   beforeEach(() => {
     // The group phase arms its grace timer on window; it never fires here.
@@ -161,6 +174,10 @@ describe('PermissionQueueManager.approveColorLinkage', () => {
     queue = new PermissionQueueManager()
     queue.adminOriginator = 'admin.example.com'
     queue.permissionsConfig = {} as any
+    // The policy takes its overlay keys from the color module the build made
+    // (the validated list), so a stand-in module publishes them.
+    queue.enabledPermissionModules = ['color']
+    queue.setPermissionsModuleHelpers(id => (id === 'color' ? colorStandIn : undefined), new Map())
     queue.createPermissionsManager({} as any, ctx([{ url: 'https://ov.example', identityKey: K }]))
     pm = { grantPermission: vi.fn(async () => {}), denyPermission: vi.fn(async () => {}) }
     queue.setPermissionsManager(pm)
@@ -259,6 +276,15 @@ describe('PermissionQueueManager.approveColorLinkage', () => {
     await request('r2', linkage('app.example'))
     expect(queue.getSnapshot().protocolRequests.map(i => i.requestID)).toEqual(['r0', 'r2'])
     expect(pm.grantPermission).toHaveBeenCalledTimes(1)
+  })
+
+  test('overlay keys come from the color module, not from settings', async () => {
+    // a build without the color module: the configured overlay grants nothing
+    queue.enabledPermissionModules = []
+    queue.createPermissionsManager({} as any, ctx([{ url: 'https://ov.example', identityKey: K }]))
+    queue.setPermissionsManager(pm)
+    await request('r1', linkage('app.example'))
+    expect((queue.getSnapshot().protocolRequests[0] as any).colorLinkage).toBeUndefined()
   })
 
   test('without a wallet context no linkage request matches', async () => {

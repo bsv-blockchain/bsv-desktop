@@ -43,8 +43,7 @@ describe('direct-pay settings form', () => {
       shareLocalAddress: true,
       signaling: 'relay',
       relayUrl: 'wss://webrtpay-relay-us-1.bsvblockchain.tech',
-      stunUrls:
-        'stun:stun-us-1.bsvb.tech:3478, stun:stun.l.google.com:19302, stun:stun.cloudflare.com:3478',
+      stunUrls: 'stun:stun-us-1.bsvb.tech:3478',
       turnUrls: '',
       turnUsername: '',
       turnCredential: ''
@@ -249,11 +248,12 @@ describe('receive warning text (audit F14)', () => {
     const line = en.match(/^ {4}directpay_receive_warning: '((?:[^'\\]|\\.)*)',$/m)
     expect(line).not.toBeNull()
     const text = line![1]
-    expect(text).toMatch(/while this is on/i)
+    expect(text).toMatch(/only while Payments → Receive is open/)
     expect(text).toMatch(/any wallet that knows your identity key/)
     expect(text).toMatch(/public IP address/)
-    expect(text).toMatch(/when your wallet is unlocked/)
+    expect(text).toMatch(/that the screen is open/)
     expect(text).toMatch(/starting a connection/)
+    expect(text).toMatch(/message box/)
     expect(text).toMatch(/without paying you/)
     // Final review M29: the setting is one per device, so it answers for every profile.
     expect(text).toMatch(/applies to every wallet profile on this device/)

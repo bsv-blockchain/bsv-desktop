@@ -301,7 +301,7 @@ footer { padding-block: 40px; color: var(--muted); font-size: 0.86rem; border-to
       <div class="step">
         <span class="when">receiving · on by default</span>
         <h3>Be payable</h3>
-        <p>While your wallet is open it stays reachable through the relay, and the Receive screen says <em>"Open to live payments"</em>. On desktop that's while the wallet is unlocked. On a phone, it's while the app is in the foreground; the rest of the time payers are offered your message box. Every arrival shows a short notice. You can turn live receiving off in Settings at any time.</p>
+        <p>Your wallet takes live payments only while its Receive screen is open, and the screen then says <em>"Open to live payments"</em>. On a phone the app must also be in the foreground. The rest of the time your wallet answers no one, and payers are offered your message box. Every arrival shows a short notice. You can turn live receiving off in Settings at any time.</p>
       </div>
     </div>
     <div class="facts" aria-label="Measured and default figures">
@@ -377,8 +377,8 @@ footer { padding-block: 40px; color: var(--muted); font-size: 0.86rem; border-to
           </tr>
           <tr>
             <td>"Is this wallet online?"<span class="op">anyone, through the relay</span></td>
-            <td>Any time receiving is on.</td>
-            <td><span class="chip meta">Metadata</span><br>Anyone who knows your identity key can learn whether your wallet is open right now. This is what makes the 2-second answer possible.</td>
+            <td>While your Receive screen is open.</td>
+            <td><span class="chip meta">Metadata</span><br>Anyone who knows your identity key can learn whether your Receive screen is open right now. This is what makes the 2-second answer possible.</td>
             <td><span class="chip enc">Encrypted</span><br>Anything else about you.</td>
             <td>Nothing.</td>
             <td>With live receiving off you always appear offline.</td>
@@ -386,17 +386,17 @@ footer { padding-block: 40px; color: var(--muted); font-size: 0.86rem; border-to
           <tr>
             <td>The person you pay, or who pays you</td>
             <td>Every live payment and every live connection attempt.</td>
-            <td><span class="chip open">In the clear</span><br>Your identity key and public IP address. With "Connect directly on the same network" on (the desktop default), also your local network and IPv6 address. Anyone who knows your key can learn your IP and that you're online by starting a connection, even without paying.</td>
+            <td><span class="chip open">In the clear</span><br>Your identity key and public IP address. With "Connect directly on the same network" on (the desktop default), also your local network and IPv6 address. While your Receive screen is open, anyone who knows your key can learn your IP and that you're online by starting a connection, even without paying.</td>
             <td>Anything outside the payment.</td>
             <td>The payment and your identity key, as with any payment.</td>
-            <td>Turn off live receiving; turn off "same network" to hide local addresses.</td>
+            <td>Close the Receive screen, or turn off live receiving; turn off "same network" to hide local addresses.</td>
           </tr>
           <tr>
-            <td>STUN servers<span class="op">BSV Association, Google, Cloudflare (default list)</span></td>
+            <td>STUN server<span class="op">BSV Association (default)</span></td>
             <td>Each time a link is set up, by both sides.</td>
             <td><span class="chip meta">Metadata</span><br>Your device's public IP address and port, and the time.</td>
             <td><span class="chip enc">Encrypted</span><br>Identity keys, who is paying whom, the payment.</td>
-            <td>Our STUN server isn't configured to log these requests. Google and Cloudflare follow their own policies.</td>
+            <td>Our STUN server isn't configured to log these requests. The wallet asks no other STUN server unless you add one.</td>
             <td>Edit the STUN list in Settings (desktop).</td>
           </tr>
           <tr>

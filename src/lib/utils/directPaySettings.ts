@@ -4,11 +4,12 @@
  * so they work before sign-in and survive logout (see WalletService).
  *
  * Receiving is on by default (the user's decision, 2026-10-18), and the switch
- * is in Settings. While it is on, any wallet that knows the identity key can
- * learn this device's public IP address and when the wallet is unlocked by
- * starting a connection, without paying (audit F14); that now applies by
- * default. The settings are one per device, so receiving answers for every
- * wallet profile on it.
+ * is in Settings. It answers live payments only while the Payments page's Receive
+ * tab is showing (the user's decision, 2026-10-21; see DirectPayManager): while it
+ * is, any wallet that knows the identity key can learn this device's public IP
+ * address and that the Receive tab is open by starting a connection, without
+ * paying (audit F14). Payers who find the wallet closed use the message box. The
+ * settings are one per device, so receiving answers for every wallet profile on it.
  * Wallets find each other through the public WebRTPay relay by default (the
  * user's decision, 2026-10-19), with the message box as the fallback while the
  * relay cannot be reached (see DirectPayManager). Settings saved before then are
@@ -28,13 +29,19 @@
  * other wallet inside the encrypted signal, and appear in face-to-face payment codes.
  */
 export interface DirectPaySettings {
-  /** Answer direct payments from other wallets. On unless the user turns it off. */
+  /**
+   * Answer direct payments from other wallets while the Receive tab is showing. On unless
+   * the user turns it off.
+   */
   receiveEnabled: boolean
   /** How the two wallets find each other before connecting. */
   signaling: 'messagebox' | 'relay'
   /** wss:// signaling relay (ws:// only for localhost). Used when signaling is 'relay'. */
   relayUrl: string
-  /** stun: / stuns: servers used to discover this device's public address. */
+  /**
+   * stun: / stuns: servers used to discover this device's public address. Only these are
+   * asked: STUN servers in the relay's TURN answer are left out (see {@link onlyOwnStun}).
+   */
   stunUrls: string[]
   /**
    * Offer this device's local network address (and IPv6 address) to the other wallet, so
@@ -63,12 +70,34 @@ export const DEFAULT_DIRECT_PAY_SETTINGS: DirectPaySettings = {
   shareLocalAddress: true,
   signaling: 'relay',
   relayUrl: DEFAULT_RELAY_URL,
-  stunUrls: [
-    'stun:stun-us-1.bsvb.tech:3478',
-    'stun:stun.l.google.com:19302',
-    'stun:stun.cloudflare.com:3478'
-  ]
+  // BSVA's own STUN server only (the user's decision, 2026-10-21): every STUN server
+  // learns this device's address and when it connects.
+  stunUrls: ['stun:stun-us-1.bsvb.tech:3478']
 }
+
+/**
+ * The STUN list that was the default until 2026-10-21. Stored settings that still hold it
+ * exactly (the user saved other settings and never edited this list) are read with the new
+ * default; any other list is the user's own and stays.
+ */
+export const PREVIOUS_DEFAULT_STUN_URLS: readonly string[] = [
+  'stun:stun-us-1.bsvb.tech:3478',
+  'stun:stun.l.google.com:19302',
+  'stun:stun.cloudflare.com:3478'
+]
+
+/**
+ * Largest transaction (Atomic BEEF) sent or taken live: 1 MB (the user's decision,
+ * 2026-10-21). A larger payment is refused before anything is spent and goes through the
+ * message box instead; a payee refuses larger live messages and closes the session.
+ */
+export const MAX_LIVE_TRANSACTION_BYTES = 1_000_000
+/**
+ * The largest message an authenticated live session may send this wallet: a `payment` with
+ * a {@link MAX_LIVE_TRANSACTION_BYTES} transaction in base64 (a third larger), plus 4096 bytes
+ * for the rest of the message, as @bsv/webrtpay counts it (MAX_DIRECT_TRANSACTION_BYTES).
+ */
+export const MAX_LIVE_MESSAGE_BYTES = 4 * Math.ceil(MAX_LIVE_TRANSACTION_BYTES / 3) + 4096
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
@@ -193,7 +222,7 @@ export function loadDirectPaySettings(): DirectPaySettings {
       shareLocalAddress: field(checkShareLocalAddress, stored.shareLocalAddress, defaults.shareLocalAddress),
       signaling: field(checkSignaling, stored.signaling, defaults.signaling),
       relayUrl: field(checkRelayUrl, stored.relayUrl, defaults.relayUrl),
-      stunUrls: field(checkStunUrls, stored.stunUrls, [...defaults.stunUrls])
+      stunUrls: field(checkStunUrls, previousDefaultStun(stored.stunUrls) ? defaults.stunUrls : stored.stunUrls, [...defaults.stunUrls])
     },
     field(checkTurn, stored.turn, undefined)
   )
@@ -241,6 +270,25 @@ export function iceServersFrom(settings: DirectPaySettings): RTCIceServer[] {
     })
   }
   return servers
+}
+
+/**
+ * `servers` (the relay's TURN answer) without its STUN entries: the relay passes on the
+ * TURN provider's STUN urls (Cloudflare's), and only the settings' STUN list is asked.
+ * An entry that lists both keeps its other urls.
+ */
+export function onlyOwnStun(servers: RTCIceServer[]): RTCIceServer[] {
+  const out: RTCIceServer[] = []
+  for (const server of servers) {
+    const urls = (typeof server.urls === 'string' ? [server.urls] : [...server.urls]).filter(u => !/^stuns?:/i.test(u))
+    if (urls.length > 0) out.push({ ...server, urls })
+  }
+  return out
+}
+
+/** True for a stored STUN list that is exactly {@link PREVIOUS_DEFAULT_STUN_URLS}. */
+function previousDefaultStun(value: unknown): boolean {
+  return Array.isArray(value) && value.length === PREVIOUS_DEFAULT_STUN_URLS.length && value.every((u, i) => u === PREVIOUS_DEFAULT_STUN_URLS[i])
 }
 
 /** Calls `fn` after every save (in this window). Returns the unsubscribe function. */

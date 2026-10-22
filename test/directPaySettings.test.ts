@@ -8,6 +8,8 @@ import {
   V1_DIRECT_PAY_SETTINGS_KEY,
   V2_DIRECT_PAY_SETTINGS_KEY,
   iceServersFrom,
+  onlyOwnStun,
+  PREVIOUS_DEFAULT_STUN_URLS,
   loadDirectPaySettings,
   saveDirectPaySettings,
   subscribeDirectPaySettings
@@ -44,19 +46,37 @@ describe('direct-pay settings: loading', () => {
       shareLocalAddress: true,
       signaling: 'relay',
       relayUrl: 'wss://webrtpay-relay-us-1.bsvblockchain.tech',
-      stunUrls: [
-        'stun:stun-us-1.bsvb.tech:3478',
-        'stun:stun.l.google.com:19302',
-        'stun:stun.cloudflare.com:3478'
-      ]
+      // BSVA's own STUN server only (2026-10-21).
+      stunUrls: ['stun:stun-us-1.bsvb.tech:3478']
     })
     expect(loadDirectPaySettings()).toEqual(DEFAULT_DIRECT_PAY_SETTINGS)
+  })
+
+  it('reads a stored STUN list that is exactly the previous default as the new default, and keeps any other', () => {
+    expect(PREVIOUS_DEFAULT_STUN_URLS).toEqual(['stun:stun-us-1.bsvb.tech:3478', 'stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'])
+    const store = (stunUrls: string[]) => localStorage.setItem(DIRECT_PAY_SETTINGS_KEY, JSON.stringify({ ...DEFAULT_DIRECT_PAY_SETTINGS, receiveEnabled: false, stunUrls }))
+    store([...PREVIOUS_DEFAULT_STUN_URLS])
+    expect(loadDirectPaySettings()).toMatchObject({ receiveEnabled: false, stunUrls: ['stun:stun-us-1.bsvb.tech:3478'] })
+    store(['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'])
+    expect(loadDirectPaySettings().stunUrls).toEqual(['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'])
+    store([...PREVIOUS_DEFAULT_STUN_URLS, 'stun:mine.example:3478'])
+    expect(loadDirectPaySettings().stunUrls).toHaveLength(4)
+    store([])
+    expect(loadDirectPaySettings().stunUrls).toEqual([])
+  })
+
+  it('drops the STUN servers from the relay\'s TURN answer, keeping its TURN servers', () => {
+    expect(onlyOwnStun([
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: ['stun:stun.cloudflare.com:3478', 'turn:turn.cloudflare.com:3478?transport=udp', 'TURNS:turn.cloudflare.com:5349'], username: 'u', credential: 'c' }
+    ])).toEqual([{ urls: ['turn:turn.cloudflare.com:3478?transport=udp', 'TURNS:turn.cloudflare.com:5349'], username: 'u', credential: 'c' }])
+    expect(onlyOwnStun([])).toEqual([])
   })
 
   it('hands out copies, so callers cannot change the defaults', () => {
     loadDirectPaySettings().stunUrls.push('stun:evil.example:3478')
     expect(loadDirectPaySettings().stunUrls).toEqual(DEFAULT_DIRECT_PAY_SETTINGS.stunUrls)
-    expect(DEFAULT_DIRECT_PAY_SETTINGS.stunUrls).toHaveLength(3)
+    expect(DEFAULT_DIRECT_PAY_SETTINGS.stunUrls).toHaveLength(1)
   })
 
   it.each(['{not json', '"text"', 'null', '[]', '42'])('falls back to defaults for corrupt storage %s', raw => {

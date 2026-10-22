@@ -21,12 +21,13 @@
  */
 import { Transaction, Utils } from '@bsv/sdk'
 import type { WalletInterface } from '@bsv/sdk'
-import { acceptDirectPayment, MAX_DIRECT_TRANSACTION_BYTES, paymentKey, validatePaymentToken, verifyDirectPayment, WebRTPayError } from '@bsv/webrtpay'
+import { acceptDirectPayment, paymentKey, validatePaymentToken, verifyDirectPayment, WebRTPayError } from '@bsv/webrtpay'
 import type { AuthenticatedPeer, DirectPayClient, IncomingPayment, PaymentAck, SeenStore } from '@bsv/webrtpay'
 import { prepareMessageBoxPayment } from './messageBoxPayments'
 import type { OutgoingPayment } from './messageBoxPayments'
 import { broadcastPayment } from './broadcast'
 import { identityKey, validAmount } from './paymentProtocol'
+import { MAX_LIVE_TRANSACTION_BYTES } from '../../../utils/directPaySettings'
 
 /** Payment keys remembered per wallet and network, newest kept. */
 const SEEN_LIMIT = 5000
@@ -79,8 +80,10 @@ export class NotSentError extends Error {
  * is not taking direct payments, or is busy), `wrong_network`, `network` (the signal could not
  * be posted: this side is offline or the message box host is down), or `link_failed` (they
  * answered but the link or its identity handshake did not come up, or the dial was cancelled).
+ * `too_large` is not a dial failure: the recipient was reached, but the new payment's
+ * transaction is over the live limit (1 MB), so it was released before anything was spent.
  */
-export type DialFailure = 'offline' | 'not_receiving' | 'link_failed' | 'network' | 'wrong_network'
+export type DialFailure = 'offline' | 'not_receiving' | 'link_failed' | 'network' | 'wrong_network' | 'too_large'
 
 /** The {@link DialFailure} for an error from `DirectPayClient.connect`. */
 export function dialFailure(error: unknown): DialFailure {
@@ -145,7 +148,7 @@ export async function deliverDirect(o: {
       const prepared = await prepareMessageBoxPayment(o.wallet, recipient, o.amount, o.originator, o.host, row => {
         // A throw here releases the prepared transaction (prepareMessageBoxPayment aborts it).
         const refusal = whyNotDeliverable(peer, row.token)
-        if (refusal) throw new NotSentError(`${refusal.reason} Nothing was spent.`)
+        if (refusal) throw new NotSentError(`${refusal.reason} Nothing was spent.`, '', refusal.tooLarge ? 'too_large' : undefined)
         o.persist({ ...row, via: 'direct' })
       })
       payment = { ...prepared, via: 'direct' }
@@ -204,10 +207,11 @@ async function connect(client: DirectPayClient, recipient: string, saved: boolea
  * check it once it arrives (by then it would be on the network), or undefined when it may.
  * `retry`: delivering it directly later can work.
  */
-function whyNotDeliverable(peer: AuthenticatedPeer, token: OutgoingPayment['token']): { reason: string; retry: boolean } | undefined {
+function whyNotDeliverable(peer: AuthenticatedPeer, token: OutgoingPayment['token']): { reason: string; retry: boolean; tooLarge?: boolean } | undefined {
   const bytes = token.transaction.length
-  if (bytes > MAX_DIRECT_TRANSACTION_BYTES) {
-    return { reason: `This payment is too large to deliver directly: its transaction is ${bytes.toLocaleString()} bytes, and at most ${MAX_DIRECT_TRANSACTION_BYTES.toLocaleString()} can be delivered.`, retry: false }
+  // Live payments carry at most 1 MB (MAX_LIVE_TRANSACTION_BYTES); payees refuse more.
+  if (bytes > MAX_LIVE_TRANSACTION_BYTES) {
+    return { reason: `This payment is too large to deliver directly: its transaction is ${bytes.toLocaleString()} bytes, and at most ${MAX_LIVE_TRANSACTION_BYTES.toLocaleString()} can be delivered.`, retry: false, tooLarge: true }
   }
   try {
     validatePaymentToken(token)

@@ -20,7 +20,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { Beef, LockingScript, P2PKH, Transaction, UnlockingScript } from '@bsv/sdk'
+import { Beef, LockingScript, MerklePath, P2PKH, Transaction, UnlockingScript } from '@bsv/sdk'
 import { OneColor } from '@bsv/templates'
 import {
   ColorGuardJournal,
@@ -395,6 +395,31 @@ describe('services layer (worker)', () => {
     expect(arc.postBeef).not.toHaveBeenCalled()
     expect(rs).toEqual([expect.objectContaining({ name: 'ColorBroadcastGuard', status: 'error' })])
     expect(rs[0].txidResults).toEqual([{ txid: G.id('hex'), status: 'error', serviceError: true }])
+  })
+
+  test('a pruned BEEF that drops a proven ancestor still parses strictly', async () => {
+    const arc = mkArc()
+    const strict: string[][] = []
+    const services: any = {
+      postBeef: async (beef: Beef, txids: string[]) => {
+        strict.push(Beef.fromBinaryStrict(beef.toBinary()).txs.map(t => t.txid))
+        return await arc.postBeef(beef, txids)
+      }
+    }
+    guardPostBeef(services, { identityKey: A, chain: 'test', journal, classify: () => loadColorClassifier() })
+    const S = mkTx([{ txid: fundingTxid(), vout: 0 }], [plainLock()])
+    S.merklePath = new MerklePath(900, [[{ offset: 0, hash: S.id('hex'), txid: true }]])
+    const T = new Transaction()
+    T.addInput({ sourceTransaction: S, sourceOutputIndex: 0, unlockingScript: new UnlockingScript(), sequence: 0xffffffff })
+    T.addOutput({ lockingScript: colorLock(), satoshis: 1 })
+    const { P, p } = scenario()
+    const beef = new Beef()
+    beef.mergeTransaction(T)
+    beef.mergeTransaction(P)
+    expect(beef.findTxid(S.id('hex'))?.hasProof).toBe(true)
+    await services.postBeef(beef, [T.id('hex'), p])
+    expect(strict).toEqual([[p]])
+    expect(arc.calls).toEqual([{ txids: [p], beefTxids: [p] }])
   })
 
   test('nothing held: the inner call gets the caller arguments unchanged', async () => {

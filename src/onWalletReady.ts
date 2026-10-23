@@ -878,10 +878,14 @@ export const onWalletReady = async (
         case '/getVersion': {
           try {
             const result = await wallet.getVersion({}, origin);
+            // Toolbox appends BRC-205 capabilities ("base; key=value;"), but every published SDK
+            // WalletClient rejects a version longer than 30 characters while probing for a wallet
+            // (WalletResultValidation getVersion), so apps never connect. Answer the base only.
+            const version = String(result.version).split(';')[0].trim();
             response = {
               request_id: req.request_id,
               status: 200,
-              body: stringifyWalletPayload(result),
+              body: stringifyWalletPayload({ ...result, version }),
             };
           } catch (error) {
             console.error('getVersion error:', error);

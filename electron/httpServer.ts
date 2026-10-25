@@ -86,7 +86,7 @@ export async function startHttpServer(mainWindow: BrowserWindow): Promise<() => 
     preflightContinue: true
   }));
 
-  // Parse JSON bodies. D30: at least 32 MiB, so a 16 MiB `p color` receipt fits.
+  // Parse JSON bodies. Large AtomicBEEF (`tx`) bodies as JSON byte arrays fit.
   app.use(express.json({ limit: HTTP_JSON_BODY_LIMIT }));
   app.use(express.text({ type: '*/*', limit: HTTP_JSON_BODY_LIMIT }));
 

@@ -3,8 +3,9 @@
  *
  * The main process and the monitor worker hold every unreleased transaction
  * with a BRC-162 output (electron/colorBroadcastGuard.ts). This drain asks the
- * color module, which lives in the renderer, whether each held txid is settled
- * (`isSettled`, a verified overlay attestation), and releases only those. A
+ * host, which lives in the renderer, whether each held txid is settled
+ * (`isSettled`: the host ledger records a σ by K this host verified, design
+ * §9 B7), and releases only those. A
  * `false`, a throw or a non-boolean answer keeps the txid held; a failed release
  * IPC is retried on the next drain. Every settle tick (scheduler) ends with a
  * drain, and a `color-guard:held` event triggers a tick.

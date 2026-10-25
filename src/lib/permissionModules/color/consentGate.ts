@@ -4,8 +4,8 @@
  *
  * The module calls `requestTokenAccess(originator, message)` with a JSON
  * consent message. The host keeps one 30-minute inventory **read** grant per
- * originator, set only by approving `color_access`. Spends, signatures,
- * relinquishments and offline receipts prompt every time and never set or
+ * originator, set only by approving `color_access`. Spends, signatures and
+ * relinquishments prompt every time and never set or
  * consume that grant (0207:8034, "a generic cryptographic or spending grant
  * does not automatically authorize this inventory scope").
  *
@@ -23,8 +23,6 @@ export const READ_GRANT_MS = 1_800_000
 const READ_REQUIRED = 'Colored Tokens inventory read permission is required'
 /** 0207:3186 */
 const SPEND_REQUIRED = 'Colored Tokens spending permission is required'
-/** Host text for `color_receive_offline` (contract §2.5, D19). */
-const RECEIVE_REQUIRED = 'Colored Tokens receive permission is required'
 
 /**
  * Thrown instead of prompting when the caller asked for `seekPermission:false`
@@ -43,7 +41,6 @@ type ConsentType =
   | 'color_send'
   | 'color_signature'
   | 'color_relinquish'
-  | 'color_receive_offline'
 
 const SPEND_TYPES: ReadonlySet<string> = new Set(['color_send', 'color_signature', 'color_relinquish'])
 
@@ -60,8 +57,7 @@ function parseConsent (message: string): { type: ConsentType, seek: boolean } | 
     type !== 'color_access' &&
     type !== 'color_send' &&
     type !== 'color_signature' &&
-    type !== 'color_relinquish' &&
-    type !== 'color_receive_offline'
+    type !== 'color_relinquish'
   ) {
     return undefined
   }
@@ -142,14 +138,8 @@ export function createColorConsentGate (o: {
       return await readAccess(app, message)
     }
 
-    if (SPEND_TYPES.has(consent.type)) {
-      if (!consent.seek) throw new ColorPermissionRequiredError(SPEND_REQUIRED)
-      return await ask(app, message)
-    }
-
-    // color_receive_offline: prompt every time, no continuing grant (D19 allows
-    // one; the desktop does not keep it, D-DESK-3).
-    if (!consent.seek) throw new ColorPermissionRequiredError(RECEIVE_REQUIRED)
+    // A spend approval prompts every time and never grants reads.
+    if (!consent.seek) throw new ColorPermissionRequiredError(SPEND_REQUIRED)
     return await ask(app, message)
   }
 

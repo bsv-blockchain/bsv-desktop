@@ -35,6 +35,7 @@ import {
   type LinkageRequest,
 } from '../permissionModules/color/linkageGrant'
 import { colorLinkageOverlayKeys } from '../permissionModules/color/overlayKeys'
+import { bindOriginator } from '../permissionModules/color/bindOriginator'
 import {
   markHttpBridgeSessionCancelled,
   normalizeBridgeOrigin,
@@ -1064,6 +1065,12 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
 
     const permissionModulesMap: Record<string, any> = {}
     let pm: WalletPermissionsManager
+    // Modules get the manager of this build lazily (it is built after them),
+    // bound to the admin originator, never one from another build.
+    let managed: WalletInterface | undefined
+    const moduleContext: PermissionModuleContext | undefined = context
+      ? { ...context, managedWallet: () => managed }
+      : undefined
     try {
       for (const moduleId of this.enabledPermissionModules) {
         const descriptor = this._getPermissionModuleById?.(moduleId) as PermissionModuleDefinition | undefined
@@ -1074,7 +1081,7 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
           // Prompts may register after wallet construction or remount on a
           // theme change. Resolve the current handler at the time of the call.
           promptHandler: (app: string, message: string) => this._promptHandlers.get(moduleId)?.(app, message) ?? Promise.resolve(false),
-          context,
+          context: moduleContext,
         })
         this._permissionModuleInstances.push({ definition: descriptor, module })
         permissionModulesMap[moduleId] = module
@@ -1086,6 +1093,7 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       }
 
       pm = new WalletPermissionsManager(wallet, this.adminOriginator, configWithModules as any)
+      managed = bindOriginator(pm as unknown as WalletInterface, this.adminOriginator)
     } catch (error) {
       // Nothing half-built keeps running without a manager.
       this.disposePermissionModules()

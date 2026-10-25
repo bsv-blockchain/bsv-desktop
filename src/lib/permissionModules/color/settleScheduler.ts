@@ -1,11 +1,10 @@
 /**
- * Periodic settlement for the color module (D17).
+ * Periodic settlement for the host Mandala runtime (D17, design §9 B7).
  *
- * The desktop is a wallet host, not a runtime: it just calls the module's
- * `settle()` once shortly after the wallet opens, every 5 minutes while it is
- * open, and whenever the window comes back `online`. `settle()` submits
- * offline-credited receipts and replays own hand-overs the overlay already
- * admitted (contract §2.3); it never throws for overlay refusals.
+ * Runs `settle` (the runtime tick: MessageBox receive, `settleReceipts` →
+ * `markSettled`, then the broadcast-guard drain) once shortly after the
+ * wallet opens, every 5 minutes while it is open, and whenever the window
+ * comes back `online`. It never throws for overlay refusals.
  *
  * Robustness:
  * - single-flight: every trigger (initial timer, interval, `online`, runNow)
@@ -22,7 +21,7 @@
 export const SETTLE_INTERVAL_MS = 300_000
 export const SETTLE_INITIAL_DELAY_MS = 1_000
 
-/** Structurally the contract §2.3 `ColorSettleReport`. */
+/** Structurally `{ results: ReceiptSettleResult[] }` of `settleReceipts`. */
 export type SettleReportLike = {
   results: Array<{
     txid: string

@@ -89,6 +89,12 @@ beforeEach(() => {
         delete: vi.fn(async () => {}),
         keys: vi.fn(async () => [])
       },
+      mandalaStore: {
+        get: vi.fn(async () => undefined),
+        set: vi.fn(async () => {}),
+        delete: vi.fn(async () => {}),
+        keys: vi.fn(async () => [])
+      },
       walletData: { call: vi.fn(async (action: string) => {
         if (action === 'binding') return undefined
         if (action === 'cancel') return undefined

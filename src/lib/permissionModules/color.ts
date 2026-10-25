@@ -1,52 +1,73 @@
 /**
- * The BRC-207 1Color module as a desktop permission module (contract §8.2).
+ * The BRC-207 1Color module as a desktop permission module (contract §8.2,
+ * Revision 3 / design §9 B7).
  *
  * `createHostColorModule` builds `@bsv/color-permission-module` for one open
- * wallet (identity + chain) with the attested and Mandala issuer profiles, and
- * the host pieces around it: the durable store, the SHIP default provider,
- * the consent gate with exact-amount display, and the settle scheduler. The
- * permissions manager registers it under the scheme id `color`.
+ * wallet (identity + chain) with the Mandala issuer-v1 profile, and the host
+ * pieces around it: the durable module store, the host ledger (Mandala host
+ * store), the SHIP default provider, the consent gate with exact-amount
+ * display, the host Mandala runtime and its scheduler. The permissions manager
+ * registers it under the scheme id `color`.
+ *
+ * Host ledger: `createHostLedger` over the main-process Mandala store, one
+ * object shared by `createMandalaProfile({ ledger })` (whose `admitReceipt`
+ * credits only what it records) and the runtime. It and `markSettled` are
+ * in-process only, never reachable over BRC-100.
  *
  * Fail closed (S5): only Mandala overlays the user configured for this
  * network are passed to the Mandala profile. An invalid or duplicate row is
  * logged and skipped (one bad settings row must not stop the wallet from
- * opening); none configured means Mandala assets are refused.
+ * opening); none configured means Mandala assets are refused. The
+ * @bsv/mandala lib is single-overlay (module-global URL and K), so the
+ * runtime receives and settles against the FIRST usable overlay only; with
+ * more configured it logs that once. A hand-over for another overlay's asset
+ * fails σ verification under K and is refused by the lib.
+ *
+ * Runtime (contract §8.2 Revision 3): every scheduler tick (shortly after
+ * the wallet opens, every 5 minutes, on `online`, and on a held broadcast)
+ * receives v4 hand-overs on MessageBox `mandala-color`, runs `settleReceipts`
+ * (→ `markSettled`), then drains the broadcast guard.
  *
  * Broadcast guard (contract §8.2): the main process and the monitor worker
- * hold every unreleased transaction with a BRC-162 output. Every settle tick
- * ends with a release drain, which releases a held txid only once
- * `module.isSettled(txid)`; a `color-guard:held` event from main runs a tick.
+ * hold every unreleased transaction with a BRC-162 output. The drain releases
+ * a held txid only once the host ledger records it `settled` (a σ by K this
+ * host verified). It never keys on `color.v1.*` store keys. Profile-free
+ * (SHIP) assets have no ledger record, so they stay held (known gap).
  *
  * Storage mode: the guard is installed only on the main-process storage. With
  * remote active storage the remote server would run `internalizeAction` /
  * `createAction` / `sendWith` and broadcast with its own services, so nothing
  * would be held. So:
  * - remote selected at build (`context.localStorageSelected` not true): a
- *   refusing module (no capability, no store, scheduler or drain); every
+ *   refusing module (no capability, no store, ledger, runtime or drain); every
  *   `p color` request fails with `ColorLocalStorageRequiredError`. It is never
  *   thrown from the factory, so the wallet still opens. Switching to local
  *   later takes effect when the wallet is next opened.
  * - local selected: every `p color` request first awaits
- *   `context.isLocalStorageActive()` (live: a primary-storage switch does not
- *   rebuild the wallet, and `user.activeStorage` may make a backup the active
- *   store) and fails with the same error unless it resolves true; settle ticks
- *   skip `settle()` likewise. The capability and the linkage overlay keys are
- *   synchronous, so they follow the last answer (initially local).
- * A missing, rejecting or non-true predicate counts as remote (fail closed).
+ *   `context.isLocalStorageActive()` (live) and fails with the same error
+ *   unless it resolves true; runtime ticks skip likewise. The capability and
+ *   the linkage overlay keys are synchronous, so they follow the last answer
+ *   (initially local). A missing, rejecting or non-true predicate counts as
+ *   remote (fail closed).
  *
  * Lifecycle: the wallet build disposes the previous module before building
  * the next (PermissionQueueManager). `dispose(module)` stops the scheduler
  * (timers and the `online` listener), unsubscribes the held event, drops the
- * host read grants and disposes the module, once.
+ * host read grants, points the lib's journals away from this identity and
+ * disposes the module, once.
  */
 
 import {
-  ATTESTED_PROFILE_ID,
-  createAttestedProfile,
   createColorModule,
   type ColorOverlayProvider,
   type ColorPermissionModule
 } from '@bsv/color-permission-module'
+import {
+  configureMandala,
+  createHostLedger,
+  memoryStorage,
+  type HostLedger
+} from '@bsv/mandala'
 import {
   MANDALA_PROFILE_ID,
   createMandalaOverlayProvider,
@@ -63,13 +84,20 @@ import { startColorSettleScheduler } from './color/settleScheduler'
 import { createColorReleaseDrain, type ColorGuardBridge } from './color/releaseDrain'
 import { ColorPermissionPrompt } from './color/Prompt'
 import { setColorLinkageOverlayKeys } from './color/overlayKeys'
+import { createIpcMandalaStorage } from './color/mandalaStorage'
+import { createMandalaHostRuntime } from './color/mandalaRuntime'
 
 export interface HostColorModuleDeps {
   createColorModule: typeof createColorModule
-  createAttestedProfile: typeof createAttestedProfile
   createMandalaProfile: typeof createMandalaProfile
   createMandalaOverlayProvider: typeof createMandalaOverlayProvider
   createStore: typeof createIpcColorModuleStore
+  /** The Mandala host store (ledger + lib journals) for one identity and chain. */
+  createMandalaStorage: typeof createIpcMandalaStorage
+  createHostLedger: typeof createHostLedger
+  /** The lib's module-global endpoints and journal storage. */
+  configureMandala: typeof configureMandala
+  createRuntime: typeof createMandalaHostRuntime
   createDefaultProvider: typeof createShipColorProvider
   startScheduler: typeof startColorSettleScheduler
   /** The main-process broadcast guard over IPC; undefined outside Electron. */
@@ -79,10 +107,13 @@ export interface HostColorModuleDeps {
 
 const defaultDeps: HostColorModuleDeps = {
   createColorModule,
-  createAttestedProfile,
   createMandalaProfile,
   createMandalaOverlayProvider,
   createStore: createIpcColorModuleStore,
+  createMandalaStorage: createIpcMandalaStorage,
+  createHostLedger,
+  configureMandala,
+  createRuntime: createMandalaHostRuntime,
   createDefaultProvider: createShipColorProvider,
   startScheduler: startColorSettleScheduler,
   guardBridge: () => (globalThis as { window?: Window }).window?.electronAPI?.colorGuard,
@@ -110,8 +141,7 @@ export class ColorLocalStorageRequiredError extends Error {
 
 /** The host's view of either module shape: the toolbox hooks plus what the host drives. */
 export type HostColorModule = PermissionsModule & {
-  settle: ColorPermissionModule['settle']
-  isSettled: ColorPermissionModule['isSettled']
+  markSettled: ColorPermissionModule['markSettled']
   dispose: () => void
 }
 
@@ -145,8 +175,7 @@ function refusingColorModule (): HostColorModule {
     handleRequest: refuse,
     onRequest: refuse,
     onResponse: refuse,
-    settle: async () => ({ results: [] }),
-    isSettled: async () => false,
+    markSettled: async () => {},
     dispose: () => {}
   }
   cleanups.set(module, () => {})
@@ -238,7 +267,22 @@ export function createHostColorModule (
   const overlayKeys = overlays.map(o => o.identityKey)
 
   const store = d.createStore(context.identityKey, context.chain)
+  const mandalaStorage = d.createMandalaStorage(context.identityKey, context.chain)
+  const ledger: HostLedger = d.createHostLedger(mandalaStorage)
   const provider = d.createDefaultProvider({ chain: context.chain })
+
+  // The lib is single-overlay: its journals, submit URL and K are module
+  // globals, set for this wallet (and cleared when none is configured, so a
+  // previous wallet's overlay is never used: S5).
+  const primary = overlays[0]
+  if (overlays.length > 1) {
+    console.warn('[color] more than one Mandala overlay is configured; hand-overs are received and settled against', primary.url)
+  }
+  d.configureMandala({
+    storage: mandalaStorage,
+    overlayUrl: primary?.url ?? '',
+    overlayIdentityKey: primary?.identityKey ?? ''
+  })
 
   // Deploy display metadata: the configured Mandala overlays first, then SHIP.
   const displayProviders: ColorOverlayProvider[] = [...configured.map(c => c.provider), provider]
@@ -250,16 +294,23 @@ export function createHostColorModule (
     enrich: m => enrichConsentMessage(m, display)
   })
 
-  const module = d.createColorModule({
-    wallet,
-    provider,
-    requestTokenAccess: gate,
-    store,
-    profiles: {
-      [ATTESTED_PROFILE_ID]: d.createAttestedProfile(),
-      [MANDALA_PROFILE_ID]: d.createMandalaProfile({ overlays })
-    }
-  })
+  let module: ColorPermissionModule
+  try {
+    module = d.createColorModule({
+      wallet,
+      provider,
+      requestTokenAccess: gate,
+      store,
+      profiles: {
+        [MANDALA_PROFILE_ID]: d.createMandalaProfile({ overlays, ledger })
+      }
+    })
+  } catch (e) {
+    gate.clear()
+    resetMandala(d)
+    throw e
+  }
+  const markSettled = (txid: string): Promise<void> => module.markSettled(txid)
 
   // Without the bridge (not in Electron) nothing is ever released: the guard in
   // main still holds every 1Color broadcast, so this fails closed.
@@ -267,10 +318,23 @@ export function createHostColorModule (
   if (!guard) console.warn('[color] broadcast guard bridge unavailable; held 1Color transactions stay held')
   const drain = guard
     ? d.createReleaseDrain({
-      isSettled: txid => module.isSettled(txid),
+      // Host-owned: a σ by K this host verified (never a color.v1.* key).
+      isSettled: async txid => (await ledger.get(txid))?.state === 'settled',
       api: guard,
       identityKey: context.identityKey,
       chain: context.chain
+    })
+    : undefined
+
+  // No overlay configured: nothing to receive or settle (S5); the drain still runs.
+  const runtime = primary
+    ? d.createRuntime({
+      ledger,
+      markSettled,
+      wallet: () => context.managedWallet?.(),
+      messageBox: () => context.messageBox?.(),
+      overlayIdentityKey: primary.identityKey,
+      isActive: storage.check
     })
     : undefined
 
@@ -280,12 +344,11 @@ export function createHostColorModule (
     scheduler = d.startScheduler({
       settle: async () => {
         try {
-          // Remote active storage: nothing to settle against until local returns.
-          if (!(await storage.check())) return { results: [] }
-          return await module.settle(undefined, adminOriginator)
+          // The runtime checks local storage itself (remote: nothing to do).
+          return runtime ? await runtime.tick() : { results: [] }
         } finally {
-          // Admissions recorded by this settle (and parks it caused through
-          // sendWith) are released in the same tick. drain() never rejects.
+          // Ledger records written by this tick (received or settled) are
+          // released in the same tick. drain() never rejects.
           if (drain) await drain.drain()
         }
       }
@@ -296,6 +359,7 @@ export function createHostColorModule (
   } catch (e) {
     try { scheduler?.stop() } catch { /* already failing */ }
     gate.clear()
+    resetMandala(d)
     try { module.dispose() } catch { /* already failing */ }
     throw e
   }
@@ -307,9 +371,23 @@ export function createHostColorModule (
     try { unsubscribeHeld() } catch (e) { console.error('[color] held listener removal failed', e) }
     try { scheduler.stop() } catch (e) { console.error('[color] scheduler stop failed', e) }
     gate.clear()
+    resetMandala(d)
     module.dispose()
   })
   return guarded
+}
+
+/**
+ * Points the lib's module-global journals and endpoints away from the closed
+ * wallet: a late write lands in a throwaway store, and any overlay call fails
+ * closed until the next build configures its own.
+ */
+function resetMandala (d: HostColorModuleDeps): void {
+  try {
+    d.configureMandala({ storage: memoryStorage(), overlayUrl: '', overlayIdentityKey: '' })
+  } catch (e) {
+    console.error('[color] Mandala reset failed', e)
+  }
 }
 
 function disposeHostColorModule (module: unknown): void {

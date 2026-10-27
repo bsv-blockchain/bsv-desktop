@@ -1,3 +1,4 @@
+import { EcpmSession, type EcpmWallet } from '../ecpm/ecpmSession'
 /**
  * PermissionQueueManager — plain TypeScript class owning all permission queue logic.
  *
@@ -138,6 +139,8 @@ const GROUP_COOLDOWN_MS = 5 * 60 * 1000
 const PACT_COOLDOWN_MS = 5 * 60 * 1000
 
 export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents> {
+  readonly ecpmSession = new EcpmSession()
+
   // ---- Queue state (previously useState) ----
   private _basketRequests: BasketAccessRequest[] = []
   private _certificateRequests: CertificateAccessRequest[] = []
@@ -207,6 +210,7 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
    * module whose dispose throws is logged and the rest are still disposed.
    */
   disposePermissionModules(): void {
+    this.ecpmSession.dispose()
     const instances = this._permissionModuleInstances
     this._permissionModuleInstances = []
     this._linkageGeneration++
@@ -1082,7 +1086,7 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
 
       const configWithModules = {
         ...this.permissionsConfig,
-        permissionModules: permissionModulesMap,
+        permissionModules: { ...permissionModulesMap, ecpm: this.ecpmSession.replace(wallet as unknown as EcpmWallet) },
       }
 
       pm = new WalletPermissionsManager(wallet, this.adminOriginator, configWithModules as any)

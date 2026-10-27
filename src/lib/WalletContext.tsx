@@ -1,3 +1,4 @@
+import { EcpmPrompt } from './ecpm/EcpmPrompt'
 /**
  * WalletContext — thin React provider wrapping WalletService.
  *
@@ -448,6 +449,7 @@ export const WalletContextProvider: React.FC<WalletContextProps> = ({
 
   return (
     <WalletContext.Provider value={contextValue}>
+      <EcpmPrompt session={svc.permissionQueue.ecpmSession} onFocusRequested={onFocusRequested} />
       {children}
       <PermissionPromptHost>
         {permissionModuleRegistry.map(module => {

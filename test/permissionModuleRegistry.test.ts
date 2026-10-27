@@ -1,3 +1,4 @@
+import { KeyDeriver, PrivateKey as EcpmTestPrivateKey } from '@bsv/sdk'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { WalletPermissionsManager } from '@bsv/wallet-toolbox-client'
 
@@ -50,7 +51,7 @@ test('createPermissionsManager returns an unwrapped WalletPermissionsManager', (
   const queue = new PermissionQueueManager()
   queue.adminOriginator = 'admin.example.com'
   queue.permissionsConfig = {} as any
-  const pm = queue.createPermissionsManager({} as any)
+  const pm = queue.createPermissionsManager({ keyDeriver: new KeyDeriver(new EcpmTestPrivateKey(17)) } as any)
   expect(pm).toBeInstanceOf(WalletPermissionsManager)
   expect(pm.createAction).toBe(WalletPermissionsManager.prototype.createAction)
 })

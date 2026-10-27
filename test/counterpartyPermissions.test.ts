@@ -1,3 +1,4 @@
+import { KeyDeriver, PrivateKey as EcpmTestPrivateKey } from '@bsv/sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -54,7 +55,7 @@ describe('grouped permission grants', () => {
     queue.adminOriginator = 'admin.example.com'
     queue.permissionsConfig = {} as any
     const release = vi.spyOn(queue as any, '_releaseDeferredAfterGroup').mockResolvedValue(undefined)
-    const pm: any = queue.createPermissionsManager({} as any)
+    const pm: any = queue.createPermissionsManager({ keyDeriver: new KeyDeriver(new EcpmTestPrivateKey(17)) } as any)
     ;(queue as any)._groupRequestCooldownKeyById.set('group-peer:app:false:02ab', 'app|02ab')
 
     const params = {

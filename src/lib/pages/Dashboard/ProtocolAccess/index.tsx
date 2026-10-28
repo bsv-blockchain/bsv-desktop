@@ -1,3 +1,4 @@
+import { parseActionLabelPermission } from '../../../utils/actionLabelPermission';
 import React, { useState, useEffect, useContext } from 'react';
 import {
   Typography,
@@ -45,6 +46,7 @@ const ProtocolAccess: React.FC = () => {
   const { protocolId: encodedProtocolId, securityLevel: encodedSecurityLevel } = useParams<{ protocolId: string, securityLevel: string }>();
   const protocolId = decodeURIComponent(encodedProtocolId);
   const securityLevel = Number(decodeURIComponent(encodedSecurityLevel));
+  const labelAccess = parseActionLabelPermission(securityLevel, protocolId);
   const history = useHistory<LocationState>();
   const { managers, settings, adminOriginator } = useContext(WalletContext);
 

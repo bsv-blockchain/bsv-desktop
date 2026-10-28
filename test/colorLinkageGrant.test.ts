@@ -1,3 +1,4 @@
+import { KeyDeriver, PrivateKey as EcpmTestPrivateKey } from '@bsv/sdk'
 /**
  * Holder-send linkage grant policy (D20, contract §5 "recipient output").
  *
@@ -178,7 +179,7 @@ describe('PermissionQueueManager.approveColorLinkage', () => {
     // (the validated list), so a stand-in module publishes them.
     queue.enabledPermissionModules = ['color']
     queue.setPermissionsModuleHelpers(id => (id === 'color' ? colorStandIn : undefined), new Map())
-    queue.createPermissionsManager({} as any, ctx([{ url: 'https://ov.example', identityKey: K }]))
+    queue.createPermissionsManager({ keyDeriver: new KeyDeriver(new EcpmTestPrivateKey(17)) } as any, ctx([{ url: 'https://ov.example', identityKey: K }]))
     pm = { grantPermission: vi.fn(async () => {}), denyPermission: vi.fn(async () => {}) }
     queue.setPermissionsManager(pm)
   })
@@ -281,14 +282,14 @@ describe('PermissionQueueManager.approveColorLinkage', () => {
   test('overlay keys come from the color module, not from settings', async () => {
     // a build without the color module: the configured overlay grants nothing
     queue.enabledPermissionModules = []
-    queue.createPermissionsManager({} as any, ctx([{ url: 'https://ov.example', identityKey: K }]))
+    queue.createPermissionsManager({ keyDeriver: new KeyDeriver(new EcpmTestPrivateKey(17)) } as any, ctx([{ url: 'https://ov.example', identityKey: K }]))
     queue.setPermissionsManager(pm)
     await request('r1', linkage('app.example'))
     expect((queue.getSnapshot().protocolRequests[0] as any).colorLinkage).toBeUndefined()
   })
 
   test('without a wallet context no linkage request matches', async () => {
-    queue.createPermissionsManager({} as any)
+    queue.createPermissionsManager({ keyDeriver: new KeyDeriver(new EcpmTestPrivateKey(17)) } as any)
     queue.setPermissionsManager(pm)
     await request('r1', linkage('app.example'))
     expect((queue.getSnapshot().protocolRequests[0] as any).colorLinkage).toBeUndefined()

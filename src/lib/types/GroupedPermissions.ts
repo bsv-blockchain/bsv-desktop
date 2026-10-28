@@ -23,6 +23,7 @@ export interface CertificateAccess {
 }
 
 export interface GroupedPermissions {
+  description?: string;
   spendingAuthorization?: SpendingAuthorization;
   protocolPermissions?: ProtocolPermission[];
   basketAccess?: BasketAccess[];

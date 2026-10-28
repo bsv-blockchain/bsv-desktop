@@ -1,3 +1,4 @@
+import { parseActionLabelPermission } from '../../utils/actionLabelPermission';
 import { useState, useEffect, useContext } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Chip, Avatar, Stack, Typography, Divider, Box } from '@mui/material'
@@ -79,6 +80,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
   }
 
   const { t } = useTranslation()
+  const labelAccess = parseActionLabelPermission(securityLevel, protocolID);
   const [protocolName, setProtocolName] = useState(protocolID)
   const [iconURL, setIconURL] = useState(deterministicImage(protocolID))
   const [description, setDescription] = useState(t('proto_chip_description_not_found'))
@@ -88,7 +90,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
   const registrant = new RegistryClient(managers.permissionsManager, undefined, adminOriginator)
 
   useEffect(() => {
-    const cacheKey = `protocolInfo_${protocolID}_${securityLevel}`
+    const cacheKey = `protocolInfo_${labelAccess ? `${labelAccess.title}: ${labelAccess.label}` : protocolID}_${securityLevel}`
 
     const fetchAndCacheData = async () => {
       // Try to load data from cache
@@ -104,7 +106,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
         // Resolve a Protocol info from id and security level
         const certifiers = settings.trustSettings.trustedCertifiers.map(x => x.identityKey)
         const results = await registrant.resolve('protocol', {
-          protocolID: [securityLevel as SecurityLevel, protocolID],
+          protocolID: [securityLevel as SecurityLevel, labelAccess?.metadataProtocol ?? protocolID],
           registryOperators: certifiers
         })
 
@@ -121,7 +123,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
         const trusted = results[mostTrustedIndex]
 
         if (!trusted) {
-          const key = `${securityLevel}:${protocolID}`
+          const key = `${securityLevel}:${labelAccess ? `${labelAccess.title}: ${labelAccess.label}` : protocolID}`
           if (!missingTrustedProtocolLoggedRef.current.has(key)) {
             missingTrustedProtocolLoggedRef.current.add(key)
             console.debug('ProtoChip: No trusted protocol found for protocolID:', protocolID, 'securityLevel:', securityLevel)
@@ -234,7 +236,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }}>
-                {protocolID}
+                {labelAccess ? `${labelAccess.title}: ${labelAccess.label}` : protocolID}
               </span>
             </div>
           }
@@ -257,7 +259,7 @@ const ProtoChip: React.FC<ProtoChipProps> = ({
               whiteSpace: 'nowrap'
             }}
           >
-            {description || t('proto_chip_description_not_found')}
+            {labelAccess?.description || description || t('proto_chip_description_not_found')}
           </Typography>
         </Box>
       </Stack>

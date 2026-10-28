@@ -1,3 +1,4 @@
+import { KeyDeriver, PrivateKey as EcpmTestPrivateKey } from '@bsv/sdk'
 /**
  * Registration of the BRC-207 color module and its lifecycle (Task 12).
  *
@@ -61,7 +62,7 @@ const K2 = new PrivateKey(7).toPublicKey().toString()
 const IDENTITY = '02' + '11'.repeat(32)
 const B = '02' + 'ab'.repeat(32)
 const B2 = '03' + 'ef'.repeat(32)
-const wallet = {} as any
+const wallet = { keyDeriver: new KeyDeriver(new EcpmTestPrivateKey(17)) } as any
 
 /** `local`: null = remote storage selected at build; else the live answer. */
 const ctx = (overlays: MandalaOverlaySetting[], local: (() => boolean) | null = () => true): PermissionModuleContext => ({
@@ -455,7 +456,7 @@ describe('real module behind the real manager', () => {
     queue.on('snapshot', s => {
       for (const item of s.protocolRequests) if (!protocolPrompts.includes(item)) protocolPrompts.push(item)
     })
-    pm = queue.createPermissionsManager(fakeWallet as any, ctx(overlays, local))
+    pm = queue.createPermissionsManager({ ...fakeWallet, keyDeriver: new KeyDeriver(new EcpmTestPrivateKey(17)) } as any, ctx(overlays, local))
     queue.setPermissionsManager(pm)
     return pm
   }

@@ -1,3 +1,4 @@
+import SessionAccessList from '../../../components/SessionAccessList'
 import { useContext, useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
 import { Box, Button, IconButton, MenuItem, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
@@ -12,7 +13,8 @@ const networks = { main: 'Mainnet', test: 'Testnet', ttn: 'TeraTestNet', tstn: '
 const row = { display: 'flex', alignItems: 'center', gap: 2, p: 2.5, width: '100%', borderRadius: 2.5, color: 'text.primary', textAlign: 'left', justifyContent: 'flex-start' }
 
 function SettingsLink({ to, icon: Icon, title, description }: { to: string; icon: typeof BackupOutlined; title: string; description: string }) {
-  return <Button component={RouterLink} to={to} sx={row}><Icon sx={{ color: 'text.secondary' }} /><Box sx={{ flex: 1 }}><Typography variant="body2" fontWeight={600}>{title}</Typography><Typography variant="caption" color="text.secondary">{description}</Typography></Box><ArrowForwardRounded sx={{ fontSize: 18, color: 'text.secondary' }} /></Button>
+  return <Button component={RouterLink} to={to} sx={row}><Icon sx={{ color: 'text.secondary' }} /><Box sx={{ flex: 1 }}><Typography variant="body2" fontWeight={600}>{title}</Typography><Typography variant="caption" color="text.secondary">{description}</Typography>
+      <SessionAccessList /></Box><ArrowForwardRounded sx={{ fontSize: 18, color: 'text.secondary' }} /></Button>
 }
 
 export default function Settings() {

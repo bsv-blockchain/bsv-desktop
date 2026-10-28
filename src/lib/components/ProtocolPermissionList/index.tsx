@@ -135,7 +135,7 @@ function groupPermissionsByApp(tokens: PermissionToken[]): AppPermissionGroup[] 
 
     const list = map.get(key) ?? [];
     // Only add if this counterparty hasn't already been seen for the app
-    if (!list.some((p) => p.counterparty === token.counterparty)) {
+    if (!list.some((p) => p.txid === token.txid && p.outputIndex === token.outputIndex)) {
       list.push(token);
       map.set(key, list);
     }
@@ -169,7 +169,7 @@ function groupPermissionsByProtocol(tokens: PermissionToken[]): ProtocolPermissi
     }
 
     // Deduplicate by counterparty
-    if (!entry.permissions.some((p) => p.counterparty === token.counterparty)) {
+    if (!entry.permissions.some((p) => p.txid === token.txid && p.outputIndex === token.outputIndex)) {
       entry.permissions.push(token);
     }
   });

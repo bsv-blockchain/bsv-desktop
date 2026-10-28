@@ -1,3 +1,4 @@
+import SessionAccessList from '../../../components/SessionAccessList';
 import React, { useState, useEffect, useContext } from 'react';
 import { Typography, IconButton, Grid, Tab, Tabs, Box, CircularProgress, Button } from '@mui/material';
 import { useHistory, useParams } from 'react-router-dom';
@@ -130,7 +131,8 @@ const AppAccess: React.FC = () => {
     <Box>
       <Grid container spacing={3} direction='column' sx={{ p: 2 }}>
         <Grid item>
-          <PageHeader
+          <SessionAccessList originator={originator.replace(/^https?:\/\//, '')} />
+      <PageHeader
             history={history}
             title={appData.name}
             subheading={

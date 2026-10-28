@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { KeyDeriver, PrivateKey } from '@bsv/sdk'
+import { KeyDeriver, PrivateKey, ProtoWallet } from '@bsv/sdk'
 vi.mock('../src/lib/WalletContext', () => ({ DEFAULT_PERMISSIONS_CONFIG: {} }))
 import { PermissionQueueManager } from '../src/lib/services/PermissionQueueManager'
 
@@ -12,14 +12,19 @@ test('the production queue installs ECPM without changing the ordinary key path 
   const keyDeriver = new KeyDeriver(new PrivateKey(17))
   const off = queue.ecpmSession.subscribe(() => {})
   try {
-    const manager = queue.createPermissionsManager({ keyDeriver } as any)
+    const wallet = new ProtoWallet(keyDeriver)
+    wallet.listOutputs = async () => ({ totalOutputs: 0, outputs: [] })
+    vi.stubGlobal('fetch', async () => new Response('{}', { status: 404 }))
+    const manager = queue.createPermissionsManager(wallet as any)
     queue.setPermissionsManager(manager)
     const point = new PrivateKey(31).toPublicKey().toString()
     const call = (operation: string, point: string) => ({ protocolID: [2, `p ecpm ${operation} ${point} mental poker deal`] as [2, string], keyID: 'deck', counterparty: 'self' })
     const pending = manager.getPublicKey(call('apply', point), 'game.example')
-    const prompt = queue.ecpmSession.getSnapshot()
-    expect(prompt?.request.originator).toBe('game.example')
-    prompt!.answer(true)
+    await vi.waitFor(() => expect(queue.getSnapshot().protocolRequests).toHaveLength(1))
+    const prompt = queue.getSnapshot().protocolRequests[0]
+    expect(prompt.originator).toBe('game.example')
+    expect(prompt.protocolID).toBe('p ecpm mental poker deal')
+    await manager.grantPermission({ requestID: prompt.requestID, sessionDurationMs: 1_800_000 })
     const masked = await pending
     expect(masked.publicKey).not.toBe(point)
     expect((await manager.getPublicKey(call('remove', masked.publicKey), 'game.example')).publicKey).toBe(point)

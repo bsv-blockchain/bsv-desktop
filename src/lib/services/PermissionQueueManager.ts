@@ -78,6 +78,9 @@ export type CertificateAccessRequest = {
 }
 
 export type ProtocolAccessRequest = {
+  usageType?: string
+  privileged?: boolean
+  actionLabel?: { label: string; operation: 'apply' | 'list' }
   requestID: string
   protocolSecurityLevel: number
   protocolID: string
@@ -139,7 +142,7 @@ const GROUP_COOLDOWN_MS = 5 * 60 * 1000
 const PACT_COOLDOWN_MS = 5 * 60 * 1000
 
 export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents> {
-  readonly ecpmSession = new EcpmSession()
+  readonly ecpmSession = new EcpmSession(() => this._permissionsManager)
 
   // ---- Queue state (previously useState) ----
   private _basketRequests: BasketAccessRequest[] = []
@@ -857,6 +860,9 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       protocolID: protocolNameString,
       counterparty,
       originator,
+      usageType: args.usageType,
+      privileged: args.privileged,
+      actionLabel: args.actionLabel,
       description: reason,
       renewal,
       type: permissionType,

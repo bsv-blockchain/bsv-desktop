@@ -49,6 +49,8 @@ import { defaultNetworkSettingsMap, type NetworkSettings, type NetworkSettingsMa
 // -----
 
 export interface PermissionsConfig {
+  differentiateActionLabelOperations?: boolean
+  preferAppPermissionGroups?: boolean
   differentiatePrivilegedOperations: boolean;
   seekBasketInsertionPermissions: boolean;
   seekBasketListingPermissions: boolean;
@@ -84,8 +86,10 @@ export const DEFAULT_PERMISSIONS_CONFIG: PermissionsConfig = {
   seekPermissionsForIdentityResolution: false,
   seekPermissionsForKeyLinkageRevelation: false,
   seekPermissionsForPublicKeyRevelation: false,
-  seekPermissionWhenApplyingActionLabels: false,
-  seekPermissionWhenListingActionsByLabel: false,
+  differentiateActionLabelOperations: true,
+  preferAppPermissionGroups: true,
+  seekPermissionWhenApplyingActionLabels: true,
+  seekPermissionWhenListingActionsByLabel: true,
   seekProtocolPermissionsForEncrypting: false,
   seekProtocolPermissionsForHMAC: false,
   // Signatures can authorise actions outside the wallet, so apps must ask first.

@@ -1,7 +1,7 @@
 /**
  * Consent prompt for the color permission module (BRC-207): `color_send`,
- * `color_signature`, `color_access`, `color_relinquish` and
- * `color_receive_offline` (contract §2.5).
+ * `color_signature`, `color_access` and `color_relinquish` (contract §2.5,
+ * Revision 3: offline receipts are credited by the host runtime, not prompted).
  *
  * The message is turned into a `ColorConsentView` BEFORE anything is queued.
  * A message the view cannot present faithfully (`InvalidColorRequestError`,
@@ -58,12 +58,10 @@ const descriptions: Record<ColorConsentView['type'], string> = {
   color_send: 'This app wants to create a token transaction. Review every asset, output and fee before approving.',
   color_signature: 'This app wants this wallet to sign token inputs of a transaction. Review every asset before approving. This approves these signatures only.',
   color_access: 'This app wants to read your token holdings. Approval lasts for 30 minutes.',
-  color_relinquish: 'This app wants to remove this token holding from your wallet.',
-  color_receive_offline: 'This app wants to add tokens to your wallet before the overlay has admitted them.'
+  color_relinquish: 'This app wants to remove this token holding from your wallet.'
 }
 
-const HANDOFF_NOTE = 'This wallet signs the transaction and hands it to the recipient, who submits it.'
-const OFFLINE_NOTICE = 'Settles when the Mandala overlay admits it'
+const HANDOFF_NOTE = 'This wallet signs the transaction and hands it to the recipient. It is submitted to the overlay once the recipient has it.'
 
 const boxSx = { p: 2, bgcolor: 'action.hover', border: 1, borderColor: 'divider', borderRadius: 2 } as const
 const monoSx = { fontFamily: 'monospace', overflowWrap: 'anywhere' } as const
@@ -86,7 +84,7 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
 
 /** The prompt body. Presentational, no Dialog, so it renders on the server. */
 export const ColorConsentDetails: React.FC<{ view: ColorConsentView }> = ({ view }) => {
-  const { satoshis, access, relinquish, offline, deploy } = view
+  const { satoshis, access, relinquish, deploy } = view
   return (
     <Stack spacing={2.5}>
       <Typography id="color-permission-description" color="text.secondary">{descriptions[view.type]}</Typography>
@@ -170,31 +168,6 @@ export const ColorConsentDetails: React.FC<{ view: ColorConsentView }> = ({ view
           <Typography variant="caption" sx={monoSx}>Asset ID: {relinquish.assetId}</Typography>
           <Typography variant="caption" color="text.secondary" sx={monoSx}>Outpoint: {relinquish.outpoint}</Typography>
         </Section>
-      )}
-
-      {offline && (
-        <>
-          <Alert severity="warning">{OFFLINE_NOTICE}</Alert>
-          <Section title="Tokens received">
-            {offline.outputs.map((output, i) => (
-              <Row key={`${output.outputIndex}-${i}`} label={`Output ${output.outputIndex}`} value={output.amount} strong />
-            ))}
-            <Row label="Unsettled transactions" value={String(offline.unsettledTransactions)} />
-            <Typography variant="caption" sx={monoSx}>Asset ID: {offline.assetId}</Typography>
-          </Section>
-          <Section title={offline.signers.length === 1 ? 'Signer' : 'Signers'}>
-            {offline.signers.map((key, i) => (
-              <Typography key={`${key}-${i}`} variant="caption" sx={monoSx}>{key}</Typography>
-            ))}
-          </Section>
-          {offline.profiles.length > 0 && (
-            <Section title="Profiles">
-              {offline.profiles.map((profile, i) => (
-                <Typography key={`${profile}-${i}`} variant="caption" sx={monoSx}>{profile}</Typography>
-              ))}
-            </Section>
-          )}
-        </>
       )}
     </Stack>
   )

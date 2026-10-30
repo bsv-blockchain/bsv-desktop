@@ -5,8 +5,8 @@
  * (`internalizeAction`), on every non-delayed `createAction`/`sendWith`, and from
  * the monitor worker's `TaskSendWaiting`. A 1Color transaction must reach the
  * network only after the color module has a verified overlay admission for it
- * (`module.isSettled(txid)`), so every such broadcast is held until the renderer
- * releases it.
+ * (the renderer's host ledger records it `settled`, design §9 B7), so every
+ * such broadcast is held until the renderer releases it.
  *
  * Three pieces, one host-owned journal:
  * 1. `ColorGuardJournal` - `<root>/<identityKey>-<chain>/<txid>.held|.released`,
@@ -25,7 +25,7 @@
  *    BEEF the network sees.
  *
  * Release (`registerColorGuardIpc`): the renderer drain calls
- * `color-guard:release` only for a txid the module reports settled. Main writes
+ * `color-guard:release` only for a txid the host ledger records settled. Main writes
  * `<txid>.released`, un-parks the req, posts it (through both layers, which now
  * pass it) and deletes `<txid>.held`. A crash anywhere before the delete leaves
  * `.held`, so the next drain redoes the (idempotent) steps.

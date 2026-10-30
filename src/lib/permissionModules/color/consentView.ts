@@ -35,7 +35,6 @@ export type ColorConsentType =
   | 'color_signature'
   | 'color_access'
   | 'color_relinquish'
-  | 'color_receive_offline'
 
 export interface ColorConsentView {
   type: ColorConsentType
@@ -62,13 +61,6 @@ export interface ColorConsentView {
   lockTime?: number
   access?: { basket?: string, labels?: string[], assetId?: string, role?: string }
   relinquish?: { assetId: string, role: string, outpoint: string }
-  offline?: {
-    assetId: string
-    outputs: Array<{ outputIndex: number, amount: string }>
-    unsettledTransactions: number
-    signers: string[]
-    profiles: string[]
-  }
 }
 
 /** A consent message the view cannot present faithfully. Matched by `.name` (D22). */
@@ -93,8 +85,7 @@ const TITLES: Record<ColorConsentType, string> = {
   color_send: 'Approve token transaction',
   color_signature: 'Approve token signature',
   color_access: 'Share token holdings',
-  color_relinquish: 'Remove a token holding',
-  color_receive_offline: 'Accept tokens offline (pending settlement)'
+  color_relinquish: 'Remove a token holding'
 }
 const HANDOFF_TITLE = 'Approve token hand-over'
 
@@ -328,34 +319,6 @@ function readAccess (m: Json): NonNullable<ColorConsentView['access']> {
   return access
 }
 
-function readOffline (m: Json, displays: Map<string, AssetDisplay>): NonNullable<ColorConsentView['offline']> {
-  const id = assetId(m.assetId, 'assetId')
-  const display = displays.get(id)
-  const outputs = arr(m.outputs, 'outputs', MAX_DESTINATIONS).map((raw, i) => {
-    const p = `outputs[${i}]`
-    const o = obj(raw, p)
-    return {
-      outputIndex: uint(o.outputIndex, `${p}.outputIndex`, UINT32_MAX),
-      amount: formatTokenAmount(outputAmount(o.amount, `${p}.amount`), display)
-    }
-  })
-  // Contract §2.5: `signer` in identity mode, `signers[]` otherwise; exactly one.
-  const hasSigner = has(m, 'signer')
-  const hasSigners = has(m, 'signers')
-  if (hasSigner === hasSigners) fail('signer', 'exactly one of signer or signers must be present')
-  const signers = hasSigner
-    ? [identityKey(m.signer, 'signer')]
-    : arr(m.signers, 'signers').map((k, i) => identityKey(k, `signers[${i}]`))
-  if (signers.length === 0) fail('signers', 'must name at least one signer')
-  return {
-    assetId: id,
-    outputs,
-    unsettledTransactions: uint(m.unsettledTransactions, 'unsettledTransactions'),
-    signers,
-    profiles: strings(m.profiles, 'profiles')
-  }
-}
-
 /** Parses and validates one consent message into what the prompt shows. */
 export function buildColorConsentView (message: string): ColorConsentView {
   let parsed: unknown
@@ -403,9 +366,6 @@ export function buildColorConsentView (message: string): ColorConsentView {
         role: role(m.role, 'role'),
         outpoint: outpoint(m.outpoint, 'outpoint')
       }
-      break
-    case 'color_receive_offline':
-      view.offline = readOffline(m, displays)
       break
   }
   return view

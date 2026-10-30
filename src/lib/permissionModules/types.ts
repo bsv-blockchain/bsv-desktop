@@ -33,6 +33,23 @@ export type PermissionModuleContext = {
    * rejection, or any value but `true`, counts as not local.
    */
   isLocalStorageActive: () => Promise<boolean>
+  /**
+   * The permissions manager of this build, bound to the admin originator;
+   * undefined until it exists. The host Mandala runtime internalizes receipts
+   * through it so the color module admits them (design §9 B7).
+   */
+  managedWallet?: () => WalletInterface | undefined
+  /**
+   * The host's MessageBox client right now (built after the wallet, replaced
+   * when its URL changes); undefined while MessageBox is off.
+   */
+  messageBox?: () => HostMessageBox | undefined
+}
+
+/** The MessageBox slice the host Mandala runtime uses (PeerPayClient fits). */
+export type HostMessageBox = {
+  listMessages: (a: { messageBox: string, acceptPayments?: boolean }) => Promise<unknown>
+  acknowledgeMessage: (a: { messageIds: string[] }) => Promise<unknown>
 }
 
 export type PermissionModuleFactoryArgs = {

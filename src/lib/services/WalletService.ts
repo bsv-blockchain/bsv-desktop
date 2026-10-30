@@ -859,6 +859,8 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
           if (!storageManager.isAvailable()) await storageManager.makeAvailable()
           return isLocalStoreActive(storageManager)
         },
+        // Read per use: the client is built below and replaced on a URL change.
+        messageBox: () => (this._useMessageBox ? this.peerPay.getSnapshot().peerPayClient ?? undefined : undefined),
       })
       this.permissionQueue.setPermissionsManager(permissionsManager)
 

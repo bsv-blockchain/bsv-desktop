@@ -39,6 +39,17 @@ export interface ElectronAPI {
     keys: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', prefix: string) => Promise<string[]>;
   };
   /**
+   * Mandala host store in the main process (electron/colorStore.ts,
+   * design §9 B7): the host ledger and the @bsv/mandala journals, namespaced
+   * per identity and chain. Keys must start with `mandala.`.
+   */
+  mandalaStore: {
+    get: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string) => Promise<string | undefined>;
+    set: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string, value: string) => Promise<void>;
+    delete: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string) => Promise<void>;
+    keys: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', prefix: string) => Promise<string[]>;
+  };
+  /**
    * 1Color broadcast guard (electron/colorBroadcastGuard.ts, contract §8.2): the
    * main process and the monitor worker hold every unreleased tx with a BRC-162
    * output; the renderer releases a txid once the color module reports it settled.

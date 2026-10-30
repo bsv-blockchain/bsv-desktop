@@ -109,15 +109,14 @@ describe('createColorConsentGate', () => {
     expect(prompt).toHaveBeenCalledTimes(1)
   })
 
-  test('signature, relinquish and offline-receive approvals never grant reads', async () => {
+  test('signature and relinquish approvals never grant reads', async () => {
     const { gate, prompt } = setup()
     expect(await gate('app', signature())).toBe(true)
     expect(await gate('app', relinquish())).toBe(true)
-    expect(await gate('app', receiveOffline())).toBe(true)
     await expect(gate('app', access({ seekPermission: false }))).rejects.toMatchObject({
       name: 'ColorPermissionRequiredError'
     })
-    expect(prompt).toHaveBeenCalledTimes(3)
+    expect(prompt).toHaveBeenCalledTimes(2)
   })
 
   test('a read grant never satisfies a spend', async () => {
@@ -146,9 +145,6 @@ describe('createColorConsentGate', () => {
     )
     await expect(gate('app', relinquish({ seekPermission: false }))).rejects.toThrow(
       'Colored Tokens spending permission is required'
-    )
-    await expect(gate('app', receiveOffline({ seekPermission: false }))).rejects.toThrow(
-      'Colored Tokens receive permission is required'
     )
     expect(prompt).not.toHaveBeenCalled()
   })
@@ -261,11 +257,11 @@ describe('createColorConsentGate', () => {
     expect(prompt).not.toHaveBeenCalled()
   })
 
-  test('receive-offline prompts every time', async () => {
+  test('color_receive_offline is no longer a consent type (Revision 3): declined without a prompt', async () => {
     const { gate, prompt } = setup()
-    expect(await gate('app', receiveOffline())).toBe(true)
-    expect(await gate('app', receiveOffline())).toBe(true)
-    expect(prompt).toHaveBeenCalledTimes(2)
+    expect(await gate('app', receiveOffline())).toBe(false)
+    expect(await gate('app', receiveOffline({ seekPermission: false }))).toBe(false)
+    expect(prompt).not.toHaveBeenCalled()
   })
 
   test('only a literal true approves; a throwing prompt is a denial and can be retried', async () => {

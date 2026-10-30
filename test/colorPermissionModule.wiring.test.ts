@@ -2,11 +2,14 @@
  * Registration of the BRC-207 color module and its lifecycle (Task 12).
  *
  * Cases pinned here:
- * - composition: no wallet context throws; the attested and Mandala issuer
- *   profiles are registered; the configured overlay is passed through; an
- *   invalid or duplicate overlay row is skipped instead of bricking wallet
- *   open; none configured registers the Mandala profile with no overlays
- *   (fail closed, S5); the store is namespaced by identity and chain;
+ * - composition: no wallet context throws; only the Mandala issuer-v1
+ *   profile is registered (Revision 3: no attested profile), with the host
+ *   ledger and the configured overlay; an invalid or duplicate overlay row is
+ *   skipped instead of bricking wallet open; none configured registers the
+ *   Mandala profile with no overlays and no runtime (fail closed, S5); the
+ *   stores are namespaced by identity and chain; the lib is configured with
+ *   the first overlay and the host store, and reset on dispose;
+ * - the drain releases only what the host ledger records `settled`;
  * - lifecycle: a rebuild and a close dispose the previous modules exactly
  *   once (scheduler stopped, `online` listener removed, grants dropped,
  *   module disposed); a factory that throws mid-build leaks nothing;
@@ -48,8 +51,8 @@ vi.mock('../src/lib/WalletContext', () => ({ DEFAULT_PERMISSIONS_CONFIG: DEFAULT
 vi.mock('@bsv/btms-permission-module-ui', () => ({ BtmsPermissionPrompt: () => null }))
 
 import { PrivateKey } from '@bsv/sdk'
-import { ATTESTED_PROFILE_ID } from '@bsv/color-permission-module'
 import { MANDALA_PROFILE_ID, createMandalaOverlayProvider } from '@bsv/mandala/profile'
+import { createHostLedger, memoryStorage } from '@bsv/mandala'
 import { colorPermissionModule, createHostColorModule, ColorLocalStorageRequiredError } from '../src/lib/permissionModules/color'
 import { colorLinkageOverlayKeys } from '../src/lib/permissionModules/color/overlayKeys'
 import { PermissionQueueManager } from '../src/lib/services/PermissionQueueManager'
@@ -91,9 +94,8 @@ function memoryColorStore () {
 function spyDeps () {
   const module = {
     capabilities: { 'brc207-color': '4' },
-    settle: vi.fn(async () => ({ results: [] })),
+    markSettled: vi.fn(async (_txid: string) => {}),
     dispose: vi.fn(),
-    isSettled: vi.fn(async (_txid: string) => false),
     handleRequest: vi.fn(async (_req: any, _next: any) => 'handled'),
     onRequest: vi.fn(async (req: any) => ({ args: req.args })),
     onResponse: vi.fn(async (res: unknown) => res)
@@ -109,7 +111,13 @@ function spyDeps () {
     })
   }
   const drain = { drain: vi.fn(async () => ({ released: [] as string[] })) }
+  const mandalaStorage = memoryStorage()
+  const ledger = createHostLedger(mandalaStorage)
+  const runtime = { tick: vi.fn(async () => ({ results: [] as any[], received: [] as any[], failed: [] as any[] })) }
   return {
+    ledger,
+    runtime,
+    mandalaStorage,
     module,
     scheduler,
     guard,
@@ -118,11 +126,14 @@ function spyDeps () {
     guardBridge: vi.fn(() => guard as any),
     createReleaseDrain: vi.fn((_o: any) => drain),
     createColorModule: vi.fn((_o: any) => module as any),
-    createAttestedProfile: vi.fn(() => ({ id: ATTESTED_PROFILE_ID }) as any),
     createMandalaProfile: vi.fn((_o: any) => ({ id: MANDALA_PROFILE_ID }) as any),
     // the real one: it is what validates a configured overlay row
     createMandalaOverlayProvider: vi.fn((o: any) => createMandalaOverlayProvider(o)),
     createStore: vi.fn((_i: string, _c: string) => ({}) as any),
+    createMandalaStorage: vi.fn((_i: string, _c: string) => mandalaStorage),
+    createHostLedger: vi.fn((_s: any) => ledger),
+    configureMandala: vi.fn((_e: any) => {}),
+    createRuntime: vi.fn((_o: any) => runtime),
     createDefaultProvider: vi.fn((_o: any) => ({ id: 'ship' }) as any),
     startScheduler: vi.fn((_o: any) => scheduler)
   }
@@ -136,20 +147,26 @@ describe('createHostColorModule', () => {
     expect(() => createHostColorModule({ wallet, adminOriginator: 'admin' })).toThrow('The 1Color module needs the wallet identity and network')
   })
 
-  test('registers attested + Mandala issuer profiles with the configured overlay', () => {
+  test('registers only the Mandala issuer-v1 profile, with the host ledger and the configured overlay', () => {
     const deps = spyDeps()
     const m = createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([{ url: 'https://ov.example', identityKey: K }]) }, deps)
     // a storage-mode guard around the module: everything else passes through
     expect(m.capabilities).toEqual({ 'brc207-color': '4' })
     expect(colorLinkageOverlayKeys(m)).toEqual([K])
     const opts = deps.createColorModule.mock.calls[0][0]
-    expect(Object.keys(opts.profiles).sort()).toEqual([ATTESTED_PROFILE_ID, MANDALA_PROFILE_ID].sort())
+    expect(Object.keys(opts.profiles)).toEqual([MANDALA_PROFILE_ID])
     expect(opts.wallet).toBe(wallet)
     expect(opts.provider).toEqual({ id: 'ship' })
     expect(opts.store).toBe(deps.createStore.mock.results[0].value)
     expect(typeof opts.requestTokenAccess).toBe('function')
-    expect(deps.createMandalaProfile).toHaveBeenCalledWith({ overlays: [{ url: 'https://ov.example', identityKey: K }] })
+    expect(deps.createMandalaProfile).toHaveBeenCalledWith({ overlays: [{ url: 'https://ov.example', identityKey: K }], ledger: deps.ledger })
     expect(deps.createStore).toHaveBeenCalledWith(IDENTITY, 'test')
+    expect(deps.createMandalaStorage).toHaveBeenCalledWith(IDENTITY, 'test')
+    expect(deps.createHostLedger).toHaveBeenCalledWith(deps.mandalaStorage)
+    expect(deps.configureMandala).toHaveBeenCalledWith({ storage: deps.mandalaStorage, overlayUrl: 'https://ov.example', overlayIdentityKey: K })
+    const ro = deps.createRuntime.mock.calls[0][0]
+    expect(ro).toMatchObject({ ledger: deps.ledger, overlayIdentityKey: K })
+    expect(Object.keys(opts).sort()).toEqual(['profiles', 'provider', 'requestTokenAccess', 'store', 'wallet'])
     expect(deps.createDefaultProvider).toHaveBeenCalledWith({ chain: 'test' })
     expect(deps.startScheduler).toHaveBeenCalledTimes(1)
   })
@@ -157,10 +174,13 @@ describe('createHostColorModule', () => {
   test('no configured overlay registers the Mandala profile with none (fail closed)', () => {
     const deps = spyDeps()
     createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([]) }, deps)
-    expect(deps.createMandalaProfile).toHaveBeenCalledWith({ overlays: [] })
+    expect(deps.createMandalaProfile).toHaveBeenCalledWith({ overlays: [], ledger: deps.ledger })
+    // the lib's globals are cleared, so no earlier wallet's overlay is used
+    expect(deps.configureMandala).toHaveBeenCalledWith({ storage: deps.mandalaStorage, overlayUrl: '', overlayIdentityKey: '' })
+    expect(deps.createRuntime).not.toHaveBeenCalled()
     const deps2 = spyDeps()
     createHostColorModule({ wallet, adminOriginator: 'admin', context: { ...ctx([]), settings: {} as any } }, deps2)
-    expect(deps2.createMandalaProfile).toHaveBeenCalledWith({ overlays: [] })
+    expect(deps2.createMandalaProfile).toHaveBeenCalledWith({ overlays: [], ledger: deps2.ledger })
   })
 
   test('an invalid or duplicate overlay row is skipped, not fatal', () => {
@@ -176,8 +196,12 @@ describe('createHostColorModule', () => {
       ])
     }, deps)
     expect(deps.createMandalaProfile).toHaveBeenCalledWith({
-      overlays: [{ url: 'https://ov.example', identityKey: K }, { url: 'https://ov2.example', identityKey: K2 }]
+      overlays: [{ url: 'https://ov.example', identityKey: K }, { url: 'https://ov2.example', identityKey: K2 }],
+      ledger: deps.ledger
     })
+    // the single-overlay lib runs against the first usable overlay
+    expect(deps.configureMandala).toHaveBeenCalledWith(expect.objectContaining({ overlayUrl: 'https://ov.example', overlayIdentityKey: K }))
+    expect(deps.createRuntime.mock.calls[0][0].overlayIdentityKey).toBe(K)
   })
 
   test('the linkage policy gets the same validated overlay keys as the profile', () => {
@@ -219,10 +243,9 @@ describe('createHostColorModule', () => {
       await expectRefusing(m, deps)
       // no BRC-207 capability: an app must not think it can use p color here
       expect(m.capabilities ?? {}).toEqual({})
-      expect(await m.isSettled('ab'.repeat(32))).toBe(false)
-      expect(await m.settle()).toEqual({ results: [] })
+      await expect(m.markSettled('ab'.repeat(32))).resolves.toBeUndefined()
       expect(colorLinkageOverlayKeys(m)).toEqual([])
-      for (const f of ['createColorModule', 'createStore', 'createDefaultProvider', 'startScheduler', 'createReleaseDrain', 'guardBridge'] as const) {
+      for (const f of ['createColorModule', 'createStore', 'createMandalaStorage', 'createHostLedger', 'configureMandala', 'createRuntime', 'createDefaultProvider', 'startScheduler', 'createReleaseDrain', 'guardBridge'] as const) {
         expect(deps[f]).not.toHaveBeenCalled()
       }
       colorPermissionModule.dispose!(m)
@@ -248,8 +271,8 @@ describe('createHostColorModule', () => {
         await expect(m.onRequest(req)).rejects.toMatchObject(refused)
         expect(d.module.handleRequest).not.toHaveBeenCalled()
         expect(d.module.onRequest).not.toHaveBeenCalled()
+        // no overlay configured: no runtime, the tick only drains
         expect(await d.startScheduler.mock.calls[0][0].settle()).toEqual({ results: [] })
-        expect(d.module.settle).not.toHaveBeenCalled()
         expect(m.capabilities).toEqual({})
         colorPermissionModule.dispose!(m)
       }
@@ -271,50 +294,73 @@ describe('createHostColorModule', () => {
       expect(deps.module.handleRequest).toHaveBeenCalledTimes(1)
       expect(deps.module.onRequest).not.toHaveBeenCalled()
       expect(colorLinkageOverlayKeys(m)).toEqual([])
-      expect(await deps.startScheduler.mock.calls[0][0].settle()).toEqual({ results: [] })
-      expect(deps.module.settle).not.toHaveBeenCalled()
+      // the runtime gets the live storage check (it skips its steps itself)
+      const { isActive } = deps.createRuntime.mock.calls[0][0]
+      expect(await isActive()).toBe(false)
 
       local = true
+      expect(await isActive()).toBe(true)
       expect(await m.onRequest(req)).toEqual({ args: req.args })
       expect(m.capabilities).toEqual({ 'brc207-color': '4' })
       expect(colorLinkageOverlayKeys(m)).toEqual([K])
       await deps.startScheduler.mock.calls[0][0].settle()
-      expect(deps.module.settle).toHaveBeenCalledTimes(1)
+      expect(deps.runtime.tick).toHaveBeenCalledTimes(1)
       // the host still drives the real module through the guard
-      deps.module.isSettled.mockResolvedValueOnce(true)
-      expect(await m.isSettled('ab'.repeat(32))).toBe(true)
+      await m.markSettled('ab'.repeat(32))
+      expect(deps.module.markSettled).toHaveBeenCalledWith('ab'.repeat(32))
       colorPermissionModule.dispose!(m)
       expect(deps.module.dispose).toHaveBeenCalledTimes(1)
     })
   })
 
-  test('the scheduler settles as the admin originator', async () => {
+  test('the runtime reaches the managed wallet, MessageBox and markSettled of this build', async () => {
     const deps = spyDeps()
-    createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([]) }, deps)
-    await deps.startScheduler.mock.calls[0][0].settle()
-    expect(deps.module.settle).toHaveBeenCalledWith(undefined, 'admin')
+    const managed = { tag: 'pm' } as any
+    const box = { listMessages: vi.fn(), acknowledgeMessage: vi.fn() }
+    createHostColorModule({
+      wallet,
+      adminOriginator: 'admin',
+      context: { ...ctx([{ url: 'https://ov.example', identityKey: K }]), managedWallet: () => managed, messageBox: () => box }
+    }, deps)
+    const ro = deps.createRuntime.mock.calls[0][0]
+    expect(ro.wallet()).toBe(managed)
+    expect(ro.messageBox()).toBe(box)
+    await ro.markSettled('cd'.repeat(32))
+    expect(deps.module.markSettled).toHaveBeenCalledWith('cd'.repeat(32))
   })
 
-  test('every settle tick ends with a release drain (contract §8.2)', async () => {
+  test('the drain releases only what the host ledger records settled (never color.v1.* keys)', async () => {
     const deps = spyDeps()
-    createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([]) }, deps)
+    createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([{ url: 'https://ov.example', identityKey: K }]) }, deps)
     const o = deps.createReleaseDrain.mock.calls[0][0]
     expect(o).toMatchObject({ api: deps.guard, identityKey: IDENTITY, chain: 'test' })
-    deps.module.isSettled.mockResolvedValueOnce(true)
-    expect(await o.isSettled('ab'.repeat(32))).toBe(true)
-    expect(deps.module.isSettled).toHaveBeenCalledWith('ab'.repeat(32))
-
-    const order: string[] = []
-    deps.module.settle.mockImplementation(async () => { order.push('settle'); return { results: [] } })
-    deps.drain.drain.mockImplementation(async () => { order.push('drain'); return { released: [] } })
-    await deps.startScheduler.mock.calls[0][0].settle()
-    expect(order).toEqual(['settle', 'drain'])
+    const settled = 'ab'.repeat(32)
+    const pending = 'cd'.repeat(32)
+    const refused = 'ef'.repeat(32)
+    const at = Date.now()
+    await deps.ledger.put({ v: 1, txid: settled, assetId: `${'11'.repeat(32)}_0`, state: 'settled', outputs: [0], at })
+    await deps.ledger.put({ v: 1, txid: pending, assetId: `${'11'.repeat(32)}_0`, state: 'pending', outputs: [0], at })
+    await deps.ledger.put({ v: 1, txid: refused, assetId: `${'11'.repeat(32)}_0`, state: 'refused', outputs: [0], at })
+    expect(await o.isSettled(settled)).toBe(true)
+    expect(await o.isSettled(pending)).toBe(false)
+    expect(await o.isSettled(refused)).toBe(false)
+    expect(await o.isSettled('12'.repeat(32))).toBe(false)
   })
 
-  test('a failing settle still drains, and the failure reaches the scheduler', async () => {
+  test('every tick runs the runtime, then the release drain (contract §8.2)', async () => {
     const deps = spyDeps()
-    deps.module.settle.mockRejectedValue(new Error('overlay down'))
-    createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([]) }, deps)
+    createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([{ url: 'https://ov.example', identityKey: K }]) }, deps)
+    const order: string[] = []
+    deps.runtime.tick.mockImplementation(async () => { order.push('tick'); return { results: [], received: [], failed: [] } })
+    deps.drain.drain.mockImplementation(async () => { order.push('drain'); return { released: [] } })
+    await deps.startScheduler.mock.calls[0][0].settle()
+    expect(order).toEqual(['tick', 'drain'])
+  })
+
+  test('a failing tick still drains, and the failure reaches the scheduler', async () => {
+    const deps = spyDeps()
+    deps.runtime.tick.mockRejectedValue(new Error('overlay down'))
+    createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([{ url: 'https://ov.example', identityKey: K }]) }, deps)
     await expect(deps.startScheduler.mock.calls[0][0].settle()).rejects.toThrow('overlay down')
     expect(deps.drain.drain).toHaveBeenCalledTimes(1)
   })
@@ -332,19 +378,24 @@ describe('createHostColorModule', () => {
   test('without the guard bridge nothing is released and the module still builds', async () => {
     const deps = spyDeps()
     deps.guardBridge.mockReturnValue(undefined)
-    createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([]) }, deps)
+    createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([{ url: 'https://ov.example', identityKey: K }]) }, deps)
     expect(deps.createReleaseDrain).not.toHaveBeenCalled()
     await deps.startScheduler.mock.calls[0][0].settle()
-    expect(deps.module.settle).toHaveBeenCalledTimes(1)
+    expect(deps.runtime.tick).toHaveBeenCalledTimes(1)
   })
 
-  test('dispose stops the scheduler and disposes the module once', () => {
+  test('dispose stops the scheduler, resets the lib and disposes the module once', () => {
     const deps = spyDeps()
-    const m = createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([]) }, deps)
+    const m = createHostColorModule({ wallet, adminOriginator: 'admin', context: ctx([{ url: 'https://ov.example', identityKey: K }]) }, deps)
     colorPermissionModule.dispose!(m)
     colorPermissionModule.dispose!(m)
     expect(deps.scheduler.stop).toHaveBeenCalledTimes(1)
     expect(deps.module.dispose).toHaveBeenCalledTimes(1)
+    // the closed wallet's store and overlay are no longer the lib's
+    expect(deps.configureMandala).toHaveBeenCalledTimes(2)
+    const reset = deps.configureMandala.mock.calls[1][0]
+    expect(reset).toMatchObject({ overlayUrl: '', overlayIdentityKey: '' })
+    expect(reset.storage).not.toBe(deps.mandalaStorage)
     // an unknown value is ignored
     expect(() => colorPermissionModule.dispose!({})).not.toThrow()
   })
@@ -399,12 +450,24 @@ describe('PermissionQueueManager module lifecycle', () => {
     expect(dispose).toHaveBeenCalledTimes(2)
   })
 
-  test('passes the context to every module', () => {
+  test('passes the context to every module, with this build\'s manager bound to the admin originator', async () => {
     const createModule = vi.fn(() => ({}))
     const queue = setup([{ id: 'x', label: 'x', createModule }])
     const c = ctx([])
-    queue.createPermissionsManager(wallet, c)
-    expect((createModule.mock.calls[0] as any[])[0]).toMatchObject({ wallet, adminOriginator: 'admin.example.com', context: c })
+    const underlying = { getVersion: vi.fn(async () => ({ version: 'v' })) } as any
+    const pm = queue.createPermissionsManager(underlying, c)
+    const args = (createModule.mock.calls[0] as any[])[0]
+    expect(args).toMatchObject({ wallet: underlying, adminOriginator: 'admin.example.com', context: c })
+    const managed = args.context.managedWallet()
+    expect(managed).toBeDefined()
+    const spy = vi.spyOn(pm, 'getVersion')
+    await managed.getVersion({})
+    expect(spy).toHaveBeenCalledWith({}, 'admin.example.com')
+    await managed.getVersion({}, 'other.example')
+    expect(spy).toHaveBeenLastCalledWith({}, 'other.example')
+    // a later build's modules never get this manager
+    queue.createPermissionsManager(underlying, c)
+    expect((createModule.mock.calls[1] as any[])[0].context.managedWallet()).not.toBe(managed)
   })
 
   test('a dispose that throws is logged and the rest still dispose', () => {
@@ -484,7 +547,7 @@ describe('real module behind the real manager', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
-    fakeWindow = Object.assign(new EventTarget(), { electronAPI: { colorStore: memoryColorStore() } })
+    fakeWindow = Object.assign(new EventTarget(), { electronAPI: { colorStore: memoryColorStore(), mandalaStore: memoryColorStore() } })
     vi.stubGlobal('window', fakeWindow)
     prompt = vi.fn(async () => false)
     fakeWallet = {

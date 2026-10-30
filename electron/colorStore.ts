@@ -28,9 +28,26 @@ export const COLOR_STORE_CHANNELS = {
   keys: 'color-store:keys'
 } as const
 
+/**
+ * The Mandala host store (design §9 B7): the host ledger and the
+ * `@bsv/mandala` journals, the same layout under its own root, channels and
+ * key prefix. It is a separate service so the color module store keeps only
+ * `color.v1.` keys; neither is reachable over BRC-100.
+ */
+export const MANDALA_STORE_CHANNELS = {
+  get: 'mandala-store:get',
+  set: 'mandala-store:set',
+  delete: 'mandala-store:delete',
+  keys: 'mandala-store:keys'
+} as const
+
+export const MANDALA_STORE_KEY_PREFIX = 'mandala.'
+
+export type StoreChannels = { get: string, set: string, delete: string, keys: string }
+
 const IDENTITY_RE = /^0[23][0-9a-f]{64}$/
 const CHAINS = new Set(['main', 'test', 'ttn', 'tstn'])
-const KEY_PREFIX = 'color.v1.'
+const COLOR_KEY_PREFIX = 'color.v1.'
 const MAX_KEY_LENGTH = 1024
 const DEFAULT_MAX_VALUE_BYTES = 33_554_432
 const FILE_RE = /^[0-9a-f]{64}\.json$/
@@ -43,10 +60,16 @@ export interface ColorStoreServiceOptions {
   root?: string
   /** Default 32 MiB (33 554 432 UTF-8 bytes). */
   maxValueBytes?: number
+  /** Every key must start with it. Default `color.v1.`. */
+  keyPrefix?: string
 }
 
 export function defaultColorStoreRoot(): string {
   return path.join(os.homedir(), '.bsv-desktop', 'color-store')
+}
+
+export function defaultMandalaStoreRoot(): string {
+  return path.join(os.homedir(), '.bsv-desktop', 'mandala-store')
 }
 
 function assertIdentity(identityKey: unknown): asserts identityKey is string {
@@ -61,10 +84,10 @@ function assertChain(chain: unknown): asserts chain is string {
   }
 }
 
-function assertKey(key: unknown): asserts key is string {
+function assertKey(key: unknown, keyPrefix: string): asserts key is string {
   if (
     typeof key !== 'string' ||
-    !key.startsWith(KEY_PREFIX) ||
+    !key.startsWith(keyPrefix) ||
     key.length > MAX_KEY_LENGTH ||
     LONE_SURROGATE_RE.test(key)
   ) {
@@ -108,16 +131,19 @@ interface Namespace {
 export class ColorStoreService {
   readonly root: string
   private readonly maxValueBytes: number
+  readonly keyPrefix: string
   private readonly namespaces = new Map<string, Namespace>()
 
   constructor(options: ColorStoreServiceOptions = {}) {
     this.root = options.root ?? defaultColorStoreRoot()
     this.maxValueBytes = options.maxValueBytes ?? DEFAULT_MAX_VALUE_BYTES
+    this.keyPrefix = options.keyPrefix ?? COLOR_KEY_PREFIX
+    if (this.keyPrefix.length === 0) throw new Error('A store key prefix is required')
   }
 
   async get(identityKey: unknown, chain: unknown, key: unknown): Promise<string | undefined> {
     const ns = this.namespace(identityKey, chain)
-    assertKey(key)
+    assertKey(key, this.keyPrefix)
     return this.enqueue(ns, async () => {
       await this.ensureIndex(ns)
       let text: string
@@ -133,7 +159,7 @@ export class ColorStoreService {
 
   async set(identityKey: unknown, chain: unknown, key: unknown, value: unknown): Promise<void> {
     const ns = this.namespace(identityKey, chain)
-    assertKey(key)
+    assertKey(key, this.keyPrefix)
     if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > this.maxValueBytes) {
       throw new Error('Color store value exceeds 32 MiB')
     }
@@ -148,7 +174,7 @@ export class ColorStoreService {
 
   async delete(identityKey: unknown, chain: unknown, key: unknown): Promise<void> {
     const ns = this.namespace(identityKey, chain)
-    assertKey(key)
+    assertKey(key, this.keyPrefix)
     return this.enqueue(ns, async () => {
       const index = await this.ensureIndex(ns)
       try {
@@ -166,7 +192,7 @@ export class ColorStoreService {
   /** Keys starting with `prefix`, sorted ascending. */
   async keys(identityKey: unknown, chain: unknown, prefix: unknown): Promise<string[]> {
     const ns = this.namespace(identityKey, chain)
-    // Any prefix is safe to enumerate: the namespace only ever holds 'color.v1.' keys.
+    // Any prefix is safe to enumerate: the namespace only ever holds keys under keyPrefix.
     if (typeof prefix !== 'string' || prefix.length > MAX_KEY_LENGTH) {
       throw new Error('Invalid color store key')
     }
@@ -197,7 +223,7 @@ export class ColorStoreService {
 
   private async ensureIndex(ns: Namespace): Promise<Map<string, string>> {
     if (ns.index) return ns.index
-    ns.indexing ??= scanNamespace(ns.dir).then(
+    ns.indexing ??= scanNamespace(ns.dir, this.keyPrefix).then(
       index => {
         ns.index = index
         ns.indexing = null
@@ -213,7 +239,7 @@ export class ColorStoreService {
 }
 
 /** Builds key -> file for one namespace directory and deletes crash-leftover temp files. */
-async function scanNamespace(dir: string): Promise<Map<string, string>> {
+async function scanNamespace(dir: string, keyPrefix: string): Promise<Map<string, string>> {
   const index = new Map<string, string>()
   let entries: string[]
   try {
@@ -239,7 +265,7 @@ async function scanNamespace(dir: string): Promise<Map<string, string>> {
     // A record whose key does not hash to its file name is never readable by get().
     if (record && fileNameFor(record.k) === entry) {
       try {
-        assertKey(record.k)
+        assertKey(record.k, keyPrefix)
       } catch {
         continue
       }
@@ -285,14 +311,21 @@ export interface ColorStoreIpcMainLike {
   handle(channel: string, fn: (event: unknown, ...args: unknown[]) => unknown): void
 }
 
-/** Registers `color-store:{get,set,delete,keys}` with the argument order of the service methods. */
-export function registerColorStoreIpc(ipcMain: ColorStoreIpcMainLike, service: ColorStoreService): void {
-  ipcMain.handle(COLOR_STORE_CHANNELS.get, (_event, identityKey, chain, key) =>
+/**
+ * Registers `color-store:{get,set,delete,keys}` (or `channels`, e.g.
+ * MANDALA_STORE_CHANNELS) with the argument order of the service methods.
+ */
+export function registerColorStoreIpc(
+  ipcMain: ColorStoreIpcMainLike,
+  service: ColorStoreService,
+  channels: StoreChannels = COLOR_STORE_CHANNELS
+): void {
+  ipcMain.handle(channels.get, (_event, identityKey, chain, key) =>
     service.get(identityKey, chain, key))
-  ipcMain.handle(COLOR_STORE_CHANNELS.set, (_event, identityKey, chain, key, value) =>
+  ipcMain.handle(channels.set, (_event, identityKey, chain, key, value) =>
     service.set(identityKey, chain, key, value))
-  ipcMain.handle(COLOR_STORE_CHANNELS.delete, (_event, identityKey, chain, key) =>
+  ipcMain.handle(channels.delete, (_event, identityKey, chain, key) =>
     service.delete(identityKey, chain, key))
-  ipcMain.handle(COLOR_STORE_CHANNELS.keys, (_event, identityKey, chain, prefix) =>
+  ipcMain.handle(channels.keys, (_event, identityKey, chain, prefix) =>
     service.keys(identityKey, chain, prefix))
 }

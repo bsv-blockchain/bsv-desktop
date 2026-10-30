@@ -15,8 +15,7 @@
  * STEAK, and its host discovery is private, so a per-call capturing
  * facilitator records each host's raw STEAK. The SDK validator accepts only
  * the three BRC-22 instruction fields, so the facilitator hands the SDK a
- * copy stripped to those fields and keeps the raw entry, which may carry the
- * BRC-175 `admissionSignature` / `admissionIdentityKey` the module verifies.
+ * copy stripped to those fields and returns the raw entry.
  *
  * Robustness: every capture is per submit (concurrent submits never see each
  * other's STEAK); every resolver, facilitator and broadcast failure is a
@@ -34,11 +33,10 @@ import {
   type STEAK,
   type TaggedBEEF
 } from '@bsv/sdk'
-import {
-  ColorProviderError,
-  type AttestedSTEAK,
-  type ColorOverlayProvider
-} from '@bsv/color-permission-module'
+import type { ColorOverlayProvider } from '@bsv/color-permission-module'
+// The module no longer exports a provider error (B7); the Mandala lib's class is
+// the one hosts and the lib match by name.
+import { ColorProviderError } from '@bsv/mandala/profile'
 import type { WalletNetwork } from '../../networkConfig'
 
 export const DEFAULT_COLOR_LOOKUP_TIMEOUT_MS = 10_000
@@ -101,7 +99,7 @@ function strippedForSdk (steak: unknown): STEAK {
 }
 
 /** True when the host acknowledged every requested topic with well-formed instructions (the SDK's success rule). */
-function acknowledgesAll (steak: unknown, sentTopics: string[], topics: string[]): steak is AttestedSTEAK {
+function acknowledgesAll (steak: unknown, sentTopics: string[], topics: string[]): steak is STEAK {
   if (!isPlainRecord(steak)) return false
   if (Object.keys(steak).some(topic => !sentTopics.includes(topic))) return false
   return topics.every(topic => {
@@ -180,7 +178,7 @@ export function createShipColorProvider (o: ShipColorProviderOptions): ColorOver
       }
       const hit = captured.find(c => acknowledgesAll(c.steak, c.topics, topics))
       if (hit === undefined) throw unavailable('No overlay host acknowledged every topic')
-      return hit.steak as AttestedSTEAK
+      return hit.steak as STEAK
     }
   }
 }

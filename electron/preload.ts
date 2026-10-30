@@ -76,6 +76,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('color-store:keys', identityKey, chain, prefix)
   },
 
+  // Mandala host store (electron/colorStore.ts, MANDALA_STORE_CHANNELS): host
+  // ledger and @bsv/mandala journals; keys start with `mandala.`
+  mandalaStore: {
+    get: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string): Promise<string | undefined> =>
+      ipcRenderer.invoke('mandala-store:get', identityKey, chain, key),
+    set: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string, value: string): Promise<void> =>
+      ipcRenderer.invoke('mandala-store:set', identityKey, chain, key, value),
+    delete: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', key: string): Promise<void> =>
+      ipcRenderer.invoke('mandala-store:delete', identityKey, chain, key),
+    keys: (identityKey: string, chain: 'main' | 'test' | 'ttn' | 'tstn', prefix: string): Promise<string[]> =>
+      ipcRenderer.invoke('mandala-store:keys', identityKey, chain, prefix)
+  },
+
   // 1Color broadcast guard (electron/colorBroadcastGuard.ts): the renderer releases a
   // held txid only after the color module reports it settled
   colorGuard: {
@@ -244,6 +257,8 @@ export interface ElectronAPI {
   };
   /** Durable color-module store, namespaced per identity and chain (electron/colorStore.ts). */
   colorStore: ColorStoreAPI;
+  /** Mandala host store (host ledger + @bsv/mandala journals); keys start with `mandala.`. */
+  mandalaStore: ColorStoreAPI;
   /** 1Color broadcast guard: held txids and their release (electron/colorBroadcastGuard.ts). */
   colorGuard: ColorGuardAPI;
   app: {

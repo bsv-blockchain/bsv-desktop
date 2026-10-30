@@ -283,7 +283,7 @@ describe('buildColorConsentView', () => {
     expect(buildColorConsentView(JSON.stringify(sendMessage({ hostDisplay: {} }))).assets[0].name).toBe(ID)
   })
 
-  test('access, relinquish, signature and receive-offline views', () => {
+  test('access, relinquish and signature views; receive-offline is refused', () => {
     const access = buildColorConsentView(JSON.stringify({ type: 'color_access', basket: 'p color assets', seekPermission: true }))
     expect(access.title).toBe('Share token holdings')
     expect(access.access).toEqual({ basket: 'p color assets' })
@@ -308,30 +308,8 @@ describe('buildColorConsentView', () => {
     expect(signature.signatures).toHaveLength(1)
     expect(() => buildColorConsentView(JSON.stringify({ ...sig, inputIndex: -1 }))).toThrow(InvalidColorRequestError)
 
-    const off = buildColorConsentView(JSON.stringify({ ...offline(), hostDisplay: { [ID]: { assetId: ID, sym: 'G', dec: 18, mandala: true } } }))
-    expect(off.title).toBe('Accept tokens offline (pending settlement)')
-    expect(off.offline).toEqual({
-      assetId: ID,
-      outputs: [{ outputIndex: 0, amount: '0.000000000000001500 G' }, { outputIndex: 2, amount: '18.446744073709551615 G' }],
-      unsettledTransactions: 2,
-      signers: [K1],
-      profiles: ['https://brc.dev/207/attested']
-    })
-    expect(buildColorConsentView(JSON.stringify(offline())).offline?.outputs[0].amount).toBe('1500 base units')
-    const { signer: _s, ...anyMode } = offline()
-    expect(buildColorConsentView(JSON.stringify({ ...anyMode, signers: [K1, K2] })).offline?.signers).toEqual([K1, K2])
-    // Both, neither, an empty list or a malformed key is refused.
-    expect(() => buildColorConsentView(JSON.stringify({ ...offline(), signers: [K2] }))).toThrow(InvalidColorRequestError)
-    expect(() => buildColorConsentView(JSON.stringify(anyMode))).toThrow(InvalidColorRequestError)
-    expect(() => buildColorConsentView(JSON.stringify({ ...anyMode, signers: [] }))).toThrow(InvalidColorRequestError)
-    expect(() => buildColorConsentView(JSON.stringify({ ...anyMode, signers: [K1, 'x'] }))).toThrow(InvalidColorRequestError)
-    expect(() => buildColorConsentView(JSON.stringify(offline({ signer: '04' + '1'.repeat(64) })))).toThrow(InvalidColorRequestError)
-    expect(() => buildColorConsentView(JSON.stringify(offline({ signer: K1.toUpperCase() })))).toThrow(InvalidColorRequestError)
-    expect(() => buildColorConsentView(JSON.stringify(offline({ outputs: [{ outputIndex: 0, amount: '18446744073709551616' }] })))).toThrow(InvalidColorRequestError)
-    expect(() => buildColorConsentView(JSON.stringify(offline({ outputs: [{ outputIndex: 0, amount: 1500 }] })))).toThrow(InvalidColorRequestError)
-    expect(() => buildColorConsentView(JSON.stringify(offline({ unsettledTransactions: -1 })))).toThrow(InvalidColorRequestError)
-    expect(() => buildColorConsentView(JSON.stringify(offline({ profiles: [1] })))).toThrow(InvalidColorRequestError)
-    expect(() => buildColorConsentView(JSON.stringify(offline({ assetId: 'ISSUE' })))).toThrow(InvalidColorRequestError)
+    // Revision 3: offline receipts are credited by the host runtime, never prompted.
+    expect(() => buildColorConsentView(JSON.stringify(offline()))).toThrow(InvalidColorRequestError)
   })
 
   test('unknown types and malformed messages are refused', () => {

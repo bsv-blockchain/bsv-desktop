@@ -9,8 +9,8 @@
  *   whose signature the approval releases;
  * - nothing an approval moves is hidden: authority counts, the deploy, token
  *   destinations, the lock time;
- * - offline receive shows the pending-settlement notice and every acceptable
- *   signer key (identity mode `signer`, and `signers[]`);
+ * - `color_receive_offline` (removed in Revision 3) is declined without a
+ *   dialog: offline receipts are credited by the host runtime, not prompted;
  * - fail closed: an invalid message is declined (false) without a dialog and
  *   logs one warning; an enqueue failure or a non-boolean answer is a decline;
  * - double-submit: the handler answers `true` only for an explicit boolean
@@ -152,20 +152,8 @@ describe('ColorConsentDetails', () => {
     expect(render(send({ lockTime: 5 }))).toContain('Lock time')
   })
 
-  test('offline receive shows the pending notice', () => {
-    const one = render({ ...offline(), hostDisplay: { [ID]: { assetId: ID, sym: 'G', dec: 18, mandala: true } } })
-    expect(one).toContain('Settles when the Mandala overlay admits it')
-    expect(one).toContain(K1)
-    expect(one).toContain(ID)
-    expect(one).toContain('0.000000000000001500 G')
-    expect(one).toContain('https://brc.dev/207/attested')
-
-    const { signer: _s, ...rest } = offline()
-    const many = render({ ...rest, signers: [K1, K2] })
-    expect(many).toContain('Settles when the Mandala overlay admits it')
-    expect(many).toContain(K1)
-    expect(many).toContain(K2)
-    expect(many).toContain('1500 base units')
+  test('an offline-receive message is no longer presentable (Revision 3)', () => {
+    expect(() => render(offline())).toThrow(/InvalidColorRequestError/)
   })
 
   test('access, relinquish and signature views', () => {

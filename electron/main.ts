@@ -10,7 +10,7 @@ import { registerWalletPortabilityIpc } from './wallet-portability/ipc.js';
 import type { WalletPortabilityService } from './wallet-portability/service.js';
 import { integrateAppImageDesktopEntry } from './linuxDesktopIntegration.js';
 import { FeeSettingsService, registerFeeSettingsIpc } from './feeSettings.js';
-import { ColorStoreService, registerColorStoreIpc } from './colorStore.js';
+import { ColorStoreService, MANDALA_STORE_CHANNELS, MANDALA_STORE_KEY_PREFIX, defaultMandalaStoreRoot, registerColorStoreIpc } from './colorStore.js';
 import { COLOR_GUARD_CHANNELS, createColorHeldSweeper, registerColorGuardIpc, sharedColorGuardJournal, sweepColorGuard } from './colorBroadcastGuard.js';
 import { arcadeUrl } from './endpoints.js';
 import { getBootConfig } from './bootConfig.js';
@@ -297,6 +297,15 @@ registerFeeSettingsIpc(ipcMain, feeSettingsService);
 // Durable store for the BRC-207 color module (receipt and settlement evidence,
 // contract D5). The main process is its single writer; every window uses IPC.
 registerColorStoreIpc(ipcMain, new ColorStoreService());
+
+// Mandala host store (design §9 B7): the host ledger the Mandala issuer-v1
+// handler credits from, and the @bsv/mandala journals. Same layout, its own
+// root and channels; renderer IPC only, never over BRC-100.
+registerColorStoreIpc(
+  ipcMain,
+  new ColorStoreService({ root: defaultMandalaStoreRoot(), keyPrefix: MANDALA_STORE_KEY_PREFIX }),
+  MANDALA_STORE_CHANNELS
+);
 
 // 1Color broadcast guard (contract §8.2): the renderer lists held txids and
 // releases each one once its color module reports it settled. The release

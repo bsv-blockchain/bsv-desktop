@@ -11,6 +11,9 @@
  * - Communicates with parent via process IPC
  */
 
+// This side-effect import must stay first: it patches global fetch before any
+// module (eventsource included) captures it.
+import './workerProxyFetch.js';
 import path from 'path';
 import os from 'os';
 import { createRequire } from 'module';

@@ -6,6 +6,7 @@ import fs from 'fs';
 import { startHttpServer, PortInUseError } from './httpServer.js';
 import { buildApplicationMenu } from './appMenu.js';
 import { applyPersistedProxySettings, registerNetworkIpc } from './networkSettings.js';
+import { installSessionFetch } from './sessionFetch.js';
 import { registerWalletPortabilityIpc } from './wallet-portability/ipc.js';
 import type { WalletPortabilityService } from './wallet-portability/service.js';
 import { integrateAppImageDesktopEntry } from './linuxDesktopIntegration.js';
@@ -790,6 +791,13 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('[Startup] Failed to apply persisted proxy settings, continuing startup without them:', error);
   }
+
+  // Wallet Toolbox builds its providers from @bsv/sdk's global-fetch client.
+  // Node's fetch ignores the app's proxy, so route HTTP(S) through the session
+  // after the persisted proxy has been applied and before Services are created.
+  // Installing even in direct mode keeps the same transport if the user enables
+  // the proxy later, without waiting for the wallet to rebuild its providers.
+  installSessionFetch();
 
   // Must run before the window opens: the compositor resolves the icon when
   // the toplevel is mapped, so a late-installed desktop entry is not picked up

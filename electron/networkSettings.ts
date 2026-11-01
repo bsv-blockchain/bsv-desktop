@@ -23,6 +23,12 @@ const DEFAULT_PROXY_SETTINGS: NetworkProxySettings = {
 
 const LOCAL_BYPASS = '<local>;localhost;127.0.0.1;::1';
 const LOCAL_NO_PROXY = 'localhost,127.0.0.1,::1';
+/**
+ * Dedicated app-owned proxy variable for the monitor worker. Do not reuse
+ * HTTP_PROXY/HTTPS_PROXY: those may come from the user's shell even when this
+ * app is in direct mode, and the worker must follow the app setting.
+ */
+const APP_PROXY_URL_ENV = 'BSV_DESKTOP_PROXY_URL';
 
 /** In-memory: workers forked before a mid-session proxy change still need a relaunch. */
 let pendingWorkerRestart = false;
@@ -140,6 +146,7 @@ function clearProcessProxyEnv(): void {
   delete process.env.all_proxy;
   delete process.env.NO_PROXY;
   delete process.env.no_proxy;
+  delete process.env[APP_PROXY_URL_ENV];
 }
 
 function setProcessProxyEnv(proxyRules: string): void {
@@ -149,6 +156,7 @@ function setProcessProxyEnv(proxyRules: string): void {
   process.env.https_proxy = proxyRules;
   process.env.NO_PROXY = LOCAL_NO_PROXY;
   process.env.no_proxy = LOCAL_NO_PROXY;
+  process.env[APP_PROXY_URL_ENV] = proxyRules;
 }
 
 /**
@@ -185,6 +193,7 @@ export async function applyPersistedProxySettings(): Promise<void> {
   if (!persisted) {
     appliedSettings = null;
     pendingWorkerRestart = false;
+    delete process.env[APP_PROXY_URL_ENV];
     return;
   }
 

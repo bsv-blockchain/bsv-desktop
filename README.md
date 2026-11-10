@@ -349,7 +349,7 @@ Update README.md, PORTED.md, or CHANGELOG.md as needed.
 
 ## License
 
-Open BSV License
+Apache License 2.0
 
 ## Support
 

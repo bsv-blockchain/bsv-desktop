@@ -24,10 +24,12 @@ import {
   GroupedPermissions,
 } from '../types/GroupedPermissions'
 import type {
+  ModuleKeyDeriver,
   PermissionModuleContext,
   PermissionModuleDefinition,
   PermissionPromptHandler,
 } from '../permissionModules/types'
+import { revocableKeyDeriver } from '../permissionModules/keyDeriver'
 import {
   createColorLinkageGrantPolicy,
   linkagePromptDescription,
@@ -181,6 +183,11 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
   private _promptHandlers: Map<string, PermissionPromptHandler> = new Map()
   /** Modules built for the current wallet, disposed on rebuild and close. */
   private _permissionModuleInstances: Array<{ definition: PermissionModuleDefinition; module: unknown }> = []
+  /**
+   * Revokes each key deriver view handed out by the current build, including
+   * one given to a module whose createModule then threw.
+   */
+  private _keyDeriverRevokers: Array<() => void> = []
 
   // ---- Holder-send linkage grants (D20) ----
   private _linkagePolicy: ColorLinkageGrantPolicy = createColorLinkageGrantPolicy({ overlayKeys: () => [] })
@@ -203,11 +210,16 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
   }
 
   /**
-   * Disposes every module built by createPermissionsManager exactly once and
-   * drops the linkage grants and pending linkage requests. Idempotent; a
-   * module whose dispose throws is logged and the rest are still disposed.
+   * Disposes every module built by createPermissionsManager exactly once,
+   * revokes the key deriver views it handed out, and drops the linkage grants
+   * and pending linkage requests. Idempotent; a module whose dispose throws is
+   * logged and the rest are still disposed.
    */
   disposePermissionModules(): void {
+    // Revoked first, so no module's dispose can keep deriving keys.
+    const revokers = this._keyDeriverRevokers
+    this._keyDeriverRevokers = []
+    for (const revoke of revokers) revoke()
     const instances = this._permissionModuleInstances
     this._permissionModuleInstances = []
     this._linkageGeneration++
@@ -1051,8 +1063,16 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
   /**
    * Creates a WalletPermissionsManager with all callbacks bound to this queue.
    * Also monkey-patches grant/deny/dismiss to auto-release the group gate.
+   * `keyDeriver` reaches only modules whose definition sets `needsKeyDeriver`,
+   * each as its own derivePrivateKey-only view (see revocableKeyDeriver) for
+   * its `p <id> ` protocol namespace and the counterparty `'self'`, revoked
+   * with the modules.
    */
-  createPermissionsManager(wallet: WalletInterface, context?: PermissionModuleContext): WalletPermissionsManager {
+  createPermissionsManager(
+    wallet: WalletInterface,
+    context?: PermissionModuleContext,
+    keyDeriver?: ModuleKeyDeriver
+  ): WalletPermissionsManager {
     // A rebuild (network/profile switch) never leaves the previous wallet's
     // modules running: their timers, listeners and grants go first.
     this.disposePermissionModules()
@@ -1075,6 +1095,20 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
       for (const moduleId of this.enabledPermissionModules) {
         const descriptor = this._getPermissionModuleById?.(moduleId) as PermissionModuleDefinition | undefined
         if (!descriptor) continue
+        let moduleKeyDeriver: ModuleKeyDeriver | undefined
+        if (descriptor.needsKeyDeriver === true && keyDeriver && !/^[a-z0-9]+$/.test(moduleId)) {
+          // The SDK lowercases and trims protocol names, so such an id could
+          // share another module's namespace. Warn instead of throwing: a throw
+          // here would abort the whole wallet build.
+          console.warn(`[PermissionQueueManager] permission module ${JSON.stringify(moduleId)} gets no key deriver: its id must match /^[a-z0-9]+$/`)
+        } else if (descriptor.needsKeyDeriver === true && keyDeriver) {
+          // Recorded before createModule runs: a module that throws is revoked too.
+          // Scoped to the module's own scheme namespace; the trailing space
+          // keeps module `sig` out of `p sigma …`.
+          const view = revocableKeyDeriver(keyDeriver, `p ${moduleId} `)
+          this._keyDeriverRevokers.push(view.revoke)
+          moduleKeyDeriver = view.deriver
+        }
         const module = descriptor.createModule({
           wallet,
           adminOriginator: this.adminOriginator,
@@ -1082,6 +1116,7 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
           // theme change. Resolve the current handler at the time of the call.
           promptHandler: (app: string, message: string) => this._promptHandlers.get(moduleId)?.(app, message) ?? Promise.resolve(false),
           context: moduleContext,
+          keyDeriver: moduleKeyDeriver,
         })
         this._permissionModuleInstances.push({ definition: descriptor, module })
         permissionModulesMap[moduleId] = module

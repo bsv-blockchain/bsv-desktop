@@ -9,17 +9,19 @@
  * never asked to approve a figure the wallet could not verify.
  *
  * Prompts are FIFO, so concurrent app calls never replace an unanswered
- * request. A decision is taken once (a double click on Approve is a no-op);
- * closing, Escape and unmounting all answer `false`.
+ * request. A decision counts only for the request it was shown for, and is
+ * taken once. Approve is enabled only PROMPT_ARM_DELAY_MS after the request
+ * appeared and after any decision in a module prompt (`modulePromptClock`);
+ * the wallet's other dialogs (the ordinary permission dialogs) are not part
+ * of that clock. Closing, Escape and unmounting all answer `false`.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React from 'react'
 import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material'
-import { createTheme, ThemeProvider } from '@mui/material/styles'
+import { ThemeProvider } from '@mui/material/styles'
 import TokenOutlinedIcon from '@mui/icons-material/TokenOutlined'
-import type { PermissionPromptHandler, PermissionPromptProps } from '../types'
+import type { PermissionPromptProps } from '../types'
+import { usePermissionPrompt } from '../promptShared'
 import { buildColorConsentView, type ColorConsentView } from './consentView'
-
-type PendingPrompt = { app: string; view: ColorConsentView; resolve: (allowed: boolean) => void }
 
 /**
  * Builds the view for `message` and hands it to `enqueue` (the dialog queue).
@@ -175,138 +177,17 @@ export const ColorConsentDetails: React.FC<{ view: ColorConsentView }> = ({ view
 
 /** FIFO prompts keep concurrent app calls from replacing an unanswered request. */
 export const ColorPermissionPrompt: React.FC<PermissionPromptProps> = (props) => {
-  // PermissionPromptHost is outside AppThemeProvider. Keep this portal on the
-  // same navy palette and honor the host's explicit light/dark preference.
-  const theme = useMemo(() => {
-    const mode = props.paletteMode
-    return createTheme({
-      palette: {
-        mode,
-        primary: { main: mode === 'light' ? '#1b365d' : '#93b4f4', contrastText: mode === 'light' ? '#ffffff' : '#0d1b3a' },
-        secondary: { main: mode === 'light' ? '#2c5282' : '#b2c5e8' },
-        background: { default: mode === 'light' ? '#f5f7fb' : '#0f172a', paper: mode === 'light' ? '#ffffff' : '#172238' },
-        text: { primary: mode === 'light' ? '#1e293b' : '#eef2fa', secondary: mode === 'light' ? '#607086' : '#a8b5cc' },
-        divider: mode === 'light' ? '#e2e8f0' : '#2b3953'
-      },
-      typography: {
-        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        h6: { fontWeight: 600, fontSize: '0.95rem' },
-        body1: { fontSize: '0.95rem', lineHeight: 1.65 },
-        body2: { fontSize: '0.85rem', lineHeight: 1.6 },
-        button: { fontWeight: 600, fontSize: '0.875rem' }
-      },
-      components: {
-        MuiButton: { defaultProps: { disableElevation: true }, styleOverrides: { root: { textTransform: 'none', borderRadius: 10, padding: '10px 18px' } } },
-        MuiPaper: { defaultProps: { elevation: 0 }, styleOverrides: { root: { backgroundImage: 'none' } } },
-        MuiChip: { styleOverrides: { root: { borderRadius: 7, fontWeight: 500, fontSize: '0.75rem' } } },
-        MuiDialog: { styleOverrides: { paper: { borderRadius: 20, backgroundImage: 'none' } } },
-        MuiDialogTitle: { styleOverrides: { root: { fontWeight: 650, padding: '24px 24px 12px' } } },
-        MuiDialogActions: { styleOverrides: { root: { padding: '16px 24px 24px' } } },
-        MuiAlert: { styleOverrides: { root: { borderRadius: 10 } } }
-      },
-      shape: { borderRadius: 6 },
-      spacing: 8
-    })
-  }, [props.paletteMode])
-  const callbacks = useRef(props)
-  callbacks.current = props
-  const mounted = useRef(false)
-  const queue = useRef<PendingPrompt[]>([])
-  const current = useRef<PendingPrompt | null>(null)
-  const inFlight = useRef<PendingPrompt | null>(null)
-  const processing = useRef(false)
-  const originallyFocused = useRef<boolean | undefined>(undefined)
-  const [active, setActive] = useState<PendingPrompt | null>(null)
+  const { theme, entry, armed, decide } = usePermissionPrompt<ColorConsentView>(props, handleColorPromptMessage)
 
-  const advance = useCallback(async function next (): Promise<void> {
-    if (!mounted.current || current.current || processing.current) return
-    processing.current = true
-    if (queue.current.length === 0) {
-      const restoreFocus = originallyFocused.current === false
-      originallyFocused.current = undefined
-      try {
-        if (restoreFocus) await callbacks.current.onFocusRelinquished()
-      } catch (error) {
-        console.error('Unable to restore focus after color permission prompt', error)
-      } finally {
-        processing.current = false
-      }
-      if (queue.current.length > 0) void next()
-      return
-    }
-
-    const request = queue.current.shift()!
-    inFlight.current = request
-    try {
-      if (originallyFocused.current === undefined) {
-        originallyFocused.current = await callbacks.current.isFocused()
-        if (mounted.current && !originallyFocused.current) await callbacks.current.onFocusRequested()
-      }
-    } catch (error) {
-      console.error('Unable to focus color permission prompt', error)
-    } finally {
-      inFlight.current = null
-      processing.current = false
-    }
-    if (!mounted.current) {
-      request.resolve(false)
-      return
-    }
-    current.current = request
-    setActive(request)
-  }, [])
-
-  const promptHandler = useCallback<PermissionPromptHandler>((app, message) => {
-    if (!mounted.current) return Promise.resolve(false)
-    return handleColorPromptMessage(message, view => new Promise<boolean>((resolve) => {
-      if (!mounted.current) {
-        resolve(false)
-        return
-      }
-      queue.current.push({ app, view, resolve })
-      void advance()
-    }))
-  }, [advance])
-
-  const decide = useCallback((allowed: boolean) => {
-    const request = current.current
-    if (!request) return
-    // Cleared before resolving, so a second click on the same dialog is a no-op.
-    current.current = null
-    setActive(null)
-    request.resolve(allowed)
-    void advance()
-  }, [advance])
-
-  useEffect(() => {
-    mounted.current = true
-    return () => {
-      mounted.current = false
-      current.current?.resolve(false)
-      inFlight.current?.resolve(false)
-      queue.current.splice(0).forEach(request => request.resolve(false))
-      current.current = null
-      if (originallyFocused.current === false) {
-        void callbacks.current.onFocusRelinquished().catch(error => console.error('Unable to restore focus', error))
-      }
-      originallyFocused.current = undefined
-    }
-  }, [])
-
-  const { id, onRegister, onUnregister } = props
-  useEffect(() => {
-    onRegister(id, promptHandler)
-    return () => onUnregister?.(id)
-  }, [id, onRegister, onUnregister, promptHandler])
-
-  if (!active) return null
-  const { view } = active
+  if (!entry) return null
+  const { view } = entry
 
   return (
     <ThemeProvider theme={theme}>
       <Dialog
+        key={entry.id}
         open
-        onClose={() => decide(false)}
+        onClose={() => decide(entry.id, false)}
         maxWidth="sm"
         fullWidth
         aria-labelledby="color-permission-title"
@@ -320,13 +201,13 @@ export const ColorPermissionPrompt: React.FC<PermissionPromptProps> = (props) =>
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2.5}>
-            <Chip label={active.app || 'Unknown app'} variant="outlined" sx={{ alignSelf: 'flex-start', maxWidth: '100%', height: 'auto', '& .MuiChip-label': { py: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' } }} />
+            <Chip label={entry.app || 'Unknown app'} variant="outlined" sx={{ alignSelf: 'flex-start', maxWidth: '100%', height: 'auto', '& .MuiChip-label': { py: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' } }} />
             <ColorConsentDetails view={view} />
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3, gap: 1 }}>
-          <Button variant="outlined" onClick={() => decide(false)} autoFocus>Deny</Button>
-          <Button variant="contained" onClick={() => decide(true)}>Approve</Button>
+          <Button variant="outlined" onClick={() => decide(entry.id, false)} autoFocus>Deny</Button>
+          <Button variant="contained" disabled={!armed} onClick={() => decide(entry.id, true)}>Approve</Button>
         </DialogActions>
       </Dialog>
     </ThemeProvider>

@@ -861,7 +861,7 @@ export class WalletService extends EventEmittable<WalletServiceEvents> {
         },
         // Read per use: the client is built below and replaced on a URL change.
         messageBox: () => (this._useMessageBox ? this.peerPay.getSnapshot().peerPayClient ?? undefined : undefined),
-      })
+      }, keyDeriver)
       this.permissionQueue.setPermissionsManager(permissionsManager)
 
       this._managers = {

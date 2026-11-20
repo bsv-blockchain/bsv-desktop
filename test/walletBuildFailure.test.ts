@@ -162,6 +162,8 @@ describe('successful wallet build', () => {
     await state._buildWallet(new Array(32).fill(1), {})
 
     expect(service.lifecycle).toBe('ready')
+    // The wallet's deriver reaches the manager, which scopes it per module.
+    expect(typeof (create.mock.calls[0][2] as any)?.derivePrivateKey).toBe('function')
     const context = create.mock.calls[0][1] as any
     expect(context.localStorageSelected).toBe(true)
     const { isLocalStorageActive } = context

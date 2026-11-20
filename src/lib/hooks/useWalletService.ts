@@ -17,7 +17,7 @@ import type { PeerPaySnapshot } from '../services/PeerPayManager'
 import type { DirectPaySnapshot } from '../services/DirectPayManager'
 import type { ReceivedRecord } from '../services/MessageBoxAutoReceiver'
 import type { DirectPaySettings } from '../utils/directPaySettings'
-import { DEFAULT_PERMISSIONS_CONFIG } from '../WalletContext'
+import { mergeStoredPermissionsConfig } from '../WalletContext'
 import { isAppWalletReady } from '../services/appWalletBridge'
 import { subscribeRecentApps, type RecentApp } from '../pages/Dashboard/Apps/getApps'
 
@@ -45,7 +45,7 @@ export function getWalletService(): WalletService {
     try {
       const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('permissionsConfig') : null
       if (stored) {
-        const merged = { ...DEFAULT_PERMISSIONS_CONFIG, ...JSON.parse(stored) }
+        const merged = mergeStoredPermissionsConfig(JSON.parse(stored))
         _walletServiceInstance.permissionQueue.permissionsConfig = merged
       }
     } catch (e) {

@@ -1087,6 +1087,9 @@ export class PermissionQueueManager extends EventEmittable<PermissionQueueEvents
         permissionModulesMap[moduleId] = module
       }
 
+      // The whole config, including the split linkage flags, is what
+      // WalletPermissionsManager reads. The installed toolbox ignores the
+      // unknown split keys and uses seekPermissionsForKeyLinkageRevelation.
       const configWithModules = {
         ...this.permissionsConfig,
         permissionModules: permissionModulesMap,

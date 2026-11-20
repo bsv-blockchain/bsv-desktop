@@ -17,9 +17,12 @@
  *   (`seekPermission:false` errors without a prompt), A.13 (a bare digest
  *   under a p color key is refused without a prompt or a signature);
  * - holder-send linkage (D20): the module never intercepts
- *   `specific linkage revelation 2 p color …`; with the default config there
- *   is no prompt; with the prompts enabled one grant covers later sends, and
- *   it never covers a non-overlay counterparty or another originator.
+ *   `specific linkage revelation 2 p color …`. When linkage permission is not
+ *   sought there is no prompt. With the prompts enabled one grant covers later
+ *   sends, and it never covers a non-overlay counterparty or another
+ *   originator. The product default seeks counterparty linkage (legacy flag
+ *   on, split counterparty flag on, specific flag off); the no-prompt case
+ *   turns those flags off.
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
@@ -38,7 +41,9 @@ const DEFAULTS = vi.hoisted(() => ({
   seekGroupedPermission: false,
   seekPermissionsForIdentityKeyRevelation: false,
   seekPermissionsForIdentityResolution: false,
-  seekPermissionsForKeyLinkageRevelation: false,
+  seekPermissionsForKeyLinkageRevelation: true,
+  seekPermissionsForCounterpartyKeyLinkageRevelation: true,
+  seekPermissionsForSpecificKeyLinkageRevelation: false,
   seekPermissionsForPublicKeyRevelation: false,
   seekPermissionWhenApplyingActionLabels: false,
   seekPermissionWhenListingActionsByLabel: false,
@@ -595,7 +600,15 @@ describe('real module behind the real manager', () => {
     expect(remove).toHaveBeenCalledWith('online', expect.any(Function))
   })
 
-  test('holder-send linkage: default config never prompts', async () => {
+  test('holder-send linkage: when linkage permission is not sought, never prompts', async () => {
+    // Product defaults seek counterparty linkage. This case is the manager
+    // with every linkage flag off, which is what used to be the default.
+    queue.setPermissionsConfig({
+      ...DEFAULTS,
+      seekPermissionsForKeyLinkageRevelation: false,
+      seekPermissionsForCounterpartyKeyLinkageRevelation: false,
+      seekPermissionsForSpecificKeyLinkageRevelation: false
+    } as any)
     await holderSend(B, linkageName('AAAA', 'BBBB'))
     await holderSend(B, linkageName('CCCC', 'DDDD'))
     expect(protocolPrompts).toHaveLength(0)
@@ -607,8 +620,22 @@ describe('real module behind the real manager', () => {
   })
 
   const promptsOn = () => {
-    queue.setPermissionsConfig({ ...DEFAULTS, seekPermissionsForKeyLinkageRevelation: true, seekProtocolPermissionsForEncrypting: true } as any)
+    queue.setPermissionsConfig({
+      ...DEFAULTS,
+      seekPermissionsForKeyLinkageRevelation: true,
+      seekPermissionsForCounterpartyKeyLinkageRevelation: true,
+      seekPermissionsForSpecificKeyLinkageRevelation: true,
+      seekProtocolPermissionsForEncrypting: true
+    } as any)
   }
+
+  test('forwards the split linkage flags onto the permissions manager', () => {
+    expect(pm.config).toMatchObject({
+      seekPermissionsForKeyLinkageRevelation: true,
+      seekPermissionsForCounterpartyKeyLinkageRevelation: true,
+      seekPermissionsForSpecificKeyLinkageRevelation: false
+    })
+  })
 
   test('holder-send linkage with prompts enabled: one grant covers later sends', async () => {
     promptsOn()

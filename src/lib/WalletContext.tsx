@@ -60,6 +60,17 @@ export interface PermissionsConfig {
   seekPermissionsForIdentityKeyRevelation: boolean;
   seekPermissionsForIdentityResolution: boolean;
   seekPermissionsForKeyLinkageRevelation: boolean;
+  /**
+   * `revealCounterpartyKeyLinkage`. Optional on the installed toolbox, which
+   * ignores unknown keys and still reads `seekPermissionsForKeyLinkageRevelation`.
+   * A toolbox that knows this flag uses it, and falls back to the legacy flag
+   * when it is undefined.
+   */
+  seekPermissionsForCounterpartyKeyLinkageRevelation: boolean;
+  /**
+   * `revealSpecificKeyLinkage`. Same fallback as the counterparty flag.
+   */
+  seekPermissionsForSpecificKeyLinkageRevelation: boolean;
   seekPermissionsForPublicKeyRevelation: boolean;
   seekPermissionWhenApplyingActionLabels: boolean;
   seekPermissionWhenListingActionsByLabel: boolean;
@@ -81,7 +92,15 @@ export const DEFAULT_PERMISSIONS_CONFIG: PermissionsConfig = {
   seekGroupedPermission: true,
   seekPermissionsForIdentityKeyRevelation: false,
   seekPermissionsForIdentityResolution: false,
-  seekPermissionsForKeyLinkageRevelation: false,
+  // Counterparty linkage reveals the root ECDH shared secret for that pair,
+  // so it is gated. The installed toolbox ignores the two keys below and reads
+  // only this legacy flag, which therefore defaults to true so counterparty
+  // linkage is gated now. Once a toolbox that honors the split flags is
+  // installed, specific linkage (false below) is permission-free on its own
+  // and this flag is only the fallback for an undefined split flag.
+  seekPermissionsForKeyLinkageRevelation: true,
+  seekPermissionsForCounterpartyKeyLinkageRevelation: true,
+  seekPermissionsForSpecificKeyLinkageRevelation: false,
   seekPermissionsForPublicKeyRevelation: false,
   seekPermissionWhenApplyingActionLabels: false,
   seekPermissionWhenListingActionsByLabel: false,
@@ -90,6 +109,28 @@ export const DEFAULT_PERMISSIONS_CONFIG: PermissionsConfig = {
   // Signatures can authorise actions outside the wallet, so apps must ask first.
   seekProtocolPermissionsForSigning: true,
   seekSpendingPermissions: true,
+}
+
+/**
+ * Merge a permissions config saved in localStorage over the defaults.
+ *
+ * A config saved before the split linkage flags has no
+ * `seekPermissionsForCounterpartyKeyLinkageRevelation`. That missing choice
+ * is the security default (true). Every stored boolean is kept, including an
+ * explicit false for the legacy combined flag or for the specific-linkage flag.
+ */
+export function mergeStoredPermissionsConfig(stored: unknown): PermissionsConfig {
+  const source = stored !== null && typeof stored === 'object' && !Array.isArray(stored)
+    ? stored as Partial<PermissionsConfig>
+    : {}
+  const merged: PermissionsConfig = { ...DEFAULT_PERMISSIONS_CONFIG, ...source }
+  if (typeof source.seekPermissionsForCounterpartyKeyLinkageRevelation !== 'boolean') {
+    merged.seekPermissionsForCounterpartyKeyLinkageRevelation = true
+  }
+  if (typeof source.seekPermissionsForSpecificKeyLinkageRevelation !== 'boolean') {
+    merged.seekPermissionsForSpecificKeyLinkageRevelation = DEFAULT_PERMISSIONS_CONFIG.seekPermissionsForSpecificKeyLinkageRevelation
+  }
+  return merged
 }
 
 // -----

@@ -15,6 +15,7 @@ import {
   Alert,
   Switch,
   FormControlLabel,
+  FormHelperText,
   Collapse,
   Divider
 } from '@mui/material'
@@ -480,12 +481,27 @@ const AdvancedSettings = () => {
               <FormControlLabel
                 control={
                   <Switch
-                    checked={localPermissionsConfig.seekPermissionsForKeyLinkageRevelation}
-                    onChange={() => handlePermissionToggle('seekPermissionsForKeyLinkageRevelation')}
+                    checked={localPermissionsConfig.seekPermissionsForCounterpartyKeyLinkageRevelation}
+                    onChange={() => handlePermissionToggle('seekPermissionsForCounterpartyKeyLinkageRevelation')}
                   />
                 }
-                label={t('permissions_identity_linkage')}
+                label={t('permissions_identity_linkage_counterparty')}
               />
+              <Box>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={localPermissionsConfig.seekPermissionsForSpecificKeyLinkageRevelation}
+                      onChange={() => handlePermissionToggle('seekPermissionsForSpecificKeyLinkageRevelation')}
+                      inputProps={{ 'aria-describedby': 'permissions-specific-linkage-helper' }}
+                    />
+                  }
+                  label={t('permissions_identity_linkage_specific')}
+                />
+                <FormHelperText id="permissions-specific-linkage-helper" sx={{ ml: 6, mt: -0.5 }}>
+                  {t('permissions_identity_linkage_specific_helper')}
+                </FormHelperText>
+              </Box>
               <FormControlLabel
                 control={
                   <Switch

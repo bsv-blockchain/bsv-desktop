@@ -8,6 +8,7 @@ vi.mock('../src/lib/WalletContext', () => ({ DEFAULT_PERMISSIONS_CONFIG: {} }))
 import { buildPermissionModuleRegistry } from '../src/lib/permissionModules/registry'
 import { btmsPermissionModule } from '../src/lib/permissionModules/btms'
 import { colorPermissionModule } from '../src/lib/permissionModules/color'
+import { sigmaPermissionModule } from '../src/lib/permissionModules/sigma'
 import { PermissionQueueManager } from '../src/lib/services/PermissionQueueManager'
 
 beforeEach(() => vi.stubGlobal('window', {}))
@@ -23,20 +24,23 @@ test('a saved mandala id is dropped and defaults are restored', () => {
   expect(r.getPermissionModuleById('mandala')).toBeUndefined()
 })
 
-// The BRC-207 color module replaces it under the scheme id 'color' and is
-// default-enabled, so a saved list from the old build gains it on restore.
-test('registry: a saved mandala id becomes color', () => {
-  const r = buildPermissionModuleRegistry([btmsPermissionModule, colorPermissionModule])
-  expect(r.restoreEnabledPermissionModules(['btms', 'mandala'])).toEqual(['btms', 'color'])
-  expect(r.restoreEnabledPermissionModules(undefined)).toEqual(['btms', 'color'])
+// The BRC-207 color module replaces it under the scheme id 'color'. It and the
+// BRC-230 sigma module (scheme id 'sigma') are default-enabled, so a saved list
+// from an earlier build gains both on restore.
+test('registry: a saved mandala id becomes color, and sigma is added', () => {
+  const r = buildPermissionModuleRegistry([btmsPermissionModule, colorPermissionModule, sigmaPermissionModule])
+  expect(r.restoreEnabledPermissionModules(['btms', 'mandala'])).toEqual(['btms', 'color', 'sigma'])
+  expect(r.restoreEnabledPermissionModules(['btms', 'color'])).toEqual(['btms', 'color', 'sigma'])
+  expect(r.restoreEnabledPermissionModules(undefined)).toEqual(['btms', 'color', 'sigma'])
   expect(r.getPermissionModuleById('color')).toBe(colorPermissionModule)
+  expect(r.getPermissionModuleById('sigma')).toBe(sigmaPermissionModule)
 })
 
-test('main.tsx registers btms and color', async () => {
+test('main.tsx registers btms, color and sigma', async () => {
   const fs = await import('node:fs')
   const path = await import('node:path')
   const main = fs.readFileSync(path.resolve(__dirname, '../src/main.tsx'), 'utf8')
-  expect(main).toMatch(/permissionModules=\{\[btmsPermissionModule, colorPermissionModule\]\}/)
+  expect(main).toMatch(/permissionModules=\{\[btmsPermissionModule, colorPermissionModule, sigmaPermissionModule\]\}/)
 })
 
 test('the Mandala module source is gone', async () => {

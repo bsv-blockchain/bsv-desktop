@@ -33,7 +33,7 @@
     "@bsv/btms-permission-module": "^1.2.1",
     "@bsv/btms-permission-module-ui": "^1.0.0",
     "@bsv/color-permission-module": "file:vendor/bsv-color-permission-module-0.2.0-4fa68e7.tgz",
-    "@bsv/ecpm-permission-module": "file:vendor/bsv-ecpm-permission-module-0.1.4-session.tgz",
+    "@bsv/ecpm-permission-module": "0.2.0",
     "@bsv/identity-react": "^1.1.14",
     "@bsv/mandala": "file:vendor/bsv-mandala-0.5.0-07e58e3.tgz",
     "@bsv/message-box-client": "^2.5.4",
